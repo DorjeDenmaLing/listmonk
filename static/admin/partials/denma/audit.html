@@ -1,0 +1,71 @@
+{{- /* denma: the activity log (cmd/denma_audit.go), on a center's Advanced
+   page (its own) and the hub's Activity page (every center's);
+   assets/js/views/denma-audit.js.
+
+   dict "Root" . "Hub" true|false "Centers" []{Slug, Name} (the hub's filter) */ -}}
+{{ define "denma-audit" -}}
+<section class="card page-content has-table denma-audit" x-data="denmaAudit({{ .Hub }})" data-testid="activity">
+	<header class="hstack justify-between denma-audit-head">
+		<div>
+			{{- if not .Hub }}<h3>Activity</h3>{{ end }}
+			<small class="text-light">Every change made here, and sign-ins, with who made it and when.</small>
+		</div>
+		<form class="hstack gap-2" @submit.prevent="reload()">
+			{{- if .Hub }}
+			<select x-model="center" @change="reload()" aria-label="Center" data-testid="activity-center">
+				<option value="">All centers and the hub</option>
+				<option value="hub">The hub</option>
+				{{- range .Centers }}
+				<option value="{{ .Slug }}">{{ .Name }}</option>
+				{{- end }}
+			</select>
+			{{- end }}
+			<input type="search" x-model="q" placeholder="Person, action or IP" aria-label="Search the activity" @search="reload()" data-testid="activity-search" />
+			<button type="submit" class="outline" aria-label="Search">{{ Icon "search" }}</button>
+		</form>
+	</header>
+
+	<div class="table-wrapper" :aria-busy="loading">
+		<table>
+			<thead>
+				<tr>
+					<th>When</th>
+					{{- if .Hub }}<th>Center</th>{{ end }}
+					<th>Who</th>
+					<th>What</th>
+					<th>IP</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				<template x-for="r in rows" :key="r.id">
+					<tr :class="{ 'denma-audit-failed': r.status >= 400 }" data-testid="activity-row">
+						<td data-label="When" class="denma-audit-when" x-text="when(r.created_at)"></td>
+						{{- if .Hub }}<td data-label="Center" x-text="r.center ? (r.center_name || r.center) : 'Hub'"></td>{{ end }}
+						<td data-label="Who">
+							<span x-text="who(r)"></span>
+							<template x-if="r.superadmin"><small class="denma-audit-badge" x-text="r.superadmin === r.username ? 'superadmin' : 'superadmin ' + r.superadmin"></small></template>
+						</td>
+						<td data-label="What">
+							<span x-text="r.action"></span>
+							<template x-if="r.status >= 400"><small class="denma-audit-status" x-text="'failed (' + r.status + ')'"></small></template>
+							<template x-if="open[r.id]"><pre class="denma-audit-details" x-text="details(r)"></pre></template>
+						</td>
+						<td data-label="IP" class="text-light" x-text="r.ip"></td>
+						<td class="align-right">
+							<button type="button" class="ghost small" @click="open[r.id] = !open[r.id]" x-text="open[r.id] ? 'Hide' : 'Details'"></button>
+						</td>
+					</tr>
+				</template>
+				<template x-if="!loading && rows.length === 0">
+					<tr><td colspan="6" class="text-light">Nothing recorded yet.</td></tr>
+				</template>
+			</tbody>
+		</table>
+	</div>
+	<footer class="hstack justify-center denma-audit-foot" x-show="more">
+		<button type="button" class="outline" @click="load()" :aria-busy="loading" data-testid="activity-more">Older</button>
+	</footer>
+</section>
+<script type="module" src="{{ URI "/admin/static/js/views/denma-audit.js" }}?v={{ .Root.AssetVersion }}" defer></script>
+{{- end }}

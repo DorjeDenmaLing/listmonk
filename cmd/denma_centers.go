@@ -261,6 +261,9 @@ func denmaHubPath(p string) bool {
 
 // denmaInitRegistry creates the center registry (schema denma) if needed.
 func denmaInitRegistry(db *sqlx.DB) error {
+	if err := denmaInitAudit(db); err != nil { // cmd/denma_audit.go
+		return err
+	}
 	_, err := db.Exec(`
 		CREATE SCHEMA IF NOT EXISTS denma;
 		CREATE TABLE IF NOT EXISTS denma.centers (

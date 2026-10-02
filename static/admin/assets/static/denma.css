@@ -816,3 +816,55 @@ svg.denma-logo {
         border-block-end: 1px solid var(--border);
     }
 }
+
+/* The activity log (partials/denma/audit.html): a center's Advanced page,
+   the hub's Activity page. */
+.denma-center-activity {
+    margin-top: var(--space-6);
+}
+.denma-audit-head {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding: var(--space-4);
+
+    h3 {
+        margin: 0;
+    }
+    form {
+        flex-wrap: wrap;
+    }
+    select, input {
+        width: auto;
+        margin: 0;
+    }
+}
+.denma-audit-when {
+    white-space: nowrap;
+}
+.denma-audit-failed td {
+    color: var(--muted-foreground);
+}
+.denma-audit-status {
+    margin-left: var(--space-2);
+    color: var(--danger);
+}
+.denma-audit-details {
+    margin: var(--space-2) 0 0;
+    max-width: 48rem;
+    max-height: 24rem;
+    overflow: auto;
+    font-size: var(--text-8);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.denma-audit-foot {
+    padding: var(--space-3);
+}
+.denma-audit-badge {
+    margin-left: var(--space-2);
+    padding: 0 var(--space-2);
+    border-radius: 999px;
+    background: var(--muted);
+    font-size: var(--text-8);
+    white-space: nowrap;
+}

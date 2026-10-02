@@ -45,6 +45,7 @@ func initDenmaHubHandlers(g *echo.Group, a *App) {
 	})
 	g.GET(path.Join(uriAdmin, "/centers/new"), a.ViewDenmaNewCenter)
 	g.GET(path.Join(uriAdmin, "/centers/:slug/open"), a.DenmaOpenCenter)
+	g.GET(path.Join(uriAdmin, "/activity"), a.ViewDenmaActivity)
 }
 
 // initDenmaAPIHandlers registers the hub's API (on the /api group).
@@ -55,6 +56,7 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	initDenmaCenterAPIHandlers(g, a)
 	initDenmaAutomationAPIHandlers(g, a)
 	initDenmaSearchAPIHandlers(g, a)
+	g.GET("/api/denma/audit", a.DenmaGetAudit)
 }
 
 // hub returns the centers if this App is the hub and the user is a

@@ -1,0 +1,11 @@
+{{ define "admin-denma-activity" -}}
+{{ template "admin-header" . }}
+{{/* denma: the hub's Activity page: every center's activity log (cmd/denma_audit.go). */}}
+<header class="row page-header">
+	<div class="col-12">
+		<h1 class="page-title">Activity</h1>
+	</div>
+</header>
+{{ template "denma-audit" dict "Root" . "Hub" true "Centers" .Data.Centers }}
+{{ template "admin-footer" . -}}
+{{ end }}
