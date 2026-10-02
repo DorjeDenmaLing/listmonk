@@ -31,10 +31,7 @@
 		<div class="col-8 col-end align-right hstack justify-end">
 			<form method="get" action="{{ URI "/admin/lists" }}" class="search-form">
 				{{- $d.Page.FormFields "query" -}}
-				<fieldset class="group">
-					<input name="query" aria-label="Search" data-testid="query" placeholder="Search" value="{{ $d.Page.Query }}" autofocus />
-					<button type="submit" class="outline" data-testid="btn-query" aria-label="Search">{{ Icon "search" }}</button>
-				</fieldset>
+				{{ template "denma-search" dict "Root" . "Kind" "lists" "Name" "query" "Value" $d.Page.Query "Placeholder" "Search names, or filter" }}{{/* denma: partials/denma/search.html */}}
 			</form>
 			{{- if $d.Can "lists:manage_all" }}
 				<a href="{{ URI "/admin/lists/new" }}" class="button" data-variant="primary" data-testid="btn-new">

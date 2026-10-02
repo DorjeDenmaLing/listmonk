@@ -21,10 +21,7 @@
 		<div class="col-8 hstack justify-end">
 			<form method="get" action="{{ $base }}" class="search-form">
 				{{- $d.Page.FormFields "query" "page" -}}
-				<fieldset class="group">
-					<input name="query" aria-label="Search" data-cy="query" placeholder="{{ .L.T "campaigns.queryPlaceholder" }}" value="{{ $d.Page.Query }}" autofocus />
-					<button type="submit" class="outline" data-cy="btn-query" aria-label="Search">{{ Icon "search" }}</button>
-				</fieldset>
+				{{ template "denma-search" dict "Root" . "Kind" "campaigns" "Name" "query" "Value" $d.Page.Query "Placeholder" "Search names and subjects, or filter" }}{{/* denma: partials/denma/search.html */}}
 			</form>
 			{{- if $d.Can "campaigns:manage" "campaigns:manage_all" }}
 				<a href="{{ URI "/admin/campaigns/new" }}" class="button" data-variant="primary" data-cy="btn-new">

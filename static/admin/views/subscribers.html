@@ -33,7 +33,7 @@
 		<div class="col-8 col-end hstack justify-end">
 			<form action="{{ $base }}" class="search-form" :method="advanced ? 'post' : 'get'">
 				{{- $d.Page.FormFields "search" "query" "page" -}}
-				{{ template "denma-search" . }}{{/* denma: in place of the SQL query editor; partials/denma/search.html */}}
+				{{ template "denma-search" dict "Root" . "Kind" "subscribers" "Name" "search" "Value" $d.Page.Search "Placeholder" "Search names and emails, or filter" }}{{/* denma: in place of the SQL query editor; partials/denma/search.html */}}
 			</form>
 			{{- if $d.Can "subscribers:manage" }}
 				<a href="{{ URI "/admin/subscribers/new" }}" class="button" data-variant="primary" data-testid="btn-new">

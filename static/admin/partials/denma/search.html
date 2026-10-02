@@ -1,17 +1,21 @@
-{{- /* denma: the subscribers search box, in place of listmonk's SQL query
-   editor (views/subscribers.html). The filter builder writes the search
-   language (cmd/denma_search.go) into the box; assets/js/views/denma-search.js. */ -}}
+{{- /* denma: the search box and filter builder for subscribers, lists and
+   campaigns (views/subscribers.html, lists.html, campaigns.html), in place of
+   their plain search box (and the subscribers' SQL query editor). The builder
+   writes the search language (cmd/denma_search.go) into the box;
+   assets/js/views/denma-search.js.
+
+   dict "Root" . "Kind" subscribers|lists|campaigns "Name" the search param
+   "Value" the current search "Placeholder" the box's placeholder */ -}}
 {{ define "denma-search" -}}
-{{- $d := .Data -}}
-<ot-dropdown x-data="denmaSearch()">
+<ot-dropdown x-data="denmaSearch('{{ .Kind }}')">
 	<fieldset class="group">
-		<input name="search" x-ref="search" aria-label="Search" data-testid="search" placeholder="Search names and emails, or filter" value="{{ $d.Page.Search }}" @input="hasFilters = filtersIn($event.target.value)" autofocus />
+		<input name="{{ .Name }}" x-ref="search" aria-label="Search" data-testid="search" placeholder="{{ .Placeholder }}" value="{{ .Value }}" @input="hasFilters = filtersIn($event.target.value)" autofocus />
 		<button type="button" class="outline sql-btn dot-indicator" :class="{ 'is-active': hasFilters }" popovertarget="denma-filter" data-testid="btn-filter" aria-label="Filters" title="Filters">{{ Icon "filter" }}</button>
-		<button type="submit" data-testid="btn-search" aria-label="{{ .L.T "globals.buttons.search" }}">{{ Icon "search" }}</button>
+		<button type="submit" data-testid="btn-search" aria-label="{{ .Root.L.T "globals.buttons.search" }}">{{ Icon "search" }}</button>
 	</fieldset>
 	<div popover id="denma-filter" class="sql-editor denma-filter" data-testid="filter-builder" @toggle="onToggle($event)">
 		<div class="denma-filter-match">
-			Find subscribers who match
+			Find {{ .Kind }} that match
 			<select x-model="match" aria-label="Match">
 				<option value="all">all</option>
 				<option value="any">any</option>
@@ -33,38 +37,30 @@
 					</template>
 				</select>
 
-				<template x-if="kind(r) === 'text'">
+				<template x-if="kindOf(r) === 'text'">
 					<input type="text" x-model="r.value" :placeholder="field(r).placeholder || ''" aria-label="Value" @keydown.enter.prevent="onApply()" />
 				</template>
-				<template x-if="kind(r) === 'number'">
-					<input type="number" min="0" step="any" x-model="r.value" aria-label="Value" @keydown.enter.prevent="onApply()" />
+				<template x-if="kindOf(r) === 'number'">
+					<input type="number" min="0" x-model="r.value" aria-label="Value" @keydown.enter.prevent="onApply()" />
 				</template>
-				<template x-if="kind(r) === 'days'">
+				<template x-if="kindOf(r) === 'days'">
 					<span class="denma-filter-days"><input type="number" min="1" x-model="r.value" aria-label="Days" @keydown.enter.prevent="onApply()" /> days</span>
 				</template>
-				<template x-if="kind(r) === 'date'">
+				<template x-if="kindOf(r) === 'date'">
 					<input type="date" x-model="r.value" aria-label="Date" />
 				</template>
-				<template x-if="kind(r) === 'choice'">
+				<template x-if="kindOf(r) === 'choice'">
 					<select x-model="r.value" aria-label="Value">
 						<template x-for="c in field(r).choices" :key="c[0]">
 							<option :value="c[0]" x-text="c[1]" :selected="c[0] === r.value"></option>
 						</template>
 					</select>
 				</template>
-				<template x-if="kind(r) === 'list'">
-					<select x-model="r.value" aria-label="List">
-						<option value="any">any list</option>
-						<template x-for="l in lists" :key="l.id">
-							<option :value="l.name" x-text="l.name" :selected="l.name === r.value"></option>
-						</template>
-					</select>
-				</template>
-				<template x-if="kind(r) === 'campaign'">
-					<select x-model="r.value" aria-label="Campaign">
-						<option value="any">any campaign</option>
-						<template x-for="c in campaigns" :key="c.id">
-							<option :value="c.name" x-text="c.name" :selected="c.name === r.value"></option>
+				<template x-if="kindOf(r) === 'list' || kindOf(r) === 'campaign' || kindOf(r) === 'template'">
+					<select x-model="r.value" :aria-label="kindOf(r)">
+						<template x-if="field(r).any"><option value="any" x-text="field(r).any" :selected="r.value === 'any'"></option></template>
+						<template x-for="x in (kindOf(r) === 'list' ? lists : kindOf(r) === 'campaign' ? campaigns : templates)" :key="x.id">
+							<option :value="x.name" x-text="x.name" :selected="x.name === r.value"></option>
 						</template>
 					</select>
 				</template>
@@ -76,31 +72,27 @@
 		<div class="hstack justify-between">
 			<button type="button" class="outline small" @click="onAdd()" data-testid="btn-filter-add">{{ Icon "plus" }} Add condition</button>
 			<div class="hstack">
-				<button type="button" class="outline" @click="onClear()" :disabled="!hasSearch()">Clear search</button>
+				<button type="button" class="outline" @click="onClear()" :disabled="!hasSearch()" data-testid="btn-filter-clear">Clear search</button>
 				<button type="button" data-variant="primary" @click="onApply()" data-testid="btn-filter-apply">Search</button>
 			</div>
 		</div>
 
 		<details class="denma-filter-help">
 			<summary>Typing filters</summary>
-			<p>The conditions are added to the search box as filters, which you can also type or edit. Words search names and emails; terms are combined with AND unless you write OR; <code>-</code> or NOT excludes; brackets group.</p>
+			<p>The conditions are added to the search box as filters, which you can also type or edit. Words search <span x-text="help.words"></span>; terms are combined with AND unless you write OR; <code>-</code> or NOT excludes; brackets group. Put values with spaces in quotes.</p>
 			<table>
 				<tbody>
-					<tr><td><code>email:gmail</code> <code>email=a@b.org</code> <code>name:smith</code></td><td>contains, or is</td></tr>
-					<tr><td><code>domain:gmail.com</code> <code>domain:yahoo.*</code></td><td>email domain</td></tr>
-					<tr><td><code>status:blocklisted</code></td><td>enabled, disabled, blocklisted</td></tr>
-					<tr><td><code>list:"Weekly news"</code> <code>list:any</code> <code>list:none</code></td><td>subscribed (not unsubscribed)</td></tr>
-					<tr><td><code>confirmed:X</code> <code>unconfirmed:X</code> <code>unsubscribed:X</code></td><td>X a list, or any</td></tr>
-					<tr><td><code>created>30d</code> <code>created&lt;2024-01-01</code> <code>updated:today</code></td><td>30d is 30 days ago (also h, w, m, y)</td></tr>
-					<tr><td><code>opened:"Spring appeal"</code> <code>opened:any</code> <code>opened>90d</code></td><td>a campaign, or when</td></tr>
-					<tr><td><code>clicked:X</code> <code>clicked:https://…</code></td><td>a campaign, a link, or when</td></tr>
-					<tr><td><code>bounced:hard</code> <code>bounced:any</code> <code>bounced>30d</code></td><td>hard, soft, complaint, any</td></tr>
-					<tr><td><code>attr.city=Halifax</code> <code>attr.age>=30</code> <code>has:attr.city</code></td><td>attributes</td></tr>
+					<template x-for="h in help.rows" :key="h[0][0]">
+						<tr>
+							<td><template x-for="c in h[0]" :key="c"><span><code x-text="c"></code> </span></template></td>
+							<td x-text="h[1]"></td>
+						</tr>
+					</template>
 				</tbody>
 			</table>
-			<p>Example: <code>list:Newsletter -opened>90d -status:blocklisted</code> finds Newsletter subscribers who haven't opened anything in 90 days.</p>
+			<p>Example: <code x-text="help.example[0]"></code> <span x-text="help.example[1]"></span></p>
 		</details>
 	</div>
 </ot-dropdown>
-<script type="module" src="{{ URI "/admin/static/js/views/denma-search.js" }}?v={{ .AssetVersion }}"></script>
+<script type="module" src="{{ URI "/admin/static/js/views/denma-search.js" }}?v={{ .Root.AssetVersion }}"></script>
 {{- end }}

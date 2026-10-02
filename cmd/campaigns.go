@@ -218,7 +218,7 @@ func (a *App) getViewCampaigns(c echo.Context) ([]models.Campaign, models.PagePr
 
 	// Run the DB query.
 	pg := a.pg.NewFromURL(q)
-	res, total, err := a.core.QueryCampaigns(q.Get("query"), q["status"], q["tag"], q.Get("type"),
+	res, total, err := a.denmaQueryCampaigns(user, q.Get("query"), q["status"], q["tag"], q.Get("type"),
 		q.Get("order_by"), q.Get("order"), hasAllPerm, permittedLists, pg.Offset, pg.Limit)
 	if err != nil {
 		return nil, models.PageProps{}, err
@@ -262,7 +262,7 @@ func (a *App) GetCampaigns(c echo.Context) error {
 	)
 
 	// Query and retrieve campaigns from the DB.
-	res, total, err := a.core.QueryCampaigns(query, status, tags, typ, orderBy, order, hasAllPerm, permittedLists, pg.Offset, pg.Limit)
+	res, total, err := a.denmaQueryCampaigns(user, query, status, tags, typ, orderBy, order, hasAllPerm, permittedLists, pg.Offset, pg.Limit)
 	if err != nil {
 		return err
 	}
@@ -657,6 +657,10 @@ func (a *App) DeleteCampaigns(c echo.Context) error {
 	if len(ids) == 0 && (query == "" && !all) {
 		return echo.NewHTTPError(http.StatusBadRequest,
 			a.i18n.Ts("globals.messages.errorInvalidIDs", "error", "id or query required"))
+	}
+
+	if err := a.denmaCampaignDeletes(user, &ids, &query); err != nil { // denma: cmd/denma_search.go
+		return err
 	}
 
 	// Delete the campaigns from the DB.

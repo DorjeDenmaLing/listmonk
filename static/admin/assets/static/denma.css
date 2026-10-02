@@ -750,6 +750,7 @@ svg.denma-logo {
     width: min(94vw, 44rem);
     max-height: 80vh;
     overflow-y: auto;
+    text-align: start; /* the lists page's header is right-aligned */
 }
 .denma-filter-match select {
     display: inline-block;
@@ -796,6 +797,8 @@ svg.denma-logo {
     td {
         padding: var(--space-1);
         vertical-align: top;
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
     code {
         white-space: nowrap;

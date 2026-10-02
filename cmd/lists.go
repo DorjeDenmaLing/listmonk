@@ -279,6 +279,9 @@ func (a *App) DeleteLists(c echo.Context) error {
 	} else {
 		// For query deletion, get the list IDs the user has manage permission for.
 		hasAllPerm, permittedIDs := user.GetPermittedLists(auth.PermTypeManage)
+		if err := a.denmaListSearch(user, &query, &hasAllPerm, &permittedIDs); err != nil { // denma: cmd/denma_search.go
+			return err
+		}
 
 		// Delete the lists from the DB with permission filtering.
 		if err := a.core.DeleteLists(nil, query,
@@ -320,10 +323,15 @@ func (a *App) getLists(c echo.Context) ([]models.List, models.PageProps, error) 
 		return res, models.NewPageProps(q, total, 1, total), nil
 	}
 
+	search := q.Get("query")
+	if err := a.denmaListSearch(user, &search, &hasAllPerm, &permittedIDs); err != nil { // denma: cmd/denma_search.go
+		return nil, models.PageProps{}, err
+	}
+
 	// Run the DB query.
 	pg := a.pg.NewFromURL(q)
 	res, total, err := a.core.QueryLists(
-		q.Get("query"),
+		search, // denma
 		q.Get("type"),
 		q.Get("optin"),
 		status,

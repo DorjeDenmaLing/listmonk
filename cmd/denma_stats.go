@@ -136,7 +136,7 @@ func (a *App) DenmaStatSubscribers(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	search, err := a.denmaSearchSQL(user, qp.Get("search"))
+	search, err := a.denmaSearchSQL(denmaSubscribers, user, qp.Get("search"))
 	if err != nil {
 		return err
 	}
