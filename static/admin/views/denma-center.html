@@ -1,0 +1,81 @@
+{{ define "admin-denma-center" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+
+{{/* denma: a center's Advanced page, its own details (cmd/denma_center.go). */}}
+<script>
+	window._denmaCenter = {{ ToJSON $d.Form }};
+</script>
+<form class="denma-center-form" x-data="denmaCenter" @submit.prevent="onSubmit" x-cloak>
+	<header class="row page-header">
+		<div class="col-8">
+			<h1 class="page-title">Advanced</h1>
+		</div>
+		<div class="col-4 hstack justify-end">
+			<button type="submit" data-variant="primary" data-testid="btn-save" :aria-busy="isLoading('center') || reloading" :disabled="isLoading('center') || reloading">
+				{{ Icon "save" }} <span x-text="reloading ? 'Reloading…' : 'Save'"></span>
+			</button>
+		</div>
+	</header>
+
+	<div class="page-content content vstack gap-6">
+		<fieldset class="card">
+			<legend>Center</legend>
+			<label data-field>
+				Name
+				<input name="site_name" maxlength="200" required x-model="form.site_name" />
+				<small data-hint>Shown in the admin, on the public pages and in e-mails.</small>
+			</label>
+			<div data-field>
+				<label>Address</label>
+				<input type="text" value="{{ $d.Address }}" readonly />
+				<small data-hint>Set when the center was created.</small>
+			</div>
+			<div data-field>
+				<label for="center-lang">Language</label>
+				<select id="center-lang" name="lang" x-model="form.lang">
+					{{- range $d.Langs }}
+					<option value="{{ .Code }}">{{ .Name }}</option>
+					{{- end }}
+				</select>
+				<small data-hint>Of this center's admin, public pages and system e-mails (opt-in confirmations, notifications).</small>
+			</div>
+			<label data-field>
+				Logo
+				<div class="hstack gap-3 denma-center-image">
+					<input name="logo_url" type="url" maxlength="2000" placeholder="https://..." x-model="form.logo_url" />
+					<template x-if="form.logo_url"><img :src="form.logo_url" alt="Logo preview" class="denma-center-logo" /></template>
+				</div>
+				<small data-hint>An image address, for the public pages and e-mails. Upload one in Media and copy its address. Empty for listmonk's.</small>
+			</label>
+			<label data-field>
+				Favicon
+				<div class="hstack gap-3 denma-center-image">
+					<input name="favicon_url" type="url" maxlength="2000" placeholder="https://..." x-model="form.favicon_url" />
+					<template x-if="form.favicon_url"><img :src="form.favicon_url" alt="Favicon preview" class="denma-center-favicon" /></template>
+				</div>
+				<small data-hint>The small icon in browser tabs, for the public pages. Empty for listmonk's.</small>
+			</label>
+		</fieldset>
+
+		<fieldset class="card">
+			<legend>E-mail</legend>
+			<label data-field>
+				Sender
+				<input name="from_email" maxlength="300" required x-model="form.from_email" placeholder='"Center name" &lt;name@example.org&gt;' />
+				<small data-hint>The From of campaigns that don't set their own, and of system e-mails. Use an address the mail servers can send for.</small>
+			</label>
+			<label data-field>
+				Admin e-mails
+				<textarea name="notify_emails" rows="3" x-model="notify" placeholder="admin@example.org"></textarea>
+				<small data-hint>One per line. They get notices about campaigns (started, finished, paused) and imports.</small>
+			</label>
+		</fieldset>
+
+	</div>
+</form>
+
+<script type="module" src="{{ URI "/admin/static/js/views/denma-center.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

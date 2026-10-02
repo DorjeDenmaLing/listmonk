@@ -31,6 +31,17 @@
 		{{- end }}
 {{ end }}
 
+{{/* The last item: a center's Advanced page (its own details; cmd/denma_center.go). */}}
+{{ define "denma-sidebar-end" }}
+{{- $u := .Data.Profile }}
+{{- $p := .Data.PageID }}
+		{{- if and DenmaHubURL (not DenmaIsHub) (Can $u "center:manage") }}
+		<li>
+			<a href="{{ URI "/admin/center" }}" {{ IsNav $p "denma.center" }} data-cy="center">{{ Icon "tool" }} Advanced</a>
+		</li>
+		{{- end }}
+{{ end }}
+
 {{/* Items at the end of the Settings group. */}}
 {{ define "denma-settings-items" }}
 {{- $u := .Data.Profile }}
@@ -44,6 +55,6 @@
 	these are the hub's, for every center (cmd/denma_centers.go). */}}
 {{ define "denma-settings-note" }}
 {{- if and DenmaHubURL DenmaIsHub }}
-<p class="denma-settings-note" role="note">{{ Icon "info" }} These settings apply to every center. Saving reloads the centers whose settings changed, one at a time; a center that is sending a campaign is reloaded when it finishes.</p>
+<p class="denma-settings-note" role="note">{{ Icon "info" }} These settings apply to every center, except what each center sets on its own Advanced page: its name, logo, favicon, language, sender and admin e-mails. Saving reloads the centers whose settings changed, one at a time; a center that is sending a campaign is reloaded when it finishes.</p>
 {{- end }}
 {{ end }}

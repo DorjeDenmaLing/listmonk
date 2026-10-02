@@ -23,6 +23,7 @@ func initDenmaAdminHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/calendar"), a.ViewDenmaCalendar)
 	g.GET(path.Join(uriAdmin, "/settings/system"), a.ViewDenmaSystem)
 	initDenmaHubHandlers(g, a)
+	initDenmaCenterHandlers(g, a)
 }
 
 type denmaSystemView struct {

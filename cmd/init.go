@@ -550,6 +550,7 @@ func initConstConfig(ko *koanf.Koanf) *Config {
 	if err != nil {
 		lo.Fatalf("error reading permissions file: %v", err)
 	}
+	pm = denmaPermissions(pm, ko) // denma: center:manage (cmd/denma_center.go)
 	c.PermissionsRaw = pm
 
 	// Make a lookup map of permissions.
