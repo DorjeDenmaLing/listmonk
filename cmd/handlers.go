@@ -322,6 +322,7 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		g.GET("/link/:linkUUID/:campUUID/:subUUID", noIndex(a.hasUUID(a.LinkRedirect, "linkUUID", "campUUID", "subUUID")))
 		g.GET("/campaign/:campUUID/:subUUID", noIndex(a.hasUUID(a.ViewCampaignMessage, "campUUID", "subUUID")))
 		g.GET("/campaign/:campUUID/:subUUID/px.png", noIndex(a.hasUUID(a.RegisterCampaignView, "campUUID", "subUUID")))
+		initDenmaPublicHandlers(g, a) // denma: cmd/denma_automations.go
 
 		if a.cfg.EnablePublicArchive {
 			g.GET("/archive", a.CampaignArchivesPage)

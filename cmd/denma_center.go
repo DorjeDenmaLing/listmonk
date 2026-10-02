@@ -28,22 +28,24 @@ var denmaCenterFields = []string{
 	"app.from_email", "app.notify_emails",
 }
 
-// denmaPermissions adds center:manage, in multi-center mode, to the Settings
-// group of listmonk's permissions (permissions.json), so that roles can
-// grant it.
+// denmaPermissions adds ours to listmonk's permissions (permissions.json), so
+// that roles can grant them: automations' to the Campaigns group, and
+// center:manage, in multi-center mode, to the Settings group.
 func denmaPermissions(raw []byte, ko *koanf.Koanf) []byte {
-	if !ko.Bool("denma.multi_center") {
-		return raw
-	}
 	var groups []map[string]any
 	if err := json.Unmarshal(raw, &groups); err != nil {
 		return raw
 	}
 	for _, g := range groups {
-		if g["group"] == "settings" {
-			if p, ok := g["permissions"].([]any); ok {
-				g["permissions"] = append(p, denmaCenterPerm)
-			}
+		p, ok := g["permissions"].([]any)
+		if !ok {
+			continue
+		}
+		switch {
+		case g["group"] == "campaigns":
+			g["permissions"] = append(p, denmaAutoGet, denmaAutoManage)
+		case g["group"] == "settings" && ko.Bool("denma.multi_center"):
+			g["permissions"] = append(p, denmaCenterPerm)
 		}
 	}
 	out, err := json.Marshal(groups)

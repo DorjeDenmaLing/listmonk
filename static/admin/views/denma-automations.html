@@ -1,0 +1,88 @@
+{{ define "admin-denma-automations" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+{{- $base := URI "/admin/automations" -}}
+{{- $canManage := $d.Can "automations:manage" -}}
+
+{{/* denma: a center's automations (cmd/denma_automations.go). */}}
+<section class="denma-automations" x-data="denmaAutomations">
+	<header class="row page-header">
+		<div class="col-8">
+			<h1 class="page-title">Automations <span>({{ len $d.Automations }})</span></h1>
+		</div>
+		<div class="col-4 hstack justify-end">
+			{{- if $canManage }}
+			<a href="{{ $base }}/new" class="button" data-variant="primary" data-testid="btn-new">{{ Icon "plus" }} New</a>
+			{{- end }}
+		</div>
+	</header>
+	<p class="text-light denma-lede">E-mails that send themselves: when someone joins one of an automation's lists, they're sent its template, once.</p>
+
+	<div class="card page-content has-table">
+		<div class="table-wrapper">
+			<table>
+				<thead>
+					<tr>
+						<th>Automation</th>
+						<th>Template</th>
+						<th>On</th>
+						<th class="align-right">Sent</th>
+						<th>Last sent</th>
+						<th class="actions align-right"></th>
+					</tr>
+				</thead>
+				<tbody>
+					{{- range $d.Automations }}
+					<tr data-testid="automation-row" data-id="{{ .ID }}">
+						<td>
+							<a href="{{ $base }}/{{ .ID }}" class="unstyled" data-testid="btn-edit"><strong>{{ .Name }}</strong></a>
+							<p class="text-light text-8">
+								{{- if .ListNames }}When someone joins <em>{{ .Lists }}</em>, {{ .Wait }}{{ else }}<span class="text-danger">Its lists were deleted.</span>{{ end -}}
+							</p>
+						</td>
+						<td data-label="Template">
+							{{- if .TemplateName }}{{ .TemplateName }}
+							<p class="text-light text-8">{{ .Subject }}</p>
+							{{- else }}<span class="text-danger">Deleted</span>{{ end }}
+						</td>
+						<td data-label="On">
+							<input type="checkbox" role="switch" aria-label="On" {{ if .Active }}checked{{ end }}
+								{{ if not $canManage }}disabled{{ end }} data-testid="switch-active"
+								@change="onToggle({{ .ID }}, {{ ToJSON .Name }}, $event)" />
+						</td>
+						<td class="align-right" data-label="Sent">
+							{{ .Sent }}
+							{{- if .Waiting }}<p class="text-light text-8" title="Joined, and will be sent it when their wait is over">{{ .Waiting }} waiting</p>{{ end }}
+							{{- if .Failed }}<p class="text-danger text-8">{{ .Failed }} failed</p>{{ end }}
+						</td>
+						<td class="date-stack" data-label="Last sent">{{ if .LastSentAt.Valid }}{{ NiceDate .LastSentAt.Time }}{{ else }}&mdash;{{ end }}</td>
+						<td class="actions align-right">
+							{{- if $canManage }}
+							<ot-dropdown>
+								<button popovertarget="auto-actions-{{ .ID }}" type="button" class="ghost more icon" aria-label="More">{{ Icon "more-vertical" }}</button>
+								<menu popover id="auto-actions-{{ .ID }}">
+									<a href="{{ $base }}/{{ .ID }}" role="menuitem" class="button ghost">{{ Icon "edit-2" }} Edit</a>
+									<button type="button" role="menuitem" class="ghost" data-testid="btn-delete" @click.prevent="onDelete({{ .ID }}, {{ ToJSON .Name }})">{{ Icon "trash-2" }} Delete</button>
+								</menu>
+							</ot-dropdown>
+							{{- end }}
+						</td>
+					</tr>
+					{{- else }}
+					<tr><td colspan="6">
+						<div class="empty-state">
+							{{ Icon "zap" }}
+							<p>No automations yet.{{ if $canManage }} Make one to welcome the people who join a list.{{ end }}</p>
+						</div>
+					</td></tr>
+					{{- end }}
+				</tbody>
+			</table>
+		</div>
+	</div>
+</section>
+
+<script type="module" src="{{ URI "/admin/static/js/views/denma-automations.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

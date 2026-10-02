@@ -53,6 +53,7 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	g.POST("/api/denma/centers", a.DenmaCreateCenter)
 	g.PUT("/api/denma/centers/:slug/status", a.DenmaSetCenterStatus)
 	initDenmaCenterAPIHandlers(g, a)
+	initDenmaAutomationAPIHandlers(g, a)
 }
 
 // hub returns the centers if this App is the hub and the user is a

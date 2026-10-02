@@ -1,0 +1,131 @@
+{{ define "admin-denma-automation" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+{{- $a := $d.Automation -}}
+{{- $isNew := eq $a.ID 0 -}}
+{{- $canManage := $d.Can "automations:manage" -}}
+
+{{/* denma: an automation, or a new one (cmd/denma_automations.go). */}}
+<script>
+	window._denmaAutomation = {{ ToJSON $a }};
+	window._denmaAutoTemplates = {{ ToJSON $d.Templates }};
+	window._lists = {{ ToJSON $d.Lists }};
+</script>
+<form class="denma-automation" x-data="denmaAutomation" @submit.prevent="onSubmit" x-cloak>
+	<header class="row page-header">
+		<div class="col-8 hstack gap-1">
+			<a href="{{ URI "/admin/automations" }}" class="back" aria-label="Back">{{ Icon "chevron-left" }}</a>
+			<h1 class="page-title">{{ if $isNew }}New automation{{ else }}{{ $a.Name }}{{ end }}</h1>
+		</div>
+		<div class="col-4 hstack justify-end gap-3">
+			{{- if not $isNew }}
+			<label class="hstack gap-1 denma-auto-on">
+				<input type="checkbox" role="switch" x-model="form.active" @change="onToggle" {{ if not $canManage }}disabled{{ end }} data-testid="switch-active" />
+				<span x-text="form.active ? 'On' : 'Off'"></span>
+			</label>
+			{{- end }}
+			{{- if $canManage }}
+			<button type="submit" data-variant="primary" data-testid="btn-save" :aria-busy="isLoading('automation')" :disabled="isLoading('automation')">
+				{{ Icon "save" }} Save
+			</button>
+			{{- end }}
+		</div>
+	</header>
+
+	<div class="page-content content vstack gap-6">
+		<fieldset class="card" {{ if not $canManage }}disabled{{ end }}>
+			<legend>Automation</legend>
+			<label data-field>
+				Name
+				<input name="name" maxlength="200" required autofocus x-model="form.name" placeholder="Welcome" />
+				<small data-hint>For you; subscribers don't see it.</small>
+			</label>
+			<div class="row">
+				<div class="col-8">
+					<label data-field>
+						When someone joins
+						<ot-taginput x-model="form.lists" data-testid="select-lists">
+							<input list="auto-lists" placeholder="Choose lists…" @input="listAutocomplete($el)" @pointerdown="listAutocomplete($el)" @focus="listAutocomplete($el)" />
+							<datalist id="auto-lists"></datalist>
+						</ot-taginput>
+						<small data-hint>Any of these lists; they get it once, even if they join more than one. Only people who join while the automation is on, not those already on the lists. On a double opt-in list, once they confirm. People added by an import or by hand count too. Its unsubscribe link takes them off all of them.</small>
+					</label>
+				</div>
+				<div class="col-4">
+					<div data-field>
+						<label for="auto-wait">Send it</label>
+						<div class="hstack gap-1">
+							<input id="auto-wait" type="number" min="0" max="525600" x-model.number="wait" x-show="unit !== 'now'" aria-label="Wait" />
+							<select x-model="unit" aria-label="Wait unit" data-testid="select-unit">
+								<option value="now">right away</option>
+								<option value="minutes">minutes later</option>
+								<option value="hours">hours later</option>
+								<option value="days">days later</option>
+							</select>
+						</div>
+					</div>
+				</div>
+			</div>
+		</fieldset>
+
+		<fieldset class="card" {{ if not $canManage }}disabled{{ end }}>
+			<legend>E-mail</legend>
+			<div data-field>
+				<label for="auto-template">Template</label>
+				<div class="hstack gap-3 denma-auto-template">
+					<select id="auto-template" name="template_id" required x-model.number="form.template_id" @change="onTemplate" data-testid="select-template">
+						<option value="0" disabled>Choose a template…</option>
+						{{- range $d.Templates }}
+						<option value="{{ .ID }}">{{ .Name }} ({{ if eq .Type "tx" }}transactional{{ else }}visual{{ end }})</option>
+						{{- end }}
+					</select>
+					<a :href="form.template_id ? `{{ URI "/admin/templates" }}/${form.template_id}` : null" x-show="form.template_id" target="_blank" class="button ghost small text-nowrap">{{ Icon "edit-2" }} Edit</a>
+					<a href="{{ URI "/admin/templates/new" }}" target="_blank" class="button ghost small text-nowrap">{{ Icon "plus" }} New template</a>
+				</div>
+				<small data-hint>The whole e-mail. Make one in Templates, as Visual (drag and drop) or Transactional (HTML). <code>{{ "{{ .Subscriber.FirstName }}" }}</code> puts in their first name; <code>{{ "{{ UnsubscribeURL }}" }}</code> is the link to leave the list.</small>
+			</div>
+			<label data-field>
+				Subject
+				<input name="subject" maxlength="500" required x-model="form.subject" placeholder="Welcome, {{ "{{ .Subscriber.FirstName }}" }}" />
+			</label>
+			<label data-field>
+				Sender
+				<input name="from_email" maxlength="300" x-model="form.from_email" placeholder="{{ $d.FromEmail }}" />
+				<small data-hint>Empty for the center's sender.</small>
+			</label>
+			{{- if $isNew }}
+			<label class="hstack gap-1">
+				<input type="checkbox" role="switch" x-model="form.active" data-testid="switch-active" />
+				Turn it on when it's saved
+			</label>
+			{{- end }}
+		</fieldset>
+
+		{{- if $canManage }}
+		<fieldset class="card">
+			<legend>Test</legend>
+			<div class="hstack gap-3 denma-auto-test">
+				<label data-field>
+					Send a test to
+					<input type="email" maxlength="200" x-model="testEmail" data-testid="test-email" />
+					<small data-hint>As it is on this page, saved or not. If the address is a subscriber's, it's filled in with theirs.</small>
+				</label>
+				<button type="button" data-testid="btn-test" @click="onTest" :aria-busy="isLoading('test')" :disabled="isLoading('test')">{{ Icon "send" }} Send test</button>
+			</div>
+		</fieldset>
+		{{- end }}
+
+		{{- if not $isNew }}
+		<p class="text-light text-8">
+			Sent {{ $a.Sent }}{{ if $a.Failed }}, {{ $a.Failed }} failed{{ end }}.
+			{{- if $a.ActiveSince.Valid }} For people who joined since {{ NiceDate $a.ActiveSince.Time true }}.{{ end }}
+		</p>
+		{{- end }}
+	</div>
+</form>
+
+<script>window._denmaTestEmail = {{ $d.Profile.Email.String }};</script>
+<script type="module" src="{{ URI "/admin/static/js/views/denma-automations.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

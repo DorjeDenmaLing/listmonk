@@ -1,7 +1,7 @@
 {{/*
 	denma: top-level sidebar items, included in partials/sidebar.html above Users
-	(or Settings, for users who can't see Users): Calendar, Media and
-	Analytics. Media and Analytics move here
+	(or Settings, for users who can't see Users): Calendar, Automations
+	(cmd/denma_automations.go), Media and Analytics. Media and Analytics move here
 	from the Campaigns group; their pages keep listmonk's page IDs. Superadmins
 	(the Super Admin role, 1) in a center get All centers, back to the hub.
 	The hub itself has none of these (partials/sidebar.html).
@@ -17,6 +17,11 @@
 		{{- if Can $u "campaigns:get" "campaigns:get_all" }}
 		<li>
 			<a href="{{ URI "/admin/calendar" }}" {{ IsNav $p "denma.calendar" }} data-cy="calendar">{{ Icon "calendar" }} Calendar</a>
+		</li>
+		{{- end }}
+		{{- if Can $u "automations:get" }}
+		<li>
+			<a href="{{ URI "/admin/automations" }}" {{ IsNav $p "denma.automations" }} data-cy="automations">{{ Icon "zap" }} Automations</a>
 		</li>
 		{{- end }}
 		{{- if Can $u "media:get" "media:manage" }}

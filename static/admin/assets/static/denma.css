@@ -691,3 +691,55 @@ svg.denma-logo {
     object-fit: contain;
   }
 }
+/* Automations (views/denma-automations.html, denma-automation.html). */
+.denma-automations .denma-lede {
+  margin: calc(-1 * var(--space-3)) 0 var(--space-4);
+}
+
+.denma-automation {
+  .denma-auto-on {
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  .denma-auto-test {
+    align-items: flex-end;
+
+    label {
+      flex: 1;
+      min-width: 0;
+    }
+
+    button {
+      margin-bottom: var(--space-5);
+    }
+  }
+
+  #auto-wait {
+    width: 5.5rem;
+  }
+
+  #auto-template {
+    flex: 1;
+    min-width: 0;
+  }
+
+  @media (max-width: 640px) {
+    .denma-auto-template {
+      flex-wrap: wrap;
+
+      #auto-template {
+        flex-basis: 100%;
+      }
+    }
+
+    .denma-auto-test {
+      flex-direction: column;
+      align-items: stretch;
+
+      button {
+        margin-bottom: 0;
+      }
+    }
+  }
+}
