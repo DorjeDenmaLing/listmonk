@@ -53,6 +53,7 @@
 					<a href="{{ URI "/admin" }}" class="logo">{{ template "denma-logo" . }}</a>{{/* denma: theme-aware logo, partials/denma/logo.html */}}
 				</div>
 				<div class="col-8 justify-end hstack">
+					{{ template "denma-superadmin-notice" . }}{{/* denma: partials/denma/superadmin-notice.html */}}
 					{{ with .Data.Profile }}
 						<ot-dropdown>
 							<button popovertarget="user-menu" type="button" class="user-nav-button ghost small user-trigger">

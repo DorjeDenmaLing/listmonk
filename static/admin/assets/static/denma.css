@@ -607,6 +607,54 @@ svg.denma-logo {
   padding-left: var(--space-6);
 }
 
+/* A superadmin in a center: who they are, and the way back to the hub
+   (partials/denma/superadmin-notice.html). */
+.denma-superadmin-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-right: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border-radius: 999px;
+  background: var(--muted);
+  font-size: var(--text-7);
+  white-space: nowrap;
+
+  .icon {
+    width: 1em;
+    height: 1em;
+  }
+
+  a {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-weight: 500;
+  }
+}
+
+.denma-superadmin-short {
+  display: none;
+}
+
+/* Phones: just "< Superadmin", so the top bar keeps the logo and avatar. */
+@media (max-width: 700px) {
+  .denma-superadmin-notice {
+    margin-right: var(--space-2);
+    padding-inline: var(--space-2);
+
+    > .icon,
+    .denma-superadmin-who,
+    .denma-superadmin-long {
+      display: none;
+    }
+
+    .denma-superadmin-short {
+      display: inline;
+    }
+  }
+}
+
 /* The hub's settings apply to every center (partials/denma/sidebar.html). */
 .denma-settings-note {
   display: flex;

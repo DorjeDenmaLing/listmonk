@@ -1,0 +1,16 @@
+{{/*
+	denma: in the top bar of a center (not the hub), for a superadmin who
+	opened it from the hub: which center they're in, and the way back.
+	Included in views/base.html.
+*/}}
+{{ define "denma-superadmin-notice" }}
+{{- with .Data.Profile }}
+{{- if and DenmaHubURL (not DenmaIsHub) (eq .UserRole.ID 1) }}
+<div class="denma-superadmin-notice" role="status" data-testid="superadmin-notice">
+	{{ Icon "star" }}
+	<span class="denma-superadmin-who">Logged in as <strong>{{ $.SiteName }}</strong></span>
+	<a href="{{ DenmaHubURL }}" title="Back to the superadmin dashboard">{{ Icon "chevron-left" }}<span class="denma-superadmin-long"> Back to the superadmin dashboard</span><span class="denma-superadmin-short"> Superadmin</span></a>
+</div>
+{{- end }}
+{{- end }}
+{{ end }}
