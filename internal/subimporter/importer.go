@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time" // denma
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/knadh/listmonk/internal/i18n"
@@ -73,6 +74,7 @@ type Options struct {
 	BlocklistStmt      *sql.Stmt
 	UpdateListDateStmt *sql.Stmt
 	PostCB             func(subject string, data any) error
+	AfterImport        func(since time.Time, lo *log.Logger) // denma: see denma.go
 
 	DomainBlocklist []string
 	DomainAllowlist []string
@@ -282,6 +284,7 @@ func (s *Session) Start() {
 
 	listIDs := make([]int, len(s.opt.ListIDs))
 	copy(listIDs, s.opt.ListIDs)
+	started := time.Now() // denma
 
 	for sub := range s.subQueue {
 		if cur == 0 {
@@ -335,6 +338,7 @@ func (s *Session) Start() {
 
 	// Queue's closed and there's nothing left to commit.
 	if cur == 0 {
+		s.denmaAfterImport(started) // denma
 		s.im.setStatus(StatusFinished)
 		s.log.Printf("imported finished")
 		if _, err := s.im.opt.UpdateListDateStmt.Exec(pq.Array(listIDs)); err != nil {
@@ -354,6 +358,7 @@ func (s *Session) Start() {
 	}
 
 	s.im.incrementImportCount(cur)
+	s.denmaAfterImport(started) // denma
 	s.im.setStatus(StatusFinished)
 	s.log.Printf("imported finished")
 	if _, err := s.im.opt.UpdateListDateStmt.Exec(pq.Array(listIDs)); err != nil {
