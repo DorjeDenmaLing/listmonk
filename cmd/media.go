@@ -131,7 +131,8 @@ func (a *App) UploadMedia(c echo.Context) error {
 	}
 
 	// Upload the file to the media store.
-	fName, err = a.media.Put(fName, contentType, src)
+	opt := a.denmaOptimizeImage(fName, ext, src) // denma: cmd/denma_media.go
+	fName, err = a.media.Put(fName, contentType, opt.reader(src))
 	if err != nil {
 		a.log.Printf("error uploading file: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
@@ -169,6 +170,7 @@ func (a *App) UploadMedia(c echo.Context) error {
 		}
 		width = wi
 		height = he
+		width, height = opt.size(width, height) // denma: the stored (optimized) image's
 
 		// Upload thumbnail.
 		tf, err := a.media.Put(thumbPrefix+fName, contentType, thumbFile)
@@ -282,7 +284,7 @@ func processImage(file *multipart.FileHeader) (*bytes.Reader, int, int, error) {
 	}
 	defer src.Close()
 
-	img, err := imaging.Decode(src)
+	img, err := imaging.Decode(src, imaging.AutoOrientation(true)) // denma: upright thumbnails of phone photos
 	if err != nil {
 		return nil, 0, 0, err
 	}

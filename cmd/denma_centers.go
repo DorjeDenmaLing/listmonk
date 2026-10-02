@@ -371,6 +371,13 @@ func (d *denmaCenters) load(c *denmaCenter) error {
 	cq := prepareQueries(qMap, cdb, ck)
 
 	app := buildApp(ck, cdb, cq, false)
+	// Its own uploads folder (uploads/<slug>, from provisioning), which
+	// listmonk expects to exist.
+	if p := ck.String("upload.filesystem.upload_path"); ck.String("upload.provider") == "filesystem" && p != "" {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			lo.Printf("denma: error creating %s's uploads folder %s: %v", c.Slug, p, err)
+		}
+	}
 	// Never listmonk's first-run "create the Super Admin" page: a center's
 	// users come from the hub, and until they do, anyone could claim it.
 	app.needsUserSetup = false
