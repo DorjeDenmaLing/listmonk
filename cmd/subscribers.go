@@ -300,11 +300,15 @@ func (a *App) getSubscribers(c echo.Context, listID int) ([]models.Subscriber, m
 		return nil, models.PageProps{}, echo.NewHTTPError(http.StatusForbidden,
 			a.i18n.Ts("globals.messages.permissionDenied", "name", auth.PermSubscribersSqlQuery))
 	}
+	search := q.Get("search")
+	if err := a.denmaSearch(user, &search, &query); err != nil { // denma: cmd/denma_search.go
+		return nil, models.PageProps{}, err
+	}
 
 	// Run the DB query.
 	pg := a.pg.NewFromURL(q)
 	res, total, err := a.core.QuerySubscribers(
-		q.Get("search"),
+		search, // denma
 		query,
 		listIDs,
 		q.Get("subscription_status"),
@@ -392,6 +396,9 @@ func (a *App) QuerySubscribers(c echo.Context) error {
 		orderBy          = c.FormValue("order_by")
 		pg               = a.pg.NewFromURL(c.Request().URL.Query())
 	)
+	if err := a.denmaSearch(user, &searchStr, &query); err != nil { // denma: cmd/denma_search.go
+		return err
+	}
 
 	// Query subscribers from the DB.
 	res, total, err := a.core.QuerySubscribers(searchStr, query, listIDs, subStatus, subscriberStatus, order, orderBy, pg.Offset, pg.Limit)
@@ -447,6 +454,10 @@ func (a *App) ExportSubscribers(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusForbidden,
 				a.i18n.Ts("globals.messages.permissionDenied", "name", auth.PermSubscribersSqlQuery))
 		}
+	}
+
+	if err := a.denmaSearch(user, &searchStr, &query); err != nil { // denma: cmd/denma_search.go
+		return err
 	}
 
 	// Get the batched export iterator.
@@ -861,6 +872,10 @@ func (a *App) DeleteSubscribersByQuery(c echo.Context) error {
 		}
 	}
 
+	if err := a.denmaSearch(user, &req.Search, &req.Query); err != nil { // denma: cmd/denma_search.go
+		return err
+	}
+
 	// Filter list IDs against the current user's permitted lists.
 	listIDs := user.GetPermittedListIDs(req.ListIDs)
 
@@ -900,6 +915,10 @@ func (a *App) BlocklistSubscribersByQuery(c echo.Context) error {
 		}
 	}
 
+	if err := a.denmaSearch(user, &req.Search, &req.Query); err != nil { // denma: cmd/denma_search.go
+		return err
+	}
+
 	// Filter list IDs against the current user's permitted lists.
 	listIDs := user.GetPermittedListIDs(req.ListIDs)
 
@@ -935,6 +954,10 @@ func (a *App) ManageSubscriberListsByQuery(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusForbidden,
 				a.i18n.Ts("globals.messages.permissionDenied", "name", auth.PermSubscribersSqlQuery))
 		}
+	}
+
+	if err := a.denmaSearch(user, &req.Search, &req.Query); err != nil { // denma: cmd/denma_search.go
+		return err
 	}
 
 	// Filter lists against the current user's permitted lists.

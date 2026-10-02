@@ -33,26 +33,7 @@
 		<div class="col-8 col-end hstack justify-end">
 			<form action="{{ $base }}" class="search-form" :method="advanced ? 'post' : 'get'">
 				{{- $d.Page.FormFields "search" "query" "page" -}}
-				<ot-dropdown>
-					<fieldset class="group">
-						<input name="search" aria-label="Search" data-testid="search" placeholder="{{ .L.T "subscribers.queryPlaceholder" }}" value="{{ $d.Page.Search }}" :disabled="isSqlOpen || advanced" autofocus />
-						<button type="button" class="outline sql-btn dot-indicator" :class="{ 'is-active': advanced }" popovertarget="sql-editor" data-testid="btn-advanced-search" :data-variant="advanced ? 'primary' : null" aria-label="{{ .L.T "subscribers.advancedQuery" }}">SQL {}</button>
-						<button type="submit" data-testid="btn-search" aria-label="{{ .L.T "globals.buttons.search" }}">{{ Icon "search" }}</button>
-					</fieldset>
-					<div popover id="sql-editor" class="sql-editor" data-testid="query-editor" @toggle="isSqlOpen = ($event.newState === 'open'); if (isSqlOpen) $nextTick(() => $refs.queryInput.focus())">
-						<div data-field>
-							<textarea x-ref="queryInput" name="query" data-testid="query" rows="6" placeholder="subscribers.name LIKE '%user%' or subscribers.status='blocklisted'" x-model="query" :disabled="!isSqlOpen && !advanced"></textarea>
-							<small data-hint>
-								{{ .L.T "subscribers.advancedQueryHelp" }}.
-								<a href="https://listmonk.app/docs/querying-and-segmentation" target="_blank" rel="noopener noreferrer">{{ .L.T "globals.buttons.learnMore" }}.</a>
-							</small>
-						</div>
-						<div class="hstack justify-end">
-							<button type="button" class="outline" data-testid="btn-query-reset" @click="query = ''" :disabled="query.trim() === ''">{{ .L.T "subscribers.reset" }}</button>
-							<button type="submit" data-variant="primary" data-testid="btn-query">{{ .L.T "subscribers.query" }}</button>
-						</div>
-					</div>
-				</ot-dropdown>
+				{{ template "denma-search" . }}{{/* denma: in place of the SQL query editor; partials/denma/search.html */}}
 			</form>
 			{{- if $d.Can "subscribers:manage" }}
 				<a href="{{ URI "/admin/subscribers/new" }}" class="button" data-variant="primary" data-testid="btn-new">

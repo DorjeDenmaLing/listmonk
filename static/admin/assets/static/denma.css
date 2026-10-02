@@ -743,3 +743,73 @@ svg.denma-logo {
     }
   }
 }
+
+/* Subscribers search filter builder (partials/denma/search.html). It's
+   positioned as listmonk's SQL editor was (.sql-editor). */
+.denma-filter.sql-editor:popover-open {
+    width: min(94vw, 44rem);
+    max-height: 80vh;
+    overflow-y: auto;
+}
+.denma-filter-match select {
+    display: inline-block;
+    width: auto;
+    margin-inline: var(--space-1);
+}
+.denma-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+
+    > select, > input {
+        flex: 1 1 9rem;
+        width: auto;
+        min-width: 0;
+        margin: 0;
+    }
+    > button {
+        flex: none;
+    }
+}
+.denma-filter-days {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: 1 1 9rem;
+
+    input {
+        width: 6rem;
+        margin: 0;
+    }
+}
+.denma-filter-help {
+    font-size: var(--text-7, 0.875rem);
+
+    summary {
+        cursor: pointer;
+    }
+    table {
+        width: 100%;
+        margin-block: var(--space-2);
+    }
+    td {
+        padding: var(--space-1);
+        vertical-align: top;
+    }
+    code {
+        white-space: nowrap;
+    }
+}
+/* Phones: the full width, less the gutters, rather than under the button. */
+@media (max-width: 640px) {
+    .denma-filter.denma-filter.sql-editor:popover-open {
+        left: 16px !important;
+        right: 16px !important;
+        width: auto;
+    }
+    .denma-filter-row {
+        padding-block-end: var(--space-2);
+        border-block-end: 1px solid var(--border);
+    }
+}

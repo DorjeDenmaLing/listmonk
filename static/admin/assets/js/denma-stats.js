@@ -1,7 +1,7 @@
 // denma: shared figures for the dashboard and Analytics sections (ported from
 // the production admin add-on, listmonk-js/admin-custom.js). Everything comes
-// from listmonk's own API with the user's session; subscriber counts use the
-// subscribers API's SQL query, which listmonk limits to its subscriber tables.
+// from listmonk's own API with the user's session; subscriber counts are
+// named figures computed on the server (cmd/denma_stats.go).
 import { urls } from './main.js';
 
 // Unique opens and clicks exist only since privacy.individual_tracking was
@@ -121,18 +121,23 @@ export async function perCampaign(type, ids, from) {
 
 const sumValues = (m) => Object.values(m).reduce((n, v) => n + v, 0);
 
-// Subscribers matching a SQL expression: { total, results } (results only when all).
-export function subscriberQuery(expr, all) {
-  return getJSON(`/subscribers?per_page=${all ? 'all' : '1'}&query=${encodeURIComponent(expr)}`);
+// Subscribers in one of the server's figures (cmd/denma_stats.go): { total,
+// results } (results only when all). opts: period ({ start, end }), campaign
+// (an ID), and search (the search language, cmd/denma_search.go).
+export function subscriberStat(metric, opts = {}, all = false) {
+  const q = new URLSearchParams({ metric, per_page: all ? 'all' : '1' });
+  if (opts.period) {
+    q.set('from', opts.period.start.toISOString());
+    q.set('to', opts.period.end.toISOString());
+  }
+  if (opts.campaign) {
+    q.set('campaign', opts.campaign);
+  }
+  if (opts.search) {
+    q.set('search', opts.search);
+  }
+  return getJSON(`/denma/stats/subscribers?${q.toString()}`);
 }
-
-export function between(col, p) {
-  return `${col} >= '${p.start.toISOString()}' AND ${col} < '${p.end.toISOString()}'`;
-}
-
-// People who unsubscribed in the period, not counting bounce removals.
-export const UNSUB_SQL = (p) => `subscribers.id IN (SELECT subscriber_id FROM subscriber_lists WHERE status = 'unsubscribed' AND ${between('updated_at', p)})`
-  + ` AND subscribers.id NOT IN (SELECT subscriber_id FROM bounces WHERE subscriber_id IS NOT NULL AND ${between('created_at', p)})`;
 
 // Bounces, newest first, paging back only as far as `since`.
 const BOUNCE_PAGE = 500;
@@ -165,7 +170,7 @@ export async function measure(campaigns, p) {
   const [opens, clicks, unsubs] = await Promise.all([
     perCampaign('views', ids, from).then(sumValues),
     perCampaign('clicks', ids, from).then(sumValues),
-    subscriberQuery(UNSUB_SQL(p)).then((d) => (d && d.total) || 0),
+    subscriberStat('unsub', { period: p }).then((d) => (d && d.total) || 0),
   ]);
   const delivered = sends - bounces;
   const rate = (n, d) => (d > 0 ? n / d : null);

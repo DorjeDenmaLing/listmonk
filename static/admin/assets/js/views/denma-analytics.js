@@ -17,16 +17,9 @@ const campaignName = (c) => c.name || c.subject || 'Untitled';
 
 // ---- Audience growth ----
 
-// Website signups wait on a double opt-in holding list until they confirm;
-// until then they aren't counted as subscribers.
-const NOT_PENDING_SQL = ' AND subscribers.id IN (SELECT sl.subscriber_id FROM subscriber_lists sl JOIN lists l ON l.id = sl.list_id'
-  + " WHERE NOT (l.optin = 'double' AND sl.status = 'unconfirmed'))";
-const NEW_SQL = (p) => s.between('subscribers.created_at', p) + NOT_PENDING_SQL;
-const REMOVED_SQL = (p) => `subscribers.id IN (SELECT subscriber_id FROM bounces WHERE subscriber_id IS NOT NULL AND ${s.between('created_at', p)})`
-  + " AND (subscribers.status = 'blocklisted' OR NOT EXISTS (SELECT 1 FROM subscriber_lists sl"
-  + " WHERE sl.subscriber_id = subscribers.id AND sl.status <> 'unsubscribed'))";
-const ACTIVE_SQL = "subscribers.status = 'enabled' AND subscribers.id IN (SELECT sl.subscriber_id FROM subscriber_lists sl JOIN lists l ON l.id = sl.list_id"
-  + " WHERE sl.status <> 'unsubscribed' AND NOT (l.optin = 'double' AND sl.status = 'unconfirmed'))";
+// The figures (new, unsub, removed, active, ...) are computed on the server
+// (cmd/denma_stats.go); website signups waiting on a double opt-in holding
+// list aren't counted as subscribers until they confirm.
 
 const GROWTH = [
   // [label, current key, previous key, higher is good, description]
@@ -130,37 +123,21 @@ const PROVIDER_CONCURRENCY = 6;
 const PROVIDER_MIN_PERIOD = 30; // emails before a rate is judged
 const PROVIDER_MIN_CAMPAIGN = 20;
 
-// [key, label, address domains (SQL LIKE patterns), opens inflated by Apple Mail]
+// [key, label, address domains (* is any ending), opens inflated by Apple Mail]
 const PROVIDERS = [
   ['gmail', 'Gmail', ['gmail.com', 'googlemail.com']],
-  ['microsoft', 'Microsoft', ['outlook.%', 'hotmail.%', 'live.%', 'msn.com', 'windowslive.com']],
-  ['yahoo', 'Yahoo / AOL', ['yahoo.%', 'ymail.com', 'rocketmail.com', 'aol.%', 'aim.com']],
+  ['microsoft', 'Microsoft', ['outlook.*', 'hotmail.*', 'live.*', 'msn.com', 'windowslive.com']],
+  ['yahoo', 'Yahoo / AOL', ['yahoo.*', 'ymail.com', 'rocketmail.com', 'aol.*', 'aim.com']],
   ['apple', 'Apple iCloud', ['icloud.com', 'me.com', 'mac.com'], true],
 ];
 const FIGURES = ['received', 'opens', 'clicks'];
 
-function providerSQL(key) {
+// A provider's addresses, as a search (cmd/denma_search.go).
+function providerSearch(key) {
   if (key === 'all') return '';
   const pr = PROVIDERS.find((x) => x[0] === key);
-  return ` AND (${pr[2].map((d) => `subscribers.email ILIKE '%@${d}'`).join(' OR ')})`;
+  return pr[2].map((d) => `domain:${d}`).join(' OR ');
 }
-
-// listmonk pastes the expression after "AND", so each one is fully bracketed.
-function receivedSQL(c) {
-  const st = `'${new Date(c.started_at).toISOString()}'`;
-  return `(subscribers.id <= (SELECT max_subscriber_id FROM campaigns WHERE id = ${c.id})`
-    + ` AND (subscribers.status <> 'blocklisted' OR subscribers.updated_at > ${st})`
-    + ' AND subscribers.id IN (SELECT sl.subscriber_id FROM subscriber_lists sl JOIN lists l ON l.id = sl.list_id'
-    + ` WHERE sl.list_id IN (SELECT list_id FROM campaign_lists WHERE campaign_id = ${c.id})`
-    + ` AND sl.created_at <= ${st}`
-    + " AND ((l.optin = 'double' AND sl.status = 'confirmed') OR (l.optin <> 'double' AND sl.status <> 'unsubscribed')"
-    + ` OR (sl.status = 'unsubscribed' AND sl.updated_at > ${st}))))`;
-}
-const FIGURE_SQL = {
-  received: receivedSQL,
-  opens: (c) => `(subscribers.id IN (SELECT subscriber_id FROM campaign_views WHERE campaign_id = ${c.id}))`,
-  clicks: (c) => `(subscribers.id IN (SELECT subscriber_id FROM link_clicks WHERE campaign_id = ${c.id}))`,
-};
 
 // Runs at most `n` requests at once.
 function limiter(n) {
@@ -175,7 +152,7 @@ function limiter(n) {
   return (fn) => new Promise((resolve, reject) => { queue.push({ fn, resolve, reject }); next(); });
 }
 const providerQueue = limiter(PROVIDER_CONCURRENCY);
-const countWhere = (expr) => providerQueue(() => s.subscriberQuery(expr)).then((d) => (d && d.total) || 0);
+const countWhere = (metric, opts) => providerQueue(() => s.subscriberStat(metric, opts)).then((d) => (d && d.total) || 0);
 
 // Everyone except this group and Apple (whose automatic opens would raise the bar).
 function baseline(rows, key, pick) {
@@ -332,10 +309,10 @@ function component(opts) {
     // ---- Audience growth ----
 
     async loadGrowth(p) {
-      const q = s.subscriberQuery;
+      const q = (metric, period, all) => s.subscriberStat(metric, { period }, all);
       const r = await Promise.all([
-        q(ACTIVE_SQL), q(NEW_SQL(p.cur), true), q(s.UNSUB_SQL(p.cur), true), q(REMOVED_SQL(p.cur), true),
-        q(NEW_SQL(p.prev)), q(s.UNSUB_SQL(p.prev)), q(REMOVED_SQL(p.prev)), s.fetchBounces(p.cur.start),
+        q('active'), q('new', p.cur, true), q('unsub', p.cur, true), q('removed', p.cur, true),
+        q('new', p.prev), q('unsub', p.prev), q('removed', p.prev), s.fetchBounces(p.cur.start),
       ]);
       // Each removed subscriber counts on the day of their first bounce in the period.
       const removedIds = new Set((r[3].results || []).map((x) => x.id));
@@ -407,7 +384,7 @@ function component(opts) {
     campaignCount(c, figure, key) {
       const k = `${c.id}|${figure}|${key}`;
       if (!this.providerCache[k]) {
-        this.providerCache[k] = countWhere(FIGURE_SQL[figure](c) + providerSQL(key));
+        this.providerCache[k] = countWhere(figure, { campaign: c.id, search: providerSearch(key) });
         this.providerCache[k].catch(() => { delete this.providerCache[k]; });
       }
       return this.providerCache[k];
@@ -431,8 +408,8 @@ function component(opts) {
         return pr;
       };
       const perGroup = keys.map((k) => Promise.all([
-        track(countWhere(ACTIVE_SQL + providerSQL(k))),
-        track(countWhere(s.UNSUB_SQL(p.cur) + providerSQL(k))),
+        track(countWhere('active', { search: providerSearch(k) })),
+        track(countWhere('unsub', { period: p.cur, search: providerSearch(k) })),
       ]));
       const perCampaign = list.map((c) => Promise.all(keys.map((k) => Promise.all(FIGURES.map((f) => track(this.campaignCount(c, f, k)))))));
       const [groups, camps] = await Promise.all([Promise.all(perGroup), Promise.all(perCampaign)]);

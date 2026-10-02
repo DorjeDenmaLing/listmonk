@@ -23,6 +23,7 @@ edit-2
 eye
 eye-off
 file-text
+filter
 grid
 help-circle
 image

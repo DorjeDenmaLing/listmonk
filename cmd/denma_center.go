@@ -30,7 +30,8 @@ var denmaCenterFields = []string{
 
 // denmaPermissions adds ours to listmonk's permissions (permissions.json), so
 // that roles can grant them: automations' to the Campaigns group, and
-// center:manage, in multi-center mode, to the Settings group.
+// center:manage, in multi-center mode, to the Settings group. It drops
+// subscribers:sql_query, as SQL queries are off (cmd/denma_search.go).
 func denmaPermissions(raw []byte, ko *koanf.Koanf) []byte {
 	var groups []map[string]any
 	if err := json.Unmarshal(raw, &groups); err != nil {
@@ -42,6 +43,14 @@ func denmaPermissions(raw []byte, ko *koanf.Koanf) []byte {
 			continue
 		}
 		switch {
+		case g["group"] == "subscribers":
+			keep := p[:0]
+			for _, x := range p {
+				if x != "subscribers:sql_query" {
+					keep = append(keep, x)
+				}
+			}
+			g["permissions"] = keep
 		case g["group"] == "campaigns":
 			g["permissions"] = append(p, denmaAutoGet, denmaAutoManage)
 		case g["group"] == "settings" && ko.Bool("denma.multi_center"):
