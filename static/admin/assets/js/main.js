@@ -80,6 +80,10 @@ function listenErrorEvents() {
   const reMatchLog = /(.+?)\.go:\d+:(.+?)$/im;
   const src = new EventSource(`${urls.api}/events?type=error`, { withCredentials: true });
 
+  // denma: close it when leaving the page. Otherwise every page visited keeps
+  // one open, and after six the browser has no connections left for the host.
+  window.addEventListener('pagehide', () => src.close());
+
   let numEv = 0;
   src.onmessage = (e) => {
     // Cap the number of toasts to not flood the UI on a burst of errors.

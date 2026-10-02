@@ -1,0 +1,78 @@
+{{ define "admin-denma-system" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+{{- $s := $d.System -}}
+{{- $a := $d.About -}}
+
+{{/* denma: Settings -> System (cmd/denma.go). The Resources card is upstream's
+     System card from the dashboard (views/dashboard.html), moved here; the rest
+     is what listmonk collects for /api/about. */}}
+<section class="denma-system">
+	<header class="page-header">
+		<h1 class="page-title">{{ .L.T "dashboard.system" }}</h1>
+	</header>
+
+	<div class="row">
+		<div class="col-6">
+			<article class="card">
+				<header class="mb-4"><h5>{{ Icon "activity" }} Resources</h5></header>
+				<dl class="vstack gap-4">
+					<div class="hstack justify-between"><dt>Uptime</dt><dd class="text-light">{{ $s.Uptime }}</dd></div>
+					<div class="hstack justify-between"><dt>App memory</dt><dd class="text-light">{{ FormatNumber (int $s.AppMemMB) }} MB</dd></div>
+					{{- if $s.HasHostMem }}
+					<div class="vstack gap-1">
+						<dt class="hstack justify-between">System memory<span class="text-light">{{ FormatNumber (int $s.MemUsedMB) }} / {{ FormatNumber (int $s.MemTotalMB) }} MB</span></dt>
+						<dd><meter min="0" max="100" value="{{ $s.MemPct }}" optimum="30" low="70" high="90" title="{{ $s.MemPct }}%"></meter></dd>
+					</div>
+					{{- end }}
+					{{- if $s.HasLoad }}
+					<div class="vstack gap-1">
+						<dt class="hstack justify-between">CPU load<span class="text-light">{{ $s.Load1 }} / {{ $s.Load5 }} / {{ $s.Load15 }}</span></dt>
+						<dd><meter min="0" max="100" value="{{ $s.LoadPct }}" optimum="30" low="70" high="90" title="{{ $s.LoadPct }}%"></meter></dd>
+					</div>
+					{{- end }}
+					<div class="hstack justify-between"><dt>CPU cores</dt><dd class="text-light">{{ $s.NumCPU }}</dd></div>
+				</dl>
+			</article>
+		</div>
+
+		<div class="col-6">
+			<article class="card">
+				<header class="mb-4"><h5>{{ Icon "info" }} listmonk</h5></header>
+				<dl class="vstack gap-4">
+					<div class="hstack justify-between"><dt>Version</dt><dd class="text-light">{{ $a.Version }}</dd></div>
+					<div class="hstack justify-between"><dt>Build</dt><dd class="text-light denma-break">{{ $a.Build }}</dd></div>
+					<div class="hstack justify-between"><dt>Go</dt><dd class="text-light">{{ $a.GoVersion }}</dd></div>
+				</dl>
+			</article>
+		</div>
+
+		<div class="col-6">
+			<article class="card">
+				<header class="mb-4"><h5>{{ Icon "inbox" }} Database</h5></header>
+				<dl class="vstack gap-4">
+					{{- with $d.DB.Version }}
+					<div class="hstack justify-between">
+						<dt>PostgreSQL</dt>
+						<dd class="text-light">{{ or (regexFind "^PostgreSQL [0-9.]+" . | trimPrefix "PostgreSQL ") . }}</dd>
+					</div>
+					{{- end }}
+					<div class="hstack justify-between"><dt>Size</dt><dd class="text-light">{{ if $d.DB.Version }}{{ FormatNumber (int $d.DB.SizeMB) }} MB{{ else }}—{{ end }}</dd></div>
+				</dl>
+			</article>
+		</div>
+
+		<div class="col-6">
+			<article class="card">
+				<header class="mb-4"><h5>{{ Icon "monitor" }} Host</h5></header>
+				<dl class="vstack gap-4">
+					<div class="hstack justify-between"><dt>Hostname</dt><dd class="text-light denma-break">{{ $a.Host.Hostname }}</dd></div>
+					<div class="hstack justify-between"><dt>Platform</dt><dd class="text-light">{{ $a.Host.OS }} / {{ $a.Host.Machine }}</dd></div>
+				</dl>
+			</article>
+		</div>
+	</div>
+</section>
+
+{{ template "admin-footer" . -}}
+{{ end }}

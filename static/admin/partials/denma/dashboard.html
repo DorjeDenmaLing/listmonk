@@ -1,0 +1,106 @@
+{{/*
+	denma: "Campaign performance" and "Bounces and complaints" at the top of the
+	dashboard, included in views/dashboard.html (assets/js/views/denma-dashboard.js).
+	Each section shows only to users with the permissions its figures need.
+*/}}
+{{ define "denma-dashboard" }}
+{{- $d := .Data -}}
+{{- $perf := and ($d.Can "campaigns:get" "campaigns:get_all") ($d.Can "campaigns:get_analytics") ($d.Can "subscribers:get" "subscribers:get_all") -}}
+{{- $bounces := $d.Can "bounces:get" -}}
+{{- if or $perf $bounces }}
+<div class="vstack gap-6 denma-dash" x-data="denmaDashboard({ performance: {{ $perf }}, bounces: {{ $bounces }} })">
+	{{- if $perf }}
+	<article class="card denma-stats">
+		<header class="denma-stat-head">
+			<h2>Campaign performance</h2>
+			{{ template "denma-range-controls" }}
+		</header>
+		<div class="denma-stat-grid denma-cols-6" :class="{ 'is-busy': perf.busy }">
+			{{ template "denma-stat-cells" "perf" }}
+		</div>
+		<p class="denma-stat-note" x-text="perf.note"></p>
+	</article>
+	{{- end }}
+
+	{{- if $bounces }}
+	<article class="card denma-stats denma-bounces">
+		<header class="denma-stat-head">
+			<h2>Bounces and complaints</h2>
+			<div class="hstack">
+				{{- if not $perf }}{{ template "denma-range-controls" }}{{ end }}
+				<a href="{{ URI "/admin/subscribers/bounces" }}" class="text-7">View all bounces</a>
+			</div>
+		</header>
+		<div class="denma-stat-grid denma-cols-5" :class="{ 'is-busy': bounce.busy }">
+			{{ template "denma-stat-cells" "bounce" }}
+		</div>
+
+		<details class="denma-recent" x-show="bounce.recent.length" :class="{ 'is-busy': bounce.busy }">
+			<summary x-text="bounce.summary"></summary>
+			<div class="table-wrapper">
+			<table>
+				<thead>
+					<tr><th>Date</th><th>Type</th><th>Email</th><th>Campaign</th></tr>
+				</thead>
+				<tbody>
+					<template x-for="b in bounce.recent" :key="b.id">
+						<tr>
+							<td class="denma-nowrap" x-text="b.when"></td>
+							<td><span class="badge small" :class="'bounce-' + b.type" x-text="b.typeLabel"></span></td>
+							<td class="denma-break">
+								<template x-if="b.url"><a :href="b.url" x-text="b.email"></a></template>
+								<template x-if="!b.url"><span x-text="b.email"></span></template>
+							</td>
+							<td class="denma-break" x-text="b.campaign"></td>
+						</tr>
+					</template>
+				</tbody>
+			</table>
+			</div>
+			<p class="denma-stat-note" x-text="bounce.more"></p>
+		</details>
+		<p class="text-light" x-show="!bounce.busy && !bounce.recent.length">No bounces or complaints in this period.</p>
+		<p class="denma-stat-note" x-text="bounce.note"></p>
+	</article>
+	{{- end }}
+</div>
+<script type="module" src="{{ URI "/admin/static/js/views/denma-dashboard.js" }}?v={{ .AssetVersion }}" defer></script>
+{{- end }}
+{{ end }}
+
+{{/* The date range picker; its state is the denmaDashboard / denmaAnalytics component's. */}}
+{{ define "denma-range-controls" }}
+<div class="hstack denma-range">
+	<select aria-label="Date range" x-model="range" @change="onRange()">
+		<template x-for="r in ranges" :key="r[0]">
+			<option :value="r[0]" x-text="r[1]" :selected="r[0] === range"></option>
+		</template>
+	</select>
+	<template x-if="range === 'custom'">
+		<div class="hstack denma-range-custom">
+			<input type="date" aria-label="Start date" x-model="from" />
+			<span class="text-light">to</span>
+			<input type="date" aria-label="End date" x-model="to" />
+			<button type="button" class="small" data-variant="primary" @click="load()">Apply</button>
+		</div>
+	</template>
+</div>
+{{ end }}
+
+{{/* Figure cells for the section named by the argument ("perf" or "bounce"). */}}
+{{ define "denma-stat-cells" }}
+<template x-for="m in {{ . }}.cells" :key="m.key">
+	<div class="denma-stat">
+		<div class="denma-stat-label" :title="m.help" x-text="m.label"></div>
+		<div class="denma-stat-value" x-text="m.value"></div>
+		<div class="denma-stat-change" :class="m.change && m.change.cls" :title="m.change && m.change.title">
+			<template x-if="m.change">
+				<span><span class="denma-arrow" x-text="m.change.arrow"></span> <span x-text="m.change.text"></span></span>
+			</template>
+		</div>
+		<template x-if="m.health">
+			<span class="badge small denma-health" :data-variant="m.health.variant" x-text="m.health.label"></span>
+		</template>
+	</div>
+</template>
+{{ end }}

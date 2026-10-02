@@ -13,6 +13,7 @@
 	</header>
 
 	<div class="vstack gap-6">
+		{{ template "denma-analytics" . }}{{/* denma: reports, growth, providers, partials/denma/analytics.html */}}
 		<form method="get" action="{{ URI "/admin/campaigns/analytics" }}" class="card" x-data="analyticsForm()" @submit="submitting = true">
 			<div class="row">
 				<div class="col-5">

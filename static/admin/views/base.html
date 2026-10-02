@@ -17,6 +17,7 @@
 
 	<link href="{{ URI "/admin/static/oat.min.css" }}?v={{ .AssetVersion }}" rel="stylesheet" type="text/css" />
 	<link href="{{ URI "/admin/static/style.css" }}?v={{ .AssetVersion }}" rel="stylesheet" type="text/css" />
+	<link href="{{ URI "/admin/static/denma.css" }}?v={{ .AssetVersion }}" rel="stylesheet" type="text/css" />
 	<link href="{{ URI "/admin/custom.css" }}?v={{ .CustomAssetVersion }}" rel="stylesheet" type="text/css" />
 	<script>
 		window._LM_I18N = {{ .I18nJS }};
@@ -49,7 +50,7 @@
 						{{ Icon "menu" }}
 					</button>
 					<a href="{{ URI "/admin" }}" class="favicon"><img src="{{ URI "/admin/static/favicon.png" }}?v={{ .AssetVersion }}" alt="listmonk" /></a>
-					<a href="{{ URI "/admin" }}" class="logo"><img src="{{ URI "/admin/static/logo.svg" }}?v={{ .AssetVersion }}" alt="listmonk" /></a>
+					<a href="{{ URI "/admin" }}" class="logo">{{ template "denma-logo" . }}</a>{{/* denma: theme-aware logo, partials/denma/logo.html */}}
 				</div>
 				<div class="col-8 justify-end hstack">
 					{{ with .Data.Profile }}

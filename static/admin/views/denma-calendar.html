@@ -1,0 +1,96 @@
+{{ define "admin-denma-calendar" -}}
+{{ template "admin-header" . }}
+
+{{/* denma: campaign calendar (cmd/denma.go, assets/js/views/denma-calendar.js). */}}
+<section class="denma-calendar" x-data="denmaCalendar" x-cloak>
+	<header class="row page-header">
+		<div class="col-4">
+			<h1 class="page-title">Calendar</h1>
+		</div>
+		<div class="col-8 hstack justify-end denma-toolbar">
+			<button type="button" class="outline small" @click="shift(-1)" aria-label="Previous month">{{ Icon "chevron-left" }}</button>
+			<strong class="denma-month" x-text="monthLabel"></strong>
+			<button type="button" class="outline small" @click="shift(1)" aria-label="Next month">{{ Icon "chevron-right" }}</button>
+			<button type="button" class="outline small" @click="goToday()">Today</button>
+			<label class="denma-check"><input type="checkbox" x-model="drafts" /> Show drafts</label>
+		</div>
+	</header>
+
+	<div class="vstack gap-6">
+		{{/* Month grid, Sunday first, whole weeks. Phones get the agenda below instead. */}}
+		<div class="card denma-cal" :aria-busy="campaigns === null">
+			<div class="denma-weekdays">
+				<div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+			</div>
+			<div class="denma-days">
+				<template x-for="d in days" :key="d.key">
+					<div class="denma-day" :class="{ 'is-other': d.other, 'is-today': d.today }">
+						<div class="denma-num" x-text="d.num"></div>
+						<template x-for="c in d.items" :key="c.id">
+							<a :href="url(c)" class="denma-chip" :class="'status-' + c.status" :title="tip(c)">
+								<span class="denma-time" x-text="fmtTime(c.when)"></span>
+								<span x-text="name(c)"></span>
+							</a>
+						</template>
+					</div>
+				</template>
+			</div>
+		</div>
+
+		<div class="card denma-agenda" :aria-busy="campaigns === null">
+			<template x-for="g in agenda" :key="g.key">
+				<div>
+					<div class="denma-date" x-text="g.label"></div>
+					<template x-for="c in g.items" :key="c.id">
+						<a :href="url(c)" class="denma-chip" :class="'status-' + c.status" :title="tip(c)">
+							<span class="denma-time" x-text="fmtTime(c.when)"></span>
+							<span x-text="name(c)"></span>
+						</a>
+					</template>
+				</div>
+			</template>
+			<p class="text-light" x-show="campaigns !== null && !agenda.length">No campaigns this month.</p>
+		</div>
+
+		<div class="row denma-panels">
+			<article class="card col-6">
+				<h2 class="denma-panel-title">Upcoming</h2>
+				<ul class="denma-list">
+					<template x-for="c in upcoming" :key="c.id">
+						<li>
+							<a :href="url(c)" x-text="name(c)"></a>
+							<div class="denma-meta">
+								<span class="badge small" :class="'status-' + c.status" x-text="statusLabel(c.status)"></span>
+								<span x-text="c.when ? fmtDate(c.when) + ', ' + fmtTime(c.when) : 'No date'"></span>
+							</div>
+						</li>
+					</template>
+				</ul>
+				<p class="text-light" x-show="campaigns !== null && !upcoming.length">Nothing scheduled.</p>
+			</article>
+
+			<article class="card col-6">
+				<h2 class="denma-panel-title">Unscheduled drafts</h2>
+				<ul class="denma-list">
+					<template x-for="c in unscheduled" :key="c.id">
+						<li>
+							<a :href="url(c)" x-text="name(c)"></a>
+							<div class="denma-meta">
+								<span class="badge small status-draft">Draft</span>
+								<span x-text="'edited ' + fmtDate(new Date(c.updated_at))"></span>
+							</div>
+						</li>
+					</template>
+				</ul>
+				<p class="text-light" x-show="campaigns !== null && !unscheduled.length">None.</p>
+			</article>
+		</div>
+
+		<p class="text-light text-8">Times in <span x-text="tz"></span>.</p>
+	</div>
+</section>
+
+<script type="module" src="{{ URI "/admin/static/js/views/denma-calendar.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

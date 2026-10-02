@@ -1,0 +1,584 @@
+/* denma: Dorje Denma Ling admin styles. Uses the admin's theme tokens
+   (assets/css/style.css, Oat) so light and dark themes both work.
+   Linked from views/base.html. */
+
+/* ---- Top bar logo (partials/denma/logo.html), same size as listmonk's <img> ---- */
+svg.denma-logo {
+    display: block;
+    width: auto;
+    height: 17px;
+    color: var(--foreground);
+
+    .denma-logo-ring {
+        color: var(--primary);
+    }
+}
+
+/* ---- Campaign calendar (views/denma-calendar.html) ---- */
+.denma-calendar {
+    .denma-toolbar {
+        gap: var(--space-2);
+    }
+
+    .denma-month {
+        min-width: 10rem;
+        text-align: center;
+    }
+
+    .denma-check {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-2);
+        margin-left: var(--space-2);
+        color: var(--muted-foreground);
+        font-size: var(--text-7);
+    }
+
+    .denma-cal {
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .denma-weekdays,
+    .denma-days {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+
+    .denma-weekdays div {
+        padding: var(--space-2);
+        font-size: var(--text-8);
+        font-weight: 600;
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+        background: var(--faint);
+        border-bottom: 1px solid var(--border);
+    }
+
+    .denma-day {
+        min-width: 0;
+        min-height: 7rem;
+        padding: var(--space-2);
+        border-right: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+
+        &:nth-child(7n) {
+            border-right: 0;
+        }
+
+        &.is-other {
+            background: var(--faint);
+
+            .denma-num {
+                color: var(--faint-foreground);
+            }
+        }
+
+        &.is-today .denma-num {
+            display: inline-block;
+            min-width: 1.4rem;
+            text-align: center;
+            color: var(--primary-foreground, #fff);
+            background: var(--primary);
+            border-radius: var(--radius-full);
+        }
+    }
+
+    .denma-num {
+        margin-bottom: var(--space-1);
+        padding: 0 var(--space-1);
+        font-size: var(--text-8);
+        font-weight: 600;
+    }
+
+    /* Colours follow the campaign status badges. */
+    .denma-chip {
+        --chip-fg: var(--tone-neutral);
+        --chip-bg: var(--tone-neutral-bg);
+
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+        overflow-wrap: anywhere;
+        margin: 0 0 var(--space-1);
+        padding: 2px var(--space-2);
+        border-radius: var(--radius-medium);
+        font-size: var(--text-8);
+        line-height: 1.35;
+        text-decoration: none;
+        color: var(--chip-fg);
+        background: var(--chip-bg);
+
+        &:hover {
+            filter: brightness(0.96);
+        }
+
+        &.status-finished {
+            --chip-fg: var(--tone-green);
+            --chip-bg: var(--tone-green-bg);
+        }
+
+        &.status-running {
+            --chip-fg: var(--tone-blue);
+            --chip-bg: var(--tone-blue-bg);
+        }
+
+        &.status-scheduled {
+            --chip-fg: var(--tone-amber);
+            --chip-bg: var(--tone-amber-bg);
+        }
+
+        &.status-paused {
+            --chip-fg: var(--tone-violet);
+            --chip-bg: var(--tone-violet-bg);
+        }
+
+        &.status-cancelled {
+            --chip-fg: var(--tone-rose);
+            --chip-bg: var(--tone-rose-bg);
+            text-decoration: line-through;
+        }
+
+        &.status-draft {
+            background: transparent;
+            border: 1px dashed var(--input);
+        }
+    }
+
+    .denma-time {
+        font-weight: 600;
+        margin-right: var(--space-1);
+    }
+
+    .denma-agenda {
+        display: none;
+
+        .denma-date {
+            font-weight: 600;
+            margin: var(--space-3) 0 var(--space-2);
+        }
+    }
+
+    .denma-panel-title {
+        margin: 0 0 var(--space-3);
+        font-size: var(--text-8);
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+    }
+
+    .denma-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+
+        li {
+            padding: var(--space-2) 0;
+            border-top: 1px solid var(--border);
+
+            &:first-child {
+                border-top: 0;
+                padding-top: 0;
+            }
+
+            > a {
+                font-weight: 600;
+            }
+        }
+    }
+
+    .denma-meta {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        margin-top: 2px;
+        font-size: var(--text-8);
+        color: var(--muted-foreground);
+    }
+
+    @media (max-width: 769px) {
+        .denma-cal {
+            display: none;
+        }
+
+        .denma-agenda {
+            display: block;
+        }
+
+        .denma-toolbar {
+            justify-content: flex-start;
+        }
+
+        .denma-panels > .col-6 {
+            grid-column: 1 / -1;
+        }
+    }
+}
+
+/* ---- Dashboard / Analytics figures (partials/denma/dashboard.html) ---- */
+.badge.bounce-complaint {
+    --badge-fg: var(--tone-red);
+    --badge-bg: var(--tone-red-bg);
+}
+
+/* Oat's (hidden) tooltips are one unwrapped line and still take up width, so
+   the long figure descriptions widened the page on phones. Wrap them, and
+   clip sideways so one can't push the page wider. */
+.denma-dash {
+    overflow-x: clip;
+}
+
+.denma-stats {
+    [data-tooltip]::after {
+        width: max-content;
+        max-width: min(18rem, 70vw);
+        white-space: normal;
+        line-height: 1.35;
+        text-align: left;
+    }
+
+    .denma-stat-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+        margin-bottom: var(--space-4);
+
+        h2 {
+            margin: 0;
+            font-size: var(--text-5);
+            font-weight: 600;
+        }
+    }
+
+    .denma-range {
+        gap: var(--space-2);
+
+        select,
+        input {
+            width: auto;
+            font-size: var(--text-7);
+            padding-block: var(--space-1);
+        }
+    }
+
+    .denma-range-custom {
+        gap: var(--space-2);
+    }
+
+    .denma-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: var(--space-5) var(--space-6);
+        transition: opacity 0.15s;
+
+        &.denma-cols-5 {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+    }
+
+    .is-busy {
+        opacity: 0.5;
+    }
+
+    .denma-stat-label {
+        display: inline-block;
+        font-size: var(--text-7);
+        color: var(--muted-foreground);
+        border-bottom: 1px dotted var(--faint-foreground);
+        cursor: help;
+    }
+
+    .denma-stat-value {
+        margin: var(--space-1) 0 2px;
+        font-size: var(--text-2);
+        font-weight: 600;
+        line-height: 1.2;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .denma-stat-change {
+        min-height: 1.2em;
+        font-size: var(--text-8);
+        font-weight: 600;
+        color: var(--muted-foreground);
+
+        &.good {
+            color: var(--success);
+        }
+
+        &.bad {
+            color: var(--danger);
+        }
+    }
+
+    .denma-arrow {
+        font-size: 0.8em;
+    }
+
+    .denma-health {
+        display: inline-block;
+        margin-top: var(--space-2);
+    }
+
+    .denma-stat-note {
+        margin: var(--space-4) 0 0;
+        font-size: var(--text-8);
+        color: var(--muted-foreground);
+
+        &:empty {
+            display: none;
+        }
+    }
+
+    /* Latest bounces: an Oat accordion, collapsed by default. */
+    .denma-recent {
+        margin-top: var(--space-5);
+        transition: opacity 0.15s;
+
+        > summary {
+            font-size: var(--text-7);
+        }
+
+        .denma-stat-note {
+            margin: var(--space-2) 0 0;
+            padding: 0 var(--space-4) var(--space-3);
+        }
+
+        table {
+            font-size: var(--text-7);
+        }
+    }
+
+    .denma-nowrap {
+        white-space: nowrap;
+    }
+
+    .denma-break {
+        overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 1150px) {
+        .denma-stat-grid,
+        .denma-stat-grid.denma-cols-5 {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 600px) {
+        .denma-stat-grid,
+        .denma-stat-grid.denma-cols-5 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .denma-stat-value {
+            font-size: var(--text-3);
+        }
+
+        /* Each bounce as a stacked row: date + type, then email; campaign hidden. */
+        .denma-recent {
+            thead,
+            td:nth-child(4) {
+                display: none;
+            }
+
+            tr {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: var(--space-1) var(--space-3);
+                padding: var(--space-2) 0;
+                border-bottom: 1px solid var(--border);
+            }
+
+            td {
+                display: block;
+                padding: 0;
+                border: 0;
+            }
+
+            td:nth-child(3) {
+                flex-basis: 100%;
+            }
+        }
+    }
+}
+
+/* ---- Settings -> System (views/denma-system.html) ---- */
+.denma-system {
+    dd {
+        margin: 0;
+        text-align: right;
+    }
+
+    .denma-break {
+        overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 769px) {
+        .row > .col-6 {
+            grid-column: 1 / -1;
+        }
+    }
+}
+
+/* ---- Analytics (partials/denma/analytics.html) ---- */
+.denma-stats {
+    --denma-added: light-dark(#36995b, #52c290);
+    --denma-unsub: light-dark(#ed7b00, #e6a23c);
+    --denma-removed: light-dark(#ff5722, #f2686e);
+
+    /* Wide tables scroll sideways inside the card on narrow screens. */
+    .denma-table {
+        overflow-x: auto;
+        transition: opacity 0.15s;
+
+        table {
+            font-size: var(--text-7);
+        }
+
+        th {
+            white-space: nowrap;
+        }
+
+        tfoot th,
+        tfoot td {
+            font-weight: 600;
+            border-top: 2px solid var(--border);
+        }
+    }
+
+    .num {
+        text-align: right;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .denma-sub {
+        font-size: 0.85em;
+        font-weight: 400;
+        color: var(--muted-foreground);
+    }
+
+    .denma-break {
+        overflow-wrap: anywhere;
+        min-width: 10rem;
+    }
+
+    .denma-warn {
+        font-weight: 600;
+        color: var(--danger);
+        cursor: help;
+    }
+
+    .denma-toggle {
+        padding: 0;
+        border: 0;
+        background: none;
+        font: inherit;
+        color: var(--primary);
+        cursor: pointer;
+        white-space: nowrap;
+
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+
+    .denma-caret {
+        display: inline-block;
+        width: 1em;
+        color: var(--muted-foreground);
+    }
+
+    tr.denma-detail > td {
+        padding: var(--space-2) var(--space-3) var(--space-4);
+        background: var(--faint);
+
+        table {
+            font-size: var(--text-8);
+            background: transparent;
+        }
+    }
+
+    .denma-chart-wrap {
+        margin-top: var(--space-5);
+        transition: opacity 0.15s;
+    }
+
+    .denma-chart {
+        display: block;
+        width: 100%;
+        height: auto;
+
+        .grid {
+            stroke: var(--border);
+        }
+
+        .axis {
+            stroke: var(--input);
+        }
+
+        .tick {
+            fill: var(--muted-foreground);
+            font-size: 11px;
+        }
+
+        .added {
+            fill: var(--denma-added);
+        }
+
+        .unsub {
+            fill: var(--denma-unsub);
+        }
+
+        .removed {
+            fill: var(--denma-removed);
+        }
+
+        .hit {
+            fill: transparent;
+        }
+
+        g:hover .hit {
+            fill: color-mix(in srgb, var(--primary) 6%, transparent);
+        }
+    }
+
+    .denma-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1) var(--space-4);
+        margin-top: var(--space-2);
+        font-size: var(--text-8);
+        color: var(--muted-foreground);
+
+        span {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+        }
+
+        i {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+
+            &.added {
+                background: var(--denma-added);
+            }
+
+            &.unsub {
+                background: var(--denma-unsub);
+            }
+
+            &.removed {
+                background: var(--denma-removed);
+            }
+        }
+    }
+}

@@ -39,7 +39,7 @@
 
 		{{- if Can $u "campaigns:get" "campaigns:manage" "campaigns:get_analytics" "media:get" "templates:get" }}
 		<li>
-			<details {{ ExpandNav $p "campaigns" }} name="sidebar-nav" data-cy="campaigns">
+			<details {{ if not (has $p (list "campaigns.media" "campaigns.analytics")) }}{{ ExpandNav $p "campaigns" }}{{ end }} name="sidebar-nav" data-cy="campaigns">
 				<summary>{{ Icon "send" }} {{ .L.T "globals.terms.campaigns" }}</summary>
 				<ul>
 					{{- if Can $u "campaigns:get" "campaigns:get_all" }}
@@ -48,19 +48,15 @@
 					{{- if Can $u "campaigns:manage" "campaigns:manage_all" }}
 					<li><a href="{{ URI "/admin/campaigns/new" }}" {{ IsNav $p "campaigns.new" }} data-cy="new-campaign">{{ .L.T "menu.newCampaign" }}</a></li>
 					{{- end }}
-					{{- if Can $u "media:get" "media:manage" }}
-					<li><a href="{{ URI "/admin/campaigns/media" }}" {{ IsNav $p "campaigns.media" }} data-cy="media">{{ .L.T "menu.media" }}</a></li>
-					{{- end }}
 					{{- if Can $u "templates:get" }}
 					<li><a href="{{ URI "/admin/templates" }}" {{ IsNav $p "campaigns.templates" }} data-cy="templates">{{ .L.T "globals.terms.templates" }}</a></li>
-					{{- end }}
-					{{- if Can $u "campaigns:get_analytics" }}
-					<li><a href="{{ URI "/admin/campaigns/analytics" }}" {{ IsNav $p "campaigns.analytics" }} data-cy="analytics">{{ .L.T "globals.terms.analytics" }}</a></li>
 					{{- end }}
 				</ul>
 			</details>
 		</li>
 		{{- end }}
+
+		{{- template "denma-sidebar-items" . }}{{/* denma: Calendar, Media, Analytics (partials/denma/sidebar.html) */}}
 
 		{{- if Can $u "users:get" "users:manage" "roles:get" "roles:manage" }}
 		<li>
@@ -91,6 +87,7 @@
 					{{- if Can $u "settings:maintain" }}
 					<li><a href="{{ URI "/admin/settings/maintenance" }}" {{ IsNav $p "settings.maintenance" }} data-cy="maintenance">{{ .L.T "menu.maintenance" }}</a></li>
 					{{- end }}
+					{{- template "denma-settings-items" . }}{{/* denma: System (partials/denma/sidebar.html) */}}
 				</ul>
 			</details>
 		</li>

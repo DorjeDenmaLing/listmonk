@@ -1,0 +1,34 @@
+{{/*
+	denma: top-level sidebar items, included in partials/sidebar.html above Users
+	(or Settings, for users who can't see Users): Calendar, Media and
+	Analytics. Media and Analytics move here
+	from the Campaigns group; their pages keep listmonk's page IDs.
+*/}}
+{{ define "denma-sidebar-items" }}
+{{- $u := .Data.Profile }}
+{{- $p := .Data.PageID }}
+		{{- if Can $u "campaigns:get" "campaigns:get_all" }}
+		<li>
+			<a href="{{ URI "/admin/calendar" }}" {{ IsNav $p "denma.calendar" }} data-cy="calendar">{{ Icon "calendar" }} Calendar</a>
+		</li>
+		{{- end }}
+		{{- if Can $u "media:get" "media:manage" }}
+		<li>
+			<a href="{{ URI "/admin/campaigns/media" }}" {{ IsNav $p "campaigns.media" }} data-cy="media">{{ Icon "image" }} {{ .L.T "menu.media" }}</a>
+		</li>
+		{{- end }}
+		{{- if Can $u "campaigns:get_analytics" }}
+		<li>
+			<a href="{{ URI "/admin/campaigns/analytics" }}" {{ IsNav $p "campaigns.analytics" }} data-cy="analytics">{{ Icon "bar-chart-2" }} {{ .L.T "globals.terms.analytics" }}</a>
+		</li>
+		{{- end }}
+{{ end }}
+
+{{/* Items at the end of the Settings group. */}}
+{{ define "denma-settings-items" }}
+{{- $u := .Data.Profile }}
+{{- $p := .Data.PageID }}
+					{{- if Can $u "settings:get" }}
+					<li><a href="{{ URI "/admin/settings/system" }}" {{ IsNav $p "settings.system" }} data-cy="system">{{ .L.T "dashboard.system" }}</a></li>
+					{{- end }}
+{{ end }}

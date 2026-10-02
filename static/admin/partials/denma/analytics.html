@@ -1,0 +1,180 @@
+{{/*
+	denma: "Campaign reports", "Audience growth" and "Mailbox providers" above
+	listmonk's own charts on Campaigns -> Analytics, included in
+	views/analytics.html (assets/js/views/denma-analytics.js). They share the
+	dashboard's date range. Each section shows only to users with the
+	permissions its figures need.
+*/}}
+{{ define "denma-analytics" }}
+{{- $d := .Data -}}
+{{- $camps := $d.Can "campaigns:get" "campaigns:get_all" -}}
+{{- $subs := $d.Can "subscribers:get" "subscribers:get_all" -}}
+{{- $reports := $camps -}}
+{{- $growth := and $subs ($d.Can "bounces:get") -}}
+{{- $providers := and $camps $subs -}}
+{{- if or $reports $growth $providers }}
+<div class="vstack gap-6 denma-dash" x-data="denmaAnalytics({ reports: {{ $reports }}, growth: {{ $growth }}, providers: {{ $providers }} })">
+	{{- if $reports }}
+	<article class="card denma-stats">
+		<header class="denma-stat-head">
+			<h2>Campaign reports</h2>
+			{{ template "denma-range-controls" }}
+		</header>
+		<div class="table-wrapper denma-table" :class="{ 'is-busy': reports.busy }" x-show="reports.rows.length">
+			<table>
+				<thead>
+					<tr>
+						<th>Campaign</th><th>Sent</th><th class="num">Recipients</th><th class="num">Delivered</th>
+						<th class="num">Opens</th><th class="num">Clicks</th><th class="num">Bounces</th>
+					</tr>
+				</thead>
+				<tbody>
+					<template x-for="r in reports.rows" :key="r.id">
+						<tr>
+							<td class="denma-break"><a :href="r.url" x-text="r.name"></a></td>
+							<td class="denma-nowrap" x-text="r.date"></td>
+							<td class="num" x-text="r.sent"></td>
+							<td class="num" x-text="r.delivered"></td>
+							{{ template "denma-rate-cell" "r.open" }}
+							{{ template "denma-rate-cell" "r.click" }}
+							<td class="num" x-text="r.bounces"></td>
+						</tr>
+					</template>
+				</tbody>
+				<tfoot x-show="reports.total">
+					<tr>
+						<th x-text="reports.total && `Total (${reports.total.count})`"></th>
+						<th></th>
+						<th class="num" x-text="reports.total && reports.total.sent"></th>
+						<th class="num" x-text="reports.total && reports.total.delivered"></th>
+						{{ template "denma-rate-cell" "reports.total && reports.total.open" }}
+						{{ template "denma-rate-cell" "reports.total && reports.total.click" }}
+						<th class="num" x-text="reports.total && reports.total.bounces"></th>
+					</tr>
+				</tfoot>
+			</table>
+		</div>
+		<p class="text-light" x-show="!reports.busy && !reports.rows.length">No campaigns were sent in this period.</p>
+		<p class="denma-stat-note" x-text="reports.note"></p>
+	</article>
+	{{- end }}
+
+	{{- if $growth }}
+	<article class="card denma-stats denma-growth">
+		<header class="denma-stat-head">
+			<h2>Audience growth</h2>
+			{{- if not $reports }}{{ template "denma-range-controls" }}{{ end }}
+		</header>
+		<div class="denma-stat-grid denma-cols-5" :class="{ 'is-busy': growth.busy }">
+			<template x-for="m in growth.cells" :key="m.label">
+				<div class="denma-stat">
+					<div class="denma-stat-label" :title="m.help" x-text="m.label"></div>
+					<div class="denma-stat-value" x-text="m.value"></div>
+					<div class="denma-stat-change" :class="m.change && m.change.cls">
+						<template x-if="m.change">
+							<span><span class="denma-arrow" x-text="m.change.arrow"></span> <span x-text="m.change.text"></span></span>
+						</template>
+					</div>
+				</div>
+			</template>
+		</div>
+		<div class="denma-chart-wrap" :class="{ 'is-busy': growth.busy }">
+			<div x-ref="growthChart"></div>
+			<div class="denma-legend">
+				<span><i class="added"></i>New</span>
+				<span><i class="unsub"></i>Unsubscribed</span>
+				<span><i class="removed"></i>Bounced or complained</span>
+			</div>
+		</div>
+		<p class="denma-stat-note" x-text="growth.note"></p>
+	</article>
+	{{- end }}
+
+	{{- if $providers }}
+	<article class="card denma-stats denma-providers">
+		<header class="denma-stat-head">
+			<h2>Mailbox providers</h2>
+			{{- if not (or $reports $growth) }}{{ template "denma-range-controls" }}{{ end }}
+		</header>
+		<div class="table-wrapper denma-table" :class="{ 'is-busy': providers.busy }" x-show="providers.rows.length">
+			<table>
+				<thead>
+					<tr>
+						<th>Provider</th><th class="num">Subscribers</th><th class="num">Received</th>
+						<th class="num">Open rate</th><th class="num">Click rate</th><th class="num">Unsubscribed</th>
+					</tr>
+				</thead>
+				<template x-for="g in providers.rows" :key="g.key">
+					<tbody>
+						<tr>
+							<td :title="g.title">
+								<button type="button" class="denma-toggle" :aria-expanded="g.expanded" @click="g.expanded = !g.expanded">
+									<span class="denma-caret" x-text="g.expanded ? '▾' : '▸'"></span> <span x-text="g.label"></span>
+								</button>
+								<span class="denma-sub" x-show="g.apple" title="Apple Mail opens emails automatically, so this open rate runs high."> *</span>
+								<span class="denma-warn" x-show="g.warn" :title="g.warn" :aria-label="g.warn && 'Warning: ' + g.warn"> ⚠</span>
+							</td>
+							<td class="num" x-text="g.subscribers"></td>
+							<td class="num" x-text="g.received"></td>
+							{{ template "denma-rate-cell" "g.open" }}
+							{{ template "denma-rate-cell" "g.click" }}
+							<td class="num" x-text="g.unsub"></td>
+						</tr>
+						<tr class="denma-detail" x-show="g.expanded">
+							<td colspan="6">
+								<p class="text-light" x-show="!g.detail.length">No campaigns reached this provider in this period.</p>
+								<table x-show="g.detail.length">
+									<thead>
+										<tr>
+											<th>Campaign</th><th>Sent</th><th class="num">Received</th><th class="num">Open rate</th>
+											<th class="num">Everyone else</th><th class="num">Click rate</th>
+										</tr>
+									</thead>
+									<tbody>
+										<template x-for="m in g.detail" :key="m.id">
+											<tr>
+												<td class="denma-break">
+													<a :href="m.url" x-text="m.name"></a>
+													<span class="denma-warn" x-show="m.warn" title="Open rate was less than half of everyone else's on this campaign."> ⚠</span>
+												</td>
+												<td class="denma-nowrap" x-text="m.date"></td>
+												<td class="num" x-text="m.received"></td>
+												<td class="num" x-text="m.open"></td>
+												<td class="num denma-sub" x-text="m.rest"></td>
+												<td class="num" x-text="m.click"></td>
+											</tr>
+										</template>
+									</tbody>
+								</table>
+							</td>
+						</tr>
+					</tbody>
+				</template>
+				<tfoot x-show="providers.all">
+					<tr>
+						<th>All</th>
+						<th class="num" x-text="providers.all && providers.all.subscribers"></th>
+						<th class="num" x-text="providers.all && providers.all.received"></th>
+						{{ template "denma-rate-cell" "providers.all && providers.all.open" }}
+						{{ template "denma-rate-cell" "providers.all && providers.all.click" }}
+						<th class="num" x-text="providers.all && providers.all.unsub"></th>
+					</tr>
+				</tfoot>
+			</table>
+		</div>
+		<p class="denma-stat-note" x-text="providers.note"></p>
+	</article>
+	{{- end }}
+</div>
+<script type="module" src="{{ URI "/admin/static/js/views/denma-analytics.js" }}?v={{ .AssetVersion }}" defer></script>
+{{- end }}
+{{ end }}
+
+{{/* A rate with its count beside it ({ pct, n }), or "—"; the argument is the
+     Alpine expression for the value. */}}
+{{ define "denma-rate-cell" }}
+<td class="num">
+	<template x-if="{{ . }}"><span><strong x-text="({{ . }}).pct"></strong> <span class="denma-sub" x-text="({{ . }}).n"></span></span></template>
+	<template x-if="!({{ . }})"><span>—</span></template>
+</td>
+{{ end }}
