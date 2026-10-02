@@ -18,6 +18,9 @@ package main
 // Only definite answers count: when DNS times out or fails, the address is
 // let through (and the cron job tries again). Domains in
 // denma.email_check_skip are never checked (dev: example.com).
+//
+// In multi-center mode a failed address is blocklisted in every center, and
+// the same checks also apply the shared blocklist (cmd/denma_blocklist.go).
 
 import (
 	"context"
@@ -182,12 +185,19 @@ func denmaReasonAttr(reason string) string {
 func denmaCheckOptin(send func(models.Subscriber, []int) (int, error), db *sqlx.DB, ko *koanf.Koanf) func(models.Subscriber, []int) (int, error) {
 	skip := denmaEmailSkip(ko)
 	return func(sub models.Subscriber, listIDs []int) (int, error) {
-		bad, reason := denmaEmailBad(sub.Email, skip)
-		if !bad {
-			return send(sub, listIDs)
+		reason, shared := denmaSharedBlock(db, sub.Email)
+		if shared {
+			lo.Printf("denma: blocklisting %s: on the shared blocklist (%s)", sub.Email, reason)
+			denmaBlocklist(db, sub.Email, reason)
+		} else {
+			var bad bool
+			if bad, reason = denmaEmailBad(sub.Email, skip); !bad {
+				return send(sub, listIDs)
+			}
+			lo.Printf("denma: blocklisting %s: %s", sub.Email, reason)
+			denmaBlocklist(db, sub.Email, reason)
+			denmaBlockEverywhere(sub.Email, reason, ko.String("denma.center"))
 		}
-		lo.Printf("denma: blocklisting %s: %s", sub.Email, reason)
-		denmaBlocklist(db, sub.Email, reason)
 		return 0, echo.NewHTTPError(http.StatusBadRequest,
 			fmt.Sprintf("%s can't receive e-mail: %s. Check the address.", sub.Email, reason))
 	}
@@ -203,6 +213,7 @@ func denmaStartEmailChecks(a *App) {
 		mu      sync.Mutex
 		skip    = denmaEmailSkip(a.ko)
 		checked = map[string]time.Time{} // "id email" -> when
+		applied = map[int]time.Time{}    // subscriber ID -> when the shared blocklist was applied
 	)
 	if _, err := a.crons.Add("@every 1m", func() {
 		if !mu.TryLock() {
@@ -215,6 +226,13 @@ func denmaStartEmailChecks(a *App) {
 				delete(checked, k)
 			}
 		}
+		for k, at := range applied {
+			if time.Since(at) > 25*time.Hour {
+				delete(applied, k)
+			}
+		}
+		a.applySharedBlocks(applied)
+		a.shareHardBounces()
 
 		var subs []struct {
 			ID    int    `db:"id"`
@@ -255,6 +273,7 @@ func denmaStartEmailChecks(a *App) {
 			if bad {
 				a.log.Printf("denma: blocklisting %s: %s", s.Email, reason)
 				denmaBlocklist(a.db, s.Email, reason)
+				denmaBlockEverywhere(s.Email, reason, a.ko.String("denma.center"))
 			}
 		}
 	}); err != nil {

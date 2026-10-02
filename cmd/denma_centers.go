@@ -276,6 +276,14 @@ func denmaInitRegistry(db *sqlx.DB) error {
 			hub_user_id    INTEGER NOT NULL,
 			center_user_id INTEGER NOT NULL,
 			PRIMARY KEY (center_id, hub_user_id)
+		);
+		-- Addresses that can't receive mail, blocklisted in every center
+		-- (cmd/denma_blocklist.go).
+		CREATE TABLE IF NOT EXISTS denma.blocked_emails (
+			email      TEXT PRIMARY KEY, -- lowercase
+			reason     TEXT NOT NULL,
+			center     TEXT NOT NULL, -- the slug of the center that found it
+			created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 		);`)
 	return err
 }
