@@ -15,7 +15,8 @@ package main
 // removed, roles, URLs and uploads set) when first loaded, and upgraded to the
 // hub's database version when loaded after a listmonk upgrade. A center can
 // also be an existing install (DDL's, in the public schema): it keeps its
-// data. Settings are the hub's, for every center (all but each center's own,
+// data, and is moved into the same layout as every other center, its own
+// schema and uploads folder (cmd/denma_layout.go). Settings are the hub's, for every center (all but each center's own,
 // denmaCenterOwnSettings), and only the hub shows them. Saving the hub's
 // settings rebuilds the hub and then each center they changed; only an OS
 // SIGHUP restarts the whole process.
@@ -291,7 +292,8 @@ func denmaInitRegistry(db *sqlx.DB) error {
 // denmaSeedCenters registers centers listed as "slug:Name,slug2:Name 2" if
 // they aren't registered yet. "slug:Name:schema" registers an existing
 // install (such as DDL's, "ddl:Dorje Denma Ling:public") as a center that
-// keeps its data. New centers are made in the hub.
+// keeps its data; it's moved into its own schema when it loads. New centers
+// are made in the hub.
 func denmaSeedCenters(db *sqlx.DB, list string) {
 	for _, item := range strings.Split(list, ",") {
 		parts := strings.SplitN(strings.TrimSpace(item), ":", 3)
@@ -322,7 +324,7 @@ func denmaRegisterCenter(db *sqlx.DB, slug, name, schema string) (*denmaCenter, 
 		name = slug
 	}
 	if schema == "" {
-		schema = "center_" + strings.ReplaceAll(slug, "-", "_")
+		schema = denmaSchemaName(slug)
 	}
 	if !reDenmaSchema.MatchString(schema) {
 		return nil, fmt.Errorf("invalid schema name %q", schema)
@@ -342,6 +344,9 @@ func denmaRegisterCenter(db *sqlx.DB, slug, name, schema string) (*denmaCenter, 
 func (d *denmaCenters) load(c *denmaCenter) error {
 	if c.Schema == d.baseSchema {
 		return fmt.Errorf("the center's schema (%s) is the hub's", c.Schema)
+	}
+	if err := d.ownSchema(c); err != nil { // cmd/denma_layout.go
+		return err
 	}
 	ck := d.centerConfig(c)
 
@@ -476,16 +481,12 @@ func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) error {
 		return err
 	}
 
-	base := d.base.ko
-	uploads := strings.TrimSuffix(base.String("upload.filesystem.upload_path"), "/")
-	if uploads == "" {
-		uploads = "uploads"
-	}
+	fsPath, s3Path := denmaUploadPaths(d.base.ko, c.Slug)
 	settings := map[string]any{
 		"app.root_url":                  strings.TrimSuffix(d.current().urlCfg.RootURL, "/") + denmaCenterPath + c.Slug,
 		"app.site_name":                 c.Name,
-		"upload.filesystem.upload_path": path.Join(uploads, c.Slug),
-		"upload.s3.bucket_path":         path.Join("/", base.String("upload.s3.bucket_path"), c.Slug),
+		"upload.filesystem.upload_path": fsPath,
+		"upload.s3.bucket_path":         s3Path,
 	}
 	for k, v := range c.initial {
 		settings[k] = v
@@ -540,12 +541,16 @@ func (d *denmaCenters) provisionRoles(db *sqlx.DB) error {
 
 // adopt keeps a center in step with the hub on every load: its address under
 // the hub's (also for an existing install, such as DDL's, whose links move
-// from / to /c/<slug>/), and the roles the hub relies on.
+// from / to /c/<slug>/), its uploads in its own folder, and the roles the hub
+// relies on.
 func (d *denmaCenters) adopt(c *denmaCenter, db *sqlx.DB) error {
 	root := strings.TrimSuffix(d.current().urlCfg.RootURL, "/") + denmaCenterPath + c.Slug
 	if _, err := db.Exec(`UPDATE settings SET value = to_jsonb($1::text), updated_at = NOW()
 		WHERE key = 'app.root_url' AND value IS DISTINCT FROM to_jsonb($1::text)`, root); err != nil {
 		return fmt.Errorf("setting the center's address: %v", err)
+	}
+	if err := d.ownUploads(c, db); err != nil { // cmd/denma_layout.go
+		return err
 	}
 	return d.provisionRoles(db)
 }
@@ -553,9 +558,9 @@ func (d *denmaCenters) adopt(c *denmaCenter, db *sqlx.DB) error {
 // denmaCryptoFuncs makes listmonk's pgcrypto functions, which live in the
 // extension's own schema (public), callable from a schema that has the
 // search path to itself (a center's or the hub's).
-func denmaCryptoFuncs(db *sqlx.DB) error {
+func denmaCryptoFuncs(db sqlx.Ext) error {
 	var ext string
-	if err := db.Get(&ext, `SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'pgcrypto'`); err != nil {
+	if err := sqlx.Get(db, &ext, `SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'pgcrypto'`); err != nil {
 		return fmt.Errorf("finding pgcrypto (CREATE EXTENSION pgcrypto first): %v", err)
 	}
 	if _, err := db.Exec(fmt.Sprintf(`
