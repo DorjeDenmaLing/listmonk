@@ -7,6 +7,7 @@
 			<a href="{{ URI "/admin" }}" {{ IsNav $p "dashboard" }}>{{ Icon "grid" }} {{ .L.T "menu.dashboard" }}</a>
 		</li>
 
+		{{- if not DenmaIsHub }}{{/* denma: the hub has no mailing of its own */}}
 		<li>
 			<details {{ ExpandNav $p "lists" }} name="sidebar-nav" data-cy="lists">
 				<summary>{{ Icon "list" }} {{ .L.T "globals.terms.lists" }}</summary>
@@ -57,6 +58,7 @@
 		{{- end }}
 
 		{{- template "denma-sidebar-items" . }}{{/* denma: Calendar, Media, Analytics (partials/denma/sidebar.html) */}}
+		{{- end }}{{/* denma */}}
 
 		{{- if Can $u "users:get" "users:manage" "roles:get" "roles:manage" }}
 		<li>
@@ -75,7 +77,7 @@
 		</li>
 		{{- end }}
 
-		{{- if Can $u "settings:get" "settings:manage" "settings:maintain" }}
+		{{- if and (or (not DenmaHubURL) DenmaIsHub) (Can $u "settings:get" "settings:manage" "settings:maintain") }}{{/* denma: settings are the hub's */}}
 		<li>
 			<details {{ ExpandNav $p "settings" }} name="sidebar-nav" data-cy="settings">
 				<summary>{{ Icon "settings" }} {{ .L.T "menu.settings" }}</summary>

@@ -718,7 +718,7 @@ func (a *App) SelfExportSubscriberData(c echo.Context) error {
 
 	// Prepare the attachment e-mail.
 	var msg bytes.Buffer
-	if err := notifs.Tpls.ExecuteTemplate(&msg, notifs.TplSubscriberData, data); err != nil {
+	if err := a.notifs.Tpls.ExecuteTemplate(&msg, notifs.TplSubscriberData, data); err != nil { // denma: the app's notifier
 		a.log.Printf("error compiling notification template '%s': %v", notifs.TplSubscriberData, err)
 		return c.Render(http.StatusInternalServerError, tplMessage,
 			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.Ts("public.errorProcessingRequest")))

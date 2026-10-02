@@ -103,7 +103,7 @@ func (a *App) ViewDashboard(c echo.Context) error {
 		Charts:           charts,
 		Campaigns:        camps,
 		System:           getSystemStats(),
-		CacheSlowQueries: ko.Bool("app.cache_slow_queries"),
+		CacheSlowQueries: a.ko.Bool("app.cache_slow_queries"), // denma: the app's own config
 	}
 
 	return c.Render(http.StatusOK, "admin-dashboard", data)

@@ -1,0 +1,92 @@
+{{ define "admin-denma-center-new" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+
+{{/* denma: the hub's new center form (cmd/denma_hub.go). */}}
+<section class="denma-centers" x-data="denmaNewCenter">
+	<header class="page-header">
+		<div class="hstack gap-1">
+			<a href="{{ URI "/admin" }}" class="back" aria-label="Back">{{ Icon "chevron-left" }}</a>
+			<h1 class="page-title">New center</h1>
+		</div>
+	</header>
+
+	<template x-if="!created">
+		<form method="post" @submit.prevent="onSubmit">
+			<div class="page-content content">
+				<section>
+					<fieldset class="card">
+						<legend>Center</legend>
+						<label data-field>
+							Name
+							<input name="name" maxlength="200" required autofocus x-model="form.name" @input="onName" placeholder="Halifax Shambhala Centre" />
+						</label>
+						<label data-field>
+							Address
+							<input name="slug" maxlength="50" required pattern="[a-z0-9]+(-[a-z0-9]+)*" x-model="form.slug" @input="slugEdited = true" />
+							<small data-hint>{{ $d.CenterURL }}<strong x-text="form.slug || '…'"></strong>/ &mdash; lowercase letters, digits and hyphens. It can't be changed later.</small>
+						</label>
+						<label data-field>
+							Sender
+							<input name="from_email" maxlength="300" x-model="form.from_email" :placeholder="fromPlaceholder" />
+							<small data-hint>The From of the center's e-mails. Leave empty for the center's name at the shared address.</small>
+						</label>
+					</fieldset>
+
+					<fieldset class="card">
+						<legend>First admin</legend>
+						<p class="text-light text-8">They can manage the center's lists, subscribers, campaigns, templates and users, but not its settings. They're e-mailed a link to set their password.</p>
+						<label data-field>
+							Name
+							<input name="admin_name" maxlength="200" required x-model="form.admin_name" />
+						</label>
+						<label data-field>
+							E-mail
+							<input name="admin_email" type="email" maxlength="200" required x-model="form.admin_email" />
+						</label>
+						<label data-field>
+							Username
+							<input name="admin_username" maxlength="200" required minlength="3" pattern="[a-zA-Z0-9_\-\.@]+" autocomplete="off" x-model="form.admin_username" />
+						</label>
+					</fieldset>
+				</section>
+			</div>
+
+			<footer class="page-footer hstack justify-end">
+				<button type="submit" data-variant="primary" :disabled="isLoading('centers')" data-testid="btn-create">
+					{{ Icon "plus" }} <span x-text="isLoading('centers') ? 'Creating…' : 'Create center'"></span>
+				</button>
+			</footer>
+		</form>
+	</template>
+
+	<template x-if="created">
+		<div class="page-content content">
+			<article class="card vstack gap-4" data-testid="center-created">
+				<h3>{{ Icon "check-circle" }} <span x-text="form.name"></span> is ready</h3>
+				<p x-show="created.email_sent">
+					<span x-text="form.admin_name"></span> has been e-mailed a link to set their password. You can also pass it on yourself; it works for 7 days, until it's used or listmonk restarts.
+				</p>
+				<p x-show="!created.email_sent" class="text-danger">
+					The e-mail to <span x-text="form.admin_email"></span> couldn't be sent (see Settings &rarr; Logs). Pass on this link to set their password; it works for 7 days, until it's used or listmonk restarts.
+				</p>
+				<div class="hstack gap-2">
+					<input type="text" readonly :value="created.invite_url" class="denma-invite" @focus="$event.target.select()" />
+					<button type="button" class="outline" @click="copy">{{ Icon "copy" }} Copy</button>
+				</div>
+				<div class="hstack gap-2">
+					<a :href="`{{ URI "/admin/centers" }}/${created.slug}/open`" class="button" data-variant="primary">{{ Icon "arrow-up-right" }} Open the center</a>
+					<a href="{{ URI "/admin" }}" class="button outline">All centers</a>
+				</div>
+			</article>
+		</div>
+	</template>
+</section>
+
+<script>
+	window._denmaFromEmail = {{ $d.FromEmail }};
+</script>
+<script type="module" src="{{ URI "/admin/static/js/views/denma-centers.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

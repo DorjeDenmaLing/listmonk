@@ -82,7 +82,8 @@ function component() {
       }
 
       const d = await api('campaigns', '/campaigns', 'POST', data);
-      u.redirect(`/admin/campaigns/${d.id}`, { message: i18n.ts('globals.messages.created', { name: d.name }) });
+      u.redirect(`${urls.admin}/campaigns/${d.id}`, // denma: root path aware
+        { message: i18n.ts('globals.messages.created', { name: d.name }) });
     },
 
     async onDelete(id, name) {

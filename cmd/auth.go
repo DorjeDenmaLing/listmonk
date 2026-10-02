@@ -145,7 +145,7 @@ func (a *App) TwofaPage(c echo.Context) error {
 	}
 
 	// Validate the 2FA temp token.
-	data, err := tmptokens.Check(token)
+	data, err := tmptokens.Check(a.tmpKey(token)) // denma: per center
 	if err != nil {
 		return c.Redirect(http.StatusFound, uriAdmin)
 	}
@@ -291,7 +291,7 @@ func (a *App) ResetPage(c echo.Context) error {
 	)
 
 	// Validate token and email (don't delete it yet, as we may need it for POST).
-	data, err := tmptokens.Check(email)
+	data, err := tmptokens.Check(a.tmpKey(email)) // denma: per center
 	if err != nil {
 		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
 	}
@@ -382,7 +382,7 @@ func (a *App) renderLoginPage(c echo.Context, loginErr error) error {
 		Name:     "nonce",
 		Value:    nonce,
 		HttpOnly: true,
-		Path:     "/",
+		Path:     a.urlCfg.RootPath, // denma: was "/"; scoped to the root path (centers share a domain)
 		SameSite: http.SameSiteLaxMode,
 	})
 	out.Nonce = nonce
@@ -484,7 +484,7 @@ func (a *App) doLogin(c echo.Context) error {
 		}
 
 		// Set the token.
-		tmptokens.Set(token, twofaTokenTTL, user.ID)
+		tmptokens.Set(a.tmpKey(token), twofaTokenTTL, user.ID) // denma: per center
 
 		// Redirect to 2FA page.
 		next := utils.SanitizeURI(c.FormValue("next"))
@@ -607,7 +607,7 @@ func (a *App) doForgotPassword(c echo.Context) error {
 	}
 
 	// Store the reset token in tmptokens.
-	tmptokens.Set(email, passwordResetTTL, token)
+	tmptokens.Set(a.tmpKey(email), passwordResetTTL, token) // denma: per center
 
 	// Prepare the reset URL.
 	resetURL := fmt.Sprintf("%s/admin/reset?token=%s&email=%s", a.urlCfg.RootURL, token, url.QueryEscape(email))
@@ -623,7 +623,7 @@ func (a *App) doForgotPassword(c echo.Context) error {
 	}
 
 	// Render the email template.
-	if err := notifs.Tpls.ExecuteTemplate(&msg, notifs.TplForgotPassword, data); err != nil {
+	if err := a.notifs.Tpls.ExecuteTemplate(&msg, notifs.TplForgotPassword, data); err != nil { // denma: the app's notifier
 		a.log.Printf("error compiling notification template '%s': %v", notifs.TplForgotPassword, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
 	}
@@ -660,7 +660,7 @@ func (a *App) doResetPassword(c echo.Context, token, email string) error {
 	}
 
 	// Validate and consume the token (this deletes it).
-	data, err := tmptokens.Get(email)
+	data, err := tmptokens.Get(a.tmpKey(email)) // denma: per center
 	if err != nil {
 		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
 	}
@@ -740,7 +740,7 @@ func (a *App) doTwofaVerify(c echo.Context, token string, userID int, next strin
 	}
 
 	// Invalidate the token.
-	tmptokens.Delete(token)
+	tmptokens.Delete(a.tmpKey(token)) // denma: per center
 
 	// Set the session.
 	if err := a.auth.SaveSession(user, "", c); err != nil {

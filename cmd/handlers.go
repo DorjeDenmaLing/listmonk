@@ -262,6 +262,7 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		g.PUT("/api/roles/users/:id", pm(hasID(a.UpdateUserRole), "roles:manage"))
 		g.PUT("/api/roles/lists/:id", pm(hasID(a.UpdateListRole), "roles:manage"))
 		g.DELETE("/api/roles/:id", pm(hasID(a.DeleteRole), "roles:manage"))
+		initDenmaAPIHandlers(g, a) // denma: cmd/denma_hub.go
 
 		if a.cfg.BounceWebhooksEnabled {
 			// Private authenticated bounce endpoint.

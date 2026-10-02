@@ -79,7 +79,7 @@ func (a *App) ViewLists(c echo.Context) error {
 		adminView:        newAdminView(c, a.i18n.T("globals.terms.lists"), "", pageID),
 		Lists:            lists,
 		Page:             props,
-		CacheSlowQueries: ko.Bool("app.cache_slow_queries"),
+		CacheSlowQueries: a.ko.Bool("app.cache_slow_queries"), // denma: the app's own config
 	}
 
 	return c.Render(http.StatusOK, "admin-lists", data)

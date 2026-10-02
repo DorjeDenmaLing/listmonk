@@ -21,7 +21,6 @@ import (
 	"github.com/knadh/koanf/v2"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/messenger/email"
-	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
 )
@@ -492,7 +491,7 @@ func (a *App) TestSMTPSettings(c echo.Context) error {
 
 	// Render the test email template body.
 	var b bytes.Buffer
-	if err := notifs.Tpls.ExecuteTemplate(&b, "smtp-test", nil); err != nil {
+	if err := a.notifs.Tpls.ExecuteTemplate(&b, "smtp-test", nil); err != nil { // denma: the app's notifier
 		a.log.Printf("error compiling notification template '%s': %v", "smtp-test", err)
 		return err
 	}

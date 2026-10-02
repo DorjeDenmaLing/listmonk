@@ -322,7 +322,7 @@ func initFS(appDir, staticDir, i18nDir string) stuffbin.FileSystem {
 
 // initDB initializes the main DB connection pool and parse and loads the app's
 // SQL queries into a prepared query map.
-func initDB() *sqlx.DB {
+func initDB(ko *koanf.Koanf) *sqlx.DB { // denma: config as a parameter (one per center)
 	var c struct {
 		Host        string        `koanf:"host"`
 		Port        int           `koanf:"port"`
@@ -473,7 +473,7 @@ func initUrlConfig(ko *koanf.Koanf) *UrlConfig {
 	// It's used as the base path for all admin/static asset URLs.
 	var rootPath string
 	if u, err := url.Parse(root); err == nil {
-		rootPath = "/" + strings.TrimSuffix(u.Path, "/")
+		rootPath = strings.TrimSuffix(u.Path, "/") + "/" // denma: was "/" + path, giving "//c/x" under a subpath
 	}
 
 	return &UrlConfig{
@@ -481,7 +481,7 @@ func initUrlConfig(ko *koanf.Koanf) *UrlConfig {
 		RootPath:   rootPath,
 		LogoURL:    ko.String("app.logo_url"),
 		FaviconURL: ko.String("app.favicon_url"),
-		LoginURL:   path.Join(uriAdmin, "/login"),
+		LoginURL:   path.Join(rootPath, uriAdmin, "/login"), // denma: root path aware
 
 		// Static URLS.
 		// url.com/subscription/{campaign_uuid}/{subscriber_uuid}
@@ -680,7 +680,7 @@ func initTxTemplates(m *manager.Manager, co *core.Core) {
 }
 
 // initImporter initializes the bulk subscriber importer.
-func initImporter(q *models.Queries, db *sqlx.DB, core *core.Core, i *i18n.I18n, ko *koanf.Koanf) *subimporter.Importer {
+func initImporter(q *models.Queries, db *sqlx.DB, core *core.Core, i *i18n.I18n, ko *koanf.Koanf, nf *notifs.Notifs) *subimporter.Importer { // denma: the app's notifier
 	return subimporter.New(
 		subimporter.Options{
 			DomainBlocklist:    ko.Strings("privacy.domain_blocklist"),
@@ -696,14 +696,14 @@ func initImporter(q *models.Queries, db *sqlx.DB, core *core.Core, i *i18n.I18n,
 				core.RefreshMatViews(true)
 
 				// Send admin notification.
-				notifs.NotifySystem(subject, notifs.TplImport, data, nil)
+				nf.NotifySystem(subject, notifs.TplImport, data, nil) // denma: the app's notifier
 				return nil
 			},
 		}, db.DB, i)
 }
 
 // initSMTPMessenger initializes the combined and individual SMTP messengers.
-func initSMTPMessengers() []manager.Messenger {
+func initSMTPMessengers(ko *koanf.Koanf) []manager.Messenger { // denma: config as a parameter
 	var (
 		servers = []email.Server{}
 		out     = []manager.Messenger{}
@@ -824,7 +824,7 @@ func initMediaStore(ko *koanf.Koanf) media.Store {
 }
 
 // initNotifs initializes the notifier with the system e-mail templates.
-func initNotifs(fs stuffbin.FileSystem, i *i18n.I18n, em *email.Emailer, u *UrlConfig, ko *koanf.Koanf) {
+func initNotifs(fs stuffbin.FileSystem, i *i18n.I18n, em *email.Emailer, u *UrlConfig, ko *koanf.Koanf) *notifs.Notifs { // denma: returned, one per app
 	tpls, err := stuffbin.ParseTemplatesGlob(initTplFuncs(i, u), fs, "/static/email-templates/*.html")
 	if err != nil {
 		lo.Fatalf("error parsing e-mail notif templates: %v", err)
@@ -848,7 +848,7 @@ func initNotifs(fs stuffbin.FileSystem, i *i18n.I18n, em *email.Emailer, u *UrlC
 		lo.Println("system e-mail templates are plaintext")
 	}
 
-	notifs.Initialize(notifs.Opt{
+	return notifs.New(notifs.Opt{ // denma: was notifs.Initialize
 		FromEmail:    ko.String("app.from_email"),
 		SystemEmails: ko.Strings("app.notify_emails"),
 		ContentType:  contentType,
@@ -957,6 +957,29 @@ func initAbout(q *models.Queries, db *sqlx.DB) about {
 
 // initHTTPServer sets up and runs the app's main HTTP server and blocks forever.
 func initHTTPServer(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.FileSystem, app *App) *echo.Echo {
+	srv := initHTTPRouter(cfg, urlCfg, i, fs, app)
+	initDenmaCenters(srv, app) // denma: centers under /c/<slug>/ (cmd/denma_centers.go)
+
+	// Start the server.
+	go func() {
+		if err := srv.Start(ko.String("app.address")); err != nil {
+			if errors.Is(err, http.ErrServerClosed) {
+				lo.Println("HTTP server shut down")
+			} else {
+				lo.Fatalf("error starting HTTP server: %v", err)
+			}
+		}
+	}()
+
+	return srv
+}
+
+// initHTTPRouter sets up the app's HTTP routes without starting a listener.
+// denma: split out of initHTTPServer so that each center gets a router; reads
+// the app's own config.
+func initHTTPRouter(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.FileSystem, app *App) *echo.Echo {
+	ko := app.ko
+
 	// Initialize the HTTP server.
 	var srv = echo.New()
 	srv.HideBanner = true
@@ -1043,17 +1066,6 @@ func initHTTPServer(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.Fi
 	// Register all HTTP handlers.
 	initHTTPHandlers(srv, app)
 
-	// Start the server.
-	go func() {
-		if err := srv.Start(ko.String("app.address")); err != nil {
-			if errors.Is(err, http.ErrServerClosed) {
-				lo.Println("HTTP server shut down")
-			} else {
-				lo.Fatalf("error starting HTTP server: %v", err)
-			}
-		}
-	}()
-
 	return srv
 }
 
@@ -1119,7 +1131,7 @@ func staticServer(fs stuffbin.FileSystem) http.Handler {
 }
 
 // initCaptcha initializes the captcha service.
-func initCaptcha() *captcha.Captcha {
+func initCaptcha(ko *koanf.Koanf) *captcha.Captcha { // denma: config as a parameter
 	var opt captcha.Opt
 	if err := ko.Unmarshal("security.captcha", &opt); err != nil {
 		lo.Fatalf("error loading captcha config: %v", err)
@@ -1129,7 +1141,7 @@ func initCaptcha() *captcha.Captcha {
 }
 
 // initCron initializes cron jobs for slow query cache refresh and database vacuum.
-func initCron(co *core.Core, db *sqlx.DB) {
+func initCron(co *core.Core, db *sqlx.DB, ko *koanf.Koanf) *cron.Cron { // denma: config as a parameter; returned
 	c := cron.New(cron.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))))
 
 	// Slow query cache cron job.
@@ -1171,6 +1183,7 @@ func initCron(co *core.Core, db *sqlx.DB) {
 	if len(c.Entries()) > 0 {
 		c.Start()
 	}
+	return c // denma
 }
 
 // awaitReload waits for a SIGHUP signal to reload the app. Every setting change on the UI causes a reload.
@@ -1330,6 +1343,8 @@ func initTplFuncs(i *i18n.I18n, u *UrlConfig) template.FuncMap {
 
 	maps.Copy(funcs, sprigFuncs)
 
+	denmaTplFuncs(funcs, u) // denma: cmd/denma_hub.go
+
 	return funcs
 }
 
@@ -1361,6 +1376,7 @@ func initAuth(co *core.Core, db *sql.DB, ko *koanf.Koanf) (bool, *auth.Auth) {
 		SetCookie: func(cookie *http.Cookie, w any) error {
 			c := w.(echo.Context)
 			cookie.SameSite = http.SameSiteLaxMode
+			cookie.Path = initUrlConfig(ko).RootPath // denma: scoped to the root path (centers share a domain)
 			c.SetCookie(cookie)
 			return nil
 		},

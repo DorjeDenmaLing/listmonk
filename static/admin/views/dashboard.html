@@ -7,6 +7,7 @@
 	window._dashboardCharts = {{ ToJSON $d.Charts }};
 </script>
 
+{{- if DenmaIsHub }}{{ template "denma-hub" . }}{{ else }}{{/* denma: the hub's dashboard, partials/denma/hub.html */}}
 <section class="dashboard">
 	<header class="page-header">
 		<h3 class="page-title">{{ now | date "January 02, 2006" }}</h3>
@@ -121,6 +122,7 @@
 </section>
 
 <script type="module" src="{{ URI "/admin/static/js/views/dashboard.js" }}?v={{ .AssetVersion }}" defer></script>
+{{- end }}{{/* denma */}}
 
 {{ template "admin-footer" . -}}
 {{ end }}

@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gdgvda/cron"
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/v2"
@@ -25,7 +26,7 @@ import (
 	"github.com/knadh/listmonk/internal/i18n"
 	"github.com/knadh/listmonk/internal/manager"
 	"github.com/knadh/listmonk/internal/media"
-	"github.com/knadh/listmonk/internal/messenger/email"
+	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/internal/subimporter"
 	"github.com/knadh/listmonk/models"
 	"github.com/knadh/paginator/v2"
@@ -34,6 +35,7 @@ import (
 
 // App contains the "global" shared components, controllers and fields.
 type App struct {
+	ko         *koanf.Koanf // denma: the app's own config (one App per center)
 	cfg        *Config
 	urlCfg     *UrlConfig
 	fs         stuffbin.FileSystem
@@ -53,6 +55,8 @@ type App struct {
 	events     *events.Events
 	log        *log.Logger
 	bufLog     *buflog.BufLog
+	notifs     *notifs.Notifs // denma: the app's own e-mail notifier (one App per center)
+	crons      *cron.Cron     // denma: stopped when a center is reloaded
 
 	about         about
 	fnOptinNotify func(models.Subscriber, []int) (int, error)
@@ -139,7 +143,7 @@ func init() {
 	}
 
 	// Connect to the database.
-	db = initDB()
+	db = initDB(ko)
 
 	// Initialize the embedded filesystem with static assets.
 	fs = initFS(appDir, ko.String("static-dir"), ko.String("i18n-dir"))
@@ -151,6 +155,8 @@ func init() {
 		install(migList[len(migList)-1].version, db, fs, !ko.Bool("yes"), ko.Bool("idempotent"))
 		os.Exit(0)
 	}
+
+	denmaPrepareHub(db) // denma: the multi-center hub's own schema (cmd/denma_centers.go)
 
 	// Is this a nightly build?
 	isNightly := strings.Contains(versionString, "nightly")
@@ -194,117 +200,14 @@ func init() {
 }
 
 func main() {
+	app := buildApp(ko, db, queries, true) // denma: shared with the centers (cmd/denma_centers.go)
 	var (
-		// Initialize static global config.
-		cfg = initConstConfig(ko)
-
-		// Initialize static URL config.
-		urlCfg = initUrlConfig(ko)
-
-		// Initialize i18n language map.
-		i18n = initI18n(ko.MustString("app.lang"), fs)
-
-		// Initialize the media store.
-		media = initMediaStore(ko)
-
-		fbOptinNotify = makeOptinNotifyHook(ko.Bool("privacy.unsubscribe_header"), urlCfg, queries, i18n)
-
-		// Crud core.
-		core = initCore(fbOptinNotify, queries, db, i18n, ko)
-
-		// Initialize all messengers, SMTP and postback.
-		msgrs = append(initSMTPMessengers(), initPostbackMessengers(ko)...)
-
-		// Campaign manager.
-		mgr = initCampaignManager(msgrs, queries, urlCfg, core, media, i18n, ko)
-
-		// Bulk importer.
-		importer = initImporter(queries, db, core, i18n, ko)
-
-		// Initialize the auth manager.
-		hasUsers, auth = initAuth(core, db.DB, ko)
-
-		// Initialize the webhook/POP3 bounce processor.
-		bounce *bounce.Manager
-
-		emailMsgr *email.Emailer
-
-		chReload = make(chan os.Signal, 1)
+		cfg      = app.cfg
+		urlCfg   = app.urlCfg
+		i18n     = app.i18n
+		mgr      = app.manager
+		chReload = app.chReload
 	)
-
-	// Initialize the bounce manager that processes bounces from webhooks and
-	// POP3 mailbox scanning.
-	if ko.Bool("bounce.enabled") {
-		bounce = initBounceManager(core.RecordBounce, queries.RecordBounce, lo, ko)
-	}
-
-	// Assign the default `email` messenger to the app.
-	for _, m := range msgrs {
-		if m.Name() == "email" {
-			emailMsgr = m.(*email.Emailer)
-		}
-	}
-
-	// Initialize the global admin/sub e-mail notifier.
-	initNotifs(fs, i18n, emailMsgr, urlCfg, ko)
-
-	// Initialize and cache tx templates in memory.
-	initTxTemplates(mgr, core)
-
-	// Initialize the bounce manager that processes bounces from webhooks and
-	// POP3 mailbox scanning.
-	if ko.Bool("bounce.enabled") {
-		go bounce.Run()
-	}
-
-	// Start cronjobs.
-	initCron(core, db)
-
-	// Start the campaign manager workers. The campaign batches (fetch from DB, push out
-	// messages) get processed at the specified interval.
-	go mgr.Run()
-
-	// =========================================================================
-	// Initialize the App{} with all the global shared components, controllers and fields.
-	app := &App{
-		cfg:        cfg,
-		urlCfg:     urlCfg,
-		fs:         fs,
-		db:         db,
-		queries:    queries,
-		core:       core,
-		manager:    mgr,
-		messengers: msgrs,
-		emailMsgr:  emailMsgr,
-		importer:   importer,
-		auth:       auth,
-		media:      media,
-		bounce:     bounce,
-		captcha:    initCaptcha(),
-		i18n:       i18n,
-		log:        lo,
-		events:     evStream,
-		bufLog:     bufLog,
-
-		pg: paginator.New(paginator.Opt{
-			DefaultPerPage: 20,
-			MaxPerPage:     50,
-			NumPageNums:    10,
-			PageParam:      "page",
-			PerPageParam:   "per_page",
-			AllowAll:       true,
-		}),
-
-		fnOptinNotify: fbOptinNotify,
-		about:         initAbout(queries, db),
-		chReload:      chReload,
-
-		// If there are no users, then the app needs to prompt for new user setup.
-		needsUserSetup: !hasUsers,
-	}
-
-	// i18n JSON string for admin HTML pages.
-	app.adminI18nJS = app.makeAdminJSI18n()
 
 	// Star the update checker.
 	if ko.Bool("app.check_updates") {
@@ -341,4 +244,126 @@ func main() {
 		// Signal the close.
 		closerWait <- true
 	})
+}
+
+// buildApp initializes the App and its components from a config, DB and
+// queries, and starts its background workers (campaign manager, bounces, cron).
+// denma: moved out of main() so that each center is built the same way.
+func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs bool) *App {
+	var (
+		// Initialize static global config.
+		cfg = initConstConfig(ko)
+
+		// Initialize static URL config.
+		urlCfg = initUrlConfig(ko)
+
+		// Initialize i18n language map.
+		i18n = initI18n(ko.MustString("app.lang"), fs)
+
+		// Initialize the media store.
+		media = initMediaStore(ko)
+
+		// Initialize all messengers, SMTP and postback.
+		msgrs = append(initSMTPMessengers(ko), initPostbackMessengers(ko)...)
+
+		// denma: this app's admin/sub e-mail notifier (was process-wide, set up below).
+		emailMsgr = denmaEmailMessenger(msgrs)
+		nf        = initNotifs(fs, i18n, emailMsgr, urlCfg, ko)
+
+		fbOptinNotify = makeOptinNotifyHook(ko.Bool("privacy.unsubscribe_header"), urlCfg, queries, i18n, nf)
+
+		// Crud core.
+		core = initCore(fbOptinNotify, queries, db, i18n, ko)
+
+		// Campaign manager.
+		mgr = initCampaignManager(msgrs, queries, urlCfg, core, media, i18n, ko)
+
+		// Bulk importer.
+		importer = initImporter(queries, db, core, i18n, ko, nf)
+
+		// Initialize the auth manager.
+		hasUsers, auth = initAuth(core, db.DB, ko)
+
+		// Initialize the webhook/POP3 bounce processor.
+		bounce *bounce.Manager
+
+		chReload = make(chan os.Signal, 1)
+	)
+
+	// Initialize the bounce manager that processes bounces from webhooks and
+	// POP3 mailbox scanning.
+	if ko.Bool("bounce.enabled") {
+		bounce = initBounceManager(core.RecordBounce, queries.RecordBounce, lo, ko)
+	}
+
+	// Initialize the global admin/sub e-mail notifier.
+	if withNotifs { // denma: the hub's is also the process-wide one
+		notifs.SetDefault(nf)
+	}
+	mgr.SetNotify(func(subject string, data any) error { // denma: this app's notifier
+		return nf.NotifySystem(subject, notifs.TplCampaignStatus, data, nil)
+	})
+
+	// Initialize and cache tx templates in memory.
+	initTxTemplates(mgr, core)
+
+	// Initialize the bounce manager that processes bounces from webhooks and
+	// POP3 mailbox scanning.
+	if ko.Bool("bounce.enabled") {
+		go bounce.Run()
+	}
+
+	// Start cronjobs.
+	crons := initCron(core, db, ko) // denma: kept to stop on reload
+
+	// Start the campaign manager workers. The campaign batches (fetch from DB, push out
+	// messages) get processed at the specified interval.
+	go mgr.Run()
+
+	// =========================================================================
+	// Initialize the App{} with all the global shared components, controllers and fields.
+	app := &App{
+		ko:         ko,
+		cfg:        cfg,
+		urlCfg:     urlCfg,
+		fs:         fs,
+		db:         db,
+		queries:    queries,
+		core:       core,
+		manager:    mgr,
+		messengers: msgrs,
+		emailMsgr:  emailMsgr,
+		importer:   importer,
+		auth:       auth,
+		media:      media,
+		bounce:     bounce,
+		captcha:    initCaptcha(ko),
+		i18n:       i18n,
+		log:        lo,
+		events:     evStream,
+		bufLog:     bufLog,
+		notifs:     nf,    // denma
+		crons:      crons, // denma
+
+		pg: paginator.New(paginator.Opt{
+			DefaultPerPage: 20,
+			MaxPerPage:     50,
+			NumPageNums:    10,
+			PageParam:      "page",
+			PerPageParam:   "per_page",
+			AllowAll:       true,
+		}),
+
+		fnOptinNotify: fbOptinNotify,
+		about:         initAbout(queries, db),
+		chReload:      chReload,
+
+		// If there are no users, then the app needs to prompt for new user setup.
+		needsUserSetup: !hasUsers,
+	}
+
+	// i18n JSON string for admin HTML pages.
+	app.adminI18nJS = app.makeAdminJSI18n()
+
+	return app
 }

@@ -452,6 +452,9 @@ func (m *Manager) scanCampaigns(tick time.Duration) {
 
 	// Periodically scan the data source for campaigns to process.
 	for range t.C {
+		if m.scanStopped() { // denma: manager/denma.go
+			return
+		}
 		ids, counts := m.getCurrentCampaigns()
 		campaigns, err := m.store.NextCampaigns(ids, counts)
 		if err != nil {

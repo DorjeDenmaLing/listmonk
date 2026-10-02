@@ -80,7 +80,7 @@ function component(list = null) {
         messenger: 'email',
         type: 'optin',
       });
-      window.location.href = `/admin/campaigns/${data.id}#tab=content`;
+      window.location.href = `${urls.admin}/campaigns/${data.id}#tab=content`; // denma: root path aware
     },
 
     // ===============

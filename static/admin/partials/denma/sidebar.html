@@ -2,11 +2,18 @@
 	denma: top-level sidebar items, included in partials/sidebar.html above Users
 	(or Settings, for users who can't see Users): Calendar, Media and
 	Analytics. Media and Analytics move here
-	from the Campaigns group; their pages keep listmonk's page IDs.
+	from the Campaigns group; their pages keep listmonk's page IDs. Superadmins
+	(the Super Admin role, 1) in a center get All centers, back to the hub.
+	The hub itself has none of these (partials/sidebar.html).
 */}}
 {{ define "denma-sidebar-items" }}
 {{- $u := .Data.Profile }}
 {{- $p := .Data.PageID }}
+		{{- if and DenmaHubURL (eq $u.UserRole.ID 1) }}
+		<li>
+			<a href="{{ DenmaHubURL }}" data-cy="centers">{{ Icon "grid" }} All centers</a>
+		</li>
+		{{- end }}
 		{{- if Can $u "campaigns:get" "campaigns:get_all" }}
 		<li>
 			<a href="{{ URI "/admin/calendar" }}" {{ IsNav $p "denma.calendar" }} data-cy="calendar">{{ Icon "calendar" }} Calendar</a>
@@ -31,4 +38,12 @@
 					{{- if Can $u "settings:get" }}
 					<li><a href="{{ URI "/admin/settings/system" }}" {{ IsNav $p "settings.system" }} data-cy="system">{{ .L.T "dashboard.system" }}</a></li>
 					{{- end }}
+{{ end }}
+
+{{/* Under the Settings heading (views/settings.html): in multi-center mode
+	these are the hub's, for every center (cmd/denma_centers.go). */}}
+{{ define "denma-settings-note" }}
+{{- if and DenmaHubURL DenmaIsHub }}
+<p class="denma-settings-note" role="note">{{ Icon "info" }} These settings apply to every center. Saving reloads the centers whose settings changed, one at a time; a center that is sending a campaign is reloaded when it finishes.</p>
+{{- end }}
 {{ end }}
