@@ -487,11 +487,7 @@ func (a *App) confirmOptinSubscription(c echo.Context, subUUID string, listUUIDs
 
 	meta := models.JSON{}
 	if a.cfg.Privacy.RecordOptinIP {
-		if h := c.Request().Header.Get("X-Forwarded-For"); h != "" {
-			meta["optin_ip"] = h
-		} else if h := c.Request().RemoteAddr; h != "" {
-			meta["optin_ip"] = strings.Split(h, ":")[0]
-		}
+		meta["optin_ip"] = c.RealIP() // denma: not any client's X-Forwarded-For (srv.IPExtractor, cmd/init.go)
 	}
 
 	if err := a.core.ConfirmOptionSubscription(subUUID, listUUIDs, meta); err != nil {

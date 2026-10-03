@@ -1001,6 +1001,11 @@ func initHTTPRouter(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.Fi
 	// Initialize the HTTP server.
 	var srv = echo.New()
 	srv.HideBanner = true
+	// denma: a client's IP (RealIP: the activity log, opt-in IPs) is taken
+	// from X-Forwarded-For only when the request comes from a proxy on a
+	// private or loopback address (the web server); any other client's is its
+	// own address, whatever headers it sends.
+	srv.IPExtractor = echo.ExtractIPFromXFFHeader()
 
 	// Register app (*App) to be injected into all HTTP handlers.
 	srv.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
