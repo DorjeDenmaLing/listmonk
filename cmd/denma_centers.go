@@ -421,6 +421,9 @@ func denmaInitRegistry(db *sqlx.DB) error {
 	if err != nil {
 		return err
 	}
+	if err := denmaInitOptinSends(db); err != nil { // cmd/denma_optins.go
+		return err
+	}
 	return denmaInitInvites(db) // cmd/denma_invites.go
 }
 
