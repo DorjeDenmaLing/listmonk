@@ -1,5 +1,6 @@
 {{ define "campaign-preview" -}}
 {{- $canManage := .Data.Can "campaigns:manage" "campaigns:manage_all" -}}
+{{- $canManage = and $canManage (eq (printf "%T" .Data) "main.campaignView") -}}{{/* denma: Send test only in the campaign editor; the Campaigns list (views/campaigns.html) shares this preview without the editor's test-send data (isNew, form, onTest) */}}
 <dialog class="preview-modal" x-ref="previewDialog" @close="onPreviewClose">
 	<div class="dialog-card">
 		<header class="dialog-head hstack justify-between">
