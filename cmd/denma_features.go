@@ -7,8 +7,8 @@ package main
 //
 //   - Unsubscribe everywhere (denma.unsubscribe_everywhere): unsubscribing
 //     from any list blocklists the subscriber and unsubscribes them from every
-//     list, whatever path did it (the unsubscribe page, one-click List-
-//     Unsubscribe, the admin).
+//     list, whatever path did it (the admin, an import, the API; a
+//     subscriber's own unsubscribe always does, cmd/denma_unsubscribe.go).
 //   - Automatic plain text (denma.plain_text_auto): every campaign's plain-
 //     text version is made from the email as sent (its template included) on
 //     each save, unless the campaign's "Edit the plain-text version by hand"

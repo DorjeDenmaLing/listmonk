@@ -1,22 +1,14 @@
 {{ define "subscriber-optin" }}
 {{ template "header" . }}
+{{- /* denma: the center's name, not its lists, which are internal
+     (cmd/denma_unsubscribe.go). From DDL's production template. */}}
 <h2>{{ L.Ts "email.optin.confirmSubTitle" }}</h2>
-<p>{{ L.Ts "email.optin.confirmSubWelcome" }} {{ .Subscriber.FirstName }}</p>
-<p>{{ L.Ts "email.optin.confirmSubInfo" }}</p>
-<ul>
-    {{ range $i, $l := .Lists }}
-        {{ if eq .Type "public" }}
-            <li>{{ .Name }}</li>
-        {{ else }}
-            <li>{{ L.Ts "email.optin.privateList" }}</li>
-        {{ end }}
-    {{ end }}
-</ul>
-<p>{{ L.Ts "email.optin.confirmSubHelp" }}</p>
+<p>{{ L.Ts "email.optin.confirmSubWelcome" }} {{ .Subscriber.FirstName }},</p>
+<p>Thank you for signing up for {{ SiteName }}'s emails. Please confirm your subscription by clicking the button below.</p>
 <p>
     <a href="{{ .OptinURL }}" class="button">{{ L.Ts "email.optin.confirmSub" }}</a>
 </p>
-<a href="{{ .UnsubURL }}?manage=true">{{ L.T "email.unsub" }}</a>
+<p>If you didn&#39;t sign up, you can ignore this email and you won&#39;t hear from us.</p>
 
 {{ template "footer" }}
 {{ end }}

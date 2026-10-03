@@ -1,16 +1,8 @@
 {{ define "optin-campaign" }}
-
-<p>{{ L.Ts "email.optin.confirmSubWelcome" }} {{ "{{" }}.Subscriber.FirstName {{ "}}" }}</p>
-<p>{{ L.Ts "email.optin.confirmSubInfo" }}</p>
-<ul>
-    {{ range $i, $l := .Lists }}
-        {{ if eq .Type "public" }}
-            <li>{{ .Name }}</li>
-        {{ else }}
-            <li>{{ L.Ts "email.optin.privateList" }}</li>
-        {{ end }}
-    {{ end }}
-</ul>
+{{- /* denma: the center's name, not its lists, which are internal
+     (cmd/denma_unsubscribe.go). */}}
+<p>{{ L.Ts "email.optin.confirmSubWelcome" }} {{ "{{" }}.Subscriber.FirstName {{ "}}" }},</p>
+<p>Please confirm your subscription to {{ SiteName }}'s emails by clicking the button below.</p>
 <p>
     <a class="button" {{ .OptinURLAttr }}>{{ L.Ts "email.optin.confirmSub" }}</a>
 </p>

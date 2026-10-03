@@ -81,7 +81,7 @@
     <div class="wrap">
         <div class="header">
             {{ if ne LogoURL "" }}
-                <img src="{{ LogoURL }}" alt="listmonk" />
+                <img src="{{ LogoURL }}" alt="{{ SiteName }}" />{{/* denma: the center's name */}}
             {{ end }}
         </div>
 {{ end }}
@@ -90,7 +90,6 @@
     </div>
     
     <div class="footer">
-        <p>{{ L.T "public.poweredBy" }} <a href="https://listmonk.app" target="_blank" rel="noreferrer">listmonk</a></p>
     </div>
     <div class="gutter">&nbsp;</div>
 </body>

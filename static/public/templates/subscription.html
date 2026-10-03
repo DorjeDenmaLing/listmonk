@@ -1,20 +1,16 @@
 {{ define "subscription" }}
 {{ template "header" .}}
+{{- /* denma: unsubscribing opts out of the center, with one button; its
+     lists are internal, so none are shown (cmd/denma_unsubscribe.go). From
+     DDL's production template, with the center's name. */}}
 <section class="section">
     {{ if not .Data.ShowManage }}
         <h2>{{ L.T "public.unsubTitle" }}</h2>
         <form method="post" class="unsub-form">
             <div>
-                {{ if .Data.AllowBlocklist }}
-                    <p>{{ L.T "public.unsubHelp" }}</p>
-                    <p>
-                        <input id="privacy-blocklist" type="checkbox" name="blocklist" value="true" />
-                        <label for="privacy-blocklist">{{ L.T "public.unsubFull" }}</label>
-                    </p>
-                {{ end }}
-
+                <p>You will be unsubscribed from all of {{ .SiteName }}'s mailing lists and will no longer receive our emails.</p>
                 <p>
-                    <button type="submit" class="button" id="btn-unsub">{{ L.T "public.unsub" }}</button>
+                    <button type="submit" class="button" id="btn-unsub">Unsubscribe from all emails</button>
                 </p>
 
                 {{ if .Data.AllowPreferences }}
@@ -31,31 +27,10 @@
                 <label>{{ L.T "globals.fields.name" }}</label>
                 <input type="text" name="name" value="{{ .Data.Subscriber.Name }}" maxlength="256" required />
 
-                {{ if .Data.Subscriptions }}
-                    <br /><br />
-                    <h3>{{ L.T "public.managePrefsUnsub" }}</h3>
-                    <ul class="lists">
-                        {{ range $i, $l := .Data.Subscriptions }}
-                            {{ if ne $l.SubscriptionStatus.Value "unsubscribed" }}
-                                <li>
-                                    <input id="l-{{ $l.UUID}}" type="checkbox" name="l" value="{{ $l.UUID }}" checked />
-                                    <label for="l-{{ $l.UUID}}">{{ $l.Name }}</label>
-                                </li>
-                            {{ end }}
-                        {{ end }}
-                    </ul>
-                {{ end }}
-
-                {{ if .Data.AllowBlocklist }}
-                    <p>
-                        <input id="privacy-blocklist" type="checkbox" name="blocklist" value="true" onchange="unsubAll(event)" />
-                        <label for="privacy-blocklist">{{ L.T "public.unsubFull" }}</label>
-                    </p>
-                {{ end }}
-
                 <p>
-                    <button type="submit" class="button" id="btn-unsub">{{ L.T "globals.buttons.save" }}</button>
+                    <button type="submit" class="button" id="btn-save">{{ L.T "globals.buttons.save" }}</button>
                 </p>
+                <p><a href="?">Unsubscribe from all of {{ .SiteName }}'s emails</a></p>
             </div>
         </form>
     {{ end }}
@@ -92,29 +67,13 @@
         var a = document.querySelector('input[name="data-action"]:checked').value,
             f = document.querySelector("#data-form");
         if (a == "export") {
-            f.action = "/subscription/export/{{ .Data.SubUUID }}";
+            f.action = "{{ RootURL }}/subscription/export/{{ .Data.SubUUID }}";
             return true;
         } else if (confirm("{{ L.T "public.privacyConfirmWipe" }}")) {
-            f.action = "/subscription/wipe/{{ .Data.SubUUID }}";
+            f.action = "{{ RootURL }}/subscription/wipe/{{ .Data.SubUUID }}";
             return true;
         }
         return false;
-    }
-
-    function unsubAll(e) {
-        if (e.target.checked) {
-            document.querySelector("input[name=name]").disabled = "disabled";
-        } else {
-            document.querySelector("input[name=name]").removeAttribute("disabled");
-        }
-
-        document.querySelectorAll('input[type=checkbox][name=l]').forEach(function(l) {
-            if (e.target.checked) {
-                l.disabled = "disabled";
-            } else {
-                l.removeAttribute("disabled");
-            }
-        });
     }
 </script>
 {{ end }}

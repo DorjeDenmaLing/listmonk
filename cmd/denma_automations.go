@@ -399,36 +399,6 @@ func (a *App) autoMessage(auto denmaAutomation, tpl denmaAutoTemplate, s models.
 	return msg, nil
 }
 
-// denmaUnsubscribe is listmonk's unsubscribe (public.go), and for an
-// automation's e-mail (campUUID is the automation's) unsubscribes from its
-// lists. An opt-in e-mail's unsubscribe (its one-click List-Unsubscribe, with
-// no campaign: dummyUUID) unsubscribes from the double opt-in lists still
-// waiting for the subscriber's confirmation; listmonk's did nothing and said
-// it had (upstream #3250).
-func (a *App) denmaUnsubscribe(subUUID, campUUID string, blocklist bool) error {
-	if !blocklist && campUUID == dummyUUID {
-		_, err := a.db.Exec(`UPDATE subscriber_lists SET status = 'unsubscribed', updated_at = NOW()
-			WHERE status = 'unconfirmed' AND list_id IN (SELECT id FROM lists WHERE optin = 'double')
-			AND subscriber_id = (SELECT id FROM subscribers WHERE uuid = $1)`, subUUID)
-		return err
-	}
-	if !blocklist && denmaAutomationsOn(a) {
-		var id int
-		err := a.db.Get(&id, `SELECT id FROM denma_automations WHERE uuid = $1`, campUUID)
-		if err == nil {
-			_, err = a.db.Exec(`UPDATE subscriber_lists SET status = 'unsubscribed', updated_at = NOW()
-				WHERE list_id IN (SELECT list_id FROM denma_automation_lists WHERE automation_id = $1)
-				AND status <> 'unsubscribed' AND subscriber_id = (SELECT id FROM subscribers WHERE uuid = $2)`,
-				id, subUUID)
-			return err
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-	}
-	return a.core.UnsubscribeByCampaign(subUUID, campUUID, blocklist)
-}
-
 // initDenmaAutomationHandlers registers the automation pages.
 func initDenmaAutomationHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/automations"), a.ViewDenmaAutomations)

@@ -394,6 +394,13 @@ func (a *App) SubscriptionPrefs(c echo.Context) error {
 			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.T("public.errorProcessingRequest")))
 	}
 
+	// denma: lists aren't shown (cmd/denma_unsubscribe.go), so there are none
+	// to unsubscribe from here; the name is all this saves.
+	if true {
+		return c.Render(http.StatusOK, tplMessage,
+			makeMsgTpl(a.i18n.T("globals.messages.done"), "", a.i18n.T("public.prefsSaved")))
+	}
+
 	// Get the subscriber's lists and whatever is not sent in the request (unchecked),
 	// unsubscribe them.
 	reqUUIDs := make(map[string]struct{})

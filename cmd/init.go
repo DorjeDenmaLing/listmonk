@@ -843,7 +843,9 @@ func initMediaStore(ko *koanf.Koanf) media.Store {
 // initNotifs initializes the notifier with the system e-mail templates.
 func initNotifs(fs stuffbin.FileSystem, i *i18n.I18n, em *email.Emailer, u *UrlConfig, ko *koanf.Koanf) *notifs.Notifs { // denma: returned, one per app
 	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
-	tpls, err := stuffbin.ParseTemplatesGlob(initTplFuncs(i, u), fs, "/static/email-templates/*.html")
+	funcs := initTplFuncs(i, u)
+	funcs["SiteName"] = func() string { return ko.String("app.site_name") } // denma: the center's name, in its e-mails
+	tpls, err := stuffbin.ParseTemplatesGlob(funcs, fs, "/static/email-templates/*.html")
 	if err != nil {
 		lo.Fatalf("error parsing e-mail notif templates: %v", err)
 	}
