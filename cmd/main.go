@@ -222,6 +222,7 @@ func main() {
 	// The `wait` channel is passed to awaitReload to wait for the callback to finish
 	// within N seconds, or do a force reload.
 	signal.Notify(chReload, syscall.SIGHUP)
+	denmaAwaitShutdown(app) // denma: SIGTERM saves the running campaigns' progress (cmd/denma_shutdown.go)
 
 	closerWait := make(chan bool)
 	<-awaitReload(chReload, closerWait, func() {

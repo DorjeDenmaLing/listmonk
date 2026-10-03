@@ -1,6 +1,9 @@
 package manager
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 // denma: many centers run in one process, each with its own campaign manager,
 // and a center's settings save replaces its manager without restarting the
@@ -69,5 +72,29 @@ func (p *pipe) denmaFinished(subID int) {
 			p.lastID.Store(id)
 		}
 		q.queued = q.queued[1:]
+	}
+}
+
+// DenmaStop stops the manager for a shutdown: it picks up no more campaigns,
+// and each running campaign stops where it is and saves its progress (its
+// pipe's cleanup: the sent count and the exact checkpoint), keeping its
+// status, so that the next start resumes it without sending anyone a second
+// copy. It returns once every campaign has saved, or false after wait.
+func (m *Manager) DenmaStop(wait time.Duration) bool {
+	m.StopScanning()
+	for deadline := time.Now().Add(wait); ; {
+		m.pipesMut.RLock()
+		n := len(m.pipes)
+		for _, p := range m.pipes {
+			p.Stop(false) // and any a scan started meanwhile
+		}
+		m.pipesMut.RUnlock()
+		if n == 0 {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
