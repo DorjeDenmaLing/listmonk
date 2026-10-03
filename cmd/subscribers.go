@@ -520,6 +520,9 @@ func (a *App) CreateSubscriber(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
+	if err := a.denmaCheckSubscriberTags(req.Attribs); err != nil { // denma: only the center's tags (cmd/denma_tags.go)
+		return err
+	}
 
 	// Filter lists against the current user's permitted lists.
 	listIDs := user.FilterListsByPerm(auth.PermTypeManage, req.Lists)
@@ -562,6 +565,9 @@ func (a *App) UpdateSubscriber(c echo.Context) error {
 
 	if req.Name != "" && !strHasLen(req.Name, 1, stdInputMaxLen) {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("subscribers.invalidName"))
+	}
+	if err := a.denmaCheckSubscriberTags(req.Attribs); err != nil { // denma: only the center's tags (cmd/denma_tags.go)
+		return err
 	}
 
 	// Filter lists against the current user's permitted lists.
@@ -638,6 +644,9 @@ func (a *App) PatchSubscriber(c echo.Context) error {
 
 	if req.Name != "" && !strHasLen(req.Name, 1, stdInputMaxLen) {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("subscribers.invalidName"))
+	}
+	if err := a.denmaCheckSubscriberTags(req.Attribs); err != nil { // denma: only the center's tags (cmd/denma_tags.go)
+		return err
 	}
 
 	// If lists were explicitly sent, replace the existing subscriptions.

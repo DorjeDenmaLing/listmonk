@@ -5,23 +5,55 @@ import { api, urls } from './main.js';
 import * as u from './utils.js';
 
 // The center's tags, fetched once per page (without a toast for users who
-// can't list them: they get no suggestions).
+// can't list them: they get no suggestions, and the server checks theirs).
 let names = null;
+let known = null;
 function tagNames() {
   if (!names) {
     names = fetch(`${urls.api}/denma/tags`, { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((r) => (r.data || []).map((t) => t.tag))
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((r) => {
+        known = (r.data || []).map((t) => t.tag);
+        return known;
+      })
       .catch(() => []);
   }
   return names;
 }
 
+// onlyKnown stops a picker adding typed text (Enter or a comma) that isn't
+// one of the center's tags: tags are added under Subscribers -> Tags. A
+// listener on the picker, capturing, so it runs before the picker's own.
+function onlyKnown(e) {
+  if ((e.key !== 'Enter' && e.key !== ',') || e.target.tagName !== 'INPUT' || !known) {
+    return;
+  }
+  const input = e.target;
+  const typed = input.value.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!typed) {
+    return;
+  }
+  if (known.includes(typed)) {
+    input.value = typed;
+    return;
+  }
+  e.preventDefault();
+  e.stopPropagation();
+  input.setCustomValidity(`There's no tag ${typed}. Pick one from the list, or add it under Subscribers -> Tags.`);
+  input.reportValidity();
+}
+
 // denmaTagAutocomplete fills a tag picker's suggestions: the center's tags
-// not already chosen that contain what's typed.
+// not already chosen that contain what's typed. Only those can be picked.
 export async function denmaTagAutocomplete(el) {
-  const all = await tagNames();
+  el.setCustomValidity('');
   const ti = el.closest('ot-taginput');
+  if (ti && !ti.denmaOnlyKnown) {
+    ti.denmaOnlyKnown = true;
+    ti.addEventListener('keydown', onlyKnown, true);
+    el.addEventListener('blur', () => el.setCustomValidity(''));
+  }
+  const all = await tagNames();
   const chosen = new Set((ti ? ti.value : []).map(String));
   const q = el.value.trim().toLowerCase();
   el.list.replaceChildren(...all

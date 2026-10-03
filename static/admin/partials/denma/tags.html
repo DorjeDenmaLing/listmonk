@@ -7,7 +7,7 @@
 <label data-field>
 	{{ .Label }}
 	<ot-taginput x-model="{{ .Model }}" {{ if .Disabled }}:disabled="{{ .Disabled }}"{{ end }} data-testid="tag-picker">
-		<input list="{{ .ID }}" placeholder="Tags" maxlength="100" @input="denmaTagAutocomplete($el)" @pointerdown="denmaTagAutocomplete($el)" @focus="denmaTagAutocomplete($el)" />
+		<input list="{{ .ID }}" placeholder="Pick a tag" maxlength="100" @input="denmaTagAutocomplete($el)" @pointerdown="denmaTagAutocomplete($el)" @focus="denmaTagAutocomplete($el)" />
 		<datalist id="{{ .ID }}"></datalist>
 	</ot-taginput>
 	{{- if .Hint }}<small data-hint>{{ .Hint }}</small>{{ end }}
@@ -30,7 +30,7 @@
 					<label><input type="radio" name="tag-action" value="add" x-model="tagBulk.action" data-testid="check-tag-add" /> {{ .L.T "globals.buttons.add" }}</label>
 					<label><input type="radio" name="tag-action" value="remove" x-model="tagBulk.action" data-testid="check-tag-remove" /> {{ .L.T "globals.buttons.remove" }}</label>
 				</fieldset>
-				{{ template "denma-tag-picker" dict "Model" "tagBulk.tags" "ID" "bulk-tags" "Label" "Tags" "Hint" "Your own labels; subscribers don't see them. Type a new one, or pick one you've used." }}
+				{{ template "denma-tag-picker" dict "Model" "tagBulk.tags" "ID" "bulk-tags" "Label" "Tags" "Hint" "Pick from the center's tags; new ones are added under Subscribers -> Tags. Subscribers don't see them." }}
 			</section>
 			<footer class="dialog-foot hstack gap-3 justify-end">
 				<button type="button" class="outline" @click="$refs.tagDialog.close()">{{ .L.T "globals.buttons.close" }}</button>

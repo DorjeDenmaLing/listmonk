@@ -13,7 +13,7 @@
 					<small data-hint>{{ $root.L.T "subscribers.preconfirmHelp" }}</small>
 				</label>
 			{{- end }}
-			{{ template "denma-tag-picker" dict "Model" "form.tags" "ID" "form-tags" "Label" "Tags" "Hint" "Your own labels for this subscriber (Subscribers -> Tags); they don't see them." }}{{/* denma: cmd/denma_tags.go */}}
+			{{ template "denma-tag-picker" dict "Model" "form.tags" "ID" "form-tags" "Label" "Tags" "Hint" "Pick from the center's tags; new ones are added under Subscribers -> Tags. The subscriber doesn't see them." }}{{/* denma: cmd/denma_tags.go */}}
 			{{ template "subscriber-attribs" $root }}
 		</section>
 

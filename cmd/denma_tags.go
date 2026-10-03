@@ -7,10 +7,12 @@ package main
 // keeps them lowercase, trimmed and without duplicates however they're set
 // (denmaFeaturesSQL, cmd/denma_features.go).
 //
-// Subscribers -> Tags (views/denma-tags.html) lists a center's tags with how
-// many have each, and renames or deletes them. Tags are added or removed on
-// the subscriber's page, for the subscribers picked (or every one matching a
-// search) on the Subscribers page, or by an import; search finds them with
+// A center's tags are added under Subscribers -> Tags (views/denma-tags.html,
+// the denma_tags table), which lists them with how many have each, and
+// renames or deletes them. A subscriber can only have those: they're given
+// or taken away on the subscriber's page, for the subscribers picked (or
+// every one matching a search) on the Subscribers page, or by an import
+// (which leaves out tags the center doesn't have); search finds them with
 // tag:volunteer.
 //
 // A campaign can be sent to tags as well as lists (campaigns.denma_tags,
@@ -88,20 +90,56 @@ type denmaTagCount struct {
 // denmaTags returns the center's tags, by name.
 func (a *App) denmaTags() ([]denmaTagCount, error) {
 	out := []denmaTagCount{}
-	err := a.db.Select(&out, `SELECT t AS tag, COUNT(*) AS subscribers, COUNT(*) FILTER (WHERE `+denmaTagActiveSQL+`) AS active
-		FROM subscribers, jsonb_array_elements_text(CASE WHEN jsonb_typeof(attribs->'tags') = 'array' THEN attribs->'tags' ELSE '[]'::JSONB END) t
-		GROUP BY t ORDER BY t`)
+	err := a.db.Select(&out, `SELECT t.tag, COUNT(subscribers.id) AS subscribers,
+		COUNT(subscribers.id) FILTER (WHERE `+denmaTagActiveSQL+`) AS active
+		FROM denma_tags t LEFT JOIN subscribers ON jsonb_typeof(subscribers.attribs->'tags') = 'array' AND subscribers.attribs->'tags' ? t.tag
+		GROUP BY t.tag ORDER BY t.tag`)
 	return out, err
 }
 
-// denmaTagNames returns the center's tags' names, for the pickers.
-func (a *App) denmaTagNames() []string {
-	out := []string{}
-	if err := a.db.Select(&out, `SELECT DISTINCT t FROM subscribers,
-		jsonb_array_elements_text(CASE WHEN jsonb_typeof(attribs->'tags') = 'array' THEN attribs->'tags' ELSE '[]'::JSONB END) t ORDER BY t`); err != nil {
-		a.log.Printf("denma: error reading the tags: %v", err)
+// denmaUnknownTags returns an error naming the tags (tidied) the center
+// doesn't have, if any.
+func (a *App) denmaUnknownTags(tags []string) error {
+	var missing []string
+	if err := a.db.Select(&missing, `SELECT t FROM unnest($1::TEXT[]) t WHERE NOT EXISTS (SELECT 1 FROM denma_tags d WHERE d.tag = t)`,
+		pq.Array(tags)); err != nil {
+		a.log.Printf("denma: error checking tags: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "Error checking the tags.")
 	}
-	return out
+	if len(missing) == 0 {
+		return nil
+	}
+	s, it := "", "it"
+	if len(missing) > 1 {
+		s, it = "s", "them"
+	}
+	return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("There's no tag%s %s. Pick from the center's tags, or add %s under Subscribers -> Tags first.",
+		s, strings.Join(missing, ", "), it))
+}
+
+// denmaCheckSubscriberTags checks that a subscriber's attributes (as sent to
+// the API) only have the center's tags. Called by CreateSubscriber,
+// UpdateSubscriber and PatchSubscriber.
+func (a *App) denmaCheckSubscriberTags(attribs map[string]any) error {
+	var tags []string
+	var add func(v any, depth int)
+	add = func(v any, depth int) {
+		switch v := v.(type) {
+		case []any:
+			if depth < 2 {
+				for _, e := range v {
+					add(e, depth+1)
+				}
+			}
+		case string, float64, bool:
+			tags = append(tags, fmt.Sprint(v))
+		}
+	}
+	add(attribs["tags"], 0)
+	if tags = denmaNormTags(tags); len(tags) == 0 {
+		return nil
+	}
+	return a.denmaUnknownTags(tags)
 }
 
 func initDenmaTagHandlers(g *echo.Group, a *App) {
@@ -111,6 +149,7 @@ func initDenmaTagHandlers(g *echo.Group, a *App) {
 func initDenmaTagAPIHandlers(g *echo.Group, a *App) {
 	pm := a.auth.Perm
 	g.GET("/api/denma/tags", pm(a.DenmaGetTags, "subscribers:get_all"))
+	g.POST("/api/denma/tags", pm(a.DenmaAddTag, "subscribers:manage"))
 	g.PUT("/api/denma/tags", pm(a.DenmaChangeTag, "subscribers:manage"))
 	g.PUT("/api/denma/tags/subscribers", pm(a.DenmaTagSubscribers, "subscribers:manage"))
 }
@@ -153,8 +192,31 @@ func (a *App) denmaAllSubscribers(c echo.Context) error {
 	return nil
 }
 
+// DenmaAddTag adds a tag to the center.
+func (a *App) DenmaAddTag(c echo.Context) error {
+	var req struct {
+		Tag string `json:"tag"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+	tag := denmaNormTags([]string{req.Tag})
+	if len(tag) != 1 {
+		return echo.NewHTTPError(http.StatusBadRequest, "Enter one tag, without commas, of up to 100 characters.")
+	}
+	res, err := a.db.Exec(`INSERT INTO denma_tags (tag) VALUES ($1) ON CONFLICT DO NOTHING`, tag[0])
+	if err != nil {
+		a.log.Printf("denma: error adding the tag %q: %v", tag[0], err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "Error adding the tag.")
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("%s is already a tag.", tag[0]))
+	}
+	return c.JSON(http.StatusOK, okResp{map[string]string{"tag": tag[0]}})
+}
+
 // DenmaChangeTag renames a tag (merging it into another of that name), or
-// deletes it from every subscriber.
+// deletes it from the center and every subscriber.
 func (a *App) DenmaChangeTag(c echo.Context) error {
 	if err := a.denmaAllSubscribers(c); err != nil {
 		return err
@@ -181,19 +243,45 @@ func (a *App) DenmaChangeTag(c echo.Context) error {
 	default:
 		return echo.NewHTTPError(http.StatusBadRequest, "action must be rename or delete")
 	}
+	if len(to) == 1 && to[0] == from[0] {
+		return c.JSON(http.StatusOK, okResp{map[string]int64{"subscribers": 0}})
+	}
+
+	tx, err := a.db.Beginx()
+	if err != nil {
+		a.log.Printf("denma: error changing the tag %q: %v", from[0], err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "Error changing the tag.")
+	}
+	defer tx.Rollback()
+
+	// The center's tags first: the trigger keeps subscribers to them.
+	res, err := tx.Exec(`DELETE FROM denma_tags WHERE tag = $1`, from[0])
+	if err == nil {
+		if n, _ := res.RowsAffected(); n == 0 {
+			return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("There's no tag %s.", from[0]))
+		}
+		if len(to) == 1 {
+			_, err = tx.Exec(`INSERT INTO denma_tags (tag) VALUES ($1) ON CONFLICT DO NOTHING`, to[0])
+		}
+	}
 	// Removing the old one and adding the new; the trigger tidies the result.
-	res, err := a.db.Exec(`UPDATE subscribers SET attribs = attribs || jsonb_build_object('tags', (attribs->'tags') - $1::TEXT || to_jsonb($2::TEXT[])),
-		updated_at = NOW() WHERE jsonb_typeof(attribs->'tags') = 'array' AND attribs->'tags' ? $1::TEXT`, from[0], pq.Array(to))
+	if err == nil {
+		res, err = tx.Exec(`UPDATE subscribers SET attribs = attribs || jsonb_build_object('tags', (attribs->'tags') - $1::TEXT || to_jsonb($2::TEXT[])),
+			updated_at = NOW() WHERE jsonb_typeof(attribs->'tags') = 'array' AND attribs->'tags' ? $1::TEXT`, from[0], pq.Array(to))
+	}
+	// Campaigns not yet sent follow the rename (or lose the tag).
+	if err == nil {
+		_, err = tx.Exec(`UPDATE campaigns SET denma_tags = ARRAY(SELECT DISTINCT x FROM unnest(array_remove(denma_tags, $1::TEXT) || $2::TEXT[]) x ORDER BY x)
+			WHERE $1::TEXT = ANY(denma_tags) AND status IN ('draft', 'scheduled', 'paused')`, from[0], pq.Array(to))
+	}
+	if err == nil {
+		err = tx.Commit()
+	}
 	if err != nil {
 		a.log.Printf("denma: error changing the tag %q: %v", from[0], err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "Error changing the tag.")
 	}
 	n, _ := res.RowsAffected()
-	// Campaigns not yet sent follow the rename (or lose the tag).
-	if _, err := a.db.Exec(`UPDATE campaigns SET denma_tags = ARRAY(SELECT DISTINCT x FROM unnest(array_remove(denma_tags, $1::TEXT) || $2::TEXT[]) x ORDER BY x)
-		WHERE $1::TEXT = ANY(denma_tags) AND status IN ('draft', 'scheduled', 'paused')`, from[0], pq.Array(to)); err != nil {
-		a.log.Printf("denma: error changing the tag %q on campaigns: %v", from[0], err)
-	}
 	return c.JSON(http.StatusOK, okResp{map[string]int64{"subscribers": n}})
 }
 
@@ -232,6 +320,11 @@ func (a *App) DenmaTagSubscribers(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "action must be add or remove")
 	}
 	add := req.Action == "add"
+	if add {
+		if err := a.denmaUnknownTags(tags); err != nil {
+			return err
+		}
+	}
 
 	if len(req.SubscriberIDs) > 0 {
 		if err := a.hasSubPerm(user, req.SubscriberIDs); err != nil {
@@ -293,18 +386,8 @@ func (a *App) denmaCampaignTags(o *campReq, c echo.Context) error {
 	if u := auth.GetUser(c); !denmaAllLists(&u) {
 		return echo.NewHTTPError(http.StatusForbidden, "Sending to tags needs access to all lists.")
 	}
-	// A tag no one has is a typo (or a tag since deleted): it would reach no one.
-	var missing []string
-	if err := a.db.Select(&missing, `SELECT t FROM unnest($1::TEXT[]) t WHERE NOT EXISTS (
-		SELECT 1 FROM subscribers WHERE jsonb_typeof(attribs->'tags') = 'array' AND attribs->'tags' ? t)`, pq.Array(o.SubscriberTags)); err != nil {
-		a.log.Printf("denma: error checking campaign tags: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "Error checking the tags.")
-	}
-	if len(missing) > 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("No subscriber has the tag %s. Check the spelling (pick it from the suggestions), or tag subscribers first.",
-			strings.Join(missing, ", ")))
-	}
-	return nil
+	// (One the center doesn't have is a typo, or a tag since deleted.)
+	return a.denmaUnknownTags(o.SubscriberTags)
 }
 
 // denmaSaveCampaignTags saves a campaign's tags (after listmonk saved the
