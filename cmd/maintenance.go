@@ -15,6 +15,7 @@ import (
 // maintenanceView is the admin page view for the maintenance/garbage-collection page.
 type maintenanceView struct {
 	adminView
+	DenmaCenters []denmaNamedSlug // denma: the hub's, to pick from (cmd/denma_maintenance.go)
 
 	DBSettings struct {
 		Vacuum         bool   `json:"vacuum"`
@@ -34,7 +35,8 @@ func (a *App) ViewMaintenance(c echo.Context) error {
 	}
 
 	data := maintenanceView{
-		adminView: newAdminView(c, a.i18n.T("maintenance.title"), "", "settings.maintenance"),
+		adminView:    newAdminView(c, a.i18n.T("maintenance.title"), "", "settings.maintenance"),
+		DenmaCenters: a.denmaPickCenters(), // denma
 	}
 	data.DBSettings.Vacuum = s.MaintenanceDB.Vacuum
 	data.DBSettings.VacuumInterval = s.MaintenanceDB.VacuumInterval

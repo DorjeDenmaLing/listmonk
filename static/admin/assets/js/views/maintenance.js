@@ -6,6 +6,7 @@ import {
   urls,
 } from '../main.js';
 import * as u from '../utils.js';
+import { denmaMaintenance } from '../denma-maintenance.js'; // denma: one center or all
 
 // Returns a 'YYYY-MM-DD' string for (today - n days), for <input type="date"> defaults.
 function daysAgo(n) {
@@ -21,6 +22,7 @@ function toRFC3339(date) {
 
 function component() {
   return {
+    ...denmaMaintenance(), // denma
     isLoading,
 
     subscriberType: 'orphan',
@@ -43,17 +45,17 @@ function component() {
         return '#';
       }
       const since = encodeURIComponent(toRFC3339(this.exportDate));
-      return `${urls.api}/maintenance/analytics/${this.exportType}/export?since=${since}`;
+      return `${urls.api}/maintenance/analytics/${this.exportType}/export?since=${since}${this.denmaQ('&')}`;
     },
 
     // ===============
     // Event handlers.
     async deleteSubscribers() {
-      if (!(await u.confirm())) {
+      if (!(await u.confirm(this.denmaConfirm()))) {
         return;
       }
 
-      const data = await api('maintenance', `/maintenance/subscribers/${this.subscriberType}`, 'DELETE');
+      const data = await api('maintenance', `/maintenance/subscribers/${this.subscriberType}${this.denmaQ('?')}`, 'DELETE');
       u.toast(i18n.ts('globals.messages.deletedCount', {
         name: i18n.tc('globals.terms.subscribers', 2),
         num: data.count,
@@ -61,12 +63,12 @@ function component() {
     },
 
     async deleteSubscriptions() {
-      if (!(await u.confirm())) {
+      if (!(await u.confirm(this.denmaConfirm()))) {
         return;
       }
 
       const since = encodeURIComponent(toRFC3339(this.subscriptionDate));
-      const data = await api('maintenance', `/maintenance/subscriptions/unconfirmed?before_date=${since}`, 'DELETE');
+      const data = await api('maintenance', `/maintenance/subscriptions/unconfirmed?before_date=${since}${this.denmaQ('&')}`, 'DELETE');
       u.toast(i18n.ts('globals.messages.deletedCount', {
         name: i18n.tc('globals.terms.subscriptions', 2),
         num: data.count,
@@ -74,12 +76,12 @@ function component() {
     },
 
     async deleteAnalytics() {
-      if (!(await u.confirm())) {
+      if (!(await u.confirm(this.denmaConfirm()))) {
         return;
       }
 
       const since = encodeURIComponent(toRFC3339(this.analyticsDate));
-      await api('maintenance', `/maintenance/analytics/${this.analyticsType}?before_date=${since}`, 'DELETE');
+      await api('maintenance', `/maintenance/analytics/${this.analyticsType}?before_date=${since}${this.denmaQ('&')}`, 'DELETE');
       u.toast(i18n.t('globals.messages.done'));
     },
 

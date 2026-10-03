@@ -60,6 +60,7 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	initDenmaAutomationAPIHandlers(g, a)
 	initDenmaSearchAPIHandlers(g, a)
 	g.GET("/api/denma/audit", a.DenmaGetAudit)
+	initDenmaMaintenanceHandlers(g, a) // cmd/denma_maintenance.go
 }
 
 // hub returns the centers if this App is the hub and the user is a

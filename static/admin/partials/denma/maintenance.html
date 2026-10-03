@@ -1,0 +1,16 @@
+{{/*
+	denma: on the hub's Maintenance page (views/maintenance.html), the center
+	its actions apply to, or all of them (cmd/denma_maintenance.go). Nothing
+	without centers.
+*/}}
+{{ define "denma-maintenance-centers" -}}
+{{- if .DenmaCenters }}
+<div class="card denma-maintenance-centers" data-testid="maintenance-centers">
+	<div class="hstack gap-3 flex-wrap">
+		<h4 class="text-4 mb-0">Centers</h4>
+		{{ template "denma-center-picker" dict "ID" "maint-center" "TestID" "maintenance-center" }}
+	</div>
+	<small class="text-light" x-text="center ? `Deleting and exporting below apply to ${pickName()} only.` : `Deleting and exporting below apply to every running center (${centers.length}); the analytics export gets a center column.`"></small>
+</div>
+{{- end }}
+{{- end }}

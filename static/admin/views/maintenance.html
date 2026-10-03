@@ -9,6 +9,7 @@
 	</header>
 
 	<div class="page-content vstack gap-6">
+		{{ template "denma-maintenance-centers" $d }}{{/* denma: one center or all (cmd/denma_maintenance.go) */}}
 		<!-- Subscribers -->
 		<div class="card">
 			<h4 class="text-4">{{ .L.T "globals.terms.subscribers" }}</h4>
@@ -151,6 +152,7 @@
 
 <script nonce="{{ .CSPNonce }}">
 	window._dbSettings = {{ ToJSON $d.DBSettings }};
+	window._denmaCenters = {{ ToJSON $d.DenmaCenters }}; // denma
 </script>
 <script type="module" src="{{ URI "/admin/static/js/views/maintenance.js" }}?v={{ .AssetVersion }}" defer></script>
 
