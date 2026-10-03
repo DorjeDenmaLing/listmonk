@@ -74,6 +74,9 @@ func (a *App) ViewUsers(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	if users, err = a.denmaVisibleUsers(c, users); err != nil { // denma: no hub superadmins; Super Admins only to superadmins (cmd/denma_hierarchy.go)
+		return err
+	}
 
 	data := usersView{
 		adminView:  newAdminView(c, a.i18n.T("globals.terms.users"), "", "users.users"),
@@ -118,6 +121,9 @@ func (a *App) ViewUser(c echo.Context) error {
 		if err != nil {
 			return err
 		}
+		if err := a.denmaSeeUser(c, out); err != nil { // denma: cmd/denma_hierarchy.go
+			return err
+		}
 
 		out.Password = null.String{}
 		user = out
@@ -129,6 +135,7 @@ func (a *App) ViewUser(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	userRoles, listRoles = denmaAssignable(c, userRoles, listRoles, user.UserRole.ID, user.ListRoleID) // denma: only roles they may give
 
 	title := a.i18n.T("users.newUser")
 	if !isNew {
@@ -190,6 +197,9 @@ func (a *App) GetUser(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := a.denmaSeeUser(c, out); err != nil { // denma: cmd/denma_hierarchy.go
+		return err
+	}
 
 	// Blank out the password hash in the response.
 	out.Password = null.String{}
@@ -202,6 +212,9 @@ func (a *App) GetUsers(c echo.Context) error {
 	// Get all users from the DB.
 	out, err := a.core.GetUsers("", "", 0, 0)
 	if err != nil {
+		return err
+	}
+	if out, err = a.denmaVisibleUsers(c, out); err != nil { // denma: cmd/denma_hierarchy.go
 		return err
 	}
 
@@ -248,6 +261,11 @@ func (a *App) CreateUser(c echo.Context) error {
 		u.Name = u.Username
 	}
 
+	// denma: only roles with no more than the creator has (cmd/denma_hierarchy.go).
+	if err := a.denmaCheckAssign(c, u.UserRoleID, u.ListRoleID); err != nil {
+		return err
+	}
+
 	// Create the user in the DB.
 	user, err := a.core.CreateUser(u)
 	if err != nil {
@@ -289,6 +307,9 @@ func (a *App) UpdateUser(c echo.Context) error {
 
 	// Get the user ID.
 	id := getID(c)
+	if err := a.denmaCheckUser(c, id); err != nil { // denma: one they see, with no more than they have (cmd/denma_hierarchy.go)
+		return err
+	}
 	if u.Type != auth.UserTypeAPI {
 		if !utils.ValidateEmail(email) {
 			return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "email"))
@@ -324,6 +345,11 @@ func (a *App) UpdateUser(c echo.Context) error {
 		u.Name = u.Username
 	}
 
+	// denma: only roles with no more than the editor has (cmd/denma_hierarchy.go).
+	if err := a.denmaCheckAssign(c, u.UserRoleID, u.ListRoleID); err != nil {
+		return err
+	}
+
 	// Update the user in the DB.
 	user, err := a.core.UpdateUser(id, u)
 	if err != nil {
@@ -352,6 +378,9 @@ func (a *App) UpdateUser(c echo.Context) error {
 func (a *App) DeleteUser(c echo.Context) error {
 	// Delete the user(s) from the DB.
 	id := getID(c)
+	if err := a.denmaCheckUser(c, id); err != nil { // denma: cmd/denma_hierarchy.go
+		return err
+	}
 	if err := a.core.DeleteUsers([]int{id}); err != nil {
 		return err
 	}
@@ -369,6 +398,12 @@ func (a *App) DeleteUsers(c echo.Context) error {
 	ids, err := getQueryInts("id", c.QueryParams())
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidID"))
+	}
+
+	for _, id := range ids { // denma: cmd/denma_hierarchy.go
+		if err := a.denmaCheckUser(c, id); err != nil {
+			return err
+		}
 	}
 
 	// Delete the user(s) from the DB.

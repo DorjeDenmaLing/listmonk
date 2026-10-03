@@ -42,6 +42,8 @@ type roleFormView struct {
 	Role       any
 	PermGroups []permGroup
 	AllLists   []models.List
+
+	DenmaLocked bool // denma: more than the viewer has, so read-only (cmd/denma_hierarchy.go)
 }
 
 // ViewUserRoles renders the HTML view listing user roles.
@@ -54,6 +56,7 @@ func (a *App) ViewUserRoles(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	roles = denmaVisibleRoles(c, roles) // denma: Super Admin only to superadmins (cmd/denma_hierarchy.go)
 
 	rows := make([]roleRow, 0, len(roles))
 	for _, r := range roles {
@@ -109,6 +112,9 @@ func (a *App) ViewUserRole(c echo.Context) error {
 		if err != nil {
 			return err
 		}
+		if r.ID == auth.SuperAdminRoleID && denmaBound(auth.GetUser(c)) { // denma: cmd/denma_hierarchy.go
+			return errDenmaNoRole
+		}
 		role = r
 		isNew = false
 	}
@@ -117,6 +123,7 @@ func (a *App) ViewUserRole(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	groups, locked := denmaRoleForm(c, groups, role, isNew) // denma: only their own permissions to give
 
 	title := a.i18n.T("users.newUserRole")
 	if !isNew {
@@ -129,6 +136,8 @@ func (a *App) ViewUserRole(c echo.Context) error {
 		IsNew:      isNew,
 		Role:       role,
 		PermGroups: groups,
+
+		DenmaLocked: locked, // denma
 	}
 
 	return c.Render(http.StatusOK, "admin-user-role", data)
@@ -170,6 +179,7 @@ func (a *App) ViewListRole(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	lists, locked := denmaListRoleForm(c, lists, role, isNew) // denma: only their own lists to give (cmd/denma_hierarchy.go)
 
 	title := a.i18n.T("users.newListRole")
 	if !isNew {
@@ -182,6 +192,8 @@ func (a *App) ViewListRole(c echo.Context) error {
 		IsNew:     isNew,
 		Role:      role,
 		AllLists:  lists,
+
+		DenmaLocked: locked, // denma
 	}
 
 	return c.Render(http.StatusOK, "admin-list-role", data)
@@ -203,6 +215,7 @@ func (a *App) GetUserRoles(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	out = denmaVisibleRoles(c, out) // denma: cmd/denma_hierarchy.go
 
 	return c.JSON(http.StatusOK, okResp{out})
 }
@@ -227,6 +240,9 @@ func (a *App) CreateUserRole(c echo.Context) error {
 	if err := a.validateUserRole(r); err != nil {
 		return err
 	}
+	if err := a.denmaCheckRole(c, 0, r.Permissions); err != nil { // denma: cmd/denma_hierarchy.go
+		return err
+	}
 
 	// Create the role in the DB.
 	out, err := a.core.CreateRole(r)
@@ -244,6 +260,9 @@ func (a *App) CreateListRole(c echo.Context) error {
 		return err
 	}
 	if err := a.validateListRole(r); err != nil {
+		return err
+	}
+	if err := a.denmaCheckListRole(c, 0, r.Lists); err != nil { // denma: cmd/denma_hierarchy.go
 		return err
 	}
 
@@ -271,6 +290,9 @@ func (a *App) UpdateUserRole(c echo.Context) error {
 		return err
 	}
 	if err := a.validateUserRole(r); err != nil {
+		return err
+	}
+	if err := a.denmaCheckRole(c, id, r.Permissions); err != nil { // denma: cmd/denma_hierarchy.go
 		return err
 	}
 
@@ -310,6 +332,9 @@ func (a *App) UpdateListRole(c echo.Context) error {
 	if err := a.validateListRole(r); err != nil {
 		return err
 	}
+	if err := a.denmaCheckListRole(c, id, r.Lists); err != nil { // denma: cmd/denma_hierarchy.go
+		return err
+	}
 
 	// Validate.
 	r.Name.String = strings.TrimSpace(r.Name.String)
@@ -336,6 +361,10 @@ func (a *App) DeleteRole(c echo.Context) error {
 	// ID 1 is reserved for the Super Admin user role.
 	if id == auth.SuperAdminRoleID {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidID"))
+	}
+
+	if err := a.denmaCheckDeleteRole(c, id); err != nil { // denma: cmd/denma_hierarchy.go
+		return err
 	}
 
 	// Delete the role from the DB.
