@@ -10,10 +10,10 @@ package main
 // superadmin opening a center, and data exports. Reading pages and searching
 // aren't.
 //
-// A center's log is on its Advanced page, for those who can use it
-// (views/denma-center.html); the superadmins' hub has every center's, on its
-// Activity page (views/denma-activity.html). Rows are never changed or
-// deleted by the app.
+// A center's log is on its Activity page, for those who can use its Config
+// page; the superadmins' hub has every center's, on its own Activity page
+// (both views/denma-activity.html). Rows are never changed or deleted by the
+// app.
 
 import (
 	"bytes"
@@ -464,7 +464,7 @@ type denmaAuditRow struct {
 }
 
 // DenmaGetAudit returns a page of the log, newest first: a center's own (on
-// its Advanced page), or, in the hub, every center's (?center= a slug, or hub
+// its Activity page), or, in the hub, every center's (?center= a slug, or hub
 // for the hub's own). ?before= an ID pages back; ?q= matches the user or the
 // action.
 func (a *App) DenmaGetAudit(c echo.Context) error {
@@ -512,9 +512,11 @@ func denmaAuditLike(q string) string {
 	return "%" + denmaLikeEscape(q) + "%"
 }
 
-// denmaActivityView is the hub's Activity page: every center's log.
+// denmaActivityView is an Activity page: in the hub, every center's log; in a
+// center, its own.
 type denmaActivityView struct {
 	adminView
+	Hub     bool
 	Centers []denmaNamedSlug
 }
 
@@ -523,8 +525,16 @@ type denmaNamedSlug struct {
 	Name string `db:"name" json:"name"`
 }
 
-// ViewDenmaActivity renders the hub's Activity page (superadmins).
+// ViewDenmaActivity renders the Activity page: the hub's (superadmins), or a
+// center's (center:manage).
 func (a *App) ViewDenmaActivity(c echo.Context) error {
+	if a.inCenter() == nil {
+		v := newAdminView(c, "Activity", "", "denma.activity")
+		if !v.Can(denmaCenterPerm) {
+			return echo.NewHTTPError(http.StatusForbidden, a.i18n.Ts("globals.messages.permissionDenied", "name", denmaCenterPerm))
+		}
+		return c.Render(http.StatusOK, "admin-denma-activity", denmaActivityView{adminView: v})
+	}
 	if _, err := a.hub(c); err != nil {
 		return err
 	}
@@ -534,6 +544,7 @@ func (a *App) ViewDenmaActivity(c echo.Context) error {
 	}
 	return c.Render(http.StatusOK, "admin-denma-activity", denmaActivityView{
 		adminView: newAdminView(c, "Activity", "", "denma.activity"),
+		Hub:       true,
 		Centers:   centers,
 	})
 }

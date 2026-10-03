@@ -1,4 +1,4 @@
-// denma: a center's Advanced page (views/denma-center.html,
+// denma: a center's Config page (views/denma-center.html,
 // cmd/denma_center.go). Saving reloads the center; the page reloads once
 // it's back.
 import Alpine from 'alpinejs';

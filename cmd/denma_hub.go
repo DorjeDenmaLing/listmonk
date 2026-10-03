@@ -45,7 +45,7 @@ func initDenmaHubHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/centers"), a.ViewDenmaCenters)
 	g.GET(path.Join(uriAdmin, "/centers/new"), a.ViewDenmaNewCenter)
 	g.GET(path.Join(uriAdmin, "/centers/:slug/open"), a.DenmaOpenCenter)
-	g.GET(path.Join(uriAdmin, "/activity"), a.ViewDenmaActivity)
+	g.GET(path.Join(uriAdmin, "/activity"), a.ViewDenmaActivity) // and a center's
 	g.GET(path.Join(uriAdmin, "/analytics"), a.ViewDenmaHubAnalytics)
 }
 

@@ -2,14 +2,14 @@
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
 
-{{/* denma: a center's Advanced page, its own details (cmd/denma_center.go). */}}
+{{/* denma: a center's Config page, its own details (cmd/denma_center.go). */}}
 <script nonce="{{ .CSPNonce }}">
 	window._denmaCenter = {{ ToJSON $d.Form }};
 </script>
 <form class="denma-center-form" x-data="denmaCenter" @submit.prevent="onSubmit" x-cloak>
 	<header class="row page-header">
 		<div class="col-8">
-			<h1 class="page-title">Advanced</h1>
+			<h1 class="page-title">Config</h1>
 		</div>
 		<div class="col-4 hstack justify-end">
 			<button type="submit" data-variant="primary" data-testid="btn-save" :aria-busy="isLoading('center') || reloading" :disabled="isLoading('center') || reloading">
@@ -132,10 +132,6 @@
 
 	</div>
 </form>
-
-<div class="denma-center-activity">
-	{{ template "denma-audit" dict "Root" . "Hub" false }}
-</div>
 
 <script type="module" src="{{ URI "/admin/static/js/views/denma-center.js" }}?v={{ .AssetVersion }}" defer></script>
 

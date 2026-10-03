@@ -56,14 +56,14 @@ var (
 var denmaHub *denmaCenters
 
 // denmaCenterOwnSettings are a center's own settings: its address and uploads
-// folder, set when it's created, and what its admins set on its Advanced
+// folder, set when it's created, and what its admins set on its Config
 // page. Every other setting is the hub's, for all centers: they're
 // managed in the hub's Settings only (centers don't show settings) and copied
 // to each center when it loads and when the hub's are saved.
 var denmaCenterOwnSettings = []string{
 	"app.root_url", "upload.filesystem.upload_path", "upload.s3.bucket_path",
 	"migrations", // the schema's own version
-	// And those on the center's Advanced page (cmd/denma_center.go).
+	// And those on the center's Config page (cmd/denma_center.go).
 	"app.site_name", "app.logo_url", "app.favicon_url", "app.lang",
 	"app.from_email", "app.notify_emails",
 }

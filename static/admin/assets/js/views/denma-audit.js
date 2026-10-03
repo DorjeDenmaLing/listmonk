@@ -1,6 +1,6 @@
 // denma: the activity log (partials/denma/audit.html, cmd/denma_audit.go):
-// a center's own on its Advanced page, every center's on the hub's Activity
-// page. Newest first, 50 at a time.
+// a center's own on its Activity page, every center's on the hub's. Newest
+// first, 50 at a time.
 import Alpine from 'alpinejs';
 import { api } from '../main.js';
 import { centerPicker } from '../denma-hub-ui.js';

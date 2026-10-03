@@ -836,7 +836,7 @@ svg.denma-logo {
   }
 }
 
-/* A center's Advanced page (views/denma-center.html). */
+/* A center's Config page (views/denma-center.html). */
 .denma-center-form {
   .denma-center-image input {
     flex: 1;
@@ -981,19 +981,12 @@ svg.denma-logo {
     }
 }
 
-/* The activity log (partials/denma/audit.html): a center's Advanced page,
-   the hub's Activity page. */
-.denma-center-activity {
-    margin-top: var(--space-6);
-}
+/* The activity log (partials/denma/audit.html), on the Activity pages. */
 .denma-audit-head {
     flex-wrap: wrap;
     gap: var(--space-3);
     padding: var(--space-4);
 
-    h3 {
-        margin: 0;
-    }
     form {
         flex-wrap: wrap;
     }

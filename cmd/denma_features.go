@@ -3,7 +3,7 @@ package main
 // denma: features from the old production add-on's database triggers
 // (listmonk-js/sql, installed by hand in DDL's database with DDL's lists,
 // template and domains written in), here for every center, each set on its
-// Advanced page (cmd/denma_center.go):
+// Config page (cmd/denma_center.go):
 //
 //   - Unsubscribe everywhere (denma.unsubscribe_everywhere): unsubscribing
 //     from any list blocklists the subscriber and unsubscribes them from every
@@ -606,7 +606,7 @@ func (a *App) denmaPlainAuto() bool {
 
 var reDenmaDomain = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$`)
 
-// denmaCheckFeatures checks and tidies the Advanced page's feature settings:
+// denmaCheckFeatures checks and tidies the Config page's feature settings:
 // domains as bare hostnames, lists and the template that exist.
 func (a *App) denmaCheckFeatures(f *denmaCenterForm) error {
 	domains := []string{}

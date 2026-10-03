@@ -9,7 +9,8 @@
 	In the hub (superadmins): Dashboard, Centers, Analytics, Activity, Users and
 	Settings. In a center: listmonk's items, ours, and for superadmins All
 	centers (back to the hub's Centers); its settings are the hub's, and it has
-	an Advanced page for its own details (cmd/denma_center.go).
+	Activity (its own log) and a Config page for its own details
+	(cmd/denma_center.go).
 
 	On phones it's the menu under the top bar's menu button, with Refresh and
 	the user's items below (as 6.2.0's).
@@ -151,7 +152,10 @@
 
 		{{- if and DenmaHubURL (not DenmaIsHub) (Can $u "center:manage") }}
 		<li>
-			<a href="{{ URI "/admin/center" }}" {{ IsNav $p "denma.center" }} data-cy="center">{{ template "denma-icon" "wrench-outline" }}<span>Advanced</span></a>
+			<a href="{{ URI "/admin/activity" }}" {{ IsNav $p "denma.activity" }} data-cy="activity">{{ template "denma-icon" "history" }}<span>Activity</span></a>
+		</li>
+		<li>
+			<a href="{{ URI "/admin/center" }}" {{ IsNav $p "denma.center" }} data-cy="center">{{ template "denma-icon" "wrench-outline" }}<span>Config</span></a>
 		</li>
 		{{- end }}
 	</ul>
@@ -180,6 +184,6 @@
 	these are the hub's, for every center (cmd/denma_centers.go). */}}
 {{ define "denma-settings-note" }}
 {{- if and DenmaHubURL DenmaIsHub }}
-<p class="denma-settings-note" role="note">{{ Icon "info" }} These settings apply to every center, except what each center sets on its own Advanced page: its name, logo, favicon, language, sender and admin e-mails. Saving reloads the centers whose settings changed, one at a time; a center that is sending a campaign is reloaded when it finishes.</p>
+<p class="denma-settings-note" role="note">{{ Icon "info" }} These settings apply to every center, except what each center sets on its own Config page: its name, logo, favicon, language, sender and admin e-mails. Saving reloads the centers whose settings changed, one at a time; a center that is sending a campaign is reloaded when it finishes.</p>
 {{- end }}
 {{ end }}

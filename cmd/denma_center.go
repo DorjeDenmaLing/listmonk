@@ -1,6 +1,6 @@
 package main
 
-// denma: a center's Advanced page (sidebar, in a center): the center's own
+// denma: a center's Config page (sidebar, in a center): the center's own
 // details, which aren't the hub's settings (denmaCenterOwnSettings): its
 // name, logo, favicon and language, and its sender and admin notification
 // e-mails. For users with center:manage (Center Admins, and superadmins).
@@ -21,7 +21,7 @@ import (
 
 const denmaCenterPerm = "center:manage"
 
-// denmaCenterFields are the settings on the Advanced page (all of them a
+// denmaCenterFields are the settings on the Config page (all of them a
 // center's own, in denmaCenterOwnSettings).
 var denmaCenterFields = []string{
 	"app.site_name", "app.logo_url", "app.favicon_url", "app.lang",
@@ -67,7 +67,7 @@ func denmaPermissions(raw []byte, ko *koanf.Koanf) []byte {
 	return out
 }
 
-// initDenmaCenterHandlers registers the Advanced page and its API.
+// initDenmaCenterHandlers registers the Config page and its API.
 func initDenmaCenterHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/center"), a.ViewDenmaCenter)
 }
@@ -76,7 +76,7 @@ func initDenmaCenterAPIHandlers(g *echo.Group, a *App) {
 	g.PUT("/api/denma/center", a.auth.Perm(a.DenmaUpdateCenter, denmaCenterPerm))
 }
 
-// denmaCenterForm is the Advanced page's form.
+// denmaCenterForm is the Config page's form.
 type denmaCenterForm struct {
 	SiteName     string   `json:"site_name"`
 	LogoURL      string   `json:"logo_url"`
@@ -129,7 +129,7 @@ func (a *App) inCenter() error {
 	return nil
 }
 
-// centerForm reads the Advanced page's settings from the center's database.
+// centerForm reads the Config page's settings from the center's database.
 func (a *App) centerForm() (denmaCenterForm, error) {
 	var rows []struct {
 		Key   string          `db:"key"`
@@ -160,12 +160,12 @@ func (a *App) centerForm() (denmaCenterForm, error) {
 	return out, err
 }
 
-// ViewDenmaCenter renders the Advanced page.
+// ViewDenmaCenter renders the Config page.
 func (a *App) ViewDenmaCenter(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
 	}
-	v := newAdminView(c, "Advanced", "", "denma.center")
+	v := newAdminView(c, "Config", "", "denma.center")
 	if !v.Can(denmaCenterPerm) {
 		return echo.NewHTTPError(http.StatusForbidden, a.i18n.Ts("globals.messages.permissionDenied", "name", denmaCenterPerm))
 	}
@@ -188,7 +188,7 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 	return c.Render(http.StatusOK, "admin-denma-center", view)
 }
 
-// DenmaUpdateCenter saves the Advanced page and reloads the center (after
+// DenmaUpdateCenter saves the Config page and reloads the center (after
 // any campaign it's sending).
 func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
