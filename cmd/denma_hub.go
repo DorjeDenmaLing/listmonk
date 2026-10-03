@@ -27,6 +27,7 @@ import (
 	"github.com/knadh/listmonk/internal/tmptokens"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/lib/pq"
 	null "gopkg.in/volatiletech/null.v6"
 )
@@ -50,8 +51,9 @@ func initDenmaHubHandlers(g *echo.Group, a *App) {
 
 // initDenmaAPIHandlers registers the hub's API (on the /api group).
 func initDenmaAPIHandlers(g *echo.Group, a *App) {
-	g.GET("/api/denma/hub/stats", a.DenmaHubStats)
-	g.GET("/api/denma/hub/analytics", a.DenmaHubAnalytics)
+	// Compressed: with hundreds of centers, these are hundreds of kilobytes.
+	g.GET("/api/denma/hub/stats", a.DenmaHubStats, middleware.Gzip())
+	g.GET("/api/denma/hub/analytics", a.DenmaHubAnalytics, middleware.Gzip())
 	g.POST("/api/denma/centers", a.DenmaCreateCenter)
 	g.PUT("/api/denma/centers/:slug/status", a.DenmaSetCenterStatus)
 	initDenmaCenterAPIHandlers(g, a)
@@ -148,6 +150,19 @@ func denmaInSchema(q, schema string) string {
 	return strings.ReplaceAll(q, "S.", pq.QuoteIdentifier(schema)+".")
 }
 
+// denmaPeriods reads the from, to, prev_from and prev_to RFC 3339 times of a
+// hub API request.
+func denmaPeriods(c echo.Context) ([4]time.Time, error) {
+	var t [4]time.Time
+	for i, k := range []string{"from", "to", "prev_from", "prev_to"} {
+		var err error
+		if t[i], err = time.Parse(time.RFC3339, c.QueryParam(k)); err != nil {
+			return t, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("invalid %s: %v", k, err))
+		}
+	}
+	return t, nil
+}
+
 // DenmaHubStats returns every center with its figures for a period (from, to)
 // and the previous one (prev_from, prev_to), all RFC 3339 times.
 func (a *App) DenmaHubStats(c echo.Context) error {
@@ -155,11 +170,9 @@ func (a *App) DenmaHubStats(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	var t [4]time.Time
-	for i, k := range []string{"from", "to", "prev_from", "prev_to"} {
-		if t[i], err = time.Parse(time.RFC3339, c.QueryParam(k)); err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("invalid %s: %v", k, err))
-		}
+	t, err := denmaPeriods(c)
+	if err != nil {
+		return err
 	}
 
 	reg, err := d.registered()
@@ -167,39 +180,43 @@ func (a *App) DenmaHubStats(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
+	type figures struct {
+		Subscribers int       `db:"subscribers"`
+		Lists       int       `db:"lists"`
+		Users       int       `db:"users"`
+		LastSent    null.Time `db:"last_sent"`
+		Version     string    `db:"version"`
+		cur, prev   *denmaPeriod
+	}
 	var (
 		db  = d.current().db
+		key = fmt.Sprintf("stats|%v", t)
 		out = make([]denmaHubCenter, len(reg))
 	)
 	denmaEach(len(reg), func(i int) {
 		x := reg[i]
 		r := &out[i]
 		*r = denmaHubCenter{Slug: x.Slug, Name: x.Name, Status: x.Status, Error: x.Error, Path: x.Path, Loaded: x.Loaded, Starting: x.Starting}
-		schema := x.Schema
 
-		var info struct {
-			Subscribers int       `db:"subscribers"`
-			Lists       int       `db:"lists"`
-			Users       int       `db:"users"`
-			LastSent    null.Time `db:"last_sent"`
-			Version     string    `db:"version"`
-		}
-		cur, prev := &denmaPeriod{}, &denmaPeriod{}
-		err := db.Get(&info, denmaInSchema(denmaCenterInfoSQL, schema))
-		if err == nil {
-			err = db.Get(cur, denmaInSchema(denmaPeriodSQL, schema), t[0], t[1])
-		}
-		if err == nil {
-			err = db.Get(prev, denmaInSchema(denmaPeriodSQL, schema), t[2], t[3])
-		}
+		f, err := denmaCached(x.Schema+"|"+key, func() (figures, error) {
+			f := figures{cur: &denmaPeriod{}, prev: &denmaPeriod{}}
+			err := db.Get(&f, denmaInSchema(denmaCenterInfoSQL, x.Schema))
+			if err == nil {
+				err = db.Get(f.cur, denmaInSchema(denmaPeriodSQL, x.Schema), t[0], t[1])
+			}
+			if err == nil {
+				err = db.Get(f.prev, denmaInSchema(denmaPeriodSQL, x.Schema), t[2], t[3])
+			}
+			return f, err
+		})
 		if err != nil {
 			if r.Error == "" {
 				r.Error = err.Error()
 			}
 			return
 		}
-		r.Subscribers, r.Lists, r.Users, r.LastSent, r.Version = info.Subscribers, info.Lists, info.Users, info.LastSent, info.Version
-		r.Cur, r.Prev = cur, prev
+		r.Subscribers, r.Lists, r.Users, r.LastSent, r.Version = f.Subscribers, f.Lists, f.Users, f.LastSent, f.Version
+		r.Cur, r.Prev = f.cur, f.prev
 	})
 
 	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })

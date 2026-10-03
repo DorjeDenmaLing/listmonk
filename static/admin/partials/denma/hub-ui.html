@@ -1,0 +1,49 @@
+{{- /* denma: the hub's center picker and center tables, made for hundreds
+	of centers (assets/js/denma-hub-ui.js, mixed into the page's component). */ -}}
+
+{{- /* A searchable center picker: type to narrow the list, arrow keys and
+	Enter to choose. dict "ID" (unique on the page) "TestID" */ -}}
+{{ define "denma-center-picker" -}}
+<div class="denma-picker" :class="{ 'is-open': pick.open }">
+	<input type="text" role="combobox" autocomplete="off" spellcheck="false" aria-autocomplete="list" aria-label="Center"
+		aria-controls="{{ .ID }}-list" :aria-expanded="pick.open" :aria-activedescendant="pick.open ? `{{ .ID }}-${pick.i}` : null"
+		:placeholder="pickName()" x-model="pick.q" @focus="pickOpen()" @click="pickOpen()" @blur="pickClose()" @input="pickInput()"
+		@keydown.down.prevent="pickMove(1)" @keydown.up.prevent="pickMove(-1)" @keydown.enter.prevent="pickChoose()"
+		@keydown.escape="pickClose()" data-testid="{{ .TestID }}" />
+	{{ Icon "chevron-down" }}
+	<ul role="listbox" id="{{ .ID }}-list" x-ref="pickList" x-show="pick.open" aria-label="Centers" x-cloak>
+		<template x-for="(c, i) in pickChoices()" :key="c.slug">
+			<li role="option" :id="`{{ .ID }}-${i}`" :aria-selected="i === pick.i" :class="{ 'is-current': c.slug === center }"
+				@mousedown.prevent="pickChoose(c)" @mousemove="pick.i = i" x-text="c.name"></li>
+		</template>
+		<li class="denma-picker-none" x-show="!pickChoices().length">No center matches.</li>
+	</ul>
+</div>
+{{- end }}
+
+{{- /* Finds centers in a table. */ -}}
+{{ define "denma-table-find" -}}
+<input type="search" class="denma-find" x-model="tbl.q" @input="tblFind()" placeholder="Find a center" aria-label="Find a center" data-testid="table-find" />
+{{- end }}
+
+{{- /* A sortable column's header. dict "Key" "Label" "First" (asc or desc,
+	its first direction) "Class" "Title" */ -}}
+{{ define "denma-th" -}}
+<th {{ with .Class }}class="{{ . }}" {{ end }}{{ with .Title }}title="{{ . }}" {{ end }}:aria-sort="tblAria('{{ .Key }}')">
+	<button type="button" class="denma-sort" :data-sorted="tblSorted('{{ .Key }}')" @click="tblSort('{{ .Key }}', '{{ or .First "asc" }}')">{{ .Label }}</button>
+</th>
+{{- end }}
+
+{{- /* What a table shows, and its pages. */ -}}
+{{ define "denma-pager" -}}
+<footer class="denma-pager" x-show="rows.length">
+	<span class="text-light" x-text="tblInfo()" data-testid="table-info"></span>
+	<template x-if="tblPages() > 1">
+		<span class="hstack gap-2">
+			<button type="button" class="outline small" :disabled="tbl.page <= 1" @click="tblGo(-1)" aria-label="Previous page" data-testid="page-prev">{{ Icon "chevron-left" }}</button>
+			<span x-text="`Page ${Math.min(tbl.page, tblPages())} of ${tblPages()}`"></span>
+			<button type="button" class="outline small" :disabled="tbl.page >= tblPages()" @click="tblGo(1)" aria-label="Next page" data-testid="page-next">{{ Icon "chevron-right" }}</button>
+		</span>
+	</template>
+</footer>
+{{- end }}

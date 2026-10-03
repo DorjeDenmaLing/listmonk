@@ -5,7 +5,9 @@ package main
 // providers for every center, together or one at a time. The figures are the
 // centers' Analytics' (cmd/denma_stats.go, views/denma-analytics.js), added
 // up over the period rather than per campaign, and computed here in a few
-// queries per center instead of one request per figure.
+// queries per center instead of one request per figure. They're added up here
+// too: the page gets each center's totals and one center's (or all centers')
+// full figures, not every center's day by day.
 //
 // Mailbox providers count every campaign that started in the period and was
 // sent with individual tracking (as on the hub's dashboard, cmd/denma_hub.go),
@@ -15,7 +17,9 @@ import (
 	"fmt"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -113,15 +117,8 @@ SELECT seen.kind, P(s.email), COUNT(*) FROM seen JOIN S.subscribers s ON s.id = 
 UNION ALL
 SELECT 'campaigns', '', COUNT(*) FROM camp`
 
-// denmaHubAnalytics is one center's figures on the hub's Analytics page.
-type denmaHubAnalytics struct {
-	Slug   string `json:"slug"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Error  string `json:"error"`
-	// Whether its figures were counted (not if its queries failed).
-	Counted bool `json:"counted"`
-
+// denmaAnalytics is the Analytics figures of a center, or of several added up.
+type denmaAnalytics struct {
 	// Active subscribers now, by provider.
 	Active map[string]int `json:"active"`
 	// The period's new, unsub, removed, received, opens and clicks, by provider.
@@ -134,6 +131,65 @@ type denmaHubAnalytics struct {
 	Campaigns int `json:"campaigns"`
 }
 
+func newDenmaAnalytics() denmaAnalytics {
+	return denmaAnalytics{Active: map[string]int{}, Cur: map[string]map[string]int{}, Prev: map[string]int{}, Days: map[string]map[string]int{}}
+}
+
+// add adds x's figures to f's.
+func (f *denmaAnalytics) add(x denmaAnalytics) {
+	for p, n := range x.Active {
+		f.Active[p] += n
+	}
+	for k, m := range x.Cur {
+		if f.Cur[k] == nil {
+			f.Cur[k] = map[string]int{}
+		}
+		for p, n := range m {
+			f.Cur[k][p] += n
+		}
+	}
+	for k, n := range x.Prev {
+		f.Prev[k] += n
+	}
+	for day, m := range x.Days {
+		if f.Days[day] == nil {
+			f.Days[day] = map[string]int{}
+		}
+		for k, n := range m {
+			f.Days[day][k] += n
+		}
+	}
+	f.Campaigns += x.Campaigns
+}
+
+func denmaSum(m map[string]int) int {
+	n := 0
+	for _, v := range m {
+		n += v
+	}
+	return n
+}
+
+// denmaHubAnalytics is one center on the hub's Analytics page: its totals,
+// for the By center table.
+type denmaHubAnalytics struct {
+	Slug   string `json:"slug"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Error  string `json:"error"`
+	// Whether its figures were counted (not if its queries failed).
+	Counted bool `json:"counted"`
+
+	Active    int `json:"active"`
+	New       int `json:"new"`
+	Unsub     int `json:"unsub"`
+	Removed   int `json:"removed"`
+	Received  int `json:"received"`
+	Opens     int `json:"opens"`
+	Clicks    int `json:"clicks"`
+	Campaigns int `json:"campaigns"`
+}
+
 // ViewDenmaHubAnalytics renders the hub's Analytics page (superadmins).
 func (a *App) ViewDenmaHubAnalytics(c echo.Context) error {
 	if _, err := a.hub(c); err != nil {
@@ -142,19 +198,19 @@ func (a *App) ViewDenmaHubAnalytics(c echo.Context) error {
 	return c.Render(http.StatusOK, "admin-denma-hub-analytics", newAdminView(c, "Analytics", "", "denma.analytics"))
 }
 
-// DenmaHubAnalytics returns every center's figures for a period (from, to)
-// and the previous one (prev_from, prev_to), RFC 3339 times; days are in the
-// time zone tz (an IANA name; UTC if Postgres doesn't know it).
+// DenmaHubAnalytics returns the figures for a period (from, to) and the
+// previous one (prev_from, prev_to), RFC 3339 times; days are in the time
+// zone tz (an IANA name; UTC if Postgres doesn't know it). Every center's
+// totals ("centers"), and the full figures ("total") of one (center, a slug)
+// or of all of them added up.
 func (a *App) DenmaHubAnalytics(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
 		return err
 	}
-	var t [4]time.Time
-	for i, k := range []string{"from", "to", "prev_from", "prev_to"} {
-		if t[i], err = time.Parse(time.RFC3339, c.QueryParam(k)); err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("invalid %s: %v", k, err))
-		}
+	t, err := denmaPeriods(c)
+	if err != nil {
+		return err
 	}
 
 	db := d.current().db
@@ -177,33 +233,67 @@ func (a *App) DenmaHubAnalytics(c echo.Context) error {
 	var (
 		providers = strings.NewReplacer("P(s.email)", denmaProviderSQL("s.email"), "P(got.email)", denmaProviderSQL("got.email"))
 		inSchema  = func(q, schema string) string { return denmaInSchema(providers.Replace(q), schema) }
+		key       = fmt.Sprintf("analytics|%v|%s", t, tz)
 		out       = make([]denmaHubAnalytics, len(reg))
+		figs      = make([]denmaAnalytics, len(reg))
 	)
 	denmaEach(len(reg), func(i int) {
 		x := reg[i]
 		r := &out[i]
-		*r = denmaHubAnalytics{
-			Slug: x.Slug, Name: x.Name, Status: x.Status, Error: x.Error,
-			Active: map[string]int{}, Cur: map[string]map[string]int{}, Prev: map[string]int{}, Days: map[string]map[string]int{},
-		}
+		*r = denmaHubAnalytics{Slug: x.Slug, Name: x.Name, Status: x.Status, Error: x.Error}
 
-		type row struct {
-			Kind     string `db:"kind"`
-			Day      string `db:"day"`
-			Provider string `db:"provider"`
-			N        int    `db:"n"`
-		}
-		var active, cur, prev, reach []row
-		err := db.Select(&active, inSchema(denmaActiveSQL, x.Schema))
-		if err == nil {
-			err = db.Select(&cur, inSchema(denmaGrowthSQL, x.Schema), t[0], t[1], tz)
-		}
-		if err == nil {
-			err = db.Select(&prev, inSchema(denmaGrowthSQL, x.Schema), t[2], t[3], tz)
-		}
-		if err == nil {
-			err = db.Select(&reach, inSchema(denmaReachSQL, x.Schema), t[0], t[1])
-		}
+		// Cached as a whole: not to be changed after.
+		f, err := denmaCached(x.Schema+"|"+key, func() (denmaAnalytics, error) {
+			type row struct {
+				Kind     string `db:"kind"`
+				Day      string `db:"day"`
+				Provider string `db:"provider"`
+				N        int    `db:"n"`
+			}
+			var active, cur, prev, reach []row
+			err := db.Select(&active, inSchema(denmaActiveSQL, x.Schema))
+			if err == nil {
+				err = db.Select(&cur, inSchema(denmaGrowthSQL, x.Schema), t[0], t[1], tz)
+			}
+			if err == nil {
+				err = db.Select(&prev, inSchema(denmaGrowthSQL, x.Schema), t[2], t[3], tz)
+			}
+			if err == nil {
+				err = db.Select(&reach, inSchema(denmaReachSQL, x.Schema), t[0], t[1])
+			}
+			if err != nil {
+				return denmaAnalytics{}, err
+			}
+
+			f := newDenmaAnalytics()
+			add := func(k, p string, n int) {
+				if f.Cur[k] == nil {
+					f.Cur[k] = map[string]int{}
+				}
+				f.Cur[k][p] += n
+			}
+			for _, v := range active {
+				f.Active[v.Provider] += v.N
+			}
+			for _, v := range cur {
+				add(v.Kind, v.Provider, v.N)
+				if f.Days[v.Day] == nil {
+					f.Days[v.Day] = map[string]int{}
+				}
+				f.Days[v.Day][v.Kind] += v.N
+			}
+			for _, v := range prev {
+				f.Prev[v.Kind] += v.N
+			}
+			for _, v := range reach {
+				if v.Kind == "campaigns" {
+					f.Campaigns = v.N
+				} else {
+					add(v.Kind, v.Provider, v.N)
+				}
+			}
+			return f, nil
+		})
 		if err != nil {
 			if r.Error == "" {
 				r.Error = err.Error()
@@ -211,36 +301,76 @@ func (a *App) DenmaHubAnalytics(c echo.Context) error {
 			return
 		}
 
-		add := func(k, p string, n int) {
-			if r.Cur[k] == nil {
-				r.Cur[k] = map[string]int{}
-			}
-			r.Cur[k][p] += n
-		}
-		for _, v := range active {
-			r.Active[v.Provider] += v.N
-		}
-		for _, v := range cur {
-			add(v.Kind, v.Provider, v.N)
-			if r.Days[v.Day] == nil {
-				r.Days[v.Day] = map[string]int{}
-			}
-			r.Days[v.Day][v.Kind] += v.N
-		}
-		for _, v := range prev {
-			r.Prev[v.Kind] += v.N
-		}
-		for _, v := range reach {
-			if v.Kind == "campaigns" {
-				r.Campaigns = v.N
-			} else {
-				add(v.Kind, v.Provider, v.N)
-			}
-		}
+		figs[i] = f
 		r.Counted = true
+		r.Active, r.Campaigns = denmaSum(f.Active), f.Campaigns
+		r.New, r.Unsub, r.Removed = denmaSum(f.Cur["new"]), denmaSum(f.Cur["unsub"]), denmaSum(f.Cur["removed"])
+		r.Received, r.Opens, r.Clicks = denmaSum(f.Cur["received"]), denmaSum(f.Cur["opens"]), denmaSum(f.Cur["clicks"])
 	})
 
-	return c.JSON(http.StatusOK, okResp{out})
+	// The full figures of the center asked for, or of all of them.
+	center := c.QueryParam("center")
+	if !slices.ContainsFunc(reg, func(x denmaCenterRef) bool { return x.Slug == center }) {
+		center = ""
+	}
+	total := newDenmaAnalytics()
+	for i, r := range out {
+		if r.Counted && (center == "" || r.Slug == center) {
+			total.add(figs[i])
+		}
+	}
+
+	return c.JSON(http.StatusOK, okResp{map[string]any{
+		"centers": out,
+		"center":  center,
+		"total":   total,
+	}})
+}
+
+// denmaFiguresTTL is how long the hub keeps each center's figures for a
+// period: superadmins move between its pages, pick centers and reload, and
+// each fresh answer is a few queries in each of hundreds of centers.
+const denmaFiguresTTL = time.Minute
+
+var denmaFigures = struct {
+	sync.Mutex
+	m      map[string]denmaFigure
+	pruned time.Time
+}{m: map[string]denmaFigure{}}
+
+type denmaFigure struct {
+	at time.Time
+	v  any
+}
+
+// denmaCached returns what's kept under key if it's fresh, or else f's
+// result, which it keeps unless f failed.
+func denmaCached[T any](key string, f func() (T, error)) (T, error) {
+	now := time.Now()
+	c := &denmaFigures
+	c.Lock()
+	e, ok := c.m[key]
+	c.Unlock()
+	if ok && now.Sub(e.at) < denmaFiguresTTL {
+		return e.v.(T), nil
+	}
+
+	v, err := f()
+	if err != nil {
+		return v, err
+	}
+	c.Lock()
+	defer c.Unlock()
+	if now.Sub(c.pruned) > denmaFiguresTTL {
+		for k, e := range c.m {
+			if now.Sub(e.at) >= denmaFiguresTTL {
+				delete(c.m, k)
+			}
+		}
+		c.pruned = now
+	}
+	c.m[key] = denmaFigure{at: now, v: v}
+	return v, nil
 }
 
 // denmaCenterRef is a registered center as the hub lists it.

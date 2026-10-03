@@ -15,12 +15,7 @@
 			<header class="denma-stat-head">
 				<h2>Audience growth</h2>
 				<div class="hstack denma-range">
-					<select aria-label="Center" x-model="center" @change="onCenter()" data-testid="hub-center">
-						<option value="">All centers</option>
-						<template x-for="c in centers" :key="c.slug">
-							<option :value="c.slug" x-text="c.name" :selected="c.slug === center"></option>
-						</template>
-					</select>
+					{{ template "denma-center-picker" dict "ID" "hub-center" "TestID" "hub-center" }}
 					{{ template "denma-range-controls" }}
 				</div>
 			</header>
@@ -84,18 +79,26 @@
 		<article class="card denma-stats">
 			<header class="denma-stat-head">
 				<h2>By center</h2>
+				<div class="hstack gap-2 denma-table-tools">
+					{{ template "denma-table-find" }}
+				</div>
 			</header>
 			<div class="table-wrapper denma-table" :class="{ 'is-busy': busy }">
 				<table data-testid="hub-analytics-centers">
 					<thead>
 						<tr>
-							<th>Center</th><th class="num">Active</th><th class="num">New</th><th class="num">Unsubscribed</th>
-							<th class="num">Bounced or complained</th><th class="num">Net change</th>
-							<th class="num">Open rate</th><th class="num">Click rate</th>
+							{{ template "denma-th" dict "Key" "name" "Label" "Center" }}
+							{{ template "denma-th" dict "Key" "active" "Label" "Active" "First" "desc" "Class" "num" }}
+							{{ template "denma-th" dict "Key" "added" "Label" "New" "First" "desc" "Class" "num" }}
+							{{ template "denma-th" dict "Key" "unsub" "Label" "Unsubscribed" "First" "desc" "Class" "num" }}
+							{{ template "denma-th" dict "Key" "removed" "Label" "Bounced or complained" "First" "desc" "Class" "num" }}
+							{{ template "denma-th" dict "Key" "net" "Label" "Net change" "First" "desc" "Class" "num" }}
+							{{ template "denma-th" dict "Key" "open" "Label" "Open rate" "First" "desc" "Class" "num" }}
+							{{ template "denma-th" dict "Key" "click" "Label" "Click rate" "First" "desc" "Class" "num" }}
 						</tr>
 					</thead>
 					<tbody>
-						<template x-for="c in rows" :key="c.slug">
+						<template x-for="c in tblPage()" :key="c.slug">
 							<tr :class="{ 'denma-selected': c.slug === center }" :data-slug="c.slug">
 								<td class="denma-break">
 									<button type="button" class="denma-toggle" @click="center = c.slug; onCenter()" x-text="c.name"></button>
@@ -116,6 +119,7 @@
 					</tbody>
 				</table>
 			</div>
+			{{ template "denma-pager" }}
 			<p class="denma-stat-note">Select a center to see only its figures. Open and click rates are unique people per campaign, as a share of emails received, over the campaigns sent with open tracking in this period.</p>
 		</article>
 	</div>

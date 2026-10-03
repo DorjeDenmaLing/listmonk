@@ -2,56 +2,47 @@
 // growth and mailbox providers for every center, together or one at a time,
 // and each center's, for the dashboard's date range compared with the
 // previous period of the same length. The figures come from
-// /api/denma/hub/analytics (cmd/denma_hub_analytics.go), per center; they're
-// added up here. Definitions are the centers' Analytics'
-// (views/denma-analytics.js), over the period rather than per campaign.
+// /api/denma/hub/analytics (cmd/denma_hub_analytics.go): each center's totals,
+// and the full figures of the one chosen or of all of them, added up there.
+// Definitions are the centers' Analytics' (views/denma-analytics.js), over the
+// period rather than per campaign.
 import Alpine from 'alpinejs';
 import * as s from '../denma-stats.js';
+import { centerPicker, centerTable, centerState } from '../denma-hub-ui.js';
 
 const CENTER_KEY = 'denma-hub-center';
 const PROVIDER_KEYS = s.PROVIDERS.map((x) => x[0]).concat('other');
 const sumOf = (m) => Object.values(m || {}).reduce((n, v) => n + v, 0);
 
-// Adds up some centers: growth (as in denma-stats.js growthCells), days
-// ({ 'YYYY-MM-DD': { new, unsub, removed } }) and provider rows ({ key: {
-// subscribers, unsub, received, opens, clicks } }, with 'all').
-function total(list) {
-  const out = { days: {}, campaigns: 0, providers: {} };
-  PROVIDER_KEYS.concat('all').forEach((k) => { out.providers[k] = { subscribers: 0, unsub: 0, received: 0, opens: 0, clicks: 0 }; });
-  const g = { active: 0, added: 0, unsub: 0, removed: 0, prevAdded: 0, prevUnsub: 0, prevRemoved: 0 };
-
-  list.forEach((c) => {
-    if (!c.counted) return;
-    const cur = c.cur || {};
-    g.active += sumOf(c.active);
-    g.added += sumOf(cur.new);
-    g.unsub += sumOf(cur.unsub);
-    g.removed += sumOf(cur.removed);
-    g.prevAdded += (c.prev && c.prev.new) || 0;
-    g.prevUnsub += (c.prev && c.prev.unsub) || 0;
-    g.prevRemoved += (c.prev && c.prev.removed) || 0;
-    out.campaigns += c.campaigns || 0;
-
-    Object.entries(c.days || {}).forEach(([day, v]) => {
-      const d = out.days[day] || (out.days[day] = { new: 0, unsub: 0, removed: 0 });
-      Object.keys(d).forEach((k) => { d[k] += v[k] || 0; });
-    });
-
-    PROVIDER_KEYS.forEach((k) => {
-      const r = out.providers[k];
-      const pick = (m) => ((m || {})[k] || 0);
-      const add = { subscribers: pick(c.active), unsub: pick(cur.unsub), received: pick(cur.received), opens: pick(cur.opens), clicks: pick(cur.clicks) };
-      Object.keys(r).forEach((f) => {
-        r[f] += add[f];
-        out.providers.all[f] += add[f];
-      });
-    });
-  });
-
+// The figures shown, from the API's total: growth (as in denma-stats.js
+// growthCells), days ({ 'YYYY-MM-DD': { new, unsub, removed } }) and provider
+// rows ({ key: { subscribers, unsub, received, opens, clicks } }, with 'all').
+function figures(t) {
+  const cur = t.cur || {};
+  const prev = t.prev || {};
+  const g = {
+    active: sumOf(t.active),
+    added: sumOf(cur.new),
+    unsub: sumOf(cur.unsub),
+    removed: sumOf(cur.removed),
+    prevAdded: prev.new || 0,
+    prevUnsub: prev.unsub || 0,
+    prevRemoved: prev.removed || 0,
+  };
   g.net = g.added - g.unsub - g.removed;
   g.prevNet = g.prevAdded - g.prevUnsub - g.prevRemoved;
-  out.growth = g;
-  return out;
+
+  const providers = {};
+  const all = { subscribers: 0, unsub: 0, received: 0, opens: 0, clicks: 0 };
+  PROVIDER_KEYS.forEach((k) => {
+    const pick = (m) => ((m || {})[k] || 0);
+    const r = { subscribers: pick(t.active), unsub: pick(cur.unsub), received: pick(cur.received), opens: pick(cur.opens), clicks: pick(cur.clicks) };
+    Object.keys(all).forEach((f) => { all[f] += r[f]; });
+    providers[k] = r;
+  });
+  providers.all = all;
+
+  return { growth: g, days: t.days || {}, campaigns: t.campaigns || 0, providers };
 }
 
 const parseDay = (d) => {
@@ -67,9 +58,12 @@ function component() {
 
   return {
     ...s.loadRange(),
+    ...centerPicker([{ slug: '', name: 'All centers' }]),
+    ...centerTable(),
     ranges: s.RANGES,
     center: saved,
     centers: [],
+    total: null,
     rows: [],
     growth: { cells: s.growthPlaceholders(), note: '' },
     providers: { rows: [], all: null, note: 'Loading…' },
@@ -97,7 +91,7 @@ function component() {
       try {
         localStorage.setItem(CENTER_KEY, this.center);
       } catch { /* storage unavailable */ }
-      this.render();
+      this.load();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
 
@@ -111,7 +105,6 @@ function component() {
       this.seq += 1;
       const { seq } = this;
       this.busy = true;
-      this.p = p;
 
       const q = new URLSearchParams({
         from: p.cur.start.toISOString(),
@@ -119,14 +112,16 @@ function component() {
         prev_from: p.prev.start.toISOString(),
         prev_to: p.prev.end.toISOString(),
         tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        center: this.center,
       });
       try {
         const data = await s.getJSON(`/denma/hub/analytics?${q}`);
         if (seq !== this.seq) return;
-        this.centers = data || [];
-        if (this.center && !this.selected) {
-          this.center = '';
-        }
+        this.p = p;
+        this.centers = data.centers || [];
+        this.total = data.total;
+        // A center no longer there: all of them.
+        this.center = data.center;
         this.render();
       } catch (err) {
         if (seq !== this.seq) return;
@@ -139,9 +134,8 @@ function component() {
     },
 
     render() {
-      const list = this.selected ? [this.selected] : this.centers;
-      const t = total(list);
-      const { p } = this;
+      const t = figures(this.total || {});
+      const { p, selected } = this;
 
       // Audience growth.
       this.growth.cells = s.growthCells(t.growth);
@@ -150,17 +144,18 @@ function component() {
         const d = parseDay(day);
         const b = bk.list.find((x) => d >= x.start && d < x.end);
         if (b) {
-          b.added += v.new;
-          b.unsub += v.unsub;
-          b.removed += v.removed;
+          b.added += v.new || 0;
+          b.unsub += v.unsub || 0;
+          b.removed += v.removed || 0;
         }
       });
       const box = this.$refs.growthChart;
       box.replaceChildren(s.growthChart(bk, box.clientWidth));
       const days = s.periodDays(p);
-      const failed = list.filter((c) => !c.counted).length;
+      const n = this.centers.length;
+      const failed = (selected ? [selected] : this.centers).filter((c) => !c.counted).length;
       this.growth.note = `Per ${bk.unit}, compared with the previous ${days} day${days === 1 ? '' : 's'}`
-        + `${this.selected ? '' : `, ${list.length} center${list.length === 1 ? '' : 's'} together`}.`
+        + `${selected ? '' : `, ${n} center${n === 1 ? '' : 's'} together`}.`
         + " Deleted subscribers aren't counted. Hover over a bar for its numbers."
         + (failed ? ` ${failed} center${failed === 1 ? '' : 's'} couldn't be counted (see By center).` : '');
 
@@ -183,22 +178,33 @@ function component() {
 
       // By center.
       this.rows = this.centers.map((c) => {
-        const x = total([c]);
-        const g = x.growth;
-        const all = s.providerFigures(x.providers.all);
         const ok = c.counted;
-        const n = (v) => (ok ? v.toLocaleString() : '—');
+        const net = c.new - c.unsub - c.removed;
+        const all = s.providerFigures({ subscribers: c.active, unsub: c.unsub, received: c.received, opens: c.opens, clicks: c.clicks });
+        const fmt = (v) => (ok ? v.toLocaleString() : '—');
+        const rate = (v) => (ok && c.received > 0 ? v / c.received : null);
         return {
           slug: c.slug,
           name: c.name,
           error: c.error,
-          active: n(g.active),
-          added: n(g.added),
-          unsub: n(g.unsub),
-          removed: n(g.removed),
-          net: ok ? (g.net > 0 ? '+' : '') + g.net.toLocaleString() : '—',
-          open: all.open,
-          click: all.click,
+          state: centerState(c),
+          sort: {
+            name: c.name.toLowerCase(),
+            active: ok ? c.active : null,
+            added: ok ? c.new : null,
+            unsub: ok ? c.unsub : null,
+            removed: ok ? c.removed : null,
+            net: ok ? net : null,
+            open: rate(c.opens),
+            click: rate(c.clicks),
+          },
+          active: fmt(c.active),
+          added: fmt(c.new),
+          unsub: fmt(c.unsub),
+          removed: fmt(c.removed),
+          net: ok ? (net > 0 ? '+' : '') + net.toLocaleString() : '—',
+          open: ok ? all.open : null,
+          click: ok ? all.click : null,
         };
       });
     },

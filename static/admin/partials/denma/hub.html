@@ -15,12 +15,7 @@
 			<header class="denma-stat-head">
 				<h2>Sending</h2>
 				<div class="hstack denma-range">
-					<select aria-label="Center" x-model="center" @change="onCenter()" data-testid="hub-center">
-						<option value="">All centers</option>
-						<template x-for="c in centers" :key="c.slug">
-							<option :value="c.slug" x-text="c.name" :selected="c.slug === center"></option>
-						</template>
-					</select>
+					{{ template "denma-center-picker" dict "ID" "hub-center" "TestID" "hub-center" }}
 					{{ template "denma-range-controls" }}
 				</div>
 			</header>
@@ -43,24 +38,34 @@
 		<article class="card denma-stats denma-hub-centers">
 			<header class="denma-stat-head">
 				<h2>Centers <span class="text-light" x-text="`(${centers.length})`"></span></h2>
-				<a href="{{ URI "/admin/centers/new" }}" class="button small" data-variant="primary" data-testid="btn-new">{{ Icon "plus" }} New center</a>
+				<div class="hstack gap-2 denma-table-tools">
+					{{ template "denma-table-find" }}
+					<select x-model="tbl.status" @change="tblFind()" aria-label="Status" data-testid="table-status">
+						<option value="">Any status</option>
+						<option value="running">Running</option>
+						<option value="starting">Starting</option>
+						<option value="error">Error</option>
+						<option value="disabled">Disabled</option>
+					</select>
+					<a href="{{ URI "/admin/centers/new" }}" class="button small" data-variant="primary" data-testid="btn-new">{{ Icon "plus" }} New center</a>
+				</div>
 			</header>
 			<div class="table-wrapper">
 				<table :class="{ 'is-busy': busy }">
 					<thead>
 						<tr>
-							<th>Center</th>
-							<th class="align-right">Subscribers</th>
-							<th class="align-right" title="E-mails sent by campaigns that started in the period">Sent</th>
-							<th class="align-right">Open rate</th>
-							<th class="align-right" title="Hard bounces per e-mail sent">Hard bounces</th>
-							<th class="align-right" title="Complaints per e-mail sent">Complaints</th>
-							<th>Last campaign</th>
+							{{ template "denma-th" dict "Key" "name" "Label" "Center" }}
+							{{ template "denma-th" dict "Key" "subscribers" "Label" "Subscribers" "First" "desc" "Class" "align-right" }}
+							{{ template "denma-th" dict "Key" "sends" "Label" "Sent" "First" "desc" "Class" "align-right" "Title" "E-mails sent by campaigns that started in the period" }}
+							{{ template "denma-th" dict "Key" "open" "Label" "Open rate" "First" "desc" "Class" "align-right" }}
+							{{ template "denma-th" dict "Key" "hard" "Label" "Hard bounces" "First" "desc" "Class" "align-right" "Title" "Hard bounces per e-mail sent" }}
+							{{ template "denma-th" dict "Key" "complaint" "Label" "Complaints" "First" "desc" "Class" "align-right" "Title" "Complaints per e-mail sent" }}
+							{{ template "denma-th" dict "Key" "last" "Label" "Last campaign" "First" "desc" }}
 							<th class="actions align-right"></th>
 						</tr>
 					</thead>
 					<tbody>
-						<template x-for="c in rows" :key="c.slug">
+						<template x-for="c in tblPage()" :key="c.slug">
 							<tr data-testid="center-row" :data-slug="c.slug" :class="{ 'denma-selected': c.slug === center }">
 								<td>
 									<div class="hstack gap-2">
@@ -92,7 +97,7 @@
 											<template x-if="c.loaded">
 												<a :href="openURL(c.slug)" role="menuitem" class="button ghost" data-testid="btn-open">{{ Icon "arrow-up-right" }} Open</a>
 											</template>
-											<button type="button" role="menuitem" class="ghost" data-testid="btn-figures" @click.prevent="center = c.slug; onCenter()">{{ Icon "bar-chart-2" }} Show its figures</button>
+											<button type="button" role="menuitem" class="ghost" data-testid="btn-figures" @click.prevent="$el.closest('[popover]').hidePopover(); center = c.slug; onCenter()">{{ Icon "bar-chart-2" }} Show its figures</button>
 											<template x-if="c.status === 'disabled'">
 												<button type="button" role="menuitem" class="ghost" data-testid="btn-enable" :disabled="isLoading('centers')" @click.prevent="setStatus(c, 'enabled')">{{ Icon "check-circle" }} Enable</button>
 											</template>
@@ -113,6 +118,7 @@
 					</tbody>
 				</table>
 			</div>
+			{{ template "denma-pager" }}
 			<p class="denma-stat-note">Opening a center signs you in there as a Super Admin. Mail server settings are the hub's (Settings): every center sends with them. A disabled center keeps its data, but its pages and its subscribers' links stop working until it's enabled.</p>
 		</article>
 	</div>

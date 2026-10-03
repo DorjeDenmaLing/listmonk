@@ -4,7 +4,7 @@
 
    dict "Root" . "Hub" true|false "Centers" []{Slug, Name} (the hub's filter) */ -}}
 {{ define "denma-audit" -}}
-<section class="card page-content has-table denma-audit" x-data="denmaAudit({{ .Hub }})" data-testid="activity">
+<section class="card page-content has-table denma-audit" x-data="denmaAudit({{ .Hub }}, {{ ToJSON .Centers }})" data-testid="activity">
 	<header class="hstack justify-between denma-audit-head">
 		<div>
 			{{- if not .Hub }}<h3>Activity</h3>{{ end }}
@@ -12,13 +12,7 @@
 		</div>
 		<form class="hstack gap-2" @submit.prevent="reload()">
 			{{- if .Hub }}
-			<select x-model="center" @change="reload()" aria-label="Center" data-testid="activity-center">
-				<option value="">All centers and the hub</option>
-				<option value="hub">The hub</option>
-				{{- range .Centers }}
-				<option value="{{ .Slug }}">{{ .Name }}</option>
-				{{- end }}
-			</select>
+			{{ template "denma-center-picker" dict "ID" "activity-center" "TestID" "activity-center" }}
 			{{- end }}
 			<input type="search" x-model="q" placeholder="Person, action or IP" aria-label="Search the activity" @search="reload()" data-testid="activity-search" />
 			<button type="submit" class="outline" aria-label="Search">{{ Icon "search" }}</button>

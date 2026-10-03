@@ -3,12 +3,16 @@
 // page. Newest first, 50 at a time.
 import Alpine from 'alpinejs';
 import { api } from '../main.js';
+import { centerPicker } from '../denma-hub-ui.js';
 
 const PAGE = 50;
 
-function denmaAudit(hub = false) {
+// centers: the hub's filter ([{ slug, name }]).
+function denmaAudit(hub = false, centers = []) {
   return {
+    ...centerPicker([{ slug: '', name: 'All centers and the hub' }, { slug: 'hub', name: 'The hub' }]),
     hub,
+    centers: centers || [],
     rows: [],
     q: '',
     center: '',
@@ -18,6 +22,10 @@ function denmaAudit(hub = false) {
 
     init() {
       this.load();
+    },
+
+    onCenter() {
+      this.reload();
     },
 
     reload() {

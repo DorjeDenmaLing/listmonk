@@ -607,6 +607,148 @@ svg.denma-logo {
   padding-left: var(--space-6);
 }
 
+/* The hub's center picker and center tables, for hundreds of centers
+   (partials/denma/hub-ui.html). */
+.denma-picker {
+  position: relative;
+
+  input[role="combobox"] {
+    width: 15rem;
+    margin: 0;
+    padding-right: 2rem;
+    font-size: var(--text-7);
+    padding-block: var(--space-1);
+    text-overflow: ellipsis;
+  }
+
+  /* Closed, the placeholder is the chosen center. */
+  &:not(.is-open) input[role="combobox"]::placeholder {
+    color: var(--foreground);
+    opacity: 1;
+  }
+
+  > .icon {
+    position: absolute;
+    right: var(--space-2);
+    top: 50%;
+    width: 1em;
+    height: 1em;
+    transform: translateY(-50%);
+    color: var(--muted-foreground);
+    pointer-events: none;
+  }
+
+  ul {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 2px);
+    left: 0;
+    min-width: 100%;
+    max-width: min(24rem, 90vw);
+    max-height: 20rem;
+    overflow-y: auto;
+    margin: 0;
+    padding: var(--space-1) 0;
+    list-style: none;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-small);
+    box-shadow: var(--shadow-large);
+    font-size: var(--text-7);
+  }
+
+  li {
+    padding: var(--space-1) var(--space-3);
+    cursor: pointer;
+    overflow-wrap: anywhere;
+
+    &[aria-selected="true"] {
+      background: var(--muted);
+    }
+
+    &.is-current {
+      font-weight: 600;
+    }
+
+    &.denma-picker-none {
+      color: var(--muted-foreground);
+      cursor: default;
+    }
+  }
+}
+
+.denma-table-tools {
+  flex-wrap: wrap;
+
+  input,
+  select {
+    width: auto;
+    margin: 0;
+    font-size: var(--text-7);
+    padding-block: var(--space-1);
+  }
+
+  .denma-find {
+    width: 12rem;
+  }
+}
+
+.denma-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    color: var(--primary);
+  }
+
+  &[data-sorted="asc"]::after {
+    content: "↑";
+  }
+
+  &[data-sorted="desc"]::after {
+    content: "↓";
+  }
+}
+
+.denma-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-3);
+  font-size: var(--text-7);
+
+  button {
+    margin: 0;
+  }
+
+  .icon {
+    width: 1em;
+    height: 1em;
+  }
+}
+
+@media (max-width: 769px) {
+  .denma-picker input[role="combobox"],
+  .denma-table-tools .denma-find {
+    width: 100%;
+  }
+
+  .denma-picker,
+  .denma-table-tools {
+    flex: 1 1 100%;
+  }
+}
+
 /* A superadmin in a center: who they are, and the way back to the hub
    (partials/denma/superadmin-notice.html). */
 .denma-superadmin-notice {

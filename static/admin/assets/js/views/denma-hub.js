@@ -7,6 +7,7 @@
 import Alpine from 'alpinejs';
 import { api, urls } from '../main.js';
 import * as s from '../denma-stats.js';
+import { centerPicker, centerTable, centerState } from '../denma-hub-ui.js';
 import * as u from '../utils.js';
 
 // [key, label, format, higher is good, description]
@@ -65,6 +66,8 @@ function component() {
 
   return {
     ...s.loadRange(),
+    ...centerPicker([{ slug: '', name: 'All centers' }]),
+    ...centerTable(),
     ranges: s.RANGES,
     center: saved,
     centers: [],
@@ -170,8 +173,19 @@ function component() {
         const f = c.cur ? figures(c.cur) : null;
         const hard = f && s.health(f.hardRate, s.BOUNCE_METRICS[1][4]);
         const complaint = f && s.health(f.complaintRate, s.BOUNCE_METRICS[4][4]);
+        const sent = f && f.sends > 0;
         return {
           ...c,
+          state: centerState(c),
+          sort: {
+            name: c.name.toLowerCase(),
+            subscribers: f ? c.subscribers : null,
+            sends: f ? f.sends : null,
+            open: f ? f.open : null,
+            hard: sent ? f.hardRate : null,
+            complaint: sent ? f.complaintRate : null,
+            last: c.last_sent ? new Date(c.last_sent).getTime() : null,
+          },
           subscribersText: s.fmt(c.subscribers, 'count'),
           newText: f && f.newSubs ? `+${f.newSubs.toLocaleString()} new` : '',
           sendsText: f ? s.fmt(f.sends, 'count') : '—',
