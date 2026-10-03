@@ -47,8 +47,9 @@ const (
 // Store represents a data backend, such as a database,
 // that provides subscriber and campaign records.
 type Store interface {
-	NextCampaigns(currentIDs []int64, sentCounts []int64) ([]*models.Campaign, error)
-	NextSubscribers(campID, limit int) ([]models.Subscriber, error)
+	// denma: lastSubIDs and lastFetchedID (upstream PR #3222).
+	NextCampaigns(currentIDs []int64, sentCounts []int64, lastSubIDs []int64) ([]*models.Campaign, error)
+	NextSubscribers(campID, lastFetchedID, limit int) ([]models.Subscriber, error)
 	GetCampaign(campID int) (*models.Campaign, error)
 	GetAttachment(mediaID int) (models.Attachment, error)
 	GetInlineAttachmentByFilename(filename string) (models.Attachment, string, error)
@@ -455,8 +456,8 @@ func (m *Manager) scanCampaigns(tick time.Duration) {
 		if m.scanStopped() { // denma: manager/denma.go
 			return
 		}
-		ids, counts := m.getCurrentCampaigns()
-		campaigns, err := m.store.NextCampaigns(ids, counts)
+		ids, counts, lastIDs := m.getCurrentCampaigns() // denma: and their checkpoints (upstream PR #3222)
+		campaigns, err := m.store.NextCampaigns(ids, counts, lastIDs)
 		if err != nil {
 			m.log.Printf("error fetching campaigns: %v", err)
 			continue
@@ -558,15 +559,15 @@ func (m *Manager) worker() {
 				// Mark the message as done.
 				msg.pipe.wg.Done()
 
+				// denma: the resume checkpoint (lastID) moves past it, sent or
+				// failed, once every message before it has too (denma.go).
+				msg.pipe.denmaFinished(msg.Subscriber.ID)
+
 				if err != nil {
 					// Call the error callback, which keeps track of the error count
 					// and stops the campaign if the error count exceeds the threshold.
 					msg.pipe.OnError()
 				} else {
-					id := uint64(msg.Subscriber.ID)
-					if id > msg.pipe.lastID.Load() {
-						msg.pipe.lastID.Store(uint64(msg.Subscriber.ID))
-					}
 					msg.pipe.rate.Incr(1)
 					msg.pipe.sent.Add(1)
 				}
@@ -587,15 +588,17 @@ func (m *Manager) worker() {
 }
 
 // getCurrentCampaigns returns the IDs of campaigns currently being processed
-// and their sent counts.
-func (m *Manager) getCurrentCampaigns() ([]int64, []int64) {
+// and their sent counts. denma: and their resume checkpoints (pipe.lastID),
+// which, unlike the counts, aren't reset.
+func (m *Manager) getCurrentCampaigns() ([]int64, []int64, []int64) {
 	// Needs to return an empty slice in case there are no campaigns.
 	m.pipesMut.RLock()
 	defer m.pipesMut.RUnlock()
 
 	var (
-		ids    = make([]int64, 0, len(m.pipes))
-		counts = make([]int64, 0, len(m.pipes))
+		ids     = make([]int64, 0, len(m.pipes))
+		counts  = make([]int64, 0, len(m.pipes))
+		lastIDs = make([]int64, 0, len(m.pipes)) // denma
 	)
 	for _, p := range m.pipes {
 		ids = append(ids, int64(p.camp.ID))
@@ -604,9 +607,10 @@ func (m *Manager) getCurrentCampaigns() ([]int64, []int64) {
 		// as in the database, they're stored cumulatively (sent += $newSent).
 		counts = append(counts, p.sent.Load())
 		p.sent.Store(0)
+		lastIDs = append(lastIDs, int64(p.lastID.Load())) // denma
 	}
 
-	return ids, counts
+	return ids, counts, lastIDs
 }
 
 // trackLink register a URL and return its UUID to be used in message templates

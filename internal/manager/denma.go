@@ -28,3 +28,46 @@ func (m *Manager) scanStopped() bool {
 	_, ok := stoppedScans.LoadAndDelete(m)
 	return ok
 }
+
+// denmaQueue is a campaign pipe's queued messages, for its resume checkpoint
+// (pipe.lastID, saved as campaigns.last_subscriber_id by the campaign scan
+// and when the pipe ends): the highest subscriber ID up to which every queued
+// message has finished, sent or failed. Upstream PR #3222 keeps fetching from
+// moving the checkpoint, but takes the highest ID sent, while the workers may
+// still be sending lower ones (or skip them, once the campaign is paused); a
+// restart then skipped those. Messages are queued in ID order and finish in
+// any order.
+type denmaQueue struct {
+	mu     sync.Mutex
+	queued []int        // queued and not finished, in order
+	done   map[int]bool // finished before an earlier one
+}
+
+// denmaQueued records a message queued for a subscriber. Call it before the
+// message can reach a worker.
+func (p *pipe) denmaQueued(subID int) {
+	p.denmaQ.mu.Lock()
+	p.denmaQ.queued = append(p.denmaQ.queued, subID)
+	p.denmaQ.mu.Unlock()
+}
+
+// denmaFinished records a subscriber's message as finished (sent or failed)
+// and moves the checkpoint past every message finished in order. A message a
+// worker skips (the campaign was stopped) isn't finished, so the checkpoint
+// stays before it and a resumed campaign sends it.
+func (p *pipe) denmaFinished(subID int) {
+	q := &p.denmaQ
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.done == nil {
+		q.done = map[int]bool{}
+	}
+	q.done[subID] = true
+	for len(q.queued) > 0 && q.done[q.queued[0]] {
+		delete(q.done, q.queued[0])
+		if id := uint64(q.queued[0]); id > p.lastID.Load() {
+			p.lastID.Store(id)
+		}
+		q.queued = q.queued[1:]
+	}
+}

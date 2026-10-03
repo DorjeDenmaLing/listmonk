@@ -20,6 +20,11 @@ type pipe struct {
 	stopped    atomic.Bool
 	withErrors atomic.Bool
 
+	// denma: the fetch cursor (upstream PR #3222), and the queued messages for
+	// the resume checkpoint, lastID (denma.go).
+	lastFetched atomic.Int64
+	denmaQ      denmaQueue
+
 	m *Manager
 }
 
@@ -54,6 +59,11 @@ func (m *Manager) newPipe(c *models.Campaign) (*pipe, error) {
 		m:    m,
 	}
 
+	// denma: fetching starts from the resume checkpoint: after a restart, the
+	// last subscriber up to whom every message was processed (upstream PR #3222).
+	p.lastFetched.Store(int64(c.LastSubscriberID))
+	p.lastID.Store(uint64(c.LastSubscriberID))
+
 	// Increment the waitgroup so that Wait() blocks immediately. This is necessary
 	// as a campaign pipe is created first and subscribers/messages under it are
 	// fetched asynchronolusly later. The messages each add to the wg and that
@@ -79,8 +89,16 @@ func (m *Manager) newPipe(c *models.Campaign) (*pipe, error) {
 // in the current batch or not. A false indicates that all subscribers
 // have been processed, or that a campaign has been paused or cancelled.
 func (p *pipe) NextSubscribers() (bool, error) {
+	// denma: a stopped campaign (paused for errors, or a shutdown) fetches no
+	// more; its workers would only skip them. Its checkpoint stays before
+	// the first message not sent, so resuming sends the rest.
+	if p.stopped.Load() {
+		return false, nil
+	}
+
 	// Fetch the next batch of subscribers from a 'running' campaign.
-	subs, err := p.m.store.NextSubscribers(p.camp.ID, p.m.cfg.BatchSize)
+	// denma: after the pipe's fetch cursor (upstream PR #3222).
+	subs, err := p.m.store.NextSubscribers(p.camp.ID, int(p.lastFetched.Load()), p.m.cfg.BatchSize)
 	if err != nil {
 		return false, fmt.Errorf("error fetching campaign subscribers (%s): %v", p.camp.Name, err)
 	}
@@ -90,6 +108,7 @@ func (p *pipe) NextSubscribers() (bool, error) {
 	if len(subs) == 0 {
 		return false, nil
 	}
+	p.lastFetched.Store(int64(subs[len(subs)-1].ID)) // denma: batches are in ID order
 
 	// Is there a sliding window limit configured?
 	hasSliding := p.m.cfg.SlidingWindow &&
@@ -106,6 +125,7 @@ func (p *pipe) NextSubscribers() (bool, error) {
 
 		// Push the message to the queue while blocking and waiting until
 		// the queue is drained.
+		p.denmaQueued(s.ID) // denma: before a worker can finish it (denma.go)
 		p.m.campMsgQ <- msg
 
 		// Check if the sliding window is active.

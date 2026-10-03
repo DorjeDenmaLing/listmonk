@@ -215,9 +215,12 @@ counts AS (
     GROUP BY camps.id
 ),
 updateCounts AS (
-    WITH uc (campaign_id, sent_count) AS (SELECT * FROM unnest($1::INT[], $2::INT[]))
+    -- denma: and the running campaigns' resume checkpoints ($3), which only
+    -- move forward (upstream PR #3222).
+    WITH uc (campaign_id, sent_count, last_sub_id) AS (SELECT * FROM unnest($1::INT[], $2::INT[], $3::INT[]))
     UPDATE campaigns
-    SET sent = sent + uc.sent_count
+    SET sent = sent + uc.sent_count,
+        last_subscriber_id = GREATEST(campaigns.last_subscriber_id, uc.last_sub_id)
     FROM uc WHERE campaigns.id = uc.campaign_id
 ),
 u AS (
@@ -317,9 +320,10 @@ SELECT campaigns.id AS campaign_id, campaigns.type as campaign_type, last_subscr
     WHERE campaigns.id = $1 AND campaigns.status='running';
 
 -- name: next-campaign-subscribers
--- Returns a batch of subscribers in a given campaign starting from the last checkpoint
--- (last_subscriber_id). Every fetch updates the checkpoint and the sent count, which means
--- every fetch returns a new batch of subscribers until all rows are exhausted.
+-- Returns a batch of subscribers in a given campaign after $3, the campaign pipe's
+-- fetch cursor (kept in memory, starting from the last_subscriber_id checkpoint).
+-- denma: fetching no longer moves the checkpoint (upstream PR #3222): it moved
+-- before the batch was sent, so a restart skipped the fetched but unsent subscribers.
 --
 -- In previous versions, get-running-campaign + this was a single query spread across multiple
 -- CTEs, but despite numerous permutations and combinations, Postgres query planner simply would not use
@@ -364,11 +368,6 @@ subs AS (
             )
         ORDER BY s.id LIMIT $6
     ) subIDs JOIN subscribers s ON (s.id = subIDs.id) ORDER BY s.id
-),
-u AS (
-    UPDATE campaigns
-    SET last_subscriber_id = (SELECT MAX(id) FROM subs), updated_at = NOW()
-    WHERE (SELECT COUNT(id) FROM subs) > 0 AND id=$1
 )
 SELECT * FROM subs;
 

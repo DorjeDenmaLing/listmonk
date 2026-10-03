@@ -94,6 +94,12 @@ type Campaign struct {
 	// Fetched bodies of the attachments.
 	Attachments []Attachment `json:"-" db:"-"`
 
+	// denma: the resume checkpoint (upstream PR #3222): every subscriber up
+	// to this ID has been processed. It advances only from the send side
+	// (internal/manager/denma.go), never when subscribers are fetched, so a
+	// restart resumes from it without skipping fetched but unsent ones.
+	LastSubscriberID int `db:"last_subscriber_id" json:"-"`
+
 	// Pseudofield for getting the total number of subscribers
 	// in searches and queries.
 	Total int `db:"total" json:"-"`
