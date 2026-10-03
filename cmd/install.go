@@ -46,7 +46,9 @@ func install(lastVer string, db *sqlx.DB, fs stuffbin.FileSystem, prompt, idempo
 	if idempotent {
 		if _, err := db.Exec("SELECT count(*) FROM settings"); err != nil {
 			// If "settings" doesn't exist, assume it's a fresh install.
-			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code != "42P01" {
+			// denma: any other error (the database briefly unreachable) aborts,
+			// as installing drops every table (upstream PR #3196).
+			if !isTableNotExistErr(err) {
 				lo.Fatalf("error checking existing DB schema: %v", err)
 			}
 		} else {
