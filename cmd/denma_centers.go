@@ -355,12 +355,33 @@ func denmaEveryMinute(a *App, at int, fn func()) (int, error) {
 	return 0, nil
 }
 
-// denmaHubPath reports whether the hub serves a path: its admin and API, the
-// health check, the static files its pages use, and the bounce webhooks (for
-// every center, cmd/denma_bounces.go).
+// denmaHubPath reports whether the hub serves a path: its admin and API (but
+// no center content), the health check, the static files its pages use, and
+// the bounce webhooks (for every center, cmd/denma_bounces.go).
 func denmaHubPath(p string) bool {
+	if denmaCenterContent(p) {
+		return false
+	}
 	for _, pre := range []string{"/admin", "/api/", "/public/", "/health", "/webhooks/"} {
 		if p == strings.TrimSuffix(pre, "/") || strings.HasPrefix(p, pre) {
+			return true
+		}
+	}
+	return false
+}
+
+// denmaCenterContent reports whether a path is one of a center's content
+// pages or APIs (lists, subscribers, campaigns, templates, media and the
+// rest), which the hub, having none, doesn't serve.
+func denmaCenterContent(p string) bool {
+	for _, pre := range []string{
+		"/admin/lists", "/admin/subscribers", "/admin/campaigns", "/admin/templates",
+		"/admin/calendar", "/admin/automations", "/admin/center",
+		"/api/lists", "/api/subscribers", "/api/campaigns", "/api/templates", "/api/media",
+		"/api/import", "/api/bounces", "/api/tx", "/api/public", "/api/dashboard",
+		"/api/denma/automations", "/api/denma/center", "/api/denma/search", "/api/denma/stats",
+	} {
+		if p == pre || strings.HasPrefix(p, pre+"/") {
 			return true
 		}
 	}
