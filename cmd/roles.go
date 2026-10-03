@@ -56,7 +56,7 @@ func (a *App) ViewUserRoles(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	roles = denmaVisibleRoles(c, roles) // denma: Super Admin only to superadmins (cmd/denma_hierarchy.go)
+	roles = a.denmaVisibleRoles(c, roles) // denma: Super Admin only to superadmins, in the hub (cmd/denma_hierarchy.go)
 
 	rows := make([]roleRow, 0, len(roles))
 	for _, r := range roles {
@@ -112,7 +112,7 @@ func (a *App) ViewUserRole(c echo.Context) error {
 		if err != nil {
 			return err
 		}
-		if r.ID == auth.SuperAdminRoleID && denmaBound(auth.GetUser(c)) { // denma: cmd/denma_hierarchy.go
+		if r.ID == auth.SuperAdminRoleID && a.denmaHidesSuper(c) { // denma: cmd/denma_hierarchy.go
 			return errDenmaNoRole
 		}
 		role = r
@@ -215,7 +215,7 @@ func (a *App) GetUserRoles(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	out = denmaVisibleRoles(c, out) // denma: cmd/denma_hierarchy.go
+	out = a.denmaVisibleRoles(c, out) // denma: cmd/denma_hierarchy.go
 
 	return c.JSON(http.StatusOK, okResp{out})
 }

@@ -10,7 +10,8 @@ package main
 // Superadmins are the hub's users with the Super Admin role. In each center
 // they open, they get a Super Admin account of their own (no password login),
 // recorded in denma.center_superadmins so that it can't be confused with a
-// center user of the same name.
+// center user of the same name. Centers have no Super Admins of their own
+// (cmd/denma_hierarchy.go).
 
 import (
 	"bytes"
@@ -23,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/internal/tmptokens"
@@ -279,13 +281,26 @@ func (a *App) DenmaOpenCenter(c echo.Context) error {
 // the first time, and making sure it's still an enabled Super Admin without
 // password login (a center admin may have changed it).
 func (d *denmaCenters) superadminIn(ctr *denmaCenter, hu auth.User) (int, error) {
-	db := ctr.app.db
+	alt := fmt.Sprintf("superadmin-%d@hub.invalid", hu.ID)
+	email := hu.Email.String
+	if email == "" {
+		email = alt
+	}
+	return d.hubAccount(ctr.ID, ctr.app.db, hu.ID, hu.Username, email, alt, hu.Name)
+}
 
+// hubAccount returns an account of the hub's in a center (db), recorded in
+// denma.center_superadmins under hubUserID (a superadmin's, or 0 for the
+// hub's own, cmd/denma_hierarchy.go), creating it if there's none, and making
+// sure it's still an enabled Super Admin without password login. A new one is
+// named username, or username-hub1, -hub2… if that's taken in the center, with
+// email, or alt if that's taken.
+func (d *denmaCenters) hubAccount(centerID int, db *sqlx.DB, hubUserID int, username, email, alt, name string) (int, error) {
 	var id int
-	err := d.base.db.Get(&id, `SELECT center_user_id FROM denma.center_superadmins WHERE center_id = $1 AND hub_user_id = $2`, ctr.ID, hu.ID)
+	err := d.base.db.Get(&id, `SELECT center_user_id FROM denma.center_superadmins WHERE center_id = $1 AND hub_user_id = $2`, centerID, hubUserID)
 	if err == nil {
 		res, err := db.Exec(`UPDATE users SET user_role_id = $2, list_role_id = NULL, status = 'enabled', type = 'user',
-			password_login = false, password = NULL, updated_at = NOW() WHERE id = $1`, id, auth.SuperAdminRoleID)
+			password_login = false, password = NULL WHERE id = $1`, id, auth.SuperAdminRoleID)
 		if err != nil {
 			return 0, err
 		}
@@ -296,35 +311,31 @@ func (d *denmaCenters) superadminIn(ctr *denmaCenter, hu auth.User) (int, error)
 	}
 
 	// A username (and e-mail, both unique) not used in the center yet.
-	email := hu.Email.String
-	if email == "" {
-		email = fmt.Sprintf("superadmin-%d@hub.invalid", hu.ID)
-	}
 	var taken bool
 	if err := db.Get(&taken, `SELECT EXISTS (SELECT 1 FROM users WHERE email = $1)`, email); err != nil {
 		return 0, err
 	}
 	if taken {
-		email = fmt.Sprintf("superadmin-%d@hub.invalid", hu.ID)
+		email = alt
 	}
-	name := hu.Username
+	uname := username
 	for i := 1; ; i++ {
-		if err := db.Get(&taken, `SELECT EXISTS (SELECT 1 FROM users WHERE username = $1)`, name); err != nil {
+		if err := db.Get(&taken, `SELECT EXISTS (SELECT 1 FROM users WHERE username = $1)`, uname); err != nil {
 			return 0, err
 		}
 		if !taken {
 			break
 		}
-		name = fmt.Sprintf("%s-hub%d", hu.Username, i)
+		uname = fmt.Sprintf("%s-hub%d", username, i)
 	}
 
 	if err := db.Get(&id, `INSERT INTO users (username, password_login, password, email, name, type, user_role_id, status)
 		VALUES ($1, false, NULL, $2, $3, 'user', $4, 'enabled') RETURNING id`,
-		name, email, hu.Name, auth.SuperAdminRoleID); err != nil {
+		uname, email, name, auth.SuperAdminRoleID); err != nil {
 		return 0, err
 	}
 	if _, err := d.base.db.Exec(`INSERT INTO denma.center_superadmins (center_id, hub_user_id, center_user_id) VALUES ($1, $2, $3)
-		ON CONFLICT (center_id, hub_user_id) DO UPDATE SET center_user_id = EXCLUDED.center_user_id`, ctr.ID, hu.ID, id); err != nil {
+		ON CONFLICT (center_id, hub_user_id) DO UPDATE SET center_user_id = EXCLUDED.center_user_id`, centerID, hubUserID, id); err != nil {
 		return 0, err
 	}
 	return id, nil

@@ -703,8 +703,8 @@ func (d *denmaCenters) provisionRoles(db *sqlx.DB) error {
 
 // adopt keeps a center in step with the hub on every load: its address under
 // the hub's (also for an existing install, such as DDL's, whose links move
-// from / to /c/<slug>/), its uploads in its own folder, and the roles the hub
-// relies on.
+// from / to /c/<slug>/), its uploads in its own folder, the roles the hub
+// relies on, and no Super Admins but the hub's.
 func (d *denmaCenters) adopt(c *denmaCenter, db *sqlx.DB) error {
 	root := strings.TrimSuffix(d.current().urlCfg.RootURL, "/") + denmaCenterPath + c.Slug
 	if _, err := db.Exec(`UPDATE settings SET value = to_jsonb($1::text), updated_at = NOW()
@@ -714,7 +714,10 @@ func (d *denmaCenters) adopt(c *denmaCenter, db *sqlx.DB) error {
 	if err := d.ownUploads(c, db); err != nil { // cmd/denma_layout.go
 		return err
 	}
-	return d.provisionRoles(db)
+	if err := d.provisionRoles(db); err != nil {
+		return err
+	}
+	return d.ownAdmins(c, db) // cmd/denma_hierarchy.go
 }
 
 // denmaCryptoFuncs makes listmonk's pgcrypto functions, which live in the

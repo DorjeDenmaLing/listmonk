@@ -14,14 +14,20 @@ package main
 //
 // In a center, nobody sees the hub's superadmins' own accounts there (made
 // when they open it, cmd/denma_hub.go): they aren't the center's users.
+// Centers have their own admins (Center Admins) and no Super Admins of their
+// own: the role is only the hub's accounts', and nobody sees it or gives it
+// out there (ownAdmins).
 //
 // Called from listmonk's users and roles handlers (cmd/users.go,
 // cmd/roles.go), at marked lines; the forms offer only what may be given
 // (views/user.html, views/user-role.html, views/list-role.html).
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
@@ -32,6 +38,40 @@ import (
 // UserRoleID.)
 func denmaBound(u auth.User) bool {
 	return u.UserRole.ID != auth.SuperAdminRoleID
+}
+
+// denmaInCenter reports whether a is a center's app (not the hub's, nor a
+// single install's).
+func (a *App) denmaInCenter() bool {
+	return denmaHub != nil && a.ko.String("denma.center") != ""
+}
+
+// denmaHidesSuper reports whether c's user doesn't see the Super Admin role
+// and its users: everyone in a center, and those who aren't superadmins.
+func (a *App) denmaHidesSuper(c echo.Context) bool {
+	return a.denmaInCenter() || denmaBound(auth.GetUser(c))
+}
+
+// ownAdmins keeps a center's Super Admins the hub's. The hub has an account
+// of its own in each center (hub_user_id 0 in denma.center_superadmins,
+// hidden like the superadmins'), as listmonk won't change or delete users
+// unless an enabled Super Admin would remain, and a center starts with only
+// its Center Admin. Anyone else with the role, such as an existing install's
+// admins (DDL's), becomes a Center Admin. On every load (adopt).
+func (d *denmaCenters) ownAdmins(c *denmaCenter, db *sqlx.DB) error {
+	if _, err := d.hubAccount(c.ID, db, 0, "hub", "hub@hub.invalid", "hub@hub.invalid", "Listmonk Shambhala"); err != nil {
+		return fmt.Errorf("creating the hub's account: %v", err)
+	}
+	var names []string
+	if err := db.Select(&names, `UPDATE users SET user_role_id = (SELECT id FROM roles WHERE name = $2 AND type = 'user'), updated_at = NOW()
+		WHERE user_role_id = $3 AND id NOT IN (SELECT center_user_id FROM denma.center_superadmins WHERE center_id = $1)
+		RETURNING username`, c.ID, denmaCenterAdminRole, auth.SuperAdminRoleID); err != nil {
+		return fmt.Errorf("making the center's Super Admins %ss: %v", denmaCenterAdminRole, err)
+	}
+	if len(names) > 0 {
+		lo.Printf("denma: center %s: %s now %s (centers have no Super Admins of their own)", c.Slug, strings.Join(names, ", "), denmaCenterAdminRole)
+	}
+	return nil
 }
 
 // denmaHasPerms reports whether u has every one of perms.
@@ -76,6 +116,8 @@ func denmaWithin(u, target auth.User) bool {
 var (
 	errDenmaNotYours = echo.NewHTTPError(http.StatusForbidden,
 		"You can only give out permissions and lists you have yourself, and only manage users and roles with no more than you have.")
+	errDenmaNoSuper = echo.NewHTTPError(http.StatusForbidden,
+		"Centers have no Super Admins: their admins are Center Admins.")
 	errDenmaNoUser = echo.NewHTTPError(http.StatusNotFound, "user not found")
 	errDenmaNoRole = echo.NewHTTPError(http.StatusNotFound, "role not found")
 )
@@ -99,17 +141,17 @@ func (a *App) denmaHubAccounts() (map[int]bool, error) {
 	return out, nil
 }
 
-// denmaVisibleUsers drops the users c's user doesn't see: the hub's
-// superadmins' accounts, and Super Admins unless they're one.
+// denmaVisibleUsers drops the users c's user doesn't see: the hub's accounts,
+// and Super Admins (denmaHidesSuper).
 func (a *App) denmaVisibleUsers(c echo.Context, users []auth.User) ([]auth.User, error) {
 	hub, err := a.denmaHubAccounts()
 	if err != nil {
 		return nil, err
 	}
-	bound := denmaBound(auth.GetUser(c))
+	hide := a.denmaHidesSuper(c)
 	out := users[:0]
 	for _, x := range users {
-		if !hub[x.ID] && !(bound && x.UserRole.ID == auth.SuperAdminRoleID) {
+		if !hub[x.ID] && !(hide && x.UserRole.ID == auth.SuperAdminRoleID) {
 			out = append(out, x)
 		}
 	}
@@ -122,7 +164,7 @@ func (a *App) denmaSeeUser(c echo.Context, target auth.User) error {
 	if err != nil {
 		return err
 	}
-	if hub[target.ID] || (denmaBound(auth.GetUser(c)) && target.UserRole.ID == auth.SuperAdminRoleID) {
+	if hub[target.ID] || (a.denmaHidesSuper(c) && target.UserRole.ID == auth.SuperAdminRoleID) {
 		return errDenmaNoUser
 	}
 	return nil
@@ -145,8 +187,12 @@ func (a *App) denmaCheckUser(c echo.Context, id int) error {
 }
 
 // denmaCheckAssign checks that c's user may give a user this role and list
-// role (nil for none): ones with no more than they have.
+// role (nil for none): ones with no more than they have, and never Super
+// Admin in a center.
 func (a *App) denmaCheckAssign(c echo.Context, roleID int, listRoleID *int) error {
+	if roleID == auth.SuperAdminRoleID && a.denmaInCenter() {
+		return errDenmaNoSuper
+	}
 	u := auth.GetUser(c)
 	if !denmaBound(u) {
 		return nil
@@ -189,31 +235,32 @@ func (a *App) denmaListRole(id int) (auth.ListRole, error) {
 
 // denmaAssignable keeps the roles c's user may give out (for the user form's
 // selectors), and the ones the user being edited has now (cur, curList), so
-// that their form shows them.
-func denmaAssignable(c echo.Context, roles []auth.Role, lists []auth.ListRole, cur int, curList *int) ([]auth.Role, []auth.ListRole) {
-	u := auth.GetUser(c)
-	if !denmaBound(u) {
+// that their form shows them. Never Super Admin, unless a superadmin gives it
+// in the hub.
+func (a *App) denmaAssignable(c echo.Context, roles []auth.Role, lists []auth.ListRole, cur int, curList *int) ([]auth.Role, []auth.ListRole) {
+	if !a.denmaHidesSuper(c) {
 		return roles, lists
 	}
+	u := auth.GetUser(c)
+	bound := denmaBound(u)
 	outR := []auth.Role{}
 	for _, r := range roles {
-		if r.ID != auth.SuperAdminRoleID && (r.ID == cur || denmaHasPerms(u, r.Permissions)) {
+		if r.ID != auth.SuperAdminRoleID && (!bound || r.ID == cur || denmaHasPerms(u, r.Permissions)) {
 			outR = append(outR, r)
 		}
 	}
 	outL := []auth.ListRole{}
 	for _, r := range lists {
-		if (curList != nil && r.ID == *curList) || denmaHasLists(u, r.Lists) {
+		if !bound || (curList != nil && r.ID == *curList) || denmaHasLists(u, r.Lists) {
 			outL = append(outL, r)
 		}
 	}
 	return outR, outL
 }
 
-// denmaVisibleRoles drops the Super Admin role for those who aren't
-// superadmins.
-func denmaVisibleRoles(c echo.Context, roles []auth.Role) []auth.Role {
-	if !denmaBound(auth.GetUser(c)) {
+// denmaVisibleRoles drops the Super Admin role (denmaHidesSuper).
+func (a *App) denmaVisibleRoles(c echo.Context, roles []auth.Role) []auth.Role {
+	if !a.denmaHidesSuper(c) {
 		return roles
 	}
 	out := roles[:0]

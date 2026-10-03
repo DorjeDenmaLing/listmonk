@@ -74,7 +74,7 @@ func (a *App) ViewUsers(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if users, err = a.denmaVisibleUsers(c, users); err != nil { // denma: no hub superadmins; Super Admins only to superadmins (cmd/denma_hierarchy.go)
+	if users, err = a.denmaVisibleUsers(c, users); err != nil { // denma: no hub accounts; Super Admins only to superadmins, in the hub (cmd/denma_hierarchy.go)
 		return err
 	}
 
@@ -135,7 +135,7 @@ func (a *App) ViewUser(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	userRoles, listRoles = denmaAssignable(c, userRoles, listRoles, user.UserRole.ID, user.ListRoleID) // denma: only roles they may give
+	userRoles, listRoles = a.denmaAssignable(c, userRoles, listRoles, user.UserRole.ID, user.ListRoleID) // denma: only roles they may give
 
 	title := a.i18n.T("users.newUser")
 	if !isNew {
