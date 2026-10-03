@@ -11,7 +11,7 @@
 {{- $p := .Data.PageID }}
 		{{- if and DenmaHubURL (eq $u.UserRole.ID 1) }}
 		<li>
-			<a href="{{ DenmaHubURL }}" data-cy="centers">{{ Icon "grid" }} All centers</a>
+			<a href="{{ DenmaHubURL }}/centers" data-cy="centers">{{ Icon "grid" }} All centers</a>
 		</li>
 		{{- end }}
 		{{- if Can $u "campaigns:get" "campaigns:get_all" }}
@@ -36,14 +36,17 @@
 		{{- end }}
 {{ end }}
 
-{{/* The last items: a center's Advanced page (its own details; cmd/denma_center.go),
-	or, in the hub, superadmins' Analytics (every center's audience and mailbox
-	providers; cmd/denma_hub_analytics.go) and Activity (every center's log;
-	cmd/denma_audit.go). */}}
-{{ define "denma-sidebar-end" }}
+{{/* In the hub, under Dashboard, for superadmins: Centers (every center, to
+	open, create, enable or disable; cmd/denma_hub.go), Analytics (every
+	center's audience and mailbox providers; cmd/denma_hub_analytics.go) and
+	Activity (every center's log; cmd/denma_audit.go). */}}
+{{ define "denma-sidebar-hub" }}
 {{- $u := .Data.Profile }}
 {{- $p := .Data.PageID }}
 		{{- if and DenmaIsHub (eq $u.UserRole.ID 1) }}
+		<li>
+			<a href="{{ URI "/admin/centers" }}" {{ IsNav $p "denma.centers" }} data-cy="centers">{{ Icon "list" }} Centers</a>
+		</li>
 		<li>
 			<a href="{{ URI "/admin/analytics" }}" {{ IsNav $p "denma.analytics" }} data-cy="analytics">{{ Icon "bar-chart-2" }} {{ .L.T "globals.terms.analytics" }}</a>
 		</li>
@@ -51,6 +54,13 @@
 			<a href="{{ URI "/admin/activity" }}" {{ IsNav $p "denma.activity" }} data-cy="activity">{{ Icon "activity" }} Activity</a>
 		</li>
 		{{- end }}
+{{ end }}
+
+{{/* The last item: a center's Advanced page (its own details;
+	cmd/denma_center.go). */}}
+{{ define "denma-sidebar-end" }}
+{{- $u := .Data.Profile }}
+{{- $p := .Data.PageID }}
 		{{- if and DenmaHubURL (not DenmaIsHub) (Can $u "center:manage") }}
 		<li>
 			<a href="{{ URI "/admin/center" }}" {{ IsNav $p "denma.center" }} data-cy="center">{{ Icon "tool" }} Advanced</a>

@@ -6,7 +6,7 @@
 <section class="denma-centers" x-data="denmaNewCenter">
 	<header class="page-header">
 		<div class="hstack gap-1">
-			<a href="{{ URI "/admin" }}" class="back" aria-label="Back">{{ Icon "chevron-left" }}</a>
+			<a href="{{ URI "/admin/centers" }}" class="back" aria-label="Back">{{ Icon "chevron-left" }}</a>
 			<h1 class="page-title">New center</h1>
 		</div>
 	</header>
@@ -76,7 +76,7 @@
 				</div>
 				<div class="hstack gap-2">
 					<a :href="`{{ URI "/admin/centers" }}/${created.slug}/open`" class="button" data-variant="primary">{{ Icon "arrow-up-right" }} Open the center</a>
-					<a href="{{ URI "/admin" }}" class="button outline">All centers</a>
+					<a href="{{ URI "/admin/centers" }}" class="button outline">All centers</a>
 				</div>
 			</article>
 		</div>

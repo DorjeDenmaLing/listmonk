@@ -595,6 +595,28 @@ svg.denma-logo {
 .denma-hub .denma-selected td {
   background: var(--muted);
 }
+/* The dashboard's note of centers that didn't start. */
+.denma-hub-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-small);
+  background: var(--tone-amber-bg);
+  color: var(--tone-amber);
+  font-size: var(--text-7);
+
+  .icon {
+    width: 1em;
+    height: 1em;
+  }
+
+  a {
+    font-weight: 500;
+  }
+}
 .denma-hub .denma-hub-centers .table-wrapper {
   overflow-x: auto;
 }

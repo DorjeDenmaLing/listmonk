@@ -6,6 +6,7 @@
 		<li>
 			<a href="{{ URI "/admin" }}" {{ IsNav $p "dashboard" }}>{{ Icon "grid" }} {{ .L.T "menu.dashboard" }}</a>
 		</li>
+		{{- template "denma-sidebar-hub" . }}{{/* denma: the hub's Centers, Analytics, Activity (partials/denma/sidebar.html) */}}
 
 		{{- if not DenmaIsHub }}{{/* denma: the hub has no mailing of its own */}}
 		<li>

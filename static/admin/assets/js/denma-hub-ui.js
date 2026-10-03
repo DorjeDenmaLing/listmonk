@@ -1,6 +1,58 @@
 // denma: the hub's center picker and center tables, for hundreds of centers
-// (partials/denma/hub-ui.html), on its Dashboard, Analytics and Activity
-// pages. Both are mixed into a page's component.
+// (partials/denma/hub-ui.html), on its Dashboard, Centers, Analytics and
+// Activity pages. Both are mixed into a page's component. Also what the
+// Dashboard and Centers pages share: their figures and the center last shown.
+import { getJSON } from './denma-stats.js';
+
+// The center the Dashboard and Analytics last showed ('' for all).
+const CENTER_KEY = 'denma-hub-center';
+
+export function savedCenter() {
+  try {
+    return localStorage.getItem(CENTER_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function saveCenter(slug) {
+  try {
+    localStorage.setItem(CENTER_KEY, slug);
+  } catch { /* storage unavailable */ }
+}
+
+// hubStats gets every center's sending for the periods p (denma-stats.js
+// periods) from /api/denma/hub/stats (cmd/denma_hub.go).
+export function hubStats(p) {
+  const q = new URLSearchParams({
+    from: p.cur.start.toISOString(),
+    to: p.cur.end.toISOString(),
+    prev_from: p.prev.start.toISOString(),
+    prev_to: p.prev.end.toISOString(),
+  });
+  return getJSON(`/denma/hub/stats?${q}`);
+}
+
+// hubFigures are the figures shown from a period of hubStats (or several
+// added up).
+export function hubFigures(p) {
+  const rate = (n, d) => (d > 0 ? n / d : null);
+  const delivered = p.sends - p.camp_bounces;
+  return {
+    campaigns: p.campaigns,
+    sends: p.sends,
+    delivery: rate(delivered, p.sends),
+    open: rate(p.opens, p.tracked_delivered),
+    click: rate(p.clicks, p.tracked_delivered),
+    unsub: rate(p.unsubs, delivered),
+    newSubs: p.new_subscribers,
+    hard: p.hard,
+    soft: p.soft,
+    complaint: p.complaint,
+    hardRate: rate(p.hard, p.sends),
+    complaintRate: rate(p.complaint, p.sends),
+  };
+}
 
 // centerPicker is a searchable center picker ("denma-center-picker"), for a
 // component with centers ([{ slug, name }]), center (the chosen slug) and

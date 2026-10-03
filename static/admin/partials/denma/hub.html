@@ -1,14 +1,17 @@
 {{/*
 	denma: the hub's dashboard (Listmonk Shambhala, the superadmins' home), in
 	place of listmonk's in views/dashboard.html. Every center's sending, all
-	together or one at a time, and the centers (assets/js/views/denma-hub.js,
-	cmd/denma_hub.go).
+	together or one at a time (assets/js/views/denma-hub.js, cmd/denma_hub.go).
+	The centers themselves are on the Centers page (views/denma-centers.html).
 */}}
 {{ define "denma-hub" }}
 <section class="dashboard denma-hub denma-dash" x-data="denmaHub" x-cloak>
 	<header class="page-header">
 		<h1 class="page-title" x-text="selected ? selected.name : 'All centers'">All centers</h1>
 	</header>
+	<p class="denma-hub-alert" x-show="problems.text" data-testid="hub-problems">
+		{{ Icon "alert-triangle" }} <span x-text="problems.text"></span> <a :href="problems.url">See them on Centers</a>
+	</p>
 
 	<div class="vstack gap-6">
 		<article class="card denma-stats">
@@ -33,93 +36,6 @@
 				{{ template "denma-stat-cells" "bounce" }}
 			</div>
 			<p class="denma-stat-note">All centers send through the same mail servers. Amazon SES judges bounce and complaint rates across all of them together.</p>
-		</article>
-
-		<article class="card denma-stats denma-hub-centers">
-			<header class="denma-stat-head">
-				<h2>Centers <span class="text-light" x-text="`(${centers.length})`"></span></h2>
-				<div class="hstack gap-2 denma-table-tools">
-					{{ template "denma-table-find" }}
-					<select x-model="tbl.status" @change="tblFind()" aria-label="Status" data-testid="table-status">
-						<option value="">Any status</option>
-						<option value="running">Running</option>
-						<option value="starting">Starting</option>
-						<option value="error">Error</option>
-						<option value="disabled">Disabled</option>
-					</select>
-					<a href="{{ URI "/admin/centers/new" }}" class="button small" data-variant="primary" data-testid="btn-new">{{ Icon "plus" }} New center</a>
-				</div>
-			</header>
-			<div class="table-wrapper">
-				<table :class="{ 'is-busy': busy }">
-					<thead>
-						<tr>
-							{{ template "denma-th" dict "Key" "name" "Label" "Center" }}
-							{{ template "denma-th" dict "Key" "subscribers" "Label" "Subscribers" "First" "desc" "Class" "align-right" }}
-							{{ template "denma-th" dict "Key" "sends" "Label" "Sent" "First" "desc" "Class" "align-right" "Title" "E-mails sent by campaigns that started in the period" }}
-							{{ template "denma-th" dict "Key" "open" "Label" "Open rate" "First" "desc" "Class" "align-right" }}
-							{{ template "denma-th" dict "Key" "hard" "Label" "Hard bounces" "First" "desc" "Class" "align-right" "Title" "Hard bounces per e-mail sent" }}
-							{{ template "denma-th" dict "Key" "complaint" "Label" "Complaints" "First" "desc" "Class" "align-right" "Title" "Complaints per e-mail sent" }}
-							{{ template "denma-th" dict "Key" "last" "Label" "Last campaign" "First" "desc" }}
-							<th class="actions align-right"></th>
-						</tr>
-					</thead>
-					<tbody>
-						<template x-for="c in tblPage()" :key="c.slug">
-							<tr data-testid="center-row" :data-slug="c.slug" :class="{ 'denma-selected': c.slug === center }">
-								<td>
-									<div class="hstack gap-2">
-										<template x-if="c.loaded"><a :href="openURL(c.slug)" class="unstyled" x-text="c.name"></a></template>
-										<template x-if="!c.loaded"><span class="text-light" x-text="c.name"></span></template>
-										<template x-if="c.error"><span class="badge small enum status-cancelled" :title="c.error"><span class="dot">&#9679;</span> Error</span></template>
-										<template x-if="c.starting"><span class="badge small enum status-scheduled"><span class="dot">&#9679;</span> Starting</span></template>
-										<template x-if="!c.error && c.status === 'disabled'"><span class="badge small enum status-disabled"><span class="dot">&#9679;</span> Disabled</span></template>
-									</div>
-									<div class="text-light text-8" x-text="c.path"></div>
-									<div class="text-8 text-danger denma-center-error" x-show="c.error" x-text="c.error"></div>
-								</td>
-								<td class="align-right" data-label="Subscribers">
-									<span x-text="c.subscribersText"></span>
-									<div class="text-light text-8" x-text="c.newText"></div>
-								</td>
-								<td class="align-right" data-label="Sent">
-									<span x-text="c.sendsText"></span>
-									<div class="text-light text-8" x-text="c.campaignsText"></div>
-								</td>
-								<td class="align-right" data-label="Open rate" x-text="c.openText"></td>
-								<td class="align-right" data-label="Hard bounces"><span :class="c.hardClass" x-text="c.hardText"></span></td>
-								<td class="align-right" data-label="Complaints"><span :class="c.complaintClass" x-text="c.complaintText"></span></td>
-								<td class="date-stack" data-label="Last campaign" x-text="c.lastText"></td>
-								<td class="actions align-right">
-									<ot-dropdown>
-										<button :popovertarget="`center-actions-${c.slug}`" type="button" class="ghost more icon" aria-label="More">{{ Icon "more-vertical" }}</button>
-										<menu popover :id="`center-actions-${c.slug}`">
-											<template x-if="c.loaded">
-												<a :href="openURL(c.slug)" role="menuitem" class="button ghost" data-testid="btn-open">{{ Icon "arrow-up-right" }} Open</a>
-											</template>
-											<button type="button" role="menuitem" class="ghost" data-testid="btn-figures" @click.prevent="$el.closest('[popover]').hidePopover(); center = c.slug; onCenter()">{{ Icon "bar-chart-2" }} Show its figures</button>
-											<template x-if="c.status === 'disabled'">
-												<button type="button" role="menuitem" class="ghost" data-testid="btn-enable" :disabled="isLoading('centers')" @click.prevent="setStatus(c, 'enabled')">{{ Icon "check-circle" }} Enable</button>
-											</template>
-											<template x-if="c.status !== 'disabled' && c.error">
-												<button type="button" role="menuitem" class="ghost" data-testid="btn-retry" :disabled="isLoading('centers')" @click.prevent="setStatus(c, 'enabled')">{{ Icon "refresh-cw" }} Try starting again</button>
-											</template>
-											<template x-if="c.status !== 'disabled'">
-												<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-disable" :disabled="isLoading('centers')" @click.prevent="setStatus(c, 'disabled')">{{ Icon "pause-circle" }} Disable</button>
-											</template>
-										</menu>
-									</ot-dropdown>
-								</td>
-							</tr>
-						</template>
-						<template x-if="!busy && !centers.length">
-							<tr><td colspan="8" class="text-light">No centers yet. Create the first with New center.</td></tr>
-						</template>
-					</tbody>
-				</table>
-			</div>
-			{{ template "denma-pager" }}
-			<p class="denma-stat-note">Opening a center signs you in there as a Super Admin. Mail server settings are the hub's (Settings): every center sends with them. A disabled center keeps its data, but its pages and its subscribers' links stop working until it's enabled.</p>
 		</article>
 	</div>
 </section>

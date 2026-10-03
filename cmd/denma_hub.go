@@ -2,9 +2,10 @@ package main
 
 // denma: the superadmins' hub, Listmonk Shambhala, at / (multi-center mode).
 // Its dashboard (partials/denma/hub.html) shows every center's sending
-// figures, together or one at a time, and lists the centers; from there
-// superadmins create centers, enable and disable them, and open any center
-// without another login.
+// figures, together or one at a time. Its Centers page
+// (views/denma-centers.html) lists the centers; from there superadmins create
+// centers, enable and disable them, and open any center without another
+// login.
 //
 // Superadmins are the hub's users with the Super Admin role. In each center
 // they open, they get a Super Admin account of their own (no password login),
@@ -40,9 +41,7 @@ const denmaInviteTTL = 7 * 24 * time.Hour
 // initDenmaHubHandlers registers the hub's pages (on the admin group). The
 // hub's home is its dashboard (views/dashboard.html).
 func initDenmaHubHandlers(g *echo.Group, a *App) {
-	g.GET(path.Join(uriAdmin, "/centers"), func(c echo.Context) error {
-		return c.Redirect(http.StatusFound, path.Join(a.urlCfg.RootPath, uriAdmin))
-	})
+	g.GET(path.Join(uriAdmin, "/centers"), a.ViewDenmaCenters)
 	g.GET(path.Join(uriAdmin, "/centers/new"), a.ViewDenmaNewCenter)
 	g.GET(path.Join(uriAdmin, "/centers/:slug/open"), a.DenmaOpenCenter)
 	g.GET(path.Join(uriAdmin, "/activity"), a.ViewDenmaActivity)
@@ -221,6 +220,15 @@ func (a *App) DenmaHubStats(c echo.Context) error {
 
 	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
 	return c.JSON(http.StatusOK, okResp{out})
+}
+
+// ViewDenmaCenters renders the hub's Centers page (views/denma-centers.html):
+// every center, with its sending, to open, enable or disable.
+func (a *App) ViewDenmaCenters(c echo.Context) error {
+	if _, err := a.hub(c); err != nil {
+		return err
+	}
+	return c.Render(http.StatusOK, "admin-denma-centers", newAdminView(c, "Centers", "", "denma.centers"))
 }
 
 type denmaNewCenterView struct {
