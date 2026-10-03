@@ -10,6 +10,7 @@ import {
 import * as u from '../utils.js';
 import { denmaPlainText } from '../denma-campaign.js'; // denma: automatic plain text
 import { denmaTagAutocomplete } from '../denma-tags-ui.js'; // denma: subscriber tags
+import { denmaFailures } from '../denma-failures.js'; // denma: failed sends
 
 // Media tag for <ot-taginput> attachments.
 class MediaTag {
@@ -46,6 +47,7 @@ function component(camp, sel) {
   return {
     ...denmaPlainText(), // denma
     denmaTagAutocomplete, // denma
+    ...denmaFailures(), // denma
     isNew,
     isHeadersVisible: Array.isArray(c.headers) && c.headers.length > 0,
     activeTab: 'campaign',

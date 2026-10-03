@@ -25,6 +25,15 @@ type pipe struct {
 	lastFetched atomic.Int64
 	denmaQ      denmaQueue
 
+	// denma: failed sends tried again first, and the failures in a row
+	// (denma.go).
+	denmaRetrying    atomic.Bool
+	denmaRetryOnly   bool
+	denmaRetryCursor int
+	denmaRetried     map[int]bool
+	denmaStreak      atomic.Int64
+	denmaStreakHit   atomic.Bool
+
 	m *Manager
 }
 
@@ -64,6 +73,11 @@ func (m *Manager) newPipe(c *models.Campaign) (*pipe, error) {
 	p.lastFetched.Store(int64(c.LastSubscriberID))
 	p.lastID.Store(uint64(c.LastSubscriberID))
 
+	// denma: a campaign's failed sends are tried again first; a retry run
+	// (campaigns.denma_retry_at) only does that (denma.go).
+	p.denmaRetrying.Store(true)
+	p.denmaRetryOnly = c.DenmaRetryAt.Valid
+
 	// Increment the waitgroup so that Wait() blocks immediately. This is necessary
 	// as a campaign pipe is created first and subscribers/messages under it are
 	// fetched asynchronolusly later. The messages each add to the wg and that
@@ -96,6 +110,16 @@ func (p *pipe) NextSubscribers() (bool, error) {
 		return false, nil
 	}
 
+	// denma: first the campaign's failed sends to try again (denma.go).
+	if p.denmaRetrying.Load() {
+		if has, err := p.denmaNextRetries(); has || err != nil {
+			return has, err
+		}
+		if p.denmaRetryOnly {
+			return false, nil
+		}
+	}
+
 	// Fetch the next batch of subscribers from a 'running' campaign.
 	// denma: after the pipe's fetch cursor (upstream PR #3222).
 	subs, err := p.m.store.NextSubscribers(p.camp.ID, int(p.lastFetched.Load()), p.m.cfg.BatchSize)
@@ -117,9 +141,13 @@ func (p *pipe) NextSubscribers() (bool, error) {
 
 	// Push messages.
 	for _, s := range subs {
+		if p.denmaRetried[s.ID] { // denma: tried again already (denma.go)
+			continue
+		}
 		msg, err := p.newMessage(s)
 		if err != nil {
 			p.m.log.Printf("error rendering message (%s) (%s): %v", p.camp.Name, s.Email, err)
+			p.denmaRenderFailed(s, err) // denma: denma.go
 			continue
 		}
 
@@ -229,7 +257,7 @@ func (p *pipe) cleanup() {
 			p.m.log.Printf("set campaign (%s) to %s", p.camp.Name, models.CampaignStatusPaused)
 		}
 
-		_ = p.m.sendNotif(p.camp, models.CampaignStatusPaused, "Too many errors")
+		_ = p.m.sendNotif(p.camp, models.CampaignStatusPaused, p.denmaPauseReason()) // denma: denma.go
 		return
 	}
 
@@ -249,6 +277,10 @@ func (p *pipe) cleanup() {
 
 	// If a running campaign has exhausted subscribers, it's finished.
 	if c.Status == models.CampaignStatusRunning || c.Status == models.CampaignStatusScheduled {
+		// denma: not while failed sends wait to be tried again (denma.go).
+		if p.denmaRetryLater() {
+			return
+		}
 		c.Status = models.CampaignStatusFinished
 		if err := p.m.store.UpdateCampaignStatus(p.camp.ID, models.CampaignStatusFinished); err != nil {
 			p.m.log.Printf("error finishing campaign (%s): %v", p.camp.Name, err)

@@ -48,6 +48,8 @@
 		{{- end }}
 	</header>
 
+	{{- with $d.DenmaFailures }}{{ template "denma-send-failures" dict "Root" $ "F" . "Campaign" $c "CanResend" (and $canManage $canSend) }}{{ end }}{{/* denma: cmd/denma_retries.go */}}
+
 	{{- if $isNew }}
 		<div role="tablist">
 			<a role="tab" aria-selected="true">{{ Icon "mail" }} {{ .L.Tc "globals.terms.campaign" 1 }}</a>

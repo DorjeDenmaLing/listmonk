@@ -29,6 +29,8 @@ package main
 //   - Subscriber tags (always, cmd/denma_tags.go): the center's tags
 //     (denma_tags), attribs.tags kept tidy and to those, and a campaign's
 //     tags to send to (campaigns.denma_tags).
+//   - Failed sends (always, cmd/denma_retries.go): who a campaign couldn't
+//     send to, and when it tries them again.
 //
 // The triggers and functions are installed in each center's schema when it
 // loads, if they've changed (denmaFeaturesVersion), and read the settings when
@@ -55,7 +57,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 5
+const denmaFeaturesVersion = 6
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -653,7 +655,7 @@ UPDATE subscribers SET attribs = attribs WHERE jsonb_typeof(attribs) = 'object' 
 -- The tags a campaign is sent to, besides its lists.
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';
 INSERT INTO denma_tags (tag) SELECT DISTINCT unnest(denma_tags) FROM campaigns ON CONFLICT DO NOTHING;
-`
+` + denmaRetriesSQL
 
 // denmaVisualTemplate is the center's default visual template's ID (0 for
 // none).

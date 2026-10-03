@@ -58,6 +58,12 @@ type Store interface {
 	CreateLink(url string) (string, error)
 	BlocklistSubscriber(id int64) error
 	DeleteSubscriber(id int64) error
+
+	// denma: failed sends and their retries (denma.go, cmd/denma_retries.go).
+	DenmaSendFailed(campID, subID int, reason string, temporary bool) error
+	DenmaRetrySent(campID, subID int) error
+	DenmaRetrySubscribers(campID, afterID, limit int, all bool) ([]models.Subscriber, error)
+	DenmaRetryLater(campID int) (bool, error)
 }
 
 // Messenger is an interface for a generic messaging backend,
@@ -125,6 +131,8 @@ type CampaignMessage struct {
 	headers  models.Headers
 
 	pipe *pipe
+
+	denmaRetry bool // denma: a failed send tried again (denma.go)
 }
 
 // Config has parameters for configuring the manager.
@@ -556,12 +564,19 @@ func (m *Manager) worker() {
 
 			// Increment the send rate or the error counter if there was an error.
 			if msg.pipe != nil {
-				// Mark the message as done.
-				msg.pipe.wg.Done()
+				// denma: the message is marked as done (wg.Done) last, below, once
+				// all of this is recorded: the last one releases cleanup(), which
+				// saves the sent count and the checkpoint, and checks for failed
+				// sends to try again.
 
 				// denma: the resume checkpoint (lastID) moves past it, sent or
-				// failed, once every message before it has too (denma.go).
-				msg.pipe.denmaFinished(msg.Subscriber.ID)
+				// failed, once every message before it has too (denma.go). A
+				// retry is behind the checkpoint already. And the failed sends
+				// are recorded (denma.go).
+				if !msg.denmaRetry {
+					msg.pipe.denmaFinished(msg.Subscriber.ID)
+				}
+				msg.pipe.denmaSent(msg, err)
 
 				if err != nil {
 					// Call the error callback, which keeps track of the error count
@@ -571,6 +586,9 @@ func (m *Manager) worker() {
 					msg.pipe.rate.Incr(1)
 					msg.pipe.sent.Add(1)
 				}
+
+				// Mark the message as done.
+				msg.pipe.wg.Done()
 			}
 
 		// Arbitrary message.

@@ -1566,3 +1566,80 @@ svg.denma-logo {
   background: var(--muted, rgba(127, 127, 127, 0.12));
   white-space: nowrap;
 }
+
+/* A campaign's failed sends, on its page (partials/denma/failures.html). */
+.denma-failures {
+  margin-bottom: var(--space-6);
+
+  > .icon {
+    flex: none;
+    align-self: flex-start;
+    margin-top: 2px;
+  }
+
+  .denma-failures-body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  p {
+    margin: var(--space-2) 0;
+  }
+
+  .denma-failures-reasons {
+    margin: 0 0 var(--space-2);
+    padding-left: 0;
+    list-style: none;
+    overflow-wrap: anywhere;
+  }
+
+  .denma-failures-n {
+    display: inline-block;
+    min-width: 3ch;
+    font-weight: 600;
+  }
+
+  details table {
+    margin-top: var(--space-2);
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  td {
+    overflow-wrap: break-word;
+  }
+}
+
+/* On phones, each one is a card: the address, why, then tries and when. */
+@media (max-width: 640px) {
+  .denma-failures {
+    padding: var(--space-4);
+
+    details :is(table, tbody, tr, td) {
+      display: block;
+    }
+
+    details thead {
+      display: none;
+    }
+
+    details tr {
+      padding-block: var(--space-3);
+      border-bottom: 1px solid var(--border);
+    }
+
+    details td {
+      padding: 0 var(--space-3);
+      border: 0;
+    }
+
+    td[data-label]::before {
+      content: attr(data-label) ": ";
+      color: var(--muted-foreground);
+    }
+
+    td.align-right {
+      text-align: start;
+    }
+  }
+}

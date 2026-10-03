@@ -103,6 +103,12 @@ type Campaign struct {
 	// denma: the subscriber tags the campaign is also sent to (cmd/denma_tags.go).
 	SubscriberTags pq.StringArray `db:"denma_tags" json:"subscriber_tags"`
 
+	// denma: failed sends (cmd/denma_retries.go): when the campaign next
+	// tries them again (set: it's a retry run, sending only to them), and how
+	// many there are (the campaigns list).
+	DenmaRetryAt null.Time `db:"denma_retry_at" json:"-"`
+	DenmaFailed  int       `db:"denma_failed" json:"denma_failed"`
+
 	// Pseudofield for getting the total number of subscribers
 	// in searches and queries.
 	Total int `db:"total" json:"-"`

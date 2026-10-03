@@ -425,6 +425,8 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return fmt.Sprintf("Set center %s to %s", target, str("status"))
 	case "PUT /api/denma/center":
 		return "Changed the center's details"
+	case "POST /api/denma/campaigns/:id/resend":
+		return "Resent " + label("campaign") + " to those it couldn't send to"
 	case "POST /api/denma/tags":
 		return fmt.Sprintf("Added the tag %q", str("tag"))
 	case "PUT /api/denma/tags":

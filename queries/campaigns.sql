@@ -62,6 +62,8 @@ SELECT id FROM camp;
 -- with every resultant row.
 SELECT  c.*,
         COUNT(*) OVER () AS total,
+        -- denma. The failed sends (cmd/denma_retries.go).
+        (SELECT COUNT(*) FROM denma_send_failures f WHERE f.campaign_id = c.id) AS denma_failed,
         (
             SELECT COALESCE(ARRAY_TO_JSON(ARRAY_AGG(l)), '[]') FROM (
                 SELECT COALESCE(campaign_lists.list_id, 0) AS id,
@@ -186,6 +188,9 @@ WITH camps AS (
     LEFT JOIN templates ON (templates.id = campaigns.template_id)
     WHERE (status='running' OR (status='scheduled' AND NOW() >= campaigns.send_at))
     AND NOT(campaigns.id = ANY($1::INT[]))
+    -- denma. A campaign trying its failed sends again waits until it's time
+    -- (cmd/denma_retries.go).
+    AND (campaigns.denma_retry_at IS NULL OR campaigns.denma_retry_at <= NOW())
 ),
 campLists AS (
     -- Get the list_ids and their optin statuses for the campaigns found in the previous step.
@@ -240,7 +245,9 @@ u AS (
         max_subscriber_id = co.max_subscriber_id,
         started_at=(CASE WHEN ca.started_at IS NULL THEN NOW() ELSE ca.started_at END)
     FROM (SELECT * FROM counts) co
-    WHERE ca.id = co.campaign_id
+    -- denma. Not a retry run, which sends only to the failed sends (people
+    -- who joined since don't get it), so its counts stay.
+    WHERE ca.id = co.campaign_id AND ca.denma_retry_at IS NULL
 )
 SELECT camps.*, campMedia.media_id FROM camps LEFT JOIN campMedia ON (campMedia.campaign_id = camps.id);
 

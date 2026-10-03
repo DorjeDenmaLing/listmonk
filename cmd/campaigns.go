@@ -80,7 +80,8 @@ type campaignView struct {
 	SelectedListIDs []int
 	ArchiveURL      string
 
-	DenmaPlainAuto bool // denma: the center makes plain text automatically (cmd/denma_features.go)
+	DenmaPlainAuto bool               // denma: the center makes plain text automatically (cmd/denma_features.go)
+	DenmaFailures  *denmaSendFailures // denma: those it couldn't send to (cmd/denma_retries.go)
 }
 
 // ViewNewCampaign renders the new campaign page (only the "campaign" tab).
@@ -183,7 +184,8 @@ func (a *App) ViewCampaign(c echo.Context) error {
 		AllLists:   allLists,
 		ArchiveURL: archiveURL,
 
-		DenmaPlainAuto: a.denmaPlainAuto(), // denma
+		DenmaPlainAuto: a.denmaPlainAuto(),                   // denma
+		DenmaFailures:  a.denmaCampaignFailuresView(camp.ID), // denma
 	}
 
 	return c.Render(http.StatusOK, "admin-campaign", data)

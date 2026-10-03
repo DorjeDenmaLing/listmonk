@@ -1,11 +1,13 @@
 package core
 
-// denma: the campaigns query with a search condition (cmd/denma_search.go).
+// denma: the campaigns query with a search condition (cmd/denma_search.go),
+// and the database for the campaign manager's store (cmd/denma_retries.go).
 
 import (
 	"net/http"
 	"strings"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
 	"github.com/lib/pq"
@@ -55,4 +57,9 @@ func (c *Core) DenmaQueryCampaigns(cond string, statuses, tags []string, typ, or
 		total = out[0].Total
 	}
 	return out, total, nil
+}
+
+// DenmaDB returns the core's database.
+func (c *Core) DenmaDB() *sqlx.DB {
+	return c.db
 }

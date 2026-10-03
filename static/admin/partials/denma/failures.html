@@ -1,0 +1,51 @@
+{{- /* denma: a campaign's failed sends, on its page (cmd/denma_retries.go,
+   assets/js/denma-failures.js). dict "Root", "F" (denmaSendFailures),
+   "Campaign", "CanResend". */ -}}
+{{ define "denma-send-failures" -}}
+{{- $f := .F }}{{ $c := .Campaign }}
+<div role="alert" data-variant="warning" class="denma-failures" data-testid="send-failures">
+	{{ Icon "alert-triangle" }}
+	<div class="denma-failures-body">
+		<div class="hstack justify-between gap-4">
+			<strong data-testid="failures-total">{{ FormatNumber $f.Total }} couldn't be sent</strong>
+			{{- if and .CanResend (eq $c.Status "finished") }}
+				<button type="button" class="small" data-testid="btn-resend" @click="denmaResend({{ $c.ID }}, {{ $f.Total }})">{{ Icon "send" }} Resend to them</button>
+			{{- end }}
+		</div>
+		<p data-testid="failures-next">
+			{{- if eq $c.Status "paused" }}
+				Resuming the campaign tries them again first.
+			{{- else if and (eq $c.Status "running") $f.Waiting }}
+				{{ FormatNumber $f.Pending }} will be tried again automatically at {{ NiceDate $f.RetryAt true }}; the campaign finishes after that.
+			{{- else if eq $c.Status "running" }}
+				Those the mail server asked to try later are tried again automatically, up to three times, after the rest are sent.
+			{{- else if eq $c.Status "finished" }}
+				{{- if .CanResend }} Resend to them sends the campaign again to only these people, once whatever stopped it is fixed.{{ end }}
+			{{- end }}
+		</p>
+		<ul class="denma-failures-reasons" data-testid="failures-reasons">
+			{{- range $f.Reasons }}
+				<li><span class="denma-failures-n">{{ FormatNumber .N }}</span> {{ .Reason }}</li>
+			{{- end }}
+		</ul>
+		<details>
+			<summary>Who{{ if gt $f.Total (len $f.Items) }} (the latest {{ len $f.Items }}){{ end }}</summary>
+			<div class="table-wrapper">
+				<table>
+					<thead><tr><th>Subscriber</th><th>Why</th><th class="align-right">Tries</th><th>Last tried</th></tr></thead>
+					<tbody>
+						{{- range $f.Items }}
+						<tr data-testid="failure-row">
+							<td><a href="{{ URI "/admin/subscribers" }}/{{ .SubscriberID }}">{{ .Email }}</a></td>
+							<td>{{ .Reason }}{{ if not .Temporary }} <span class="text-light">(not retried)</span>{{ end }}</td>
+							<td class="align-right" data-label="Tries">{{ .Tries }}</td>
+							<td class="text-nowrap" data-label="Last tried">{{ NiceDate .FailedAt true }}</td>
+						</tr>
+						{{- end }}
+					</tbody>
+				</table>
+			</div>
+		</details>
+	</div>
+</div>
+{{- end }}

@@ -129,6 +129,9 @@
 									<div><dt>{{ $.L.T "campaigns.clicks" }}</dt><dd>{{ FormatNumber .Clicks }}</dd></div>
 									<div><dt>{{ $.L.T "campaigns.sent" }}</dt><dd><span data-stat="sent">{{ FormatNumber .Sent }}</span>{{ if .ToSend }} / <span data-stat="to_send">{{ FormatNumber .ToSend }}</span>{{ end }}</dd></div>
 									<div><dt>{{ $.L.T "globals.terms.bounces" }}</dt><dd><a href="{{ URI "/admin/subscribers/bounces" }}?campaign_id={{ .ID }}" class="unstyled">{{ FormatNumber .Bounces }}</a></dd></div>
+									{{- if .DenmaFailed }}{{/* denma: cmd/denma_retries.go */}}
+										<div class="denma-not-sent"><dt>Not sent</dt><dd><a href="{{ $base }}/{{ .ID }}" class="unstyled" title="Couldn't be sent: see the campaign's page" data-testid="not-sent">{{ FormatNumber .DenmaFailed }}</a></dd></div>
+									{{- end }}
 									{{- with Duration .StartedAt .UpdatedAt }}
 										<div><dt>{{ $.L.T "settings.performance.slidingWindowDuration" }}</dt><dd>{{ . }}</dd></div>
 									{{- end }}

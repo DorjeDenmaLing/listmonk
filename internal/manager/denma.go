@@ -1,8 +1,13 @@
 package manager
 
 import (
+	"errors"
+	"fmt"
+	"net/textproto"
 	"sync"
 	"time"
+
+	"github.com/knadh/listmonk/models"
 )
 
 // denma: many centers run in one process, each with its own campaign manager,
@@ -97,4 +102,122 @@ func (m *Manager) DenmaStop(wait time.Duration) bool {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+// Failed sends (cmd/denma_retries.go). Each is recorded with its reason and
+// whether it's worth trying again: the mail server unreachable or answering
+// "try later" (a 4xx reply) is temporary; a 5xx reply, or a message that
+// couldn't be made from the template, isn't. A pipe first sends the
+// campaign's failed sends again (all of them when a paused campaign is
+// resumed; the temporary ones on a retry run, which does nothing else), and a
+// campaign that reaches the end of its list with temporary ones left stays
+// running, to be picked up again for them after a wait.
+
+// denmaFailStreak is how many sends in a row may fail before the campaign is
+// paused (or listmonk's max_send_errors, if lower; none if that's off): a mail
+// server that's down would otherwise fail everyone left.
+const denmaFailStreak = 20
+
+// denmaTemporary reports whether a failed send is worth trying again.
+func denmaTemporary(err error) bool {
+	var tp *textproto.Error
+	if errors.As(err, &tp) {
+		return tp.Code < 500
+	}
+	return true
+}
+
+// denmaSent records a message's outcome: a failure, or a retry sent.
+func (p *pipe) denmaSent(msg CampaignMessage, err error) {
+	if err != nil {
+		p.denmaFailed(msg.Subscriber.ID, err.Error(), denmaTemporary(err))
+		return
+	}
+	p.denmaStreak.Store(0)
+	if msg.denmaRetry {
+		if err := p.m.store.DenmaRetrySent(p.camp.ID, msg.Subscriber.ID); err != nil {
+			p.m.log.Printf("denma: error recording a retry sent (%s, subscriber %d): %v", p.camp.Name, msg.Subscriber.ID, err)
+		}
+	}
+}
+
+// denmaRenderFailed records a subscriber whose message couldn't be made.
+func (p *pipe) denmaRenderFailed(s models.Subscriber, err error) {
+	p.denmaFailed(s.ID, "The message couldn't be made from the campaign's template: "+err.Error(), false)
+}
+
+// denmaFailed records a failed send, and pauses the campaign after
+// denmaStreakLimit in a row.
+func (p *pipe) denmaFailed(subID int, reason string, temporary bool) {
+	if err := p.m.store.DenmaSendFailed(p.camp.ID, subID, reason, temporary); err != nil {
+		p.m.log.Printf("denma: error recording a failed send (%s, subscriber %d): %v", p.camp.Name, subID, err)
+	}
+	n := p.denmaStreak.Add(1)
+	if limit := p.denmaStreakLimit(); limit > 0 && n >= int64(limit) && !p.stopped.Load() {
+		p.denmaStreakHit.Store(true)
+		p.Stop(true)
+		p.m.log.Printf("denma: %d sends in a row failed, pausing campaign %s", n, p.camp.Name)
+	}
+}
+
+func (p *pipe) denmaStreakLimit() int {
+	if p.m.cfg.MaxSendErrors < 1 {
+		return 0
+	}
+	return min(denmaFailStreak, p.m.cfg.MaxSendErrors)
+}
+
+// denmaPauseReason is why a campaign was paused for errors, for the
+// notification.
+func (p *pipe) denmaPauseReason() string {
+	if p.denmaStreakHit.Load() {
+		return fmt.Sprintf("%d sends in a row failed: the mail server may be down or refusing mail. Resuming the campaign tries them again first.",
+			p.denmaStreakLimit())
+	}
+	return "Too many errors"
+}
+
+// denmaNextRetries queues the next batch of the campaign's failed sends to
+// try again, and reports whether there were any.
+func (p *pipe) denmaNextRetries() (bool, error) {
+	subs, err := p.m.store.DenmaRetrySubscribers(p.camp.ID, p.denmaRetryCursor, p.m.cfg.BatchSize, !p.denmaRetryOnly)
+	if err != nil {
+		return false, fmt.Errorf("error fetching the failed sends to try again (%s): %v", p.camp.Name, err)
+	}
+	if len(subs) == 0 {
+		p.denmaRetrying.Store(false)
+		return false, nil
+	}
+	p.denmaRetryCursor = subs[len(subs)-1].ID
+	if p.denmaRetried == nil {
+		p.denmaRetried = map[int]bool{}
+	}
+	p.m.log.Printf("denma: trying %d failed sends again (%s)", len(subs), p.camp.Name)
+	for _, s := range subs {
+		// (The rest of the campaign skips them.)
+		p.denmaRetried[s.ID] = true
+		msg, err := p.newMessage(s)
+		if err != nil {
+			p.denmaRenderFailed(s, err)
+			continue
+		}
+		msg.denmaRetry = true
+		p.m.campMsgQ <- msg
+	}
+	return true, nil
+}
+
+// denmaRetryLater keeps a campaign that reached the end of its list running
+// if it has temporary failures left to try again (cmd/denma_retries.go sets
+// when), and reports whether it did.
+func (p *pipe) denmaRetryLater() bool {
+	later, err := p.m.store.DenmaRetryLater(p.camp.ID)
+	if err != nil {
+		p.m.log.Printf("denma: error checking campaign (%s)'s failed sends: %v", p.camp.Name, err)
+		return false
+	}
+	if later {
+		p.m.log.Printf("denma: campaign (%s) has failed sends to try again later", p.camp.Name)
+	}
+	return later
 }
