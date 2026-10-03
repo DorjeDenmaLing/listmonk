@@ -1,5 +1,6 @@
 import Alpine from 'alpinejs';
 import { urls } from '../main.js';
+import { denmaLogs } from '../denma-logs.js'; // denma: one center's lines
 
 // Regexp for splitting a log line into [timestamp] [file] [message].
 // 2021/05/01 00:00:00:00 init.go:99: reading config: config.toml
@@ -17,6 +18,7 @@ function splitLine(l) {
 
 function component() {
   return {
+    ...denmaLogs(), // denma
     lines: (window._logs || []).filter((l) => l).map(splitLine),
     loading: false,
     pollID: null,

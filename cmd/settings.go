@@ -430,7 +430,8 @@ func (a *App) handleSettingsRestart(c echo.Context) error {
 type logsView struct {
 	adminView
 
-	Lines []string
+	Lines        []string
+	DenmaCenters []denmaNamedSlug // denma: the hub's, to show one's lines (cmd/denma_logs.go)
 }
 
 // ViewLogs renders the HTML view for the application log viewer.
@@ -442,6 +443,8 @@ func (a *App) ViewLogs(c echo.Context) error {
 	data := logsView{
 		adminView: newAdminView(c, a.i18n.T("logs.title"), "", "settings.logs"),
 		Lines:     a.bufLog.Lines(),
+
+		DenmaCenters: a.denmaPickCenters(), // denma
 	}
 
 	return c.Render(http.StatusOK, "admin-logs", data)

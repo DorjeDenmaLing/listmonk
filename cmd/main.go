@@ -250,6 +250,7 @@ func main() {
 // queries, and starts its background workers (campaign manager, bounces, cron).
 // denma: moved out of main() so that each center is built the same way.
 func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs bool) *App {
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	var (
 		// Initialize static global config.
 		cfg = initConstConfig(ko)

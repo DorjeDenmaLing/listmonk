@@ -1555,3 +1555,8 @@ svg.denma-logo {
     }
   }
 }
+
+/* The hub's Logs page: whose lines to show (partials/denma/logs.html). */
+.denma-logs-centers {
+    margin-top: var(--space-3);
+}

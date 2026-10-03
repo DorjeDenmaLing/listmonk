@@ -323,6 +323,7 @@ func initFS(appDir, staticDir, i18nDir string) stuffbin.FileSystem {
 // initDB initializes the main DB connection pool and parse and loads the app's
 // SQL queries into a prepared query map.
 func initDB(ko *koanf.Koanf) *sqlx.DB { // denma: config as a parameter (one per center)
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	var c struct {
 		Host        string        `koanf:"host"`
 		Port        int           `koanf:"port"`
@@ -339,7 +340,7 @@ func initDB(ko *koanf.Koanf) *sqlx.DB { // denma: config as a parameter (one per
 		lo.Fatalf("error loading db config: %v", err)
 	}
 
-	lo.Printf("connecting to db: %s:%d/%s", c.Host, c.Port, c.DBName)
+	denmaSetupLog(ko).Printf("connecting to db: %s:%d/%s", c.Host, c.Port, c.DBName) // denma: the hub only
 
 	// Build Postgres DSN conditionally with non-empty fields.
 	fields := map[string]string{
@@ -412,6 +413,7 @@ func readQueries(dir string, fs stuffbin.FileSystem) goyesql.Queries {
 
 // prepareQueries queries prepares a query map and returns a *Queries
 func prepareQueries(qMap goyesql.Queries, db *sqlx.DB, ko *koanf.Koanf) *models.Queries {
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	var (
 		countQuery = "get-campaign-analytics-counts"
 		linkSel    = "*"
@@ -446,6 +448,7 @@ func prepareQueries(qMap goyesql.Queries, db *sqlx.DB, ko *koanf.Koanf) *models.
 
 // initSettings loads settings from the DB into the given Koanf map.
 func initSettings(query string, db *sqlx.DB, ko *koanf.Koanf) {
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	var s types.JSONText
 	if err := db.Get(&s, query); err != nil {
 		msg := err.Error()
@@ -512,6 +515,7 @@ func initUrlConfig(ko *koanf.Koanf) *UrlConfig {
 
 // initConstConfig initializes the app's global constants from the given koanf instance.
 func initConstConfig(ko *koanf.Koanf) *Config {
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	// Read constants.
 	var c Config
 	if err := ko.Unmarshal("app", &c); err != nil {
@@ -610,6 +614,7 @@ func initI18n(lang string, fs stuffbin.FileSystem) *i18n.I18n {
 
 // initCore initializes the CRUD DB core .
 func initCore(fnNotify func(sub models.Subscriber, listIDs []int) (int, error), queries *models.Queries, db *sqlx.DB, i *i18n.I18n, ko *koanf.Koanf) *core.Core {
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	opt := &core.Opt{
 		Constants: core.Constants{
 			SendOptinConfirmation: ko.Bool("app.send_optin_confirmation"),
@@ -634,6 +639,7 @@ func initCore(fnNotify func(sub models.Subscriber, listIDs []int) (int, error), 
 
 // initCampaignManager initializes the campaign manager.
 func initCampaignManager(msgrs []manager.Messenger, q *models.Queries, u *UrlConfig, co *core.Core, md media.Store, i *i18n.I18n, ko *koanf.Koanf) *manager.Manager {
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	if ko.Bool("passive") {
 		lo.Println("running in passive mode. won't process campaigns.")
 	}
@@ -712,6 +718,7 @@ func initImporter(q *models.Queries, db *sqlx.DB, core *core.Core, i *i18n.I18n,
 
 // initSMTPMessenger initializes the combined and individual SMTP messengers.
 func initSMTPMessengers(ko *koanf.Koanf) []manager.Messenger { // denma: config as a parameter
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	var (
 		servers = []email.Server{}
 		out     = []manager.Messenger{}
@@ -730,7 +737,7 @@ func initSMTPMessengers(ko *koanf.Koanf) []manager.Messenger { // denma: config 
 		}
 
 		servers = append(servers, s)
-		lo.Printf("initialized email (SMTP) messenger: %s@%s", item.String("username"), item.String("host"))
+		denmaSetupLog(ko).Printf("initialized email (SMTP) messenger: %s@%s", item.String("username"), item.String("host")) // denma: the hub only
 
 		// If the server has a name, initialize it as a standalone e-mail messenger
 		// allowing campaigns to select individual SMTPs. In the UI and config, it'll appear as `email / $name`.
@@ -763,6 +770,7 @@ func initSMTPMessengers(ko *koanf.Koanf) []manager.Messenger { // denma: config 
 // initPostbackMessengers initializes and returns all the enabled
 // HTTP postback messenger backends.
 func initPostbackMessengers(ko *koanf.Koanf) []manager.Messenger {
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	items := ko.Slices("messengers")
 	if len(items) == 0 {
 		return nil
@@ -798,6 +806,7 @@ func initPostbackMessengers(ko *koanf.Koanf) []manager.Messenger {
 
 // initMediaStore initializes Upload manager with a custom backend.
 func initMediaStore(ko *koanf.Koanf) media.Store {
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	switch provider := ko.String("upload.provider"); provider {
 	case "s3":
 		var o s3.Opt
@@ -808,7 +817,7 @@ func initMediaStore(ko *koanf.Koanf) media.Store {
 		if err != nil {
 			lo.Fatalf("error initializing s3 upload provider %s", err)
 		}
-		lo.Println("media upload provider: s3")
+		denmaSetupLog(ko).Println("media upload provider: s3") // denma: the hub only
 		return up
 
 	case "filesystem":
@@ -822,7 +831,7 @@ func initMediaStore(ko *koanf.Koanf) media.Store {
 		if err != nil {
 			lo.Fatalf("error initializing filesystem upload provider %s", err)
 		}
-		lo.Println("media upload provider: filesystem")
+		denmaSetupLog(ko).Println("media upload provider: filesystem") // denma: the hub only
 		return up
 
 	default:
@@ -833,6 +842,7 @@ func initMediaStore(ko *koanf.Koanf) media.Store {
 
 // initNotifs initializes the notifier with the system e-mail templates.
 func initNotifs(fs stuffbin.FileSystem, i *i18n.I18n, em *email.Emailer, u *UrlConfig, ko *koanf.Koanf) *notifs.Notifs { // denma: returned, one per app
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	tpls, err := stuffbin.ParseTemplatesGlob(initTplFuncs(i, u), fs, "/static/email-templates/*.html")
 	if err != nil {
 		lo.Fatalf("error parsing e-mail notif templates: %v", err)
@@ -1151,6 +1161,7 @@ func initCaptcha(ko *koanf.Koanf) *captcha.Captcha { // denma: config as a param
 
 // initCron initializes cron jobs for slow query cache refresh and database vacuum.
 func initCron(co *core.Core, db *sqlx.DB, ko *koanf.Koanf) *cron.Cron { // denma: config as a parameter; returned
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	c := cron.New(cron.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))))
 
 	// Slow query cache cron job.
@@ -1359,6 +1370,7 @@ func initTplFuncs(i *i18n.I18n, u *UrlConfig) template.FuncMap {
 
 // initAuth initializes the auth module with the given DB connection and
 func initAuth(co *core.Core, db *sql.DB, ko *koanf.Koanf) (bool, *auth.Auth) {
+	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	var oidcCfg auth.OIDCConfig
 
 	// If OIDC is enabled, set up the OIDC config.

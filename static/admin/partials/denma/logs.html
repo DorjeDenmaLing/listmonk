@@ -1,0 +1,13 @@
+{{/*
+	denma: on the hub's Logs page (views/logs.html), which lines to show:
+	everything, the hub's own, or one center's (cmd/denma_logs.go). Nothing
+	without centers.
+*/}}
+{{ define "denma-logs-centers" -}}
+{{- if .DenmaCenters }}
+<div class="hstack gap-3 denma-logs-centers">
+	<span class="text-light">Show</span>
+	{{ template "denma-center-picker" dict "ID" "logs-center" "TestID" "logs-center" }}
+</div>
+{{- end }}
+{{- end }}

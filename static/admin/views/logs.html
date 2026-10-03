@@ -5,12 +5,13 @@
 <section class="logs relative" x-data="logsView">
 	<header class="page-header">
 		<h1 class="page-title">{{ .L.T "logs.title" }}</h1>
+		{{ template "denma-logs-centers" $d }}{{/* denma: one center's lines (cmd/denma_logs.go) */}}
 	</header>
 
 	<div class="card page-content">
 		<div class="log-view">
 			<div class="lines" x-ref="lines">
-				<template x-for="(l, i) in lines" :key="i">
+				<template x-for="(l, i) in denmaShown(lines)" :key="i">{{/* denma: was lines */}}
 					<span class="line">
 						<span class="timestamp" x-text="l.timestamp"></span>
 						<span class="file" x-show="l.file && l.file !== '*'" x-text="l.file + ':'"></span>
@@ -24,6 +25,7 @@
 
 <script nonce="{{ .CSPNonce }}">
 	window._logs = {{ ToJSON $d.Lines }};
+	window._denmaCenters = {{ ToJSON $d.DenmaCenters }}; // denma
 </script>
 <script type="module" src="{{ URI "/admin/static/js/views/logs.js" }}?v={{ .AssetVersion }}" defer></script>
 
