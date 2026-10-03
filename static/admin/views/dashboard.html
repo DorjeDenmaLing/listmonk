@@ -3,7 +3,7 @@
 {{- $d := .Data -}}
 {{- $c := $d.Counts -}}
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._dashboardCharts = {{ ToJSON $d.Charts }};
 </script>
 

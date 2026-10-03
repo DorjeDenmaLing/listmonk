@@ -2,7 +2,7 @@
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	const _settings = {{ ToJSON $d.Settings }};
 	const _userRoles = {{ ToJSON $d.UserRoles }};
 	const _listRoles = {{ ToJSON $d.ListRoles }};

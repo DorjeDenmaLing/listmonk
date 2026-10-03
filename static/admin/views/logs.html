@@ -22,7 +22,7 @@
 	</div>
 </section>
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._logs = {{ ToJSON $d.Lines }};
 </script>
 <script type="module" src="{{ URI "/admin/static/js/views/logs.js" }}?v={{ .AssetVersion }}" defer></script>

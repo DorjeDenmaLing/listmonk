@@ -2,7 +2,7 @@
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._selectedCampaigns = {{ ToJSON $d.Campaigns }};
 	window._analytics = {{ if $d.HasData }}{{ ToJSON $d.Data }}{{ else }}null{{ end }};
 </script>

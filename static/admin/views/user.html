@@ -4,7 +4,7 @@
 {{- $base := URI "/admin/users" -}}
 {{- $canSave := $d.Can "users:manage" -}}
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._user = {{ ToJSON $d.User }};
 	window._userRoles = {{ ToJSON $d.UserRoles }};
 </script>

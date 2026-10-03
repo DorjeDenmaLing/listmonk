@@ -4,7 +4,7 @@
 {{- $sub := $d.Subscriber -}}
 {{- $base := printf "%s/%d" (URI "/admin/subscribers") $sub.ID -}}
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._lists = {{ ToJSON $d.AllLists }};
 	const _sub = {{ if $d.IsNew }}null{{ else }}{{ ToJSON $sub }}{{ end }};
 </script>

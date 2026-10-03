@@ -4,7 +4,7 @@
 {{- $canManage := and ($d.Can "roles:manage") (not $d.DenmaLocked) -}}{{/* denma: a role with more than the viewer has is read-only (cmd/denma_hierarchy.go) */}}
 {{- $base := URI "/admin/users/roles/lists" -}}
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._role = {{ ToJSON $d.Role }};
 	window._lists = {{ ToJSON $d.AllLists }};
 </script>

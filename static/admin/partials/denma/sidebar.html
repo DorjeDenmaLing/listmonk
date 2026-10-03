@@ -158,14 +158,14 @@
 
 	{{- /* Phones: Refresh and the user's items, as in 6.2.0's menu. */}}
 	<div class="denma-menu-more">
-		<a href="#" onclick="location.reload(); return false;" class="denma-menu-refresh">{{ template "denma-icon" "refresh" }}<span>{{ .L.T "globals.buttons.refresh" }}</span></a>
+		<a href="#" @click.prevent="location.reload()" class="denma-menu-refresh">{{ template "denma-icon" "refresh" }}<span>{{ .L.T "globals.buttons.refresh" }}</span></a>
 		{{- with $u }}
 		<div class="denma-menu-user">
 			{{ template "denma-avatar" . }}
 			<strong>{{ .Username }}</strong>
 			<small>{{ .Name }}</small>
 			<a href="{{ URI "/admin/user/profile" }}">{{ template "denma-icon" "account-outline" }}<span>{{ $.L.T "users.profile" }}</span></a>
-			<a href="#" onclick="fetch('{{ URI "/api/logout" }}', { method: 'POST' }).then(() => { document.location.href = '{{ URI "/admin/login" }}'; }); return false;">{{ template "denma-icon" "logout-variant" }}<span>{{ $.L.T "users.logout" }}</span></a>
+			<a href="#" @click.prevent="fetch('{{ URI "/api/logout" }}', { method: 'POST' }).then(() => { document.location.href = '{{ URI "/admin/login" }}'; })">{{ template "denma-icon" "logout-variant" }}<span>{{ $.L.T "users.logout" }}</span></a>
 			{{ template "denma-theme-switch" $ }}
 		</div>
 		{{- end }}

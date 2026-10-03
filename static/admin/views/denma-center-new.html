@@ -83,7 +83,7 @@
 	</template>
 </section>
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._denmaFromEmail = {{ $d.FromEmail }};
 </script>
 <script type="module" src="{{ URI "/admin/static/js/views/denma-centers.js" }}?v={{ .AssetVersion }}" defer></script>

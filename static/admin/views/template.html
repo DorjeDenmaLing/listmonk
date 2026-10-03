@@ -6,7 +6,7 @@
 {{- $base := URI "/admin/templates" -}}
 {{- $canManage := $d.Can "templates:manage" -}}
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	const _tpl = {{ ToJSON $t }};
 </script>
 

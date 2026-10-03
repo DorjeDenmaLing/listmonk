@@ -2,7 +2,7 @@
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
 
-<script>const _lists = {{ ToJSON $d.PublicLists }};</script>
+<script nonce="{{ .CSPNonce }}">const _lists = {{ ToJSON $d.PublicLists }};</script>
 <section class="forms" x-data="formsView(_lists)">
 	<header class="row page-header">
 		<div class="col-4">

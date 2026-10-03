@@ -6,7 +6,7 @@
 {{- $canManage := $d.Can "automations:manage" -}}
 
 {{/* denma: an automation, or a new one (cmd/denma_automations.go). */}}
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._denmaAutomation = {{ ToJSON $a }};
 	window._denmaAutoTemplates = {{ ToJSON $d.Templates }};
 	window._lists = {{ ToJSON $d.Lists }};
@@ -124,7 +124,7 @@
 	</div>
 </form>
 
-<script>window._denmaTestEmail = {{ $d.Profile.Email.String }};</script>
+<script nonce="{{ .CSPNonce }}">window._denmaTestEmail = {{ $d.Profile.Email.String }};</script>
 <script type="module" src="{{ URI "/admin/static/js/views/denma-automations.js" }}?v={{ .AssetVersion }}" defer></script>
 
 {{ template "admin-footer" . -}}

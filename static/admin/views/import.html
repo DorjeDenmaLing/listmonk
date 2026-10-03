@@ -3,7 +3,7 @@
 {{- $d := .Data -}}
 {{- $show := or (eq $d.Status.Status "none") (eq $d.Status.Status "") -}}
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._lists = {{ ToJSON $d.AllLists }};
 	window._selectedLists = {{ ToJSON $d.SelectedLists }};
 	window._importStatus = {{ ToJSON $d.Status }};

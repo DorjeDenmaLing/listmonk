@@ -89,6 +89,7 @@ type adminTplData struct {
 	ReqDuration        string
 	Data               any
 	L                  *i18n.I18n
+	CSPNonce           string // denma: for inline <script>s (cmd/denma_csp.go)
 }
 
 type publicTpl struct {
@@ -186,6 +187,7 @@ func (t *adminTplRenderer) Render(w io.Writer, name string, data any, c echo.Con
 		ReqDuration:        reqDuration,
 		Data:               data,
 		L:                  app.i18n,
+		CSPNonce:           denmaAdminCSP(c), // denma: cmd/denma_csp.go
 	})
 }
 

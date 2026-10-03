@@ -245,6 +245,7 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 				case !denmaHubPath(p):
 					return echo.NewHTTPError(http.StatusNotFound, "not found")
 				}
+				denmaSandbox(d.current(), c.Response().Header(), p) // cmd/denma_csp.go
 				if r := d.baseRouter(); r != nil {
 					r.ServeHTTP(c.Response(), c.Request())
 					return nil
@@ -266,6 +267,7 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 				}
 				return echo.NewHTTPError(http.StatusForbidden, "Settings are managed in the hub, for all centers.")
 			}
+			denmaSandbox(ctr.app, c.Response().Header(), "/"+rest)
 			r := c.Request().Clone(c.Request().Context())
 			r.URL.Path = "/" + rest
 			r.URL.RawPath = ""

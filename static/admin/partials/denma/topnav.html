@@ -13,7 +13,7 @@
 	</a>
 	<div class="denma-topnav-end">
 		{{ template "denma-superadmin-notice" . }}
-		<a href="#" class="denma-refresh" onclick="location.reload(); return false;" title="{{ .L.T "globals.buttons.refresh" }}" aria-label="{{ .L.T "globals.buttons.refresh" }}" data-cy="btn-refresh">{{ template "denma-icon" "refresh" }}</a>
+		<a href="#" class="denma-refresh" @click.prevent="location.reload()" title="{{ .L.T "globals.buttons.refresh" }}" aria-label="{{ .L.T "globals.buttons.refresh" }}" data-cy="btn-refresh">{{ template "denma-icon" "refresh" }}</a>
 		{{- with .Data.Profile }}
 		<ot-dropdown class="denma-user">
 			<button popovertarget="user-menu" type="button" class="denma-user-trigger" aria-label="{{ .Username }}" data-testid="user-menu">
@@ -22,7 +22,7 @@
 			<menu popover id="user-menu">
 				<a href="{{ URI "/admin/user/profile" }}" class="denma-user-name"><strong>{{ .Username }}</strong><small>{{ .Name }}</small></a>
 				<a href="{{ URI "/admin/user/profile" }}" role="menuitem">{{ template "denma-icon" "account-outline" }} {{ $.L.T "users.profile" }}</a>
-				<a href="#" role="menuitem" onclick="fetch('{{ URI "/api/logout" }}', { method: 'POST' }).then(() => { document.location.href = '{{ URI "/admin/login" }}'; }); return false;">{{ template "denma-icon" "logout-variant" }} {{ $.L.T "users.logout" }}</a>
+				<a href="#" role="menuitem" @click.prevent="fetch('{{ URI "/api/logout" }}', { method: 'POST' }).then(() => { document.location.href = '{{ URI "/admin/login" }}'; })">{{ template "denma-icon" "logout-variant" }} {{ $.L.T "users.logout" }}</a>
 				{{ template "denma-theme-switch" $ }}
 			</menu>
 		</ot-dropdown>

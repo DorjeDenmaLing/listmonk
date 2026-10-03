@@ -6,7 +6,7 @@
 {{- $canManage := $d.Can "campaigns:manage" "campaigns:manage_all" -}}
 {{- $canSend := $d.Can "campaigns:send" -}}
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._lists = {{ ToJSON $d.AllLists }};
 	window._templates = {{ ToJSON $d.Templates }};
 	const _camp = {{ ToJSON $c }};

@@ -149,7 +149,7 @@
 	</div>
 </section>
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._dbSettings = {{ ToJSON $d.DBSettings }};
 </script>
 <script type="module" src="{{ URI "/admin/static/js/views/maintenance.js" }}?v={{ .AssetVersion }}" defer></script>

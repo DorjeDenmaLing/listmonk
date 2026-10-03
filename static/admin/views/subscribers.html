@@ -7,7 +7,7 @@
 {{- $statusIcons := dict "confirmed" "check-circle" "blocklisted" "x-circle" "disabled" "pause-circle" "unsubscribed" "minus-circle" "unconfirmed" "help-circle" -}}
 {{- if $d.CurrentList }}{{ $base = printf "%s/lists/%d" (URI "/admin/subscribers") $d.CurrentList.ID }}{{ end -}}
 
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._lists = {{ ToJSON $d.AllLists }};
 	window._filters = {
 		listID: {{ if $d.CurrentList }}{{ $d.CurrentList.ID }}{{ else }}null{{ end }},

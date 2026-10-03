@@ -3,7 +3,7 @@
 {{- $d := .Data -}}
 
 {{/* denma: a center's Advanced page, its own details (cmd/denma_center.go). */}}
-<script>
+<script nonce="{{ .CSPNonce }}">
 	window._denmaCenter = {{ ToJSON $d.Form }};
 </script>
 <form class="denma-center-form" x-data="denmaCenter" @submit.prevent="onSubmit" x-cloak>

@@ -2,7 +2,7 @@
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
 
-<script>const _form = {{ if $d.IsNew }}null{{ else }}{{ ToJSON $d.List }}{{ end }};</script>
+<script nonce="{{ .CSPNonce }}">const _form = {{ if $d.IsNew }}null{{ else }}{{ ToJSON $d.List }}{{ end }};</script>
 <section class="lists" x-data="listsView(_form)">
 	<header class="page-header">
 		<div class="hstack gap-1">
