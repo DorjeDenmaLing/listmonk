@@ -291,6 +291,7 @@ func (a *App) ResetPage(c echo.Context) error {
 	)
 
 	// Validate token and email (don't delete it yet, as we may need it for POST).
+	a.denmaRestoreInvite(email, token)            // denma: a center invite after a restart (cmd/denma_invites.go)
 	data, err := tmptokens.Check(a.tmpKey(email)) // denma: per center
 	if err != nil {
 		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
@@ -686,6 +687,7 @@ func (a *App) doResetPassword(c echo.Context, token, email string) error {
 		a.log.Printf("error updating user password: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
 	}
+	a.denmaInviteUsed(email) // denma: cmd/denma_invites.go
 
 	// Invalidate all existing sessions for the user after password reset.
 	if err := a.core.DeleteUserSessions(user.ID, ""); err != nil {

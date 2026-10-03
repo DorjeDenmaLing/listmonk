@@ -418,7 +418,10 @@ func denmaInitRegistry(db *sqlx.DB) error {
 			center     TEXT NOT NULL, -- the slug of the center that found it
 			created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 		);`)
-	return err
+	if err != nil {
+		return err
+	}
+	return denmaInitInvites(db) // cmd/denma_invites.go
 }
 
 // denmaSeedCenters registers centers listed as "slug:Name,slug2:Name 2" if

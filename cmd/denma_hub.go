@@ -35,9 +35,8 @@ import (
 	null "gopkg.in/volatiletech/null.v6"
 )
 
-// denmaInviteTTL is how long a new center admin's set-password link works.
-// Like reset links, it lives in memory: a restart voids it (use Forgot
-// password then).
+// denmaInviteTTL is how long a new center admin's set-password link works,
+// across restarts (cmd/denma_invites.go).
 const denmaInviteTTL = 7 * 24 * time.Hour
 
 // initDenmaHubHandlers registers the hub's pages (on the admin group). The
@@ -460,6 +459,9 @@ func (d *denmaCenters) addCenterAdmin(ctr *denmaCenter, username, name, email st
 		return "", false, err
 	}
 	tmptokens.Set(app.tmpKey(email), denmaInviteTTL, token)
+	if err := d.saveInvite(ctr, email, token, denmaInviteTTL); err != nil { // cmd/denma_invites.go
+		lo.Printf("denma: error saving the invite for %s (it works until a restart): %v", email, err)
+	}
 	link := fmt.Sprintf("%s/admin/reset?token=%s&email=%s", app.urlCfg.RootURL, token, url.QueryEscape(email))
 
 	// The e-mail, in the center's notification look (header and footer from
