@@ -607,7 +607,7 @@ func denmaConnect(ck *koanf.Koanf) (*sqlx.DB, error) {
 	}
 	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s %s",
 		c.Host, c.Port, c.User, c.Password, c.DBName, c.SSLMode, c.Params)
-	test, err := sqlx.Connect("postgres", dsn)
+	test, err := sqlx.Connect(denmaDB(dsn, ck)) // cmd/denma_db.go
 	if err != nil {
 		return nil, fmt.Errorf("connecting to the database: %v", err)
 	}

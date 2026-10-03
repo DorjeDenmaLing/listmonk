@@ -367,7 +367,7 @@ func initDB(ko *koanf.Koanf) *sqlx.DB { // denma: config as a parameter (one per
 		parts = append(parts, c.Params)
 	}
 
-	db, err := sqlx.Connect("postgres", strings.Join(parts, " "))
+	db, err := sqlx.Connect(denmaDB(strings.Join(parts, " "), ko)) // denma: through PgBouncer (cmd/denma_db.go)
 	if err != nil {
 		lo.Fatalf("error connecting to DB: %v", err)
 	}
