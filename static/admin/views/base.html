@@ -43,43 +43,10 @@
 </head>
 <body x-data="adminApp"{{ if .Data.Can "settings:get" }} data-error-events{{ end }}>
 	<div id="app" data-sidebar-layout>
-		<nav data-topnav>
-			<div class="row">
-				<div class="col-4 branding">
-					<button data-sidebar-toggle type="button" aria-label="Toggle sidebar menu" class="small">
-						{{ Icon "menu" }}
-					</button>
-					<a href="{{ URI "/admin" }}" class="favicon"><img src="{{ URI "/admin/static/favicon.png" }}?v={{ .AssetVersion }}" alt="listmonk" /></a>
-					<a href="{{ URI "/admin" }}" class="logo">{{ template "denma-logo" . }}</a>{{/* denma: theme-aware logo, partials/denma/logo.html */}}
-				</div>
-				<div class="col-8 justify-end hstack">
-					{{ template "denma-superadmin-notice" . }}{{/* denma: partials/denma/superadmin-notice.html */}}
-					{{ with .Data.Profile }}
-						<ot-dropdown>
-							<button popovertarget="user-menu" type="button" class="user-nav-button ghost small user-trigger">
-								{{ template "avatar" dict "Seed" (printf "%d" .ID) "Name" (or .Name .Username) "URL" .Avatar.String }}
-								<span class="user-label">{{ .Username }}</span>
-							</button>
-							<menu popover id="user-menu">
-								<a href="{{ URI "/admin/user/profile" }}" role="menuitem" class="button ghost">{{ Icon "user" }} {{ $.L.T "users.profile" }}</a>
-								<button type="button" role="menuitem" class="ghost" onclick="fetch('{{ URI "/api/logout" }}', { method: 'POST' }).then(() => { document.location.href = '{{ URI "/admin/login" }}'; })">
-									{{ Icon "log-out" }} {{ $.L.T "users.logout" }}
-								</button>
-								<hr />
-								<div class="theme-switch" role="group" aria-label="Theme">
-									<button type="button" class="ghost small" title="{{ $.L.T "globals.terms.system" }}" @click="setTheme('auto')" :class="{ 'is-active': theme === 'auto' }" :aria-pressed="theme === 'auto'">{{ Icon "monitor" }}</button>
-									<button type="button" class="ghost small" title="{{ $.L.T "users.themeLight" }}" @click="setTheme('light')" :class="{ 'is-active': theme === 'light' }" :aria-pressed="theme === 'light'">{{ Icon "sun" }}</button>
-									<button type="button" class="ghost small" title="{{ $.L.T "users.themeDark" }}" @click="setTheme('dark')" :class="{ 'is-active': theme === 'dark' }" :aria-pressed="theme === 'dark'">{{ Icon "moon" }}</button>
-								</div>
-							</menu>
-						</ot-dropdown>
-					{{ end }}
-				</div>
-			</div>
-		</nav>
+		{{ template "denma-topnav" . }}{{/* denma: the top bar as in listmonk v6.2.0, partials/denma/topnav.html */}}
 
 		<aside data-sidebar>
-			{{ template "admin-sidebar" . }}
+			{{ template "denma-sidebar" . }}{{/* denma: the sidebar as in listmonk v6.2.0, partials/denma/sidebar.html */}}
 
 			<footer id="footer">
 				<span class="text-light text-8" title="Page render time">{{ .ReqDuration }}</span>

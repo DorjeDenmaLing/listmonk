@@ -1032,3 +1032,526 @@ svg.denma-logo {
     font-size: var(--text-8);
     white-space: nowrap;
 }
+
+/* ---- Top bar and sidebar as in listmonk v6.2.0 (partials/denma/topnav.html,
+   partials/denma/sidebar.html): a white bar and a white 240px column with a
+   faint shadow, 15px text, and the current page in blue with a bar on its
+   right. 6.2.0's light colours; matching ones in the dark theme. Overrides
+   listmonk's layout (assets/css/style.css) and Oat's sidebar. ---- */
+:root {
+  --denma-nav-bg: light-dark(#fff, #14161a);
+  --denma-nav-text: light-dark(#4a4a4a, #c9ccd1);
+  --denma-nav-strong: light-dark(#363636, #f7f8f8);
+  --denma-nav-hover: light-dark(#fafafa, rgb(255 255 255 / 0.05));
+  --denma-nav-line: light-dark(#dbdbdb, #2d3139);
+  --denma-nav-primary: light-dark(#0055d4, #4f8ce6);
+  --denma-nav-height: 49px;
+}
+
+#app[data-sidebar-layout] {
+  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  justify-content: stretch;
+  column-gap: 0;
+  padding: 0;
+
+  > main {
+    padding: 30px 30px 30px 45px;
+    /* Oat's hidden tooltips near the right edge still take up width. */
+    overflow-x: clip;
+
+    > .container {
+      max-width: none;
+      margin: 0;
+    }
+  }
+}
+
+/* The top bar. */
+#app > nav.denma-topnav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  height: var(--denma-nav-height);
+  padding: 0;
+  border: 0;
+  background: var(--denma-nav-bg);
+  box-shadow: 0 0 3px var(--denma-nav-line);
+  color: var(--denma-nav-text);
+  font-size: 15px;
+  line-height: 1.5;
+  /* Oat's hidden tooltips (the superadmin notice's) still take up width. */
+  overflow-x: clip;
+
+  a {
+    text-decoration: none;
+  }
+
+  .denma-brand {
+    display: flex;
+    align-items: flex-start;
+    padding-left: 25px;
+
+    .logo {
+      display: block;
+      margin-top: 15px;
+    }
+
+    .favicon {
+      display: none;
+      height: 24px;
+      width: auto;
+      max-height: none;
+      margin-top: 12px;
+    }
+  }
+
+  .denma-topnav-end {
+    display: flex;
+    align-items: stretch;
+  }
+
+  .denma-superadmin-notice {
+    align-self: center;
+  }
+
+  .denma-refresh {
+    display: flex;
+    align-items: center;
+    padding: 7.5px 11.25px;
+    color: var(--denma-nav-text);
+
+    &:hover {
+      background: var(--denma-nav-hover);
+      color: var(--denma-nav-primary);
+    }
+
+    .icon {
+      width: 15px;
+      height: 15px;
+    }
+  }
+
+  /* The avatar, with 6.2.0's blue arrow after it. */
+  .denma-user {
+    display: flex;
+  }
+
+  .denma-user-trigger {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 100%;
+    margin: 0;
+    padding: 7.5px 37.5px 7.5px 11.25px;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--denma-nav-text);
+    cursor: pointer;
+
+    &::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: 16.875px;
+      width: 9.375px;
+      height: 9.375px;
+      margin-top: -9px;
+      border: 3px solid var(--denma-nav-primary);
+      border-top: 0;
+      border-right: 0;
+      border-radius: 2px;
+      transform: rotate(-45deg);
+      transform-origin: center;
+      pointer-events: none;
+    }
+
+    &:hover,
+    &[aria-expanded="true"] {
+      background: var(--denma-nav-hover);
+    }
+  }
+
+  /* The user's menu: under the bar, against its right edge. */
+  .denma-user menu[popover] {
+    min-width: 0;
+    padding: 7.5px 0;
+    border: 0;
+    border-top: 2px solid var(--denma-nav-line);
+    border-radius: 0 0 6px 6px;
+    background: var(--denma-nav-bg);
+    box-shadow: 0 8px 8px rgb(10 10 10 / 0.1);
+    font-size: 15px;
+    /* Shown at once, as 6.2.0's (not Oat's fade). */
+    transform: none;
+    transition: none;
+
+    &:popover-open {
+      opacity: 1;
+    }
+
+    > a {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5.625px 45px 5.625px 15px;
+      border-radius: 0;
+      background: none;
+      color: var(--denma-nav-primary);
+      white-space: nowrap;
+
+      &:is(:hover, :focus-visible) {
+        background: var(--denma-nav-hover);
+      }
+
+      .icon {
+        width: 15px;
+        height: 15px;
+      }
+    }
+
+    > a.denma-user-name {
+      display: block;
+      min-width: 150px;
+      color: var(--denma-nav-text);
+
+      strong {
+        display: block;
+        font-weight: 700;
+      }
+
+      small {
+        display: block;
+        font-size: 11.25px;
+      }
+    }
+
+    .denma-theme-switch {
+      margin-top: 7.5px;
+      padding: 7.5px 15px 0;
+      border-top: 1px solid var(--denma-nav-line);
+    }
+  }
+}
+
+.denma-avatar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  border-radius: 100%;
+  background: light-dark(#ddd, #3a3f47);
+  color: var(--denma-nav-text);
+  font-size: 13.125px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+
+  img {
+    width: 32px;
+    height: 32px;
+    max-height: none;
+    object-fit: cover;
+  }
+}
+
+/* The menu button (phones), drawn as 6.2.0's: three lines, an X when open. */
+.denma-burger {
+  position: relative;
+  display: none;
+  width: var(--denma-nav-height);
+  height: var(--denma-nav-height);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--denma-nav-strong);
+  cursor: pointer;
+
+  span {
+    position: absolute;
+    left: calc(50% - 8px);
+    display: block;
+    width: 16px;
+    height: 1px;
+    background: currentColor;
+    transform-origin: center;
+    transition: opacity 86ms ease-out, transform 86ms ease-out;
+
+    &:nth-child(1) { top: calc(50% - 6px); }
+    &:nth-child(2) { top: calc(50% - 1px); }
+    &:nth-child(3) { top: calc(50% + 4px); }
+  }
+
+  &:hover {
+    background: rgb(0 0 0 / 0.05);
+  }
+}
+
+#app[data-sidebar-open] .denma-burger {
+  background: rgb(0 0 0 / 0.05);
+
+  span:nth-child(1) { transform: translateY(5px) rotate(45deg); }
+  span:nth-child(2) { opacity: 0; }
+  span:nth-child(3) { transform: translateY(-5px) rotate(-45deg); }
+}
+
+/* The sidebar. */
+#app > aside[data-sidebar] {
+  position: sticky;
+  top: var(--denma-nav-height);
+  align-self: start;
+  width: 240px;
+  height: calc(100dvh - var(--denma-nav-height));
+  margin: 0;
+  border: 0;
+  background: var(--denma-nav-bg);
+  box-shadow: 0 0 3px var(--denma-nav-line);
+
+  /* listmonk's page render time: not in 6.2.0. */
+  > footer {
+    display: none;
+  }
+}
+
+#app > aside[data-sidebar] > nav.denma-menu {
+  max-height: none;
+  margin: 0;
+  padding: 26px 0 15px;
+  color: var(--denma-nav-text);
+  font-size: 15px;
+  line-height: 22.5px;
+
+  ul {
+    gap: 0;
+  }
+
+  > ul > li {
+    margin: 0 0 10px;
+  }
+
+  li ul {
+    animation: none;
+    margin: 11.25px 0 11.25px 11.25px;
+    padding: 0 0 0 11.25px;
+    border-left: 1px solid var(--denma-nav-line);
+
+    > li {
+      margin: 0;
+    }
+  }
+
+  details {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  :is(a, summary) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 7.5px 11.25px 7.5px 25px;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--denma-nav-text);
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 22.5px;
+    text-decoration: none;
+    cursor: pointer;
+
+    .icon {
+      flex: none;
+      width: 15px;
+      height: 15px;
+    }
+
+    &:hover {
+      background: var(--denma-nav-hover);
+      color: var(--denma-nav-strong);
+    }
+  }
+
+  summary {
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    /* A small arrow after the label, pointing up while the group is open. */
+    &::after {
+      content: "";
+      display: inline-block;
+      flex: none;
+      align-self: center;
+      width: 0.42em;
+      height: 0.42em;
+      margin: 0 0 0.2em 0.6em;
+      border: 0;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      background: none;
+      -webkit-mask: none;
+      mask: none;
+      opacity: 0.55;
+      transform: rotate(45deg);
+      transition: transform 0.15s;
+    }
+  }
+
+  details[open] > summary {
+    background: var(--denma-nav-hover);
+    color: var(--denma-nav-primary);
+
+    &::after {
+      transform: translateY(0.25em) rotate(225deg);
+    }
+  }
+
+  a[aria-current] {
+    border-right: 5px solid var(--denma-nav-primary);
+    background: var(--denma-nav-hover);
+    color: var(--denma-nav-primary);
+  }
+
+  /* Phones only (below). */
+  .denma-menu-more {
+    display: none;
+  }
+}
+
+/* Narrower: the favicon in place of the logo, as 6.2.0. */
+@media (max-width: 1100px) {
+  #app > nav.denma-topnav .denma-brand {
+    padding-left: 10px;
+
+    .logo {
+      display: none;
+    }
+
+    .favicon {
+      display: block;
+    }
+  }
+
+  #app[data-sidebar-layout] > main {
+    padding: 30px 20px 30px 25px;
+  }
+}
+
+/* Phones: no sidebar. The menu button opens it under the bar, full width,
+   with Refresh and the user's items, as 6.2.0's menu. */
+@media (max-width: 768px) {
+  #app[data-sidebar-layout] {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0;
+
+    > main {
+      grid-column: 1;
+      padding: 24px 16px;
+    }
+  }
+
+  #app > nav.denma-topnav {
+    position: sticky;
+
+    .denma-refresh,
+    .denma-user {
+      display: none;
+    }
+  }
+
+  .denma-burger {
+    display: block;
+  }
+
+  #app > aside[data-sidebar] {
+    position: fixed;
+    top: var(--denma-nav-height);
+    right: 0;
+    left: 0;
+    z-index: 20;
+    display: none;
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: calc(100dvh - var(--denma-nav-height));
+    overflow-y: auto;
+    transform: none;
+    box-shadow: 0 8px 16px rgb(10 10 10 / 0.1);
+  }
+
+  #app[data-sidebar-open] > aside[data-sidebar] {
+    display: block;
+  }
+
+  #app > aside[data-sidebar] > nav.denma-menu {
+    overflow: visible;
+    padding: 7.5px 0;
+
+    > ul > li {
+      margin: 0;
+    }
+
+    :is(a, summary) {
+      padding-left: 11.25px;
+    }
+
+    .denma-menu-more {
+      display: block;
+
+      > a {
+        padding-left: 11.25px;
+      }
+    }
+
+    .denma-menu-user {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      margin-top: 15px;
+      padding: 15px 15px 0;
+      border-top: 1px solid var(--denma-nav-line);
+
+      .denma-avatar {
+        margin-bottom: 15px;
+      }
+
+      strong {
+        font-weight: 700;
+      }
+
+      small {
+        margin-bottom: 7.5px;
+        font-size: 11.25px;
+      }
+
+      a {
+        padding: 5.625px 0;
+        color: var(--denma-nav-primary);
+
+        &:hover {
+          background: none;
+        }
+      }
+
+      .denma-theme-switch {
+        margin-top: 7.5px;
+      }
+    }
+  }
+}

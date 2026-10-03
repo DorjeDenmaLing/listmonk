@@ -6,9 +6,7 @@
 		<li>
 			<a href="{{ URI "/admin" }}" {{ IsNav $p "dashboard" }}>{{ Icon "grid" }} {{ .L.T "menu.dashboard" }}</a>
 		</li>
-		{{- template "denma-sidebar-hub" . }}{{/* denma: the hub's Centers, Analytics, Activity (partials/denma/sidebar.html) */}}
 
-		{{- if not DenmaIsHub }}{{/* denma: the hub has no mailing of its own */}}
 		<li>
 			<details {{ ExpandNav $p "lists" }} name="sidebar-nav" data-cy="lists">
 				<summary>{{ Icon "list" }} {{ .L.T "globals.terms.lists" }}</summary>
@@ -41,7 +39,7 @@
 
 		{{- if Can $u "campaigns:get" "campaigns:manage" "campaigns:get_analytics" "media:get" "templates:get" }}
 		<li>
-			<details {{ if not (has $p (list "campaigns.media" "campaigns.analytics")) }}{{ ExpandNav $p "campaigns" }}{{ end }} name="sidebar-nav" data-cy="campaigns">
+			<details {{ ExpandNav $p "campaigns" }} name="sidebar-nav" data-cy="campaigns">
 				<summary>{{ Icon "send" }} {{ .L.T "globals.terms.campaigns" }}</summary>
 				<ul>
 					{{- if Can $u "campaigns:get" "campaigns:get_all" }}
@@ -50,16 +48,19 @@
 					{{- if Can $u "campaigns:manage" "campaigns:manage_all" }}
 					<li><a href="{{ URI "/admin/campaigns/new" }}" {{ IsNav $p "campaigns.new" }} data-cy="new-campaign">{{ .L.T "menu.newCampaign" }}</a></li>
 					{{- end }}
+					{{- if Can $u "media:get" "media:manage" }}
+					<li><a href="{{ URI "/admin/campaigns/media" }}" {{ IsNav $p "campaigns.media" }} data-cy="media">{{ .L.T "menu.media" }}</a></li>
+					{{- end }}
 					{{- if Can $u "templates:get" }}
 					<li><a href="{{ URI "/admin/templates" }}" {{ IsNav $p "campaigns.templates" }} data-cy="templates">{{ .L.T "globals.terms.templates" }}</a></li>
+					{{- end }}
+					{{- if Can $u "campaigns:get_analytics" }}
+					<li><a href="{{ URI "/admin/campaigns/analytics" }}" {{ IsNav $p "campaigns.analytics" }} data-cy="analytics">{{ .L.T "globals.terms.analytics" }}</a></li>
 					{{- end }}
 				</ul>
 			</details>
 		</li>
 		{{- end }}
-
-		{{- template "denma-sidebar-items" . }}{{/* denma: Calendar, Media, Analytics (partials/denma/sidebar.html) */}}
-		{{- end }}{{/* denma */}}
 
 		{{- if Can $u "users:get" "users:manage" "roles:get" "roles:manage" }}
 		<li>
@@ -78,7 +79,7 @@
 		</li>
 		{{- end }}
 
-		{{- if and (or (not DenmaHubURL) DenmaIsHub) (Can $u "settings:get" "settings:manage" "settings:maintain") }}{{/* denma: settings are the hub's */}}
+		{{- if Can $u "settings:get" "settings:manage" "settings:maintain" }}
 		<li>
 			<details {{ ExpandNav $p "settings" }} name="sidebar-nav" data-cy="settings">
 				<summary>{{ Icon "settings" }} {{ .L.T "menu.settings" }}</summary>
@@ -90,12 +91,10 @@
 					{{- if Can $u "settings:maintain" }}
 					<li><a href="{{ URI "/admin/settings/maintenance" }}" {{ IsNav $p "settings.maintenance" }} data-cy="maintenance">{{ .L.T "menu.maintenance" }}</a></li>
 					{{- end }}
-					{{- template "denma-settings-items" . }}{{/* denma: System (partials/denma/sidebar.html) */}}
 				</ul>
 			</details>
 		</li>
 		{{- end }}
-		{{- template "denma-sidebar-end" . }}{{/* denma: Advanced (partials/denma/sidebar.html) */}}
 	</ul>
 </nav>
 {{ end }}

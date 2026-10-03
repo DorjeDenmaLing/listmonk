@@ -1,0 +1,47 @@
+{{/*
+	denma: the top bar, in place of listmonk's (views/base.html), looking and
+	working as in listmonk v6.2.0: the logo (the favicon on narrow screens),
+	Refresh, and the user's round avatar opening Profile and Logout (and, ours,
+	the theme). On phones a menu button on the right opens the sidebar
+	(partials/denma/sidebar.html) below it, as 6.2.0's menu.
+*/}}
+{{ define "denma-topnav" }}
+<nav data-topnav class="denma-topnav">
+	<a href="{{ URI "/admin" }}" class="denma-brand" aria-label="{{ .L.T "menu.dashboard" }}">
+		<span class="logo">{{ template "denma-logo" . }}</span>
+		<img class="favicon" src="{{ URI "/admin/static/favicon.png" }}?v={{ .AssetVersion }}" alt="listmonk" />
+	</a>
+	<div class="denma-topnav-end">
+		{{ template "denma-superadmin-notice" . }}
+		<a href="#" class="denma-refresh" onclick="location.reload(); return false;" title="{{ .L.T "globals.buttons.refresh" }}" aria-label="{{ .L.T "globals.buttons.refresh" }}" data-cy="btn-refresh">{{ template "denma-icon" "refresh" }}</a>
+		{{- with .Data.Profile }}
+		<ot-dropdown class="denma-user">
+			<button popovertarget="user-menu" type="button" class="denma-user-trigger" aria-label="{{ .Username }}" data-testid="user-menu">
+				{{ template "denma-avatar" . }}
+			</button>
+			<menu popover id="user-menu">
+				<a href="{{ URI "/admin/user/profile" }}" class="denma-user-name"><strong>{{ .Username }}</strong><small>{{ .Name }}</small></a>
+				<a href="{{ URI "/admin/user/profile" }}" role="menuitem">{{ template "denma-icon" "account-outline" }} {{ $.L.T "users.profile" }}</a>
+				<a href="#" role="menuitem" onclick="fetch('{{ URI "/api/logout" }}', { method: 'POST' }).then(() => { document.location.href = '{{ URI "/admin/login" }}'; }); return false;">{{ template "denma-icon" "logout-variant" }} {{ $.L.T "users.logout" }}</a>
+				{{ template "denma-theme-switch" $ }}
+			</menu>
+		</ot-dropdown>
+		{{- end }}
+		<button data-sidebar-toggle type="button" class="denma-burger" aria-label="Menu"><span></span><span></span><span></span></button>
+	</div>
+</nav>
+{{ end }}
+
+{{/* A user's round avatar: their picture, or their username's first letter. */}}
+{{ define "denma-avatar" -}}
+<span class="denma-avatar">{{ if .Avatar.String }}<img src="{{ .Avatar.String }}" alt="" />{{ else }}{{ printf "%.1s" .Username }}{{ end }}</span>
+{{- end }}
+
+{{/* The theme: the system's, light or dark (not in 6.2.0). */}}
+{{ define "denma-theme-switch" -}}
+<div class="theme-switch denma-theme-switch" role="group" aria-label="Theme">
+	<button type="button" class="ghost small" title="{{ .L.T "globals.terms.system" }}" @click="setTheme('auto')" :class="{ 'is-active': theme === 'auto' }" :aria-pressed="theme === 'auto'">{{ template "denma-icon" "monitor" }}</button>
+	<button type="button" class="ghost small" title="{{ .L.T "users.themeLight" }}" @click="setTheme('light')" :class="{ 'is-active': theme === 'light' }" :aria-pressed="theme === 'light'">{{ template "denma-icon" "weather-sunny" }}</button>
+	<button type="button" class="ghost small" title="{{ .L.T "users.themeDark" }}" @click="setTheme('dark')" :class="{ 'is-active': theme === 'dark' }" :aria-pressed="theme === 'dark'">{{ template "denma-icon" "weather-night" }}</button>
+</div>
+{{- end }}

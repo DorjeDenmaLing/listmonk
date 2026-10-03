@@ -1,81 +1,180 @@
 {{/*
-	denma: top-level sidebar items, included in partials/sidebar.html above Users
-	(or Settings, for users who can't see Users): Calendar, Automations
-	(cmd/denma_automations.go), Media and Analytics. Media and Analytics move here
-	from the Campaigns group; their pages keep listmonk's page IDs. Superadmins
-	(the Super Admin role, 1) in a center get All centers, back to the hub.
-	The hub itself has none of these (partials/sidebar.html).
+	denma: the sidebar, in place of listmonk's partials/sidebar.html (in
+	views/base.html), looking and working as in listmonk v6.2.0 with the JS
+	add-on (listmonk-js/admin-custom.js), which production runs: its icons
+	(assets/static/denma-icons.svg), one group open at a time, and Calendar,
+	Automations, Media and Analytics as top-level items. listmonk's items and
+	permissions are kept; Media and Analytics keep their page IDs.
+
+	In the hub (superadmins): Dashboard, Centers, Analytics, Activity, Users and
+	Settings. In a center: listmonk's items, ours, and for superadmins All
+	centers (back to the hub's Centers); its settings are the hub's, and it has
+	an Advanced page for its own details (cmd/denma_center.go).
+
+	On phones it's the menu under the top bar's menu button, with Refresh and
+	the user's items below (as 6.2.0's).
 */}}
-{{ define "denma-sidebar-items" }}
+{{ define "denma-sidebar" }}
 {{- $u := .Data.Profile }}
 {{- $p := .Data.PageID }}
+<nav class="denma-menu">
+	<ul>
+		<li>
+			<a href="{{ URI "/admin" }}" {{ IsNav $p "dashboard" }} data-cy="dashboard">{{ template "denma-icon" "view-dashboard-variant-outline" }}<span>{{ .L.T "menu.dashboard" }}</span></a>
+		</li>
+
+		{{- if DenmaIsHub }}
+		{{- if eq $u.UserRole.ID 1 }}
+		<li>
+			<a href="{{ URI "/admin/centers" }}" {{ IsNav $p "denma.centers" }} data-cy="centers">{{ template "denma-icon" "domain" }}<span>Centers</span></a>
+		</li>
+		<li>
+			<a href="{{ URI "/admin/analytics" }}" {{ IsNav $p "denma.analytics" }} data-cy="analytics">{{ template "denma-icon" "chart-bar" }}<span>{{ .L.T "globals.terms.analytics" }}</span></a>
+		</li>
+		<li>
+			<a href="{{ URI "/admin/activity" }}" {{ IsNav $p "denma.activity" }} data-cy="activity">{{ template "denma-icon" "history" }}<span>Activity</span></a>
+		</li>
+		{{- end }}
+		{{- else }}
+		<li>
+			<details {{ ExpandNav $p "lists" }} name="sidebar-nav" data-cy="lists">
+				<summary>{{ template "denma-icon" "format-list-bulleted-square" }}<span>{{ .L.T "globals.terms.lists" }}</span></summary>
+				<ul>
+					<li><a href="{{ URI "/admin/lists" }}" {{ IsNav $p "lists.all" }} data-cy="all-lists">{{ template "denma-icon" "format-list-bulleted-square" }}<span>{{ .L.T "menu.allLists" }}</span></a></li>
+					<li><a href="{{ URI "/admin/lists" }}?status=archived" {{ IsNav $p "lists.archived" }} data-cy="archived-lists">{{ template "denma-icon" "archive-outline" }}<span>{{ .L.T "lists.archived" }}</span></a></li>
+					<li><a href="{{ URI "/admin/lists/forms" }}" {{ IsNav $p "lists.forms" }} data-cy="forms">{{ template "denma-icon" "newspaper-variant-outline" }}<span>{{ .L.T "menu.forms" }}</span></a></li>
+				</ul>
+			</details>
+		</li>
+
+		{{- if Can $u "subscribers:get" "subscribers:get_all" "subscribers:manage" "subscribers:import" "bounces:get" }}
+		<li>
+			<details {{ ExpandNav $p "subscribers" }} name="sidebar-nav" data-cy="subscribers">
+				<summary>{{ template "denma-icon" "account-multiple" }}<span>{{ .L.T "globals.terms.subscribers" }}</span></summary>
+				<ul>
+					{{- if Can $u "subscribers:get" "subscribers:get_all" }}
+					<li><a href="{{ URI "/admin/subscribers" }}" {{ IsNav $p "subscribers.all" }} data-cy="all-subscribers">{{ template "denma-icon" "account-multiple" }}<span>{{ .L.T "menu.allSubscribers" }}</span></a></li>
+					{{- end }}
+					{{- if Can $u "subscribers:import" }}
+					<li><a href="{{ URI "/admin/subscribers/import" }}" {{ IsNav $p "subscribers.import" }} data-cy="import">{{ template "denma-icon" "file-upload-outline" }}<span>{{ .L.T "menu.import" }}</span></a></li>
+					{{- end }}
+					{{- if Can $u "bounces:get" }}
+					<li><a href="{{ URI "/admin/subscribers/bounces" }}" {{ IsNav $p "subscribers.bounces" }} data-cy="bounces">{{ template "denma-icon" "email-bounce" }}<span>{{ .L.T "globals.terms.bounces" }}</span></a></li>
+					{{- end }}
+				</ul>
+			</details>
+		</li>
+		{{- end }}
+
+		{{- if Can $u "campaigns:get" "campaigns:get_all" "campaigns:manage" "campaigns:manage_all" "templates:get" }}{{/* Media and Analytics are their own items */}}
+		<li>
+			<details {{ if not (has $p (list "campaigns.media" "campaigns.analytics")) }}{{ ExpandNav $p "campaigns" }}{{ end }} name="sidebar-nav" data-cy="campaigns">
+				<summary>{{ template "denma-icon" "rocket-launch-outline" }}<span>{{ .L.T "globals.terms.campaigns" }}</span></summary>
+				<ul>
+					{{- if Can $u "campaigns:get" "campaigns:get_all" }}
+					<li><a href="{{ URI "/admin/campaigns" }}" {{ IsNav $p "campaigns.all" }} data-cy="all-campaigns">{{ template "denma-icon" "rocket-launch-outline" }}<span>{{ .L.T "menu.allCampaigns" }}</span></a></li>
+					{{- end }}
+					{{- if Can $u "campaigns:manage" "campaigns:manage_all" }}
+					<li><a href="{{ URI "/admin/campaigns/new" }}" {{ IsNav $p "campaigns.new" }} data-cy="new-campaign">{{ template "denma-icon" "plus" }}<span>{{ .L.T "menu.newCampaign" }}</span></a></li>
+					{{- end }}
+					{{- if Can $u "templates:get" }}
+					<li><a href="{{ URI "/admin/templates" }}" {{ IsNav $p "campaigns.templates" }} data-cy="templates">{{ template "denma-icon" "file-image-outline" }}<span>{{ .L.T "globals.terms.templates" }}</span></a></li>
+					{{- end }}
+				</ul>
+			</details>
+		</li>
+		{{- end }}
+
 		{{- if and DenmaHubURL (eq $u.UserRole.ID 1) }}
 		<li>
-			<a href="{{ DenmaHubURL }}/centers" data-cy="centers">{{ Icon "grid" }} All centers</a>
+			<a href="{{ DenmaHubURL }}/centers" data-cy="centers">{{ template "denma-icon" "domain" }}<span>All centers</span></a>
 		</li>
 		{{- end }}
 		{{- if Can $u "campaigns:get" "campaigns:get_all" }}
 		<li>
-			<a href="{{ URI "/admin/calendar" }}" {{ IsNav $p "denma.calendar" }} data-cy="calendar">{{ Icon "calendar" }} Calendar</a>
+			<a href="{{ URI "/admin/calendar" }}" {{ IsNav $p "denma.calendar" }} data-cy="calendar">{{ template "denma-icon" "calendar-clock" }}<span>Calendar</span></a>
 		</li>
 		{{- end }}
 		{{- if Can $u "automations:get" }}
 		<li>
-			<a href="{{ URI "/admin/automations" }}" {{ IsNav $p "denma.automations" }} data-cy="automations">{{ Icon "zap" }} Automations</a>
+			<a href="{{ URI "/admin/automations" }}" {{ IsNav $p "denma.automations" }} data-cy="automations">{{ template "denma-icon" "email-outline" }}<span>Automations</span></a>
 		</li>
 		{{- end }}
 		{{- if Can $u "media:get" "media:manage" }}
 		<li>
-			<a href="{{ URI "/admin/campaigns/media" }}" {{ IsNav $p "campaigns.media" }} data-cy="media">{{ Icon "image" }} {{ .L.T "menu.media" }}</a>
+			<a href="{{ URI "/admin/campaigns/media" }}" {{ IsNav $p "campaigns.media" }} data-cy="media">{{ template "denma-icon" "image-outline" }}<span>{{ .L.T "menu.media" }}</span></a>
 		</li>
 		{{- end }}
 		{{- if Can $u "campaigns:get_analytics" }}
 		<li>
-			<a href="{{ URI "/admin/campaigns/analytics" }}" {{ IsNav $p "campaigns.analytics" }} data-cy="analytics">{{ Icon "bar-chart-2" }} {{ .L.T "globals.terms.analytics" }}</a>
+			<a href="{{ URI "/admin/campaigns/analytics" }}" {{ IsNav $p "campaigns.analytics" }} data-cy="analytics">{{ template "denma-icon" "chart-bar" }}<span>{{ .L.T "globals.terms.analytics" }}</span></a>
 		</li>
 		{{- end }}
-{{ end }}
+		{{- end }}
 
-{{/* In the hub, under Dashboard, for superadmins: Centers (every center, to
-	open, create, enable or disable; cmd/denma_hub.go), Analytics (every
-	center's audience and mailbox providers; cmd/denma_hub_analytics.go) and
-	Activity (every center's log; cmd/denma_audit.go). */}}
-{{ define "denma-sidebar-hub" }}
-{{- $u := .Data.Profile }}
-{{- $p := .Data.PageID }}
-		{{- if and DenmaIsHub (eq $u.UserRole.ID 1) }}
+		{{- if Can $u "users:get" "users:manage" "roles:get" "roles:manage" }}
 		<li>
-			<a href="{{ URI "/admin/centers" }}" {{ IsNav $p "denma.centers" }} data-cy="centers">{{ Icon "list" }} Centers</a>
-		</li>
-		<li>
-			<a href="{{ URI "/admin/analytics" }}" {{ IsNav $p "denma.analytics" }} data-cy="analytics">{{ Icon "bar-chart-2" }} {{ .L.T "globals.terms.analytics" }}</a>
-		</li>
-		<li>
-			<a href="{{ URI "/admin/activity" }}" {{ IsNav $p "denma.activity" }} data-cy="activity">{{ Icon "activity" }} Activity</a>
+			<details {{ ExpandNav $p "users" }} name="sidebar-nav" data-cy="users">
+				<summary>{{ template "denma-icon" "account-multiple" }}<span>{{ .L.T "globals.terms.users" }}</span></summary>
+				<ul>
+					{{- if Can $u "users:get" }}
+					<li><a href="{{ URI "/admin/users" }}" {{ IsNav $p "users.users" }} data-cy="users">{{ template "denma-icon" "account-multiple" }}<span>{{ .L.T "globals.terms.users" }}</span></a></li>
+					{{- end }}
+					{{- if Can $u "roles:get" }}
+					<li><a href="{{ URI "/admin/users/roles" }}" {{ IsNav $p "users.user-roles" }} data-cy="userRoles">{{ template "denma-icon" "newspaper-variant-outline" }}<span>{{ .L.T "users.userRoles" }}</span></a></li>
+					<li><a href="{{ URI "/admin/users/roles/lists" }}" {{ IsNav $p "users.list-roles" }} data-cy="listRoles">{{ template "denma-icon" "format-list-bulleted-square" }}<span>{{ .L.T "users.listRoles" }}</span></a></li>
+					{{- end }}
+				</ul>
+			</details>
 		</li>
 		{{- end }}
-{{ end }}
 
-{{/* The last item: a center's Advanced page (its own details;
-	cmd/denma_center.go). */}}
-{{ define "denma-sidebar-end" }}
-{{- $u := .Data.Profile }}
-{{- $p := .Data.PageID }}
+		{{- if and (or (not DenmaHubURL) DenmaIsHub) (Can $u "settings:get" "settings:manage" "settings:maintain") }}
+		<li>
+			<details {{ ExpandNav $p "settings" }} name="sidebar-nav" data-cy="settings">
+				<summary>{{ template "denma-icon" "cog-outline" }}<span>{{ .L.T "menu.settings" }}</span></summary>
+				<ul>
+					{{- if Can $u "settings:get" }}
+					<li><a href="{{ URI "/admin/settings" }}" {{ IsNav $p "settings.all" }} data-cy="all-settings">{{ template "denma-icon" "cog-outline" }}<span>{{ .L.T "menu.settings" }}</span></a></li>
+					{{- end }}
+					{{- if Can $u "settings:maintain" }}
+					<li><a href="{{ URI "/admin/settings/maintenance" }}" {{ IsNav $p "settings.maintenance" }} data-cy="maintenance">{{ template "denma-icon" "wrench-outline" }}<span>{{ .L.T "menu.maintenance" }}</span></a></li>
+					{{- end }}
+					{{- if Can $u "settings:get" }}
+					<li><a href="{{ URI "/admin/settings/logs" }}" {{ IsNav $p "settings.logs" }} data-cy="logs">{{ template "denma-icon" "format-list-bulleted-square" }}<span>{{ .L.T "menu.logs" }}</span></a></li>
+					<li><a href="{{ URI "/admin/settings/system" }}" {{ IsNav $p "settings.system" }} data-cy="system">{{ template "denma-icon" "information-outline" }}<span>{{ .L.T "dashboard.system" }}</span></a></li>
+					{{- end }}
+				</ul>
+			</details>
+		</li>
+		{{- end }}
+
 		{{- if and DenmaHubURL (not DenmaIsHub) (Can $u "center:manage") }}
 		<li>
-			<a href="{{ URI "/admin/center" }}" {{ IsNav $p "denma.center" }} data-cy="center">{{ Icon "tool" }} Advanced</a>
+			<a href="{{ URI "/admin/center" }}" {{ IsNav $p "denma.center" }} data-cy="center">{{ template "denma-icon" "wrench-outline" }}<span>Advanced</span></a>
 		</li>
 		{{- end }}
+	</ul>
+
+	{{- /* Phones: Refresh and the user's items, as in 6.2.0's menu. */}}
+	<div class="denma-menu-more">
+		<a href="#" onclick="location.reload(); return false;" class="denma-menu-refresh">{{ template "denma-icon" "refresh" }}<span>{{ .L.T "globals.buttons.refresh" }}</span></a>
+		{{- with $u }}
+		<div class="denma-menu-user">
+			{{ template "denma-avatar" . }}
+			<strong>{{ .Username }}</strong>
+			<small>{{ .Name }}</small>
+			<a href="{{ URI "/admin/user/profile" }}">{{ template "denma-icon" "account-outline" }}<span>{{ $.L.T "users.profile" }}</span></a>
+			<a href="#" onclick="fetch('{{ URI "/api/logout" }}', { method: 'POST' }).then(() => { document.location.href = '{{ URI "/admin/login" }}'; }); return false;">{{ template "denma-icon" "logout-variant" }}<span>{{ $.L.T "users.logout" }}</span></a>
+			{{ template "denma-theme-switch" $ }}
+		</div>
+		{{- end }}
+	</div>
+</nav>
 {{ end }}
 
-{{/* Items at the end of the Settings group. */}}
-{{ define "denma-settings-items" }}
-{{- $u := .Data.Profile }}
-{{- $p := .Data.PageID }}
-					{{- if Can $u "settings:get" }}
-					<li><a href="{{ URI "/admin/settings/system" }}" {{ IsNav $p "settings.system" }} data-cy="system">{{ .L.T "dashboard.system" }}</a></li>
-					{{- end }}
-{{ end }}
+{{/* An icon of listmonk v6.2.0 (assets/static/denma-icons.svg), by name. */}}
+{{ define "denma-icon" }}{{ Icon . "denma-icons.svg" }}{{ end }}
 
 {{/* Under the Settings heading (views/settings.html): in multi-center mode
 	these are the hub's, for every center (cmd/denma_centers.go). */}}
