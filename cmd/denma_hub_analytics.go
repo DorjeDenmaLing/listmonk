@@ -245,13 +245,14 @@ func (a *App) DenmaHubAnalytics(c echo.Context) error {
 
 // denmaCenterRef is a registered center as the hub lists it.
 type denmaCenterRef struct {
-	Slug   string `db:"slug"`
-	Name   string `db:"name"`
-	Schema string `db:"schema_name"`
-	Status string `db:"status"`
-	Error  string `db:"-"` // why it didn't load
-	Loaded bool   `db:"-"`
-	Path   string `db:"-"` // its address, e.g. /c/ddl/
+	Slug     string `db:"slug"`
+	Name     string `db:"name"`
+	Schema   string `db:"schema_name"`
+	Status   string `db:"status"`
+	Error    string `db:"-"` // why it didn't load
+	Loaded   bool   `db:"-"`
+	Starting bool   `db:"-"` // still loading after a start
+	Path     string `db:"-"` // its address, e.g. /c/ddl/
 }
 
 // registered returns every registered center, by name: its name is the
@@ -268,6 +269,7 @@ func (d *denmaCenters) registered() ([]denmaCenterRef, error) {
 	for i := range reg {
 		r := &reg[i]
 		r.Error = d.failed[r.Slug]
+		r.Starting = d.starting[r.Slug]
 		r.Path = path.Join(root, denmaCenterPath, r.Slug) + "/"
 		if ctr := d.bySlug[r.Slug]; ctr != nil {
 			r.Loaded = true

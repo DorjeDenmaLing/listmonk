@@ -81,6 +81,7 @@ type denmaHubCenter struct {
 	Status      string    `json:"status"` // enabled, disabled
 	Error       string    `json:"error"`  // why it didn't load
 	Loaded      bool      `json:"loaded"`
+	Starting    bool      `json:"starting"` // still loading after a start
 	Subscribers int       `json:"subscribers"`
 	Lists       int       `json:"lists"`
 	Users       int       `json:"users"` // the center's own (not superadmins)
@@ -173,7 +174,7 @@ func (a *App) DenmaHubStats(c echo.Context) error {
 	denmaEach(len(reg), func(i int) {
 		x := reg[i]
 		r := &out[i]
-		*r = denmaHubCenter{Slug: x.Slug, Name: x.Name, Status: x.Status, Error: x.Error, Path: x.Path, Loaded: x.Loaded}
+		*r = denmaHubCenter{Slug: x.Slug, Name: x.Name, Status: x.Status, Error: x.Error, Path: x.Path, Loaded: x.Loaded, Starting: x.Starting}
 		schema := x.Schema
 
 		var info struct {

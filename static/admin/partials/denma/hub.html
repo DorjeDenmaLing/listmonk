@@ -67,6 +67,7 @@
 										<template x-if="c.loaded"><a :href="openURL(c.slug)" class="unstyled" x-text="c.name"></a></template>
 										<template x-if="!c.loaded"><span class="text-light" x-text="c.name"></span></template>
 										<template x-if="c.error"><span class="badge small enum status-cancelled" :title="c.error"><span class="dot">&#9679;</span> Error</span></template>
+										<template x-if="c.starting"><span class="badge small enum status-scheduled"><span class="dot">&#9679;</span> Starting</span></template>
 										<template x-if="!c.error && c.status === 'disabled'"><span class="badge small enum status-disabled"><span class="dot">&#9679;</span> Disabled</span></template>
 									</div>
 									<div class="text-light text-8" x-text="c.path"></div>

@@ -206,7 +206,7 @@ func denmaStartAutomations(a *App) {
 	}
 
 	var mu sync.Mutex
-	if _, err := a.crons.Add("@every 1m", func() {
+	if _, err := denmaEveryMinute(a, 0, func() {
 		if !mu.TryLock() {
 			return
 		}

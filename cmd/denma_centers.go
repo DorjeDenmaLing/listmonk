@@ -23,7 +23,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"os"
 	"path"
@@ -115,6 +117,30 @@ type denmaCenters struct {
 
 	baseSchema string            // the hub's schema
 	failed     map[string]string // centers that didn't load: slug -> error
+	starting   map[string]bool   // centers still loading after a start
+
+	// One center at a time changes database objects (schemas, migrations,
+	// shared settings) and moves files while loading; the rest of loading
+	// (its app and router) runs several at once.
+	setupMu sync.Mutex
+	timings denmaTimings
+}
+
+// denmaNoExit, once centers are on, turns errors that would stop the server
+// while a center loads (preparing its queries, reading its settings; see
+// cmd/init.go) into a panic that load recovers from, so that the center
+// fails to load and the others carry on.
+var denmaNoExit func(error) any
+
+type denmaLoadError struct{ err error }
+
+var errDenmaStarting = errors.New("the center is still starting up; try again in a moment")
+
+// isStarting reports whether a center is still loading after a start.
+func (d *denmaCenters) isStarting(slug string) bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.starting[slug]
 }
 
 // current is the hub's App, reloaded or not.
@@ -181,23 +207,21 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 		lo.Fatalf("denma: error reading centers: %v", err)
 	}
 
-	d := &denmaCenters{bySlug: make(map[string]*denmaCenter, len(list)), base: base, failed: map[string]string{}}
+	denmaNoExit = func(err error) any { return denmaLoadError{err} }
+
+	d := &denmaCenters{bySlug: make(map[string]*denmaCenter, len(list)), base: base, failed: map[string]string{}, starting: map[string]bool{}}
 	if err := base.db.Get(&d.baseSchema, `SELECT current_schema()`); err != nil {
 		lo.Fatalf("denma: error reading the hub's schema: %v", err)
 	}
 	denmaHub = d
 
-	start := time.Now()
+	// The centers load in the background, several at a time, while the hub
+	// and the centers already loaded serve; until a center has loaded, its
+	// pages say it's starting.
 	for _, c := range list {
-		if err := d.load(c); err != nil {
-			// One broken center shouldn't take the others down.
-			lo.Printf("denma: center %s not loaded: %v", c.Slug, err)
-			d.setFailed(c.Slug, err)
-			continue
-		}
-		d.set(c)
+		d.starting[c.Slug] = true
 	}
-	lo.Printf("denma: %d of %d centers loaded in %s", len(d.bySlug), len(list), time.Since(start).Round(time.Millisecond))
+	go d.loadAll(list, base.ko.Int("denma.center_load_workers"))
 
 	// The hub's settings saves (and Reload) rebuild it in place, as for the
 	// centers: they signal on a channel of their own, while main() keeps the
@@ -229,6 +253,9 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 			}
 			slug, rest, _ := strings.Cut(strings.TrimPrefix(p, denmaCenterPath), "/")
 			ctr := d.get(slug)
+			if ctr == nil && d.isStarting(slug) {
+				return denmaStartingPage(c)
+			}
 			if ctr == nil {
 				return echo.NewHTTPError(http.StatusNotFound, "center not found")
 			}
@@ -246,6 +273,75 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 			return nil
 		}
 	})
+}
+
+// loadAll loads centers, workers at a time (default 4), after a start.
+func (d *denmaCenters) loadAll(list []*denmaCenter, workers int) {
+	if workers < 1 {
+		workers = 4
+	}
+	start := time.Now()
+	jobs := make(chan *denmaCenter)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for c := range jobs {
+				if err := d.load(c); err != nil {
+					// One broken center shouldn't take the others down.
+					lo.Printf("denma: center %s not loaded: %v", c.Slug, err)
+					d.setFailed(c.Slug, err)
+				} else {
+					d.set(c)
+				}
+				d.mu.Lock()
+				delete(d.starting, c.Slug)
+				d.mu.Unlock()
+			}
+		}()
+	}
+	for _, c := range list {
+		jobs <- c
+	}
+	close(jobs)
+	wg.Wait()
+	lo.Printf("denma: %d of %d centers loaded in %s, %d at a time (total time per step: %s)",
+		len(d.loaded()), len(list), time.Since(start).Round(time.Millisecond), workers, &d.timings)
+}
+
+// denmaStartingPage answers for a center that's still loading after a start:
+// a page that reloads itself, or for the API, an error to retry.
+func denmaStartingPage(c echo.Context) error {
+	c.Response().Header().Set("Retry-After", "5")
+	if strings.Contains(c.Request().Header.Get("Accept"), "text/html") {
+		return c.HTML(http.StatusServiceUnavailable, `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="refresh" content="5">
+<title>Starting</title><style>body{font-family:system-ui,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh;
+background:#fff;color:#333}@media (prefers-color-scheme:dark){body{background:#111;color:#ddd}}p{max-width:30em;padding:0 16px;text-align:center}</style>
+</head><body><p>This site is starting up. The page will reload in a few seconds.</p></body></html>`)
+	}
+	return echo.NewHTTPError(http.StatusServiceUnavailable, "This center is starting up. Try again in a few seconds.")
+}
+
+// denmaEveryMinute adds a job to an app's cron that runs every minute, at a
+// second of the minute set by its center (plus at seconds), so that the
+// centers' jobs spread over the minute rather than all running at once, and
+// a center's jobs (at different at) don't run together: each would need a
+// connection of its own. Errors are logged; it returns (0, nil).
+func denmaEveryMinute(a *App, at int, fn func()) (int, error) {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(a.ko.String("denma.center")))
+	offset := time.Duration((int(h.Sum32()%30)+at)%60) * time.Second
+
+	// An @every job's first run is a minute after it's added; a job added
+	// to a cron that has since stopped (a replaced app) never runs.
+	time.AfterFunc(offset, func() {
+		if _, err := a.crons.Add("@every 1m", fn); err != nil {
+			a.log.Printf("denma: error adding a job: %v", err)
+		}
+	})
+	return 0, nil
 }
 
 // denmaHubPath reports whether the hub serves a path: its admin and API, the
@@ -344,41 +440,37 @@ func denmaRegisterCenter(db *sqlx.DB, slug, name, schema string) (*denmaCenter, 
 
 // load opens a center: provisions its schema if new, then builds its App and
 // router, and watches for its reload signal (a settings save).
-func (d *denmaCenters) load(c *denmaCenter) error {
+func (d *denmaCenters) load(c *denmaCenter) (err error) {
+	var cdb *sqlx.DB
+	defer func() {
+		if r := recover(); r != nil {
+			e, ok := r.(denmaLoadError)
+			if !ok {
+				panic(r)
+			}
+			err = e.err
+			if cdb != nil {
+				cdb.Close()
+			}
+		}
+	}()
 	if c.Schema == d.baseSchema {
 		return fmt.Errorf("the center's schema (%s) is the hub's", c.Schema)
 	}
-	if err := d.ownSchema(c); err != nil { // cmd/denma_layout.go
-		return err
-	}
-	ck := d.centerConfig(c)
-
-	cdb, err := denmaConnect(ck)
+	t := time.Now()
+	cdb, ck, err := d.setup(c)
 	if err != nil {
 		return err
 	}
-	if err := d.provision(c, cdb); err != nil {
-		cdb.Close()
-		return err
-	}
-	if err := d.upgrade(c, cdb); err != nil {
-		cdb.Close()
-		return err
-	}
-	if err := d.adopt(c, cdb); err != nil {
-		cdb.Close()
-		return err
-	}
-	if _, err := d.syncShared(cdb); err != nil {
-		cdb.Close()
-		return fmt.Errorf("copying the shared settings: %v", err)
-	}
+	d.timings.add(0, &t)
 
 	qMap := readQueries(queryFilePath, fs)
 	initSettings(qMap["get-settings"].Query, cdb, ck)
 	cq := prepareQueries(qMap, cdb, ck)
+	d.timings.add(1, &t)
 
 	app := buildApp(ck, cdb, cq, false)
+	d.timings.add(2, &t)
 	// Its own uploads folder (uploads/<slug>, from provisioning), which
 	// listmonk expects to exist.
 	if p := ck.String("upload.filesystem.upload_path"); ck.String("upload.provider") == "filesystem" && p != "" {
@@ -391,9 +483,67 @@ func (d *denmaCenters) load(c *denmaCenter) error {
 	app.needsUserSetup = false
 	c.app = app
 	c.router = initHTTPRouter(app.cfg, app.urlCfg, app.i18n, fs, app)
+	d.timings.add(3, &t)
 
 	go d.watchReload(c)
 	return nil
+}
+
+// denmaTimings adds up the time centers spend in each step of loading, for
+// the startup log.
+type denmaTimings struct {
+	mu sync.Mutex
+	d  [4]time.Duration // setup, queries, app, router
+}
+
+// add adds the time since *t to step i and restarts *t.
+func (m *denmaTimings) add(i int, t *time.Time) {
+	now := time.Now()
+	m.mu.Lock()
+	m.d[i] += now.Sub(*t)
+	m.mu.Unlock()
+	*t = now
+}
+
+func (m *denmaTimings) String() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := func(d time.Duration) time.Duration { return d.Round(time.Millisecond) }
+	return fmt.Sprintf("setup %s, queries %s, app %s, router %s", r(m.d[0]), r(m.d[1]), r(m.d[2]), r(m.d[3]))
+}
+
+// setup readies a center's schema, settings and files and opens its DB pool,
+// one center at a time (setupMu).
+func (d *denmaCenters) setup(c *denmaCenter) (*sqlx.DB, *koanf.Koanf, error) {
+	d.setupMu.Lock()
+	defer d.setupMu.Unlock()
+
+	if err := d.ownSchema(c); err != nil { // cmd/denma_layout.go
+		return nil, nil, err
+	}
+	ck := d.centerConfig(c)
+
+	cdb, err := denmaConnect(ck)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := d.provision(c, cdb); err != nil {
+		cdb.Close()
+		return nil, nil, err
+	}
+	if err := d.upgrade(c, cdb); err != nil {
+		cdb.Close()
+		return nil, nil, err
+	}
+	if err := d.adopt(c, cdb); err != nil {
+		cdb.Close()
+		return nil, nil, err
+	}
+	if _, err := d.syncShared(cdb); err != nil {
+		cdb.Close()
+		return nil, nil, fmt.Errorf("copying the shared settings: %v", err)
+	}
+	return cdb, ck, nil
 }
 
 // centerConfig is the hub's config (files, env, flags) with the
@@ -415,6 +565,15 @@ func (d *denmaCenters) centerConfig(c *denmaCenter) *koanf.Koanf {
 	_ = ck.Set("db.max_idle", d.base.ko.Int("denma.center_db_max_idle"))
 	if ck.Int("db.max_open") < 1 {
 		_ = ck.Set("db.max_open", 4)
+	}
+	// Some connections kept open: with none, every query (such as the
+	// campaign check every few seconds) connects anew and re-prepares its
+	// statement, which with many centers runs the server out of ports.
+	if ck.Int("db.max_idle") < 1 {
+		_ = ck.Set("db.max_idle", 1)
+	}
+	if ck.Int("db.max_idle") > ck.Int("db.max_open") {
+		_ = ck.Set("db.max_idle", ck.Int("db.max_open"))
 	}
 	return ck
 }
@@ -721,6 +880,9 @@ func denmaSignalReload(a *App) {
 
 // disable stops serving a center (its data stays).
 func (d *denmaCenters) disable(slug string) error {
+	if d.isStarting(slug) {
+		return errDenmaStarting
+	}
 	if _, err := d.base.db.Exec(`UPDATE denma.centers SET status = 'disabled' WHERE slug = $1`, slug); err != nil {
 		return err
 	}
@@ -738,6 +900,9 @@ func (d *denmaCenters) disable(slug string) error {
 
 // enable loads a center and serves it again.
 func (d *denmaCenters) enable(slug string) error {
+	if d.isStarting(slug) {
+		return errDenmaStarting
+	}
 	var c denmaCenter
 	if err := d.base.db.Get(&c, `SELECT id, slug, name, schema_name FROM denma.centers WHERE slug = $1`, slug); err != nil {
 		return err

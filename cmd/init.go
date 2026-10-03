@@ -435,6 +435,9 @@ func prepareQueries(qMap goyesql.Queries, db *sqlx.DB, ko *koanf.Koanf) *models.
 	// Scan and prepare all queries.
 	var q models.Queries
 	if err := goyesqlx.ScanToStruct(&q, qMap, db); err != nil {
+		if denmaNoExit != nil { // denma: a center's error doesn't stop the server (cmd/denma_centers.go)
+			panic(denmaNoExit(fmt.Errorf("error preparing SQL queries: %v", err)))
+		}
 		lo.Fatalf("error preparing SQL queries: %v", err)
 	}
 
@@ -452,6 +455,9 @@ func initSettings(query string, db *sqlx.DB, ko *koanf.Koanf) {
 			}
 		}
 
+		if denmaNoExit != nil { // denma: a center's error doesn't stop the server (cmd/denma_centers.go)
+			panic(denmaNoExit(fmt.Errorf("error reading settings from DB: %s", msg)))
+		}
 		lo.Fatalf("error reading settings from DB: %s", msg)
 	}
 
