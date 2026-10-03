@@ -161,3 +161,18 @@ func (a *App) DenmaStatSubscribers(c echo.Context) error {
 		PageProps: models.PageProps{Total: total, Page: pg.Page, PerPage: pg.PerPage},
 	}})
 }
+
+// DenmaUntrackedCampaigns returns the IDs of the campaigns whose opens are
+// counted only in total, not per subscriber (they have views without one:
+// sent while individual tracking was off, as before production turned it on).
+// Open and click rates leave them out (denma-stats.js isTracked), as the
+// hub's analytics do (cmd/denma_hub_analytics.go).
+//
+//	GET /api/denma/stats/untracked
+func (a *App) DenmaUntrackedCampaigns(c echo.Context) error {
+	ids := []int{}
+	if err := a.db.Select(&ids, `SELECT DISTINCT campaign_id FROM campaign_views WHERE subscriber_id IS NULL ORDER BY 1`); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, okResp{ids})
+}

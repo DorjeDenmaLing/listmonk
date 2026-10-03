@@ -26,6 +26,9 @@ const denmaCenterPerm = "center:manage"
 var denmaCenterFields = []string{
 	"app.site_name", "app.logo_url", "app.favicon_url", "app.lang",
 	"app.from_email", "app.notify_emails",
+	// The features (cmd/denma_features.go).
+	"denma.unsubscribe_everywhere", "denma.plain_text_auto", "denma.utm_domains",
+	"denma.signup_holding_list", "denma.signup_target_list", "denma.visual_template",
 }
 
 // denmaPermissions adds ours to listmonk's permissions (permissions.json), so
@@ -81,11 +84,22 @@ type denmaCenterForm struct {
 	Lang         string   `json:"lang"`
 	FromEmail    string   `json:"from_email"`
 	NotifyEmails []string `json:"notify_emails"`
+
+	// The features (cmd/denma_features.go).
+	UnsubscribeEverywhere bool     `json:"unsubscribe_everywhere"`
+	PlainTextAuto         bool     `json:"plain_text_auto"`
+	UTMDomains            []string `json:"utm_domains"`
+	SignupHoldingList     int      `json:"signup_holding_list"`
+	SignupTargetList      int      `json:"signup_target_list"`
+	VisualTemplate        int      `json:"visual_template"`
 }
 
 var denmaFormKeys = map[string]string{
 	"site_name": "app.site_name", "logo_url": "app.logo_url", "favicon_url": "app.favicon_url",
 	"lang": "app.lang", "from_email": "app.from_email", "notify_emails": "app.notify_emails",
+	"unsubscribe_everywhere": "denma.unsubscribe_everywhere", "plain_text_auto": "denma.plain_text_auto",
+	"utm_domains": "denma.utm_domains", "signup_holding_list": "denma.signup_holding_list",
+	"signup_target_list": "denma.signup_target_list", "visual_template": "denma.visual_template",
 }
 
 type denmaCenterView struct {
@@ -93,6 +107,17 @@ type denmaCenterView struct {
 	Form    denmaCenterForm
 	Address string
 	Langs   []i18nLang
+
+	// For the features' choices.
+	Lists           []denmaOption
+	VisualTemplates []denmaOption
+}
+
+// denmaOption is a list or template to choose.
+type denmaOption struct {
+	ID    int    `db:"id" json:"id"`
+	Name  string `db:"name" json:"name"`
+	Optin string `db:"optin" json:"optin,omitempty"`
 }
 
 // inCenter returns an error unless the App is a center (not the hub, and in
@@ -129,6 +154,9 @@ func (a *App) centerForm() (denmaCenterForm, error) {
 	if out.NotifyEmails == nil {
 		out.NotifyEmails = []string{}
 	}
+	if out.UTMDomains == nil {
+		out.UTMDomains = []string{}
+	}
 	return out, err
 }
 
@@ -149,9 +177,15 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	return c.Render(http.StatusOK, "admin-denma-center", denmaCenterView{
-		adminView: v, Form: form, Address: a.urlCfg.RootURL, Langs: langs,
-	})
+	view := denmaCenterView{adminView: v, Form: form, Address: a.urlCfg.RootURL, Langs: langs,
+		Lists: []denmaOption{}, VisualTemplates: []denmaOption{}}
+	if err := a.db.Select(&view.Lists, `SELECT id, name, optin::TEXT AS optin FROM lists ORDER BY name`); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if err := a.db.Select(&view.VisualTemplates, `SELECT id, name, '' AS optin FROM templates WHERE type = 'campaign_visual' ORDER BY name`); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.Render(http.StatusOK, "admin-denma-center", view)
 }
 
 // DenmaUpdateCenter saves the Advanced page and reloads the center (after
@@ -209,6 +243,9 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	}
 	if !known {
 		return bad("Choose a language from the list.")
+	}
+	if err := a.denmaCheckFeatures(&f); err != nil {
+		return bad(err.Error())
 	}
 	// Save each setting.
 	b, _ := json.Marshal(f)

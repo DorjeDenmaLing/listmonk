@@ -8,6 +8,7 @@ import {
   urls,
 } from '../main.js';
 import * as u from '../utils.js';
+import { denmaPlainText } from '../denma-campaign.js'; // denma: automatic plain text
 
 // Media tag for <ot-taginput> attachments.
 class MediaTag {
@@ -42,6 +43,7 @@ function component(camp, sel) {
   }
 
   return {
+    ...denmaPlainText(), // denma
     isNew,
     isHeadersVisible: Array.isArray(c.headers) && c.headers.length > 0,
     activeTab: 'campaign',
@@ -302,6 +304,7 @@ function component(camp, sel) {
       }
 
       const d = await api('campaigns', `/campaigns/${this.form.id}`, 'PUT', p);
+      this.denmaAfterSave(d); // denma: the plain text made from it
       this._saved = true;
       this.form.archive_slug = d.archive_slug || this.form.archive_slug;
       u.toast(i18n.ts('globals.messages.updated', { name: d.name }));

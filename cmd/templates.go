@@ -35,8 +35,9 @@ var (
 type templatesView struct {
 	adminView
 
-	Templates []models.Template
-	Type      string
+	Templates   []models.Template
+	Type        string
+	DenmaVisual int // denma: the default visual template (cmd/denma_features.go)
 }
 
 // templateView is the admin page view for creating/editing a single template.
@@ -60,6 +61,8 @@ func (a *App) ViewTemplates(c echo.Context) error {
 		adminView: newAdminView(c, a.i18n.T("globals.terms.templates"), "", "campaigns.templates"),
 		Templates: out,
 		Type:      typ,
+
+		DenmaVisual: a.denmaVisualTemplate(), // denma
 	}
 
 	return c.Render(http.StatusOK, "admin-templates", data)

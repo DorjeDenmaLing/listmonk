@@ -72,6 +72,64 @@
 			</label>
 		</fieldset>
 
+		{{/* The features (cmd/denma_features.go). */}}
+		<fieldset class="card" data-testid="center-subscribers">
+			<legend>Subscribers</legend>
+			<label data-field>
+				<span><input type="checkbox" role="switch" x-model="form.unsubscribe_everywhere" data-testid="unsubscribe-everywhere" /> Unsubscribing from one list unsubscribes from all</span>
+				<small data-hint>Whoever unsubscribes from any list (the unsubscribe link, the e-mail app's unsubscribe button, or here) is unsubscribed from every list and blocklisted, so no list added later reaches them.</small>
+			</label>
+			<div class="row">
+				<div class="col-6">
+					<label data-field>
+						Website signups wait on
+						<select x-model.number="form.signup_holding_list" data-testid="signup-holding">
+							<option value="0">No list (off)</option>
+							{{- range $d.Lists }}{{ if eq .Optin "double" }}
+							<option value="{{ .ID }}">{{ .Name }}</option>
+							{{- end }}{{ end }}
+						</select>
+						<small data-hint>A double opt-in list that the website's signup form adds people to. They get the confirmation e-mail.</small>
+					</label>
+				</div>
+				<div class="col-6">
+					<label data-field>
+						and, once confirmed, join
+						<select x-model.number="form.signup_target_list" :disabled="!form.signup_holding_list" data-testid="signup-target">
+							<option value="0">No list</option>
+							{{- range $d.Lists }}
+							<option value="{{ .ID }}">{{ .Name }}</option>
+							{{- end }}
+						</select>
+						<small data-hint>They're moved here, confirmed, with the date they confirmed. Don't send campaigns to the first list.</small>
+					</label>
+				</div>
+			</div>
+		</fieldset>
+
+		<fieldset class="card" data-testid="center-campaigns">
+			<legend>Campaigns</legend>
+			<label data-field>
+				<span><input type="checkbox" role="switch" x-model="form.plain_text_auto" data-testid="plain-text-auto" /> Make the plain-text version automatically</span>
+				<small data-hint>For e-mail apps that don't show HTML: made from the e-mail (with its template) each time a campaign is saved. A campaign can still have it written by hand.</small>
+			</label>
+			<label data-field>
+				Default visual template
+				<select x-model.number="form.visual_template" data-testid="visual-template">
+					<option value="0">None (new campaigns are rich text)</option>
+					{{- range $d.VisualTemplates }}
+					<option value="{{ .ID }}">{{ .Name }}</option>
+					{{- end }}
+				</select>
+				<small data-hint>New campaigns are Visual and start from this template. It can't be deleted while it's the default.</small>
+			</label>
+			<label data-field>
+				Add UTM tags to links to
+				<textarea rows="3" x-model="utm" placeholder="example.org" data-testid="utm-domains"></textarea>
+				<small data-hint>One domain per line (its subdomains too). When a campaign is scheduled or starts, its links there get utm_source=newsletter, utm_medium=email and utm_campaign with the campaign's name, for Google Analytics. Links with their own UTM tags are left as they are. Empty: none.</small>
+			</label>
+		</fieldset>
+
 	</div>
 </form>
 

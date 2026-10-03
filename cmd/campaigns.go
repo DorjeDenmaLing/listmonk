@@ -79,6 +79,8 @@ type campaignView struct {
 	AllLists        []models.List
 	SelectedListIDs []int
 	ArchiveURL      string
+
+	DenmaPlainAuto bool // denma: the center makes plain text automatically (cmd/denma_features.go)
 }
 
 // ViewNewCampaign renders the new campaign page (only the "campaign" tab).
@@ -104,7 +106,7 @@ func (a *App) ViewNewCampaign(c echo.Context) error {
 	data := campaignView{
 		adminView:       newAdminView(c, a.i18n.T("campaigns.newCampaign")+" / "+a.i18n.T("globals.terms.campaigns"), "", "campaigns.new"),
 		IsNew:           true,
-		Campaign:        models.Campaign{Type: models.CampaignTypeRegular, ContentType: models.CampaignContentTypeRichtext},
+		Campaign:        models.Campaign{Type: models.CampaignTypeRegular, ContentType: a.denmaNewCampaignFormat(tpls)}, // denma: Visual with a default visual template (cmd/denma_features.go)
 		Templates:       tpls,
 		AllLists:        allLists,
 		SelectedListIDs: selIDs,
@@ -180,6 +182,8 @@ func (a *App) ViewCampaign(c echo.Context) error {
 		Templates:  tpls,
 		AllLists:   allLists,
 		ArchiveURL: archiveURL,
+
+		DenmaPlainAuto: a.denmaPlainAuto(), // denma
 	}
 
 	return c.Render(http.StatusOK, "admin-campaign", data)

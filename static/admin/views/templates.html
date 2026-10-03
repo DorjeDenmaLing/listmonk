@@ -46,6 +46,7 @@
 							<td>
 								<a href="{{ $base }}/{{ .ID }}" class="unstyled" data-testid="btn-edit">{{ .Name }}</a>
 								{{ if .IsDefault }}{{ Badge ($.L.T "templates.default") }}{{ end }}
+								{{- if and $d.DenmaVisual (eq .ID $d.DenmaVisual) }}<span title="New visual campaigns start from this template. It can't be deleted.">{{ Badge "Default (visual)" }}</span>{{ end }}{{/* denma: cmd/denma_features.go */}}
 								{{- if eq .Type "tx" }}<p class="text-light">{{ .Subject }}</p>{{ end }}
 							</td>
 							<td>
@@ -78,7 +79,7 @@
 											{{- if and (not .IsDefault) (eq .Type "campaign") }}
 												<button type="button" role="menuitem" class="ghost" data-testid="btn-set-default" :disabled="isLoading('templates')" @click.prevent="onSetDefault({{ .ID }}, {{ ToJSON .Name }})">{{ Icon "check-circle" }} {{ $.L.T "templates.makeDefault" }}</button>
 											{{- end }}
-											{{- if not .IsDefault }}
+											{{- if and (not .IsDefault) (ne .ID $d.DenmaVisual) }}{{/* denma: nor the default visual template */}}
 												<hr />
 												<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-delete" :disabled="isLoading('templates')" @click.prevent="onDelete({{ .ID }}, {{ ToJSON .Name }})">{{ Icon "trash-2" }} {{ $.L.T "globals.buttons.delete" }}</button>
 											{{- end }}

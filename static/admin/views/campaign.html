@@ -11,6 +11,7 @@
 	window._templates = {{ ToJSON $d.Templates }};
 	const _camp = {{ ToJSON $c }};
 	const _sel = {{ ToJSON $d.SelectedListIDs }};
+	window._denmaPlainAuto = {{ $d.DenmaPlainAuto }}; // denma
 </script>
 
 <section class="campaign" x-data="campaignView(_camp, _sel)" @keydown.ctrl.s.window.prevent="onSaveShortcut" @keydown.meta.s.window.prevent="onSaveShortcut">

@@ -83,7 +83,9 @@ CREATE TABLE IF NOT EXISTS denma_automation_sends (
 
 // denmaAutoWaitingSQL: the subscriptions (sl) to an automation's (a) lists
 // made while it was on, still on, of subscribers it hasn't sent to yet; one
-// row per subscription, so a subscriber can be in more than one.
+// row per subscription, so a subscriber can be in more than one. Imported
+// subscribers (attribs.imported_at, cmd/denma_features.go) never get
+// automations.
 // denmaAutoDueSQL narrows them to those whose wait is over.
 const (
 	denmaAutoWaitingSQL = `
@@ -94,6 +96,7 @@ JOIN subscribers s ON s.id = sl.subscriber_id
 JOIN lists l ON l.id = sl.list_id
 WHERE a.active AND a.template_id IS NOT NULL
     AND s.status <> 'blocklisted' AND sl.status <> 'unsubscribed'
+    AND NOT (jsonb_typeof(s.attribs) = 'object' AND s.attribs ? 'imported_at')
     AND (l.optin <> 'double' OR sl.status = 'confirmed')
     AND sl.created_at >= a.active_since
     AND NOT EXISTS (SELECT 1 FROM denma_automation_sends d WHERE d.automation_id = a.id AND d.subscriber_id = sl.subscriber_id)`

@@ -1,0 +1,24 @@
+{{/*
+	denma: the campaign's plain-text version, in place of listmonk's switch
+	(partials/campaign-content.html) when the center makes it automatically
+	(cmd/denma_features.go; assets/js/denma-campaign.js).
+*/}}
+{{ define "denma-plain-text" -}}
+<template x-if="canEdit && form.content_type !== 'plain'">
+	<fieldset class="mb-0 denma-plain-text" data-testid="plain-text">
+		<h4 class="text-5 mb-1">Plain-text version</h4>
+		<label data-field>
+			<span><input type="checkbox" role="switch" :checked="denmaPlainManual() === true" :disabled="denmaPlainManual() === null"
+				@change="denmaSetPlainManual($event.target.checked)" data-testid="plain-text-manual" /> Edit the plain-text version by hand</span>
+			<small data-hint x-text="denmaPlainManual() === null
+				? 'The Attributes tab has invalid JSON; fix it to change this.'
+				: denmaPlainManual()
+					? 'Your text below is kept as written; update it yourself when the email changes. Untick to make it from the email again. Save to apply.'
+					: 'For email apps that don\'t show HTML. It\'s made from the email each time you save, so it always matches.'"></small>
+		</label>
+		<div class="alt-body">
+			<textarea x-model="form.altbody" :readonly="denmaPlainManual() !== true" aria-label="Plain-text version" data-testid="plain-text-body"></textarea>
+		</div>
+	</fieldset>
+</template>
+{{- end }}

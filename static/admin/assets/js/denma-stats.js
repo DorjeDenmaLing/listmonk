@@ -4,10 +4,6 @@
 // named figures computed on the server (cmd/denma_stats.go).
 import { urls } from './main.js';
 
-// Unique opens and clicks exist only since privacy.individual_tracking was
-// turned on in production; earlier campaigns only have anonymous totals, so
-// they're left out of open and click figures.
-export const TRACKING_SINCE = new Date('2026-09-29T18:41:52Z');
 
 export const RANGES = [
   ['7', 'Last 7 days'],
@@ -90,9 +86,14 @@ export async function getJSON(uri) {
   return out.data;
 }
 
+// The campaigns, each marked tracked or not (isTracked).
 export async function fetchCampaigns() {
-  const d = await getJSON('/campaigns?per_page=all&no_body=true');
-  return (d && d.results) || [];
+  const [d, untracked] = await Promise.all([
+    getJSON('/campaigns?per_page=all&no_body=true'),
+    getJSON('/denma/stats/untracked'),
+  ]);
+  const skip = new Set(untracked || []);
+  return ((d && d.results) || []).map((c) => ({ ...c, denmaTracked: !skip.has(c.id) }));
 }
 
 // Campaigns that started sending in period p.
@@ -103,7 +104,11 @@ export function startedIn(campaigns, p) {
   });
 }
 
-export const isTracked = (c) => new Date(c.started_at) >= TRACKING_SINCE;
+// Whether a campaign's opens and clicks are counted per subscriber: not if it
+// has opens without one (sent while individual tracking was off, as before
+// production turned it on), which open and click figures leave out, as the
+// hub's analytics do (cmd/denma_stats.go).
+export const isTracked = (c) => c.denmaTracked !== false;
 
 // Unique views or clicks per campaign ({id: count}) since `from`.
 export async function perCampaign(type, ids, from) {

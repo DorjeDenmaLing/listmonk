@@ -825,6 +825,7 @@ func denmaFind(all []denmaNamed, v, what string) (int, error) {
 func initDenmaSearchAPIHandlers(g *echo.Group, a *App) {
 	g.GET("/api/denma/search/check", a.DenmaCheckSearch)
 	g.GET("/api/denma/stats/subscribers", a.auth.Perm(a.DenmaStatSubscribers, "subscribers:get_all", "subscribers:get"))
+	g.GET("/api/denma/stats/untracked", a.auth.Perm(a.DenmaUntrackedCampaigns, "campaigns:get_all", "campaigns:get"))
 }
 
 // DenmaCheckSearch says whether a search (?kind=subscribers, lists or

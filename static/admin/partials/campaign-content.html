@@ -22,6 +22,7 @@
 		</template>
 	</div>
 
+	{{- if $root.Data.DenmaPlainAuto }}{{ template "denma-plain-text" . }}{{ else }}{{/* denma: automatic plain text (cmd/denma_features.go) */}}
 	<template x-if="canEdit && form.content_type !== 'plain'">
 		<fieldset class="mb-0">
 			<label>
@@ -35,5 +36,6 @@
 			</template>
 		</fieldset>
 	</template>
+	{{- end }}
 </div>
 {{- end }}
