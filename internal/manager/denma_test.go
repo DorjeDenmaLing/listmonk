@@ -515,3 +515,35 @@ func TestCleanupWaitsForRetries(t *testing.T) {
 		t.Fatalf("statuses %v, counts saved %d times; want it left running, its counts saved", store.statuses, len(store.checkpointWrites))
 	}
 }
+
+// A campaign message waiting for the daily limit is skipped once the campaign
+// stops, and the checkpoint stays before it.
+func TestDailyWaitSkips(t *testing.T) {
+	stopped := make(chan struct{})
+	DenmaDailyWait = func(stop func() bool) bool {
+		for !stop() {
+			time.Sleep(time.Millisecond)
+		}
+		close(stopped)
+		return false
+	}
+	defer func() { DenmaDailyWait = nil }()
+	store := &mockStore{batches: [][]models.Subscriber{makeSubs(1)}}
+	m := newTestManager(store, mockMessenger{})
+	p, err := m.newPipe(newTestCampaign(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go m.worker()
+	if _, err := p.NextSubscribers(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	p.Stop(false)
+	<-stopped
+	p.wg.Done()
+	time.Sleep(20 * time.Millisecond)
+	if p.sent.Load() != 0 || p.lastID.Load() != 0 || len(store.failures) != 0 {
+		t.Fatalf("sent %d, checkpoint %d, failures %v; want it skipped, not sent or failed", p.sent.Load(), p.lastID.Load(), store.failures)
+	}
+}

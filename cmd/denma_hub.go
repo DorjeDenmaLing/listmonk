@@ -26,6 +26,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/listmonk/internal/auth"
+	"github.com/knadh/listmonk/internal/denmadaily"
 	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/internal/tmptokens"
 	"github.com/knadh/listmonk/models"
@@ -543,6 +544,11 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 			return ""
 		}
 		return path.Join(denmaHub.current().urlCfg.RootPath, uriAdmin)
+	}
+	// DenmaDailySending is the e-mails sent in the last 24 hours against the
+	// daily limit (cmd/denma_daily.go).
+	funcs["DenmaDailySending"] = func() denmadaily.Status {
+		return denmaDaily.Status()
 	}
 	// DenmaIsHub reports whether the page is the hub's.
 	funcs["DenmaIsHub"] = func() bool {

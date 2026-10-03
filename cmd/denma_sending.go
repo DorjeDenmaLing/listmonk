@@ -16,6 +16,9 @@ package main
 // (postbacks) wait in a wrapper given to the managers. A center sending alone
 // still gets the full rate; several share it, in the order they asked.
 //
+// Every e-mail is also counted for the hub's daily limit (cmd/denma_daily.go),
+// which campaign messages wait for.
+//
 // Multi-center mode only.
 
 import (
@@ -138,7 +141,16 @@ func denmaLimitSending(msgrs []manager.Messenger, ko *koanf.Koanf) []manager.Mes
 		return msgrs
 	}
 	denmaSendPacer.configure(ko)
-	denmaHookEmail.Do(func() { email.BeforePush = denmaSendPacer.wait })
+	if ko.String("denma.center") == "" {
+		denmaDaily.SetLimit(ko.Int("denma.daily_limit")) // the hub's setting
+	}
+	denmaHookEmail.Do(func() {
+		email.BeforePush = func() {
+			denmaSendPacer.wait()
+			denmaDaily.Add()
+		}
+		manager.DenmaDailyWait = denmaDaily.Wait
+	})
 
 	out := make([]manager.Messenger, len(msgrs))
 	for i, m := range msgrs {

@@ -238,13 +238,22 @@ func (a *App) runAutomations() {
 }
 
 func (a *App) runAutomation(auto denmaAutomation) {
+	// The hub's daily limit (cmd/denma_daily.go): no more than what's left of
+	// it; the rest are sent on a later run.
+	limit := denmaAutoBatch
+	if left := denmaDaily.Left(); left == 0 {
+		return
+	} else if left > 0 {
+		limit = min(limit, left)
+	}
+
 	// Mark who's due as sent first, so that no one gets it twice.
 	var ids []int
 	if err := a.db.Select(&ids, `
 		INSERT INTO denma_automation_sends (automation_id, subscriber_id)
 		SELECT a.id, sl.subscriber_id `+denmaAutoDueSQL+` AND a.id = $1
 		GROUP BY a.id, sl.subscriber_id ORDER BY MIN(sl.created_at) LIMIT $2
-		ON CONFLICT DO NOTHING RETURNING subscriber_id`, auto.ID, denmaAutoBatch); err != nil {
+		ON CONFLICT DO NOTHING RETURNING subscriber_id`, auto.ID, limit); err != nil {
 		a.log.Printf("denma: error getting automation %d's subscribers: %v", auto.ID, err)
 		return
 	}

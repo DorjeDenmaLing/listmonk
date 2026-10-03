@@ -65,10 +65,12 @@ func denmaNormTags(in []string) []string {
 
 // denmaHubColumns adds the campaign tags column and the failed sends' table
 // (cmd/denma_retries.go) to the hub's schema, which has no features installed
-// but runs listmonk's campaign queries (which read them). Called on every
-// start (denmaPrepareHub).
+// but runs listmonk's campaign queries (which read them), and the daily
+// sending limit to its settings (cmd/denma_daily.go). Called on every start
+// (denmaPrepareHub).
 func denmaHubColumns(db *sqlx.DB) {
-	if _, err := db.Exec(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';` + denmaRetriesSQL); err != nil {
+	if _, err := db.Exec(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';` + denmaRetriesSQL +
+		`INSERT INTO settings (key, value) VALUES ('denma.daily_limit', '0') ON CONFLICT (key) DO NOTHING;`); err != nil {
 		lo.Fatalf("denma: error adding the campaign tags column and failed sends to the hub: %v", err)
 	}
 }

@@ -104,6 +104,12 @@ func (m *Manager) DenmaStop(wait time.Duration) bool {
 	}
 }
 
+// DenmaDailyWait, if set, blocks a campaign message until the hub's daily
+// limit lets it go (cmd/denma_daily.go), and returns false if stopped()
+// first: its campaign was paused or stopped, so the message is skipped as a
+// stopped campaign's are, and sent when it resumes.
+var DenmaDailyWait func(stopped func() bool) bool
+
 // Failed sends (cmd/denma_retries.go). Each is recorded with its reason and
 // whether it's worth trying again: the mail server unreachable or answering
 // "try later" (a 4xx reply) is temporary; a 5xx reply, or a message that

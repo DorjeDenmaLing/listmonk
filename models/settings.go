@@ -29,6 +29,9 @@ type Settings struct {
 	AppMessageSlidingWindowDuration string `json:"app.message_sliding_window_duration"`
 	AppMessageSlidingWindowRate     int    `json:"app.message_sliding_window_rate"`
 
+	// denma: the hub's daily sending limit, for every center (cmd/denma_daily.go).
+	DenmaDailyLimit int `json:"denma.daily_limit"`
+
 	PrivacyIndividualTracking bool     `json:"privacy.individual_tracking"`
 	PrivacyDisableTracking    bool     `json:"privacy.disable_tracking"`
 	PrivacyUnsubHeader        bool     `json:"privacy.unsubscribe_header"`
