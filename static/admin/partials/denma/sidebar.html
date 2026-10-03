@@ -7,10 +7,10 @@
 	permissions are kept; Media and Analytics keep their page IDs.
 
 	In the hub (superadmins): Dashboard, Centers, Analytics, Activity, Users and
-	Settings. In a center: listmonk's items, ours, and for superadmins All
-	centers (back to the hub's Centers); its settings are the hub's, and it has
-	Activity (its own log) and a Config page for its own details
-	(cmd/denma_center.go).
+	Settings. In a center: listmonk's items and ours; its settings are the
+	hub's, and it has Activity (its own log) and a Config page for its own
+	details (cmd/denma_center.go). Superadmins go back to the hub with the top
+	bar's button.
 
 	On phones it's the menu under the top bar's menu button, with Refresh and
 	the user's items below (as 6.2.0's).
@@ -89,11 +89,6 @@
 		</li>
 		{{- end }}
 
-		{{- if and DenmaHubURL (eq $u.UserRole.ID 1) }}
-		<li>
-			<a href="{{ DenmaHubURL }}/centers" data-cy="centers">{{ template "denma-icon" "domain" }}<span>All centers</span></a>
-		</li>
-		{{- end }}
 		{{- if Can $u "campaigns:get" "campaigns:get_all" }}
 		<li>
 			<a href="{{ URI "/admin/calendar" }}" {{ IsNav $p "denma.calendar" }} data-cy="calendar">{{ template "denma-icon" "calendar-clock" }}<span>Calendar</span></a>
