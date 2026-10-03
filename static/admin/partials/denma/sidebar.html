@@ -36,12 +36,17 @@
 		{{- end }}
 {{ end }}
 
-{{/* The last item: a center's Advanced page (its own details; cmd/denma_center.go),
-	or, in the hub, superadmins' Activity (every center's log; cmd/denma_audit.go). */}}
+{{/* The last items: a center's Advanced page (its own details; cmd/denma_center.go),
+	or, in the hub, superadmins' Analytics (every center's audience and mailbox
+	providers; cmd/denma_hub_analytics.go) and Activity (every center's log;
+	cmd/denma_audit.go). */}}
 {{ define "denma-sidebar-end" }}
 {{- $u := .Data.Profile }}
 {{- $p := .Data.PageID }}
 		{{- if and DenmaIsHub (eq $u.UserRole.ID 1) }}
+		<li>
+			<a href="{{ URI "/admin/analytics" }}" {{ IsNav $p "denma.analytics" }} data-cy="analytics">{{ Icon "bar-chart-2" }} {{ .L.T "globals.terms.analytics" }}</a>
+		</li>
 		<li>
 			<a href="{{ URI "/admin/activity" }}" {{ IsNav $p "denma.activity" }} data-cy="activity">{{ Icon "activity" }} Activity</a>
 		</li>

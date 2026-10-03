@@ -20,7 +20,6 @@ import (
 	"path"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/knadh/listmonk/internal/auth"
@@ -46,11 +45,13 @@ func initDenmaHubHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/centers/new"), a.ViewDenmaNewCenter)
 	g.GET(path.Join(uriAdmin, "/centers/:slug/open"), a.DenmaOpenCenter)
 	g.GET(path.Join(uriAdmin, "/activity"), a.ViewDenmaActivity)
+	g.GET(path.Join(uriAdmin, "/analytics"), a.ViewDenmaHubAnalytics)
 }
 
 // initDenmaAPIHandlers registers the hub's API (on the /api group).
 func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	g.GET("/api/denma/hub/stats", a.DenmaHubStats)
+	g.GET("/api/denma/hub/analytics", a.DenmaHubAnalytics)
 	g.POST("/api/denma/centers", a.DenmaCreateCenter)
 	g.PUT("/api/denma/centers/:slug/status", a.DenmaSetCenterStatus)
 	initDenmaCenterAPIHandlers(g, a)
@@ -160,73 +161,45 @@ func (a *App) DenmaHubStats(c echo.Context) error {
 		}
 	}
 
-	var reg []struct {
-		Slug   string `db:"slug"`
-		Name   string `db:"name"`
-		Schema string `db:"schema_name"`
-		Status string `db:"status"`
-	}
-	if err := d.base.db.Select(&reg, `SELECT slug, name, schema_name, status FROM denma.centers ORDER BY name`); err != nil {
+	reg, err := d.registered()
+	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
-	d.mu.RLock()
-	failed := make(map[string]string, len(d.failed))
-	for k, v := range d.failed {
-		failed[k] = v
-	}
-	d.mu.RUnlock()
-
 	var (
-		db    = d.current().db
-		root  = d.current().urlCfg.RootPath
-		out   = make([]denmaHubCenter, len(reg))
-		wg    sync.WaitGroup
-		slots = make(chan struct{}, 6) // queries at a time
+		db  = d.current().db
+		out = make([]denmaHubCenter, len(reg))
 	)
-	for i, x := range reg {
+	denmaEach(len(reg), func(i int) {
+		x := reg[i]
 		r := &out[i]
-		*r = denmaHubCenter{
-			Slug: x.Slug, Name: x.Name, Status: x.Status, Error: failed[x.Slug],
-			Path: path.Join(root, denmaCenterPath, x.Slug) + "/",
-		}
-		if ctr := d.get(x.Slug); ctr != nil {
-			r.Loaded = true
-			r.Name = ctr.app.ko.String("app.site_name")
-		}
+		*r = denmaHubCenter{Slug: x.Slug, Name: x.Name, Status: x.Status, Error: x.Error, Path: x.Path, Loaded: x.Loaded}
+		schema := x.Schema
 
-		wg.Add(1)
-		go func(schema string) {
-			defer wg.Done()
-			slots <- struct{}{}
-			defer func() { <-slots }()
-
-			var info struct {
-				Subscribers int       `db:"subscribers"`
-				Lists       int       `db:"lists"`
-				Users       int       `db:"users"`
-				LastSent    null.Time `db:"last_sent"`
-				Version     string    `db:"version"`
+		var info struct {
+			Subscribers int       `db:"subscribers"`
+			Lists       int       `db:"lists"`
+			Users       int       `db:"users"`
+			LastSent    null.Time `db:"last_sent"`
+			Version     string    `db:"version"`
+		}
+		cur, prev := &denmaPeriod{}, &denmaPeriod{}
+		err := db.Get(&info, denmaInSchema(denmaCenterInfoSQL, schema))
+		if err == nil {
+			err = db.Get(cur, denmaInSchema(denmaPeriodSQL, schema), t[0], t[1])
+		}
+		if err == nil {
+			err = db.Get(prev, denmaInSchema(denmaPeriodSQL, schema), t[2], t[3])
+		}
+		if err != nil {
+			if r.Error == "" {
+				r.Error = err.Error()
 			}
-			cur, prev := &denmaPeriod{}, &denmaPeriod{}
-			err := db.Get(&info, denmaInSchema(denmaCenterInfoSQL, schema))
-			if err == nil {
-				err = db.Get(cur, denmaInSchema(denmaPeriodSQL, schema), t[0], t[1])
-			}
-			if err == nil {
-				err = db.Get(prev, denmaInSchema(denmaPeriodSQL, schema), t[2], t[3])
-			}
-			if err != nil {
-				if r.Error == "" {
-					r.Error = err.Error()
-				}
-				return
-			}
-			r.Subscribers, r.Lists, r.Users, r.LastSent, r.Version = info.Subscribers, info.Lists, info.Users, info.LastSent, info.Version
-			r.Cur, r.Prev = cur, prev
-		}(x.Schema)
-	}
-	wg.Wait()
+			return
+		}
+		r.Subscribers, r.Lists, r.Users, r.LastSent, r.Version = info.Subscribers, info.Lists, info.Users, info.LastSent, info.Version
+		r.Cur, r.Prev = cur, prev
+	})
 
 	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
 	return c.JSON(http.StatusOK, okResp{out})

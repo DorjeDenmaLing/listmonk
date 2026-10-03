@@ -1,0 +1,125 @@
+{{ define "admin-denma-hub-analytics" -}}
+{{ template "admin-header" . }}
+{{/* denma: the hub's Analytics page: every center's audience growth and
+	mailbox providers, together or one at a time, and each center's
+	(assets/js/views/denma-hub-analytics.js, cmd/denma_hub_analytics.go). As on
+	the centers' Analytics (partials/denma/analytics.html), without the
+	per-campaign figures. */}}
+<section class="denma-hub denma-dash" x-data="denmaHubAnalytics" x-cloak>
+	<header class="page-header">
+		<h1 class="page-title" x-text="selected ? `Analytics: ${selected.name}` : 'Analytics: all centers'">Analytics</h1>
+	</header>
+
+	<div class="vstack gap-6">
+		<article class="card denma-stats denma-growth">
+			<header class="denma-stat-head">
+				<h2>Audience growth</h2>
+				<div class="hstack denma-range">
+					<select aria-label="Center" x-model="center" @change="onCenter()" data-testid="hub-center">
+						<option value="">All centers</option>
+						<template x-for="c in centers" :key="c.slug">
+							<option :value="c.slug" x-text="c.name" :selected="c.slug === center"></option>
+						</template>
+					</select>
+					{{ template "denma-range-controls" }}
+				</div>
+			</header>
+			<div class="denma-stat-grid denma-cols-5" :class="{ 'is-busy': busy }">
+				{{ template "denma-stat-cells" "growth" }}
+			</div>
+			<div class="denma-chart-wrap" :class="{ 'is-busy': busy }">
+				<div x-ref="growthChart"></div>
+				<div class="denma-legend">
+					<span><i class="added"></i>New</span>
+					<span><i class="unsub"></i>Unsubscribed</span>
+					<span><i class="removed"></i>Bounced or complained</span>
+				</div>
+			</div>
+			<p class="denma-stat-note" x-text="growth.note"></p>
+		</article>
+
+		<article class="card denma-stats denma-providers">
+			<header class="denma-stat-head">
+				<h2>Mailbox providers</h2>
+			</header>
+			<div class="table-wrapper denma-table" :class="{ 'is-busy': busy }" x-show="providers.rows.length">
+				<table>
+					<thead>
+						<tr>
+							<th>Provider</th><th class="num">Subscribers</th><th class="num">Received</th>
+							<th class="num">Open rate</th><th class="num">Click rate</th><th class="num">Unsubscribed</th>
+						</tr>
+					</thead>
+					<tbody>
+						<template x-for="g in providers.rows" :key="g.key">
+							<tr>
+								<td :title="g.title">
+									<span x-text="g.label"></span>
+									<span class="denma-sub" x-show="g.apple" title="Apple Mail opens emails automatically, so this open rate runs high."> *</span>
+									<span class="denma-warn" x-show="g.warn" :title="g.warn" :aria-label="g.warn && 'Warning: ' + g.warn"> ⚠</span>
+								</td>
+								<td class="num" x-text="g.subscribers"></td>
+								<td class="num" x-text="g.received"></td>
+								{{ template "denma-rate-cell" "g.open" }}
+								{{ template "denma-rate-cell" "g.click" }}
+								<td class="num" x-text="g.unsub"></td>
+							</tr>
+						</template>
+					</tbody>
+					<tfoot x-show="providers.all">
+						<tr>
+							<th>All</th>
+							<th class="num" x-text="providers.all && providers.all.subscribers"></th>
+							<th class="num" x-text="providers.all && providers.all.received"></th>
+							{{ template "denma-rate-cell" "providers.all && providers.all.open" }}
+							{{ template "denma-rate-cell" "providers.all && providers.all.click" }}
+							<th class="num" x-text="providers.all && providers.all.unsub"></th>
+						</tr>
+					</tfoot>
+				</table>
+			</div>
+			<p class="denma-stat-note" x-text="providers.note"></p>
+		</article>
+
+		<article class="card denma-stats">
+			<header class="denma-stat-head">
+				<h2>By center</h2>
+			</header>
+			<div class="table-wrapper denma-table" :class="{ 'is-busy': busy }">
+				<table data-testid="hub-analytics-centers">
+					<thead>
+						<tr>
+							<th>Center</th><th class="num">Active</th><th class="num">New</th><th class="num">Unsubscribed</th>
+							<th class="num">Bounced or complained</th><th class="num">Net change</th>
+							<th class="num">Open rate</th><th class="num">Click rate</th>
+						</tr>
+					</thead>
+					<tbody>
+						<template x-for="c in rows" :key="c.slug">
+							<tr :class="{ 'denma-selected': c.slug === center }" :data-slug="c.slug">
+								<td class="denma-break">
+									<button type="button" class="denma-toggle" @click="center = c.slug; onCenter()" x-text="c.name"></button>
+									<div class="text-8 text-danger" x-show="c.error" x-text="c.error"></div>
+								</td>
+								<td class="num" x-text="c.active"></td>
+								<td class="num" x-text="c.added"></td>
+								<td class="num" x-text="c.unsub"></td>
+								<td class="num" x-text="c.removed"></td>
+								<td class="num" x-text="c.net"></td>
+								{{ template "denma-rate-cell" "c.open" }}
+								{{ template "denma-rate-cell" "c.click" }}
+							</tr>
+						</template>
+						<template x-if="!busy && !centers.length">
+							<tr><td colspan="8" class="text-light">No centers yet.</td></tr>
+						</template>
+					</tbody>
+				</table>
+			</div>
+			<p class="denma-stat-note">Select a center to see only its figures. Open and click rates are unique people per campaign, as a share of emails received, over the campaigns sent with open tracking in this period.</p>
+		</article>
+	</div>
+</section>
+<script type="module" src="{{ URI "/admin/static/js/views/denma-hub-analytics.js" }}?v={{ .AssetVersion }}" defer></script>
+{{ template "admin-footer" . -}}
+{{ end }}

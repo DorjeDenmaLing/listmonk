@@ -208,6 +208,169 @@ export function health(v, bands) {
   return v < bands[1] ? { variant: 'warning', label: 'Watch' } : { variant: 'danger', label: 'At risk' };
 }
 
+// ---- Audience growth (Analytics, and the hub's Analytics) ----
+//
+// g: { active, added, unsub, removed, net, and prevAdded, prevUnsub,
+// prevRemoved, prevNet }. Website signups waiting on a double opt-in holding
+// list aren't counted as subscribers until they confirm.
+
+const GROWTH = [
+  // [label, current key, previous key, higher is good, description]
+  ['Active subscribers', 'active', null, null, 'Enabled subscribers with at least one list subscription, right now.'],
+  ['New', 'added', 'prevAdded', true, 'Subscribers added in this period (imports count on the day they were imported).'],
+  ['Unsubscribed', 'unsub', 'prevUnsub', false, 'People who unsubscribed in this period (not bounce removals).'],
+  ['Bounced or complained', 'removed', 'prevRemoved', false, 'People removed after a bounce or spam complaint in this period.'],
+  ['Net change', 'net', 'prevNet', true, 'New minus unsubscribed minus bounced or complained.'],
+];
+
+export const growthPlaceholders = () => GROWTH.map((m) => ({ key: m[1], label: m[0], help: m[4], value: '…', change: null, health: null }));
+
+export function growthCells(g) {
+  return GROWTH.map(([label, key, prevKey, higherIsGood, help]) => {
+    const v = g[key];
+    let ch = null;
+    if (prevKey) {
+      const pv = g[prevKey];
+      if (pv === v) {
+        ch = { cls: 'flat', arrow: '▬', text: 'same as before', title: '' };
+      } else {
+        const up = v > pv;
+        ch = { cls: up === higherIsGood ? 'good' : 'bad', arrow: up ? '▲' : '▼', text: `${Math.abs(v - pv).toLocaleString()} vs previous`, title: `Previous period: ${pv.toLocaleString()}` };
+      }
+    }
+    return { key, label, help, value: (key === 'net' && v > 0 ? '+' : '') + v.toLocaleString(), change: ch, health: null };
+  });
+}
+
+// Chart buckets: days up to 45 days, weeks up to 200, then months.
+export function buckets(p) {
+  const days = (p.cur.end - p.cur.start) / 86400000;
+  const unit = days <= 45 ? 'day' : (days <= 200 ? 'week' : 'month');
+  let d = new Date(p.cur.start);
+  if (unit === 'week') d = addDays(d, -d.getDay());
+  if (unit === 'month') d = new Date(d.getFullYear(), d.getMonth(), 1);
+  const list = [];
+  while (d < p.cur.end) {
+    const next = unit === 'day' ? addDays(d, 1) : (unit === 'week' ? addDays(d, 7) : new Date(d.getFullYear(), d.getMonth() + 1, 1));
+    list.push({ start: d, end: next, added: 0, unsub: 0, removed: 0 });
+    d = next;
+  }
+  return { unit, list };
+}
+
+function bucketLabel(b, unit, short) {
+  if (unit === 'month') {
+    return b.start.toLocaleDateString([], { month: short ? 'short' : 'long', year: short ? undefined : 'numeric' });
+  }
+  const str = b.start.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return unit === 'week' && !short ? `Week of ${str}` : str;
+}
+
+// Bars of subscribers gained (up) and lost (down) per bucket, drawn at the
+// container's real width so labels stay readable on phones.
+export function growthChart(bk, width) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const W = Math.max(300, Math.round(width || 900));
+  const H = W < 500 ? 180 : 220;
+  const top = 12;
+  const bottom = 26;
+  const left = 36;
+  const n = bk.list.length;
+  let max = 1;
+  bk.list.forEach((b) => { max = Math.max(max, b.added, b.unsub + b.removed); });
+  const mid = top + (H - top - bottom) / 2;
+  const scale = (H - top - bottom) / 2 / max;
+  const slot = (W - left) / n;
+  const bw = Math.max(2, Math.min(28, slot * 0.7));
+
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('class', 'denma-chart');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `Subscribers gained and lost per ${bk.unit}`);
+  const node = (parent, tag, attrs, text) => {
+    const e = document.createElementNS(NS, tag);
+    Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+    if (text != null) e.textContent = text;
+    parent.appendChild(e);
+    return e;
+  };
+
+  [max, 0, -max].forEach((v) => {
+    const y = mid - v * scale;
+    node(svg, 'line', { x1: left, x2: W, y1: y, y2: y, class: v === 0 ? 'axis' : 'grid' });
+    node(svg, 'text', { x: left - 6, y: y + 4, 'text-anchor': 'end', class: 'tick' }, v === 0 ? '0' : `${v > 0 ? '+' : '−'}${Math.abs(v)}`);
+  });
+
+  const every = Math.ceil(n / Math.max(3, Math.floor((W - left) / 80)));
+  bk.list.forEach((b, i) => {
+    const x = left + slot * i + (slot - bw) / 2;
+    const g = node(svg, 'g', {});
+    node(g, 'title', {}, `${bucketLabel(b, bk.unit)}: +${b.added} new, −${b.unsub} unsubscribed, −${b.removed} bounced or complained`);
+    const bar = (y, h, cls) => {
+      if (h > 0) node(g, 'rect', { x, width: bw, y, height: h, class: cls, rx: 2 });
+    };
+    bar(mid - b.added * scale, b.added * scale, 'added');
+    bar(mid, b.unsub * scale, 'unsub');
+    bar(mid + b.unsub * scale, b.removed * scale, 'removed');
+    // Invisible full-height target so the tooltip works on empty days too.
+    node(g, 'rect', { x: left + slot * i, width: slot, y: top, height: H - top - bottom, class: 'hit' });
+    if (i % every === 0) {
+      node(svg, 'text', { x: left + slot * i + slot / 2, y: H - 8, 'text-anchor': 'middle', class: 'tick' }, bucketLabel(b, bk.unit, true));
+    }
+  });
+  return svg;
+}
+
+// ---- Mailbox providers (Analytics, and the hub's Analytics) ----
+
+// [key, label, address domains (* is any ending), opens inflated by Apple
+// Mail]. The hub's are the same (denmaProviders, cmd/denma_hub_analytics.go).
+export const PROVIDERS = [
+  ['gmail', 'Gmail', ['gmail.com', 'googlemail.com']],
+  ['microsoft', 'Microsoft', ['outlook.*', 'hotmail.*', 'live.*', 'msn.com', 'windowslive.com']],
+  ['yahoo', 'Yahoo / AOL', ['yahoo.*', 'ymail.com', 'rocketmail.com', 'aol.*', 'aim.com']],
+  ['apple', 'Apple iCloud', ['icloud.com', 'me.com', 'mac.com'], true],
+];
+export const OTHER_PROVIDER = "Every other address, including organizations' own domains (even when they use Google or Microsoft mail).";
+const PROVIDER_MIN_PERIOD = 30; // emails before a rate is judged
+
+export const pct = (n, d, digits) => (d > 0 ? `${(n / d * 100).toFixed(digits)}%` : '—');
+
+// rows: { [provider key, 'other' or 'all']: { subscribers, unsub, received,
+// opens, clicks } }. Everyone except this group and Apple (whose automatic
+// opens would raise the bar), as picked from each row.
+export function providerBaseline(rows, key, pick) {
+  const all = pick(rows.all);
+  const own = pick(rows[key]);
+  const apple = key === 'apple' ? { received: 0, opens: 0 } : pick(rows.apple);
+  return { received: all.received - own.received - apple.received, opens: all.opens - own.opens - apple.opens };
+}
+
+export const lowVersus = (own, rest, min) => own.received >= min && rest.received >= min && rest.opens > 0
+  && own.opens / own.received < 0.5 * (rest.opens / rest.received);
+
+// Why a provider is flagged over the period, or null. Apple is never flagged.
+export function providerWarning(rows, key) {
+  if (key === 'apple' || key === 'all') return null;
+  if (lowVersus(rows[key], providerBaseline(rows, key, (x) => x), PROVIDER_MIN_PERIOD)) {
+    return "Open rate is less than half of everyone else's in this period.";
+  }
+  return null;
+}
+
+// Figures for a provider row (or the "All" footer).
+export function providerFigures(row) {
+  const rate = (n, digits) => (row.received > 0 ? { pct: pct(n, row.received, digits), n: n.toLocaleString() } : null);
+  return {
+    subscribers: row.subscribers.toLocaleString(),
+    received: row.received.toLocaleString(),
+    open: rate(row.opens, 1),
+    click: rate(row.clicks, 2),
+    unsub: row.unsub.toLocaleString(),
+  };
+}
+
 // ---- Formatting ----
 
 export function fmt(v, kind) {
