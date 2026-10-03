@@ -6,6 +6,9 @@ import {
   ListTag,
 } from '../main.js';
 import * as u from '../utils.js';
+import { // denma: subscriber tags (cmd/denma_tags.go)
+  denmaBulkTags, denmaSplitTags, denmaWithTags,
+} from '../denma-tags-ui.js';
 
 function component(sub = null) {
   // The current view's filters are injected by the template.
@@ -21,15 +24,21 @@ function component(sub = null) {
     lists: [],
     preconfirm: false,
     strAttribs: '{}',
+    tags: [], // denma
   });
-  const makeFormFromSub = (s) => ({
-    ...makeForm(),
-    ...s,
-    lists: (Array.isArray(s.lists) ? s.lists : []).map((l) => new ListTag(l)),
-    strAttribs: JSON.stringify(s.attribs || {}, null, 4),
-  });
+  const makeFormFromSub = (s) => {
+    const { tags, attribs } = denmaSplitTags(s.attribs); // denma: tags apart
+    return {
+      ...makeForm(),
+      ...s,
+      lists: (Array.isArray(s.lists) ? s.lists : []).map((l) => new ListTag(l)),
+      strAttribs: JSON.stringify(attribs, null, 4),
+      tags,
+    };
+  };
 
   return {
+    ...denmaBulkTags(), // denma
     filters,
     query: filters.query || '',
     isSqlOpen: false,
@@ -75,7 +84,7 @@ function component(sub = null) {
         email: this.form.email,
         name: this.form.name,
         status: this.form.status,
-        attribs,
+        attribs: denmaWithTags(attribs, this.form.tags), // denma
       });
 
       u.reload({ message: i18n.ts('globals.messages.updated', { name: data.email }) });
@@ -313,7 +322,7 @@ function component(sub = null) {
         email: this.form.email,
         name: this.form.name,
         status: this.form.status,
-        attribs,
+        attribs: denmaWithTags(attribs, this.form.tags), // denma
         preconfirm_subscriptions: this.form.preconfirm,
         lists: this.form.lists.map((l) => l.id),
       };

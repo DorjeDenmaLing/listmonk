@@ -54,12 +54,16 @@ func (s *store) NextSubscribers(campID, lastFetchedID, limit int) ([]models.Subs
 		return nil, err
 	}
 
-	var listIDs []int
+	// denma: a campaign with tags (cmd/denma_tags.go) may have no lists; its
+	// row has list ID 0.
+	listIDs := []int{}
 	for _, c := range camps {
-		listIDs = append(listIDs, c.ListID)
+		if c.ListID != 0 {
+			listIDs = append(listIDs, c.ListID)
+		}
 	}
 
-	if len(listIDs) == 0 {
+	if len(camps) == 0 {
 		return nil, nil
 	}
 

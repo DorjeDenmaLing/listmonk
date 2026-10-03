@@ -100,6 +100,9 @@ type Campaign struct {
 	// restart resumes from it without skipping fetched but unsent ones.
 	LastSubscriberID int `db:"last_subscriber_id" json:"-"`
 
+	// denma: the subscriber tags the campaign is also sent to (cmd/denma_tags.go).
+	SubscriberTags pq.StringArray `db:"denma_tags" json:"subscriber_tags"`
+
 	// Pseudofield for getting the total number of subscribers
 	// in searches and queries.
 	Total int `db:"total" json:"-"`

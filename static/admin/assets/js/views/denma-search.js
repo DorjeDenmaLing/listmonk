@@ -96,6 +96,7 @@ const FIELDS = {
       choices: [['any', 'any bounce'], ['hard', 'hard'], ['soft', 'soft'], ['complaint', 'complaint (spam)']],
       tok: (op, v) => ({ did: `bounced:${v}`, didnt: neg(`bounced:${v}`), last: `bounced>${int(v)}d` }[op]),
     },
+    tag(),
     {
       id: 'attr',
       label: 'Attribute',
@@ -170,6 +171,7 @@ const HELP = {
       [['opened:"Spring appeal"', 'opened:any', 'opened>90d'], 'a campaign, or when'],
       [['clicked:X', 'clicked:https://…'], 'a campaign, a link, or when'],
       [['bounced:hard', 'bounced:any', 'bounced>30d'], 'hard, soft, complaint, any'],
+      [['tag:volunteer', 'tag:any', 'tag:none'], 'has the tag (Subscribers -> Tags)'],
       [['attr.city=Halifax', 'attr.age>=30', 'has:attr.city'], 'attributes'],
     ],
     example: ['list:Newsletter -opened>90d -status:blocklisted', "finds Newsletter subscribers who haven't opened anything in 90 days."],

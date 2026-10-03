@@ -23,6 +23,7 @@
 		</label>
 
 		{{ template "list-selector" dict "Root" $root "Model" "form.lists" "ListID" "campaign-lists" "Label" "globals.terms.lists" "Placeholder" "campaigns.sendToLists" "Disabled" "!canEdit" }}
+		{{ template "denma-tag-picker" dict "Model" "form.subscriber_tags" "ID" "campaign-sub-tags" "Label" "Subscriber tags" "Disabled" "!canEdit" "Hint" "Also send to everyone with any of these tags (Subscribers -> Tags) who is subscribed to a list and not blocklisted. Each person gets it once." }}{{/* denma: cmd/denma_tags.go */}}
 
 		<label data-field for="messenger">
 			{{ $root.L.Tc "globals.terms.messenger" 1 }}
@@ -43,8 +44,9 @@
 		</label>
 
 		<label data-field>
-			{{ $root.L.T "globals.terms.tags" }}
-			<ot-taginput x-model="form.tags" :disabled="!canEdit"><input placeholder="{{ $root.L.T "globals.terms.tags" }}" maxlength="200" /></ot-taginput>
+			Labels{{/* denma: listmonk's campaign tags, named apart from subscriber tags (cmd/denma_tags.go) */}}
+			<ot-taginput x-model="form.tags" :disabled="!canEdit"><input placeholder="Labels" maxlength="200" /></ot-taginput>
+			<small data-hint>For finding and grouping campaigns; they don't change who receives it.</small>
 		</label>
 
 		<fieldset>

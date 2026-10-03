@@ -118,6 +118,9 @@
 									{{- range .ParsedLists }}
 										<li><a href="{{ URI "/admin/subscribers/lists" }}/{{ .ID }}" class="unstyled">{{ .Name }}</a></li>
 									{{- end }}
+									{{- range .SubscriberTags }}{{/* denma: cmd/denma_tags.go */}}
+										<li><a href="{{ URI "/admin/subscribers" }}?search={{ printf "tag:%q" . | urlquery }}" class="unstyled" title="Subscribers tagged {{ . }}"><span class="denma-tag">{{ . }}</span></a></li>
+									{{- end }}
 								</ul>
 							</td>
 							<td class="stats counts">

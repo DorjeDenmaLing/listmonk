@@ -425,6 +425,27 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return fmt.Sprintf("Set center %s to %s", target, str("status"))
 	case "PUT /api/denma/center":
 		return "Changed the center's details"
+	case "PUT /api/denma/tags":
+		if str("action") == "rename" {
+			return fmt.Sprintf("Renamed the tag %q to %q", str("tag"), str("to"))
+		}
+		return fmt.Sprintf("Deleted the tag %q", str("tag"))
+	case "PUT /api/denma/tags/subscribers":
+		tags := []string{}
+		if ts, ok := b["tags"].([]any); ok {
+			for _, t := range ts {
+				tags = append(tags, fmt.Sprint(t))
+			}
+		}
+		verb := "Added the tags %s to"
+		if str("action") == "remove" {
+			verb = "Removed the tags %s from"
+		}
+		who := "the subscribers found by a search"
+		if ids, ok := b["ids"].([]any); ok && len(ids) > 0 {
+			who = fmt.Sprintf("%d subscribers", len(ids))
+		}
+		return fmt.Sprintf(verb+" %s", strings.Join(tags, ", "), who)
 	}
 	if strings.HasPrefix(route, "/api/maintenance/") {
 		return "Ran maintenance: " + strings.TrimPrefix(route, "/api/maintenance/") + " " + target

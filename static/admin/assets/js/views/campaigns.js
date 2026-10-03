@@ -60,6 +60,7 @@ function component() {
         name: newName,
         subject: c.subject,
         lists: (c.lists || []).map((l) => l.id),
+        subscriber_tags: c.subscriber_tags || [], // denma
         type: c.type,
         from_email: c.from_email,
         content_type: c.content_type,

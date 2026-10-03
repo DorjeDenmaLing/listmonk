@@ -26,6 +26,8 @@ package main
 //     start from it, and it can't be deleted (as listmonk's default template).
 //   - Imports are marked (always): subscribers an import adds get
 //     attribs.imported_at, and automations skip them (cmd/denma_automations.go).
+//   - Subscriber tags (always, cmd/denma_tags.go): attribs.tags kept tidy,
+//     and a campaign's tags to send to (campaigns.denma_tags).
 //
 // The triggers and functions are installed in each center's schema when it
 // loads, if they've changed (denmaFeaturesVersion), and read the settings when
@@ -52,7 +54,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 3
+const denmaFeaturesVersion = 4
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -577,6 +579,64 @@ DROP TRIGGER IF EXISTS denma_mark_imported_subscription ON subscriber_lists;
 CREATE TRIGGER denma_mark_imported_subscription
     AFTER INSERT ON subscriber_lists
     FOR EACH ROW EXECUTE FUNCTION denma_mark_imported_subscription();
+
+-- Subscriber tags (cmd/denma_tags.go): attribs.tags is a list of tags, kept
+-- lowercase, trimmed, without duplicates and in order however it's set (the
+-- admin, the API, an import); a string is split at commas and |. An import
+-- keeps the tags a subscriber has and adds its own.
+CREATE OR REPLACE FUNCTION denma_norm_tags(t JSONB) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$
+    SELECT COALESCE(jsonb_agg(DISTINCT x ORDER BY x), '[]'::JSONB) FROM (
+        SELECT lower(regexp_replace(btrim(p), '\s+', ' ', 'g')) AS x
+        FROM (
+            SELECT t #>> '{}' AS v WHERE jsonb_typeof(t) IN ('string', 'number', 'boolean')
+            UNION ALL
+            SELECT e #>> '{}' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(t) = 'array' THEN t ELSE '[]'::JSONB END) e
+                WHERE jsonb_typeof(e) IN ('string', 'number', 'boolean')
+        ) s, regexp_split_to_table(s.v, '[,|]') p
+    ) n WHERE x <> '' AND length(x) <= 100;
+$$;
+
+CREATE OR REPLACE FUNCTION denma_subscriber_tags() RETURNS trigger
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+DECLARE
+    tags JSONB;
+BEGIN
+    IF jsonb_typeof(NEW.attribs) IS DISTINCT FROM 'object' THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' AND denma_is_import() AND jsonb_typeof(OLD.attribs) = 'object' AND OLD.attribs ? 'tags' THEN
+        NEW.attribs := NEW.attribs || jsonb_build_object('tags', jsonb_build_array(OLD.attribs->'tags', COALESCE(NEW.attribs->'tags', '[]'::JSONB)));
+    END IF;
+    IF NOT NEW.attribs ? 'tags' THEN
+        RETURN NEW;
+    END IF;
+    -- (Nested lists, from the import above, are flattened one level.)
+    IF jsonb_typeof(NEW.attribs->'tags') = 'array' THEN
+        SELECT COALESCE(jsonb_agg(f), '[]'::JSONB) INTO tags
+            FROM jsonb_array_elements(NEW.attribs->'tags') e,
+            LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(e) = 'array' THEN e ELSE jsonb_build_array(e) END) f;
+        tags := denma_norm_tags(tags);
+    ELSE
+        tags := denma_norm_tags(NEW.attribs->'tags');
+    END IF;
+    IF tags = '[]'::JSONB THEN
+        NEW.attribs := NEW.attribs - 'tags';
+    ELSE
+        NEW.attribs := jsonb_set(NEW.attribs, '{tags}', tags);
+    END IF;
+    RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS denma_subscriber_tags ON subscribers;
+CREATE TRIGGER denma_subscriber_tags
+    BEFORE INSERT OR UPDATE OF attribs ON subscribers
+    FOR EACH ROW EXECUTE FUNCTION denma_subscriber_tags();
+CREATE INDEX IF NOT EXISTS denma_subscribers_tags ON subscribers USING GIN ((attribs->'tags'));
+UPDATE subscribers SET attribs = attribs WHERE jsonb_typeof(attribs) = 'object' AND attribs ? 'tags';
+
+-- The tags a campaign is sent to, besides its lists.
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';
 `
 
 // denmaVisualTemplate is the center's default visual template's ID (0 for

@@ -59,6 +59,7 @@
 						<button type="button" role="menuitem" class="ghost" data-testid="btn-export-subscribers" @click.prevent="onExport(allSelected, selected, total)">{{ Icon "download-cloud" }} {{ .L.T "subscribers.export" }}</button>
 						{{- if $d.Can "subscribers:manage" }}
 							<button type="button" role="menuitem" class="ghost" data-testid="btn-manage-lists" @click.prevent="onOpenManageLists(allSelected, selected)">{{ Icon "list" }} {{ .L.T "subscribers.manageLists" }}</button>
+							{{ template "denma-bulk-tags-button" . }}{{/* denma: cmd/denma_tags.go */}}
 							<button type="button" role="menuitem" class="ghost" data-testid="btn-manage-blocklist" @click.prevent="onBlocklistSelected(allSelected, selected, total)">{{ Icon "user-x" }} {{ .L.T "import.blocklist" }}</button>
 							<hr />
 							<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-delete-subscribers" :disabled="isLoading('subscribers')" @click.prevent="onDeleteSelected(allSelected, selected, total)">{{ Icon "trash-2" }} {{ .L.T "globals.buttons.delete" }} <span x-text="numSelected"></span></button>
@@ -159,6 +160,7 @@
 			</div>
 		</form>
 	</dialog>
+	{{ template "denma-bulk-tags-dialog" . }}{{/* denma */}}
 </section>
 
 <script type="module" src="{{ URI "/admin/static/js/views/subscribers.js" }}?v={{ .AssetVersion }}" defer></script>

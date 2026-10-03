@@ -62,6 +62,9 @@
 					{{- if Can $u "bounces:get" }}
 					<li><a href="{{ URI "/admin/subscribers/bounces" }}" {{ IsNav $p "subscribers.bounces" }} data-cy="bounces">{{ template "denma-icon" "email-bounce" }}<span>{{ .L.T "globals.terms.bounces" }}</span></a></li>
 					{{- end }}
+					{{- if Can $u "subscribers:get_all" }}{{/* cmd/denma_tags.go */}}
+					<li><a href="{{ URI "/admin/subscribers/tags" }}" {{ IsNav $p "subscribers.tags" }} data-cy="tags">{{ template "denma-icon" "tag-outline" }}<span>Tags</span></a></li>
+					{{- end }}
 				</ul>
 			</details>
 		</li>

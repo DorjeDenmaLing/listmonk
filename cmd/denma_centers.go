@@ -379,7 +379,7 @@ func denmaCenterContent(p string) bool {
 		"/admin/calendar", "/admin/automations", "/admin/center",
 		"/api/lists", "/api/subscribers", "/api/campaigns", "/api/templates", "/api/media",
 		"/api/import", "/api/bounces", "/api/tx", "/api/public", "/api/dashboard",
-		"/api/denma/automations", "/api/denma/center", "/api/denma/search", "/api/denma/stats",
+		"/api/denma/automations", "/api/denma/center", "/api/denma/search", "/api/denma/stats", "/api/denma/tags",
 	} {
 		if p == pre || strings.HasPrefix(p, pre+"/") {
 			return true
@@ -791,6 +791,7 @@ func denmaPrepareHub(db *sqlx.DB) {
 	if !ko.Bool("denma.multi_center") {
 		return
 	}
+	defer denmaHubColumns(db) // cmd/denma_tags.go
 	var sp string
 	if err := db.Get(&sp, `SHOW search_path`); err != nil {
 		lo.Fatalf("denma: error reading the search path: %v", err)

@@ -9,6 +9,7 @@ import {
 } from '../main.js';
 import * as u from '../utils.js';
 import { denmaPlainText } from '../denma-campaign.js'; // denma: automatic plain text
+import { denmaTagAutocomplete } from '../denma-tags-ui.js'; // denma: subscriber tags
 
 // Media tag for <ot-taginput> attachments.
 class MediaTag {
@@ -44,6 +45,7 @@ function component(camp, sel) {
 
   return {
     ...denmaPlainText(), // denma
+    denmaTagAutocomplete, // denma
     isNew,
     isHeadersVisible: Array.isArray(c.headers) && c.headers.length > 0,
     activeTab: 'campaign',
@@ -69,6 +71,7 @@ function component(camp, sel) {
       content_type: c.content_type || 'richtext',
       tags: Array.isArray(c.tags) ? c.tags : [],
       lists: lists.map((l) => new ListTag(l)),
+      subscriber_tags: Array.isArray(c.subscriber_tags) ? c.subscriber_tags : [], // denma
       template_id: c.template_id || null,
       body: c.body || '',
       body_source: c.body_source || null,
@@ -250,6 +253,7 @@ function component(camp, sel) {
         name: this.form.name,
         subject: this.form.subject,
         lists: this.form.lists.map((l) => l.id),
+        subscriber_tags: this.form.subscriber_tags.map(String), // denma
         from_email: this.form.from_email,
         messenger: this.form.messenger,
         type: 'regular',
@@ -281,6 +285,7 @@ function component(camp, sel) {
         name: p.name,
         subject: p.subject,
         lists: p.lists,
+        subscriber_tags: p.subscriber_tags, // denma
         from_email: p.from_email,
         content_type: p.content_type,
         messenger: p.messenger,

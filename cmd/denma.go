@@ -25,6 +25,7 @@ func initDenmaAdminHandlers(g *echo.Group, a *App) {
 	initDenmaHubHandlers(g, a)
 	initDenmaCenterHandlers(g, a)
 	initDenmaAutomationHandlers(g, a)
+	initDenmaTagHandlers(g, a)
 }
 
 type denmaSystemView struct {

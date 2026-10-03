@@ -21,8 +21,8 @@ package main
 // Subscribers: email, name, domain (domain:yahoo.*), status, list, confirmed,
 //   unconfirmed, unsubscribed (a list, any, or list:none), created, updated,
 //   opened, clicked (a campaign, a link, any, or when), bounced (hard, soft,
-//   complaint, any, or when), attr.<name> (attr.address.city for nested),
-//   has:attr.<name>, id.
+//   complaint, any, or when), tag (a tag, any, or none: cmd/denma_tags.go),
+//   attr.<name> (attr.address.city for nested), has:attr.<name>, id.
 // Lists: name, type, optin, status, tag, subscribers (a count), campaign (sent
 //   to by a campaign, or any), mailed (when a campaign last started to it, or
 //   any), created, updated, id.
@@ -57,7 +57,7 @@ const (
 )
 
 var denmaSearchKeys = map[denmaKind]string{
-	denmaSubscribers: "email, name, domain, status, list, confirmed, unconfirmed, unsubscribed, created, updated, opened, clicked, bounced, attr.<name>, has, id",
+	denmaSubscribers: "email, name, domain, status, list, confirmed, unconfirmed, unsubscribed, created, updated, opened, clicked, bounced, tag, attr.<name>, has, id",
 	denmaLists:       "name, type, optin, status, tag, subscribers, campaign, mailed, created, updated, id",
 	denmaCampaigns:   "name, subject, from, status, type, format, tag, list, template, created, updated, started, scheduled, sent, opens, clicks, bounces, archive, id",
 }
@@ -429,6 +429,19 @@ func (p *denmaParser) subscriberTerm(key, op, v string) (string, error) {
 
 	case key == "opened" || key == "clicked" || key == "bounced":
 		return p.activity(key, op, v)
+
+	case key == "tag": // cmd/denma_tags.go
+		tags := "subscribers.attribs->'tags'"
+		switch t := denmaNormTags([]string{v}); {
+		case strings.EqualFold(v, "any"):
+			return denmaIs(key, op, "(jsonb_typeof("+tags+") = 'array' AND "+tags+" <> '[]'::JSONB)")
+		case strings.EqualFold(v, "none"):
+			return denmaIs(key, op, "NOT COALESCE(jsonb_typeof("+tags+") = 'array' AND "+tags+" <> '[]'::JSONB, FALSE)")
+		case len(t) != 1:
+			return "", fmt.Errorf("tag: needs one tag, like tag:volunteer")
+		default:
+			return denmaIs(key, op, "(jsonb_typeof("+tags+") = 'array' AND "+tags+" ? "+pq.QuoteLiteral(t[0])+")")
+		}
 
 	case key == "has":
 		path := strings.TrimPrefix(strings.TrimPrefix(v, "attr."), "attribs.")

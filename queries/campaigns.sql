@@ -200,7 +200,10 @@ campMedia AS (
     GROUP BY campaign_id
 ),
 counts AS (
-    SELECT camps.id AS campaign_id, COUNT(DISTINCT sl.subscriber_id) AS to_send, COALESCE(MAX(sl.subscriber_id), 0) AS max_subscriber_id
+    -- denma. The subscribers on the campaign's lists, and the active ones with
+    -- any of its tags (cmd/denma_tags.go), once each.
+    SELECT campaign_id, COUNT(*) AS to_send, COALESCE(MAX(subscriber_id), 0) AS max_subscriber_id FROM (
+    SELECT camps.id AS campaign_id, sl.subscriber_id
     FROM camps
     JOIN campLists cl ON cl.campaign_id = camps.id
     JOIN subscriber_lists sl ON sl.list_id = cl.list_id
@@ -212,10 +215,16 @@ counts AS (
             END
         )
     JOIN subscribers s ON (s.id = sl.subscriber_id AND s.status != 'blocklisted')
-    GROUP BY camps.id
+    UNION
+    SELECT camps.id, s.id FROM camps JOIN subscribers s ON camps.type != 'optin'
+        AND s.attribs->'tags' ?| camps.denma_tags AND s.status != 'blocklisted' AND EXISTS (
+            SELECT 1 FROM subscriber_lists dsl JOIN lists dl ON dl.id = dsl.list_id WHERE dsl.subscriber_id = s.id
+            AND (CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status != 'unsubscribed' END))
+    ) x
+    GROUP BY campaign_id
 ),
 updateCounts AS (
-    -- denma: and the running campaigns' resume checkpoints ($3), which only
+    -- denma. And the running campaigns' resume checkpoints ($3), which only
     -- move forward (upstream PR #3222).
     WITH uc (campaign_id, sent_count, last_sub_id) AS (SELECT * FROM unnest($1::INT[], $2::INT[], $3::INT[]))
     UPDATE campaigns
@@ -313,16 +322,17 @@ SELECT link_clicks.campaign_id,
 -- name: get-running-campaign
 -- Returns the metadata for a running campaign that is required by next-campaign-subscribers to retrieve
 -- a batch of campaign subscribers for processing.
-SELECT campaigns.id AS campaign_id, campaigns.type as campaign_type, last_subscriber_id, max_subscriber_id, lists.id AS list_id
+-- denma. With a row (list ID 0) for a campaign without lists, which may have tags.
+SELECT campaigns.id AS campaign_id, campaigns.type as campaign_type, last_subscriber_id, max_subscriber_id, COALESCE(lists.id, 0) AS list_id
     FROM campaigns
-    JOIN campaign_lists ON (campaign_lists.campaign_id = campaigns.id)
-    JOIN lists ON (lists.id = campaign_lists.list_id)
+    LEFT JOIN campaign_lists ON (campaign_lists.campaign_id = campaigns.id)
+    LEFT JOIN lists ON (lists.id = campaign_lists.list_id)
     WHERE campaigns.id = $1 AND campaigns.status='running';
 
 -- name: next-campaign-subscribers
 -- Returns a batch of subscribers in a given campaign after $3, the campaign pipe's
 -- fetch cursor (kept in memory, starting from the last_subscriber_id checkpoint).
--- denma: fetching no longer moves the checkpoint (upstream PR #3222): it moved
+-- denma. Fetching no longer moves the checkpoint (upstream PR #3222); it moved
 -- before the batch was sent, so a restart skipped the fetched but unsent subscribers.
 --
 -- In previous versions, get-running-campaign + this was a single query spread across multiple
@@ -340,7 +350,7 @@ WITH campLists AS (
 subs AS (
     SELECT s.*
     FROM (
-        SELECT DISTINCT s.id
+        (SELECT DISTINCT s.id
         FROM subscriber_lists sl
         JOIN campLists ON sl.list_id = campLists.list_id
         JOIN subscribers s ON s.id = sl.subscriber_id
@@ -366,7 +376,18 @@ subs AS (
                     )
                 )
             )
-        ORDER BY s.id LIMIT $6
+        ORDER BY s.id LIMIT $6)
+        UNION
+        -- denma. And the active subscribers with any of the campaign's tags
+        -- (cmd/denma_tags.go).
+        (SELECT s.id FROM subscribers s
+        WHERE $2 != 'optin' AND s.attribs->'tags' ?| (SELECT denma_tags FROM campaigns WHERE id = $1)
+            AND s.id > $3 AND s.id <= $4
+            AND s.status != 'blocklisted' AND EXISTS (
+            SELECT 1 FROM subscriber_lists dsl JOIN lists dl ON dl.id = dsl.list_id WHERE dsl.subscriber_id = s.id
+            AND (CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status != 'unsubscribed' END))
+        ORDER BY s.id LIMIT $6)
+        ORDER BY id LIMIT $6
     ) subIDs JOIN subscribers s ON (s.id = subIDs.id) ORDER BY s.id
 )
 SELECT * FROM subs;

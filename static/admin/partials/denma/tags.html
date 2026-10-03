@@ -1,0 +1,42 @@
+{{- /* denma: subscriber tags in the admin (cmd/denma_tags.go,
+   assets/js/denma-tags-ui.js). */ -}}
+
+{{/* A tag picker: dict "Model" the x-model, "ID" its suggestions' ID,
+   "Label", "Hint", "Disabled" (an Alpine expression, optional). */}}
+{{ define "denma-tag-picker" -}}
+<label data-field>
+	{{ .Label }}
+	<ot-taginput x-model="{{ .Model }}" {{ if .Disabled }}:disabled="{{ .Disabled }}"{{ end }} data-testid="tag-picker">
+		<input list="{{ .ID }}" placeholder="Tags" maxlength="100" @input="denmaTagAutocomplete($el)" @pointerdown="denmaTagAutocomplete($el)" @focus="denmaTagAutocomplete($el)" />
+		<datalist id="{{ .ID }}"></datalist>
+	</ot-taginput>
+	{{- if .Hint }}<small data-hint>{{ .Hint }}</small>{{ end }}
+</label>
+{{- end }}
+
+{{/* The Subscribers page's bulk Tags action and its dialog. */}}
+{{ define "denma-bulk-tags-button" -}}
+<button type="button" role="menuitem" class="ghost" data-testid="btn-manage-tags" @click.prevent="onOpenTags(allSelected, selected, total)">{{ template "denma-icon" "tag-outline" }} Tags</button>
+{{- end }}
+
+{{ define "denma-bulk-tags-dialog" -}}
+<dialog x-ref="tagDialog">
+	<form @submit.prevent="onSubmitTags">
+		<div class="dialog-card content">
+			<header class="dialog-head"><h4 class="dialog-title">Tags for <span x-text="tagBulk.num"></span> <span x-text="tagBulk.num === 1 ? 'subscriber' : 'subscribers'"></span></h4></header>
+			<section class="dialog-body">
+				<fieldset class="hstack">
+					<legend>{{ .L.T "settings.bounces.action" }}</legend>
+					<label><input type="radio" name="tag-action" value="add" x-model="tagBulk.action" data-testid="check-tag-add" /> {{ .L.T "globals.buttons.add" }}</label>
+					<label><input type="radio" name="tag-action" value="remove" x-model="tagBulk.action" data-testid="check-tag-remove" /> {{ .L.T "globals.buttons.remove" }}</label>
+				</fieldset>
+				{{ template "denma-tag-picker" dict "Model" "tagBulk.tags" "ID" "bulk-tags" "Label" "Tags" "Hint" "Your own labels; subscribers don't see them. Type a new one, or pick one you've used." }}
+			</section>
+			<footer class="dialog-foot hstack gap-3 justify-end">
+				<button type="button" class="outline" @click="$refs.tagDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+				<button type="submit" data-variant="primary" data-testid="btn-tags-save" :disabled="tagBulk.tags.length === 0">{{ .L.T "globals.buttons.save" }}</button>
+			</footer>
+		</div>
+	</form>
+</dialog>
+{{- end }}

@@ -1553,3 +1553,16 @@ svg.denma-logo {
 .denma-logs-centers {
     margin-top: var(--space-3);
 }
+
+/* Subscriber tags (cmd/denma_tags.go): the Tags page (views/denma-tags.html),
+   and tags shown on the subscriber and campaign pages. */
+.denma-tags .denma-lede {
+  margin: calc(-1 * var(--space-3)) 0 var(--space-4);
+}
+.denma-tag {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: var(--muted, rgba(127, 127, 127, 0.12));
+  white-space: nowrap;
+}

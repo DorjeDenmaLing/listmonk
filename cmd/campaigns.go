@@ -467,6 +467,9 @@ func (a *App) CreateCampaign(c echo.Context) error {
 	}
 
 	// Validate.
+	if err := a.denmaCampaignTags(&o, c); err != nil { // denma: cmd/denma_tags.go
+		return err
+	}
 	if c, err := a.validateCampaignFields(o); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	} else {
@@ -479,6 +482,9 @@ func (a *App) CreateCampaign(c echo.Context) error {
 
 	out, err := a.core.CreateCampaign(o.Campaign, o.ListIDs, o.MediaIDs)
 	if err != nil {
+		return err
+	}
+	if err := a.denmaSaveCampaignTags(out.ID, o.SubscriberTags, &out); err != nil { // denma
 		return err
 	}
 
@@ -523,6 +529,9 @@ func (a *App) UpdateCampaign(c echo.Context) error {
 	user := auth.GetUser(c)
 	o.ListIDs = user.FilterListsByPerm(auth.PermTypeGet|auth.PermTypeManage, o.ListIDs)
 
+	if err := a.denmaCampaignTags(&o, c); err != nil { // denma: cmd/denma_tags.go
+		return err
+	}
 	if c, err := a.validateCampaignFields(o); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	} else {
@@ -531,6 +540,9 @@ func (a *App) UpdateCampaign(c echo.Context) error {
 
 	out, err := a.core.UpdateCampaign(id, o.Campaign, o.ListIDs, o.MediaIDs)
 	if err != nil {
+		return err
+	}
+	if err := a.denmaSaveCampaignTags(id, o.SubscriberTags, &out); err != nil { // denma
 		return err
 	}
 
@@ -860,7 +872,7 @@ func (a *App) validateCampaignFields(c campReq) (campReq, error) {
 		}
 	}
 
-	if len(c.ListIDs) == 0 {
+	if len(c.ListIDs) == 0 && len(c.SubscriberTags) == 0 { // denma: or tags (cmd/denma_tags.go)
 		return c, errors.New(a.i18n.T("campaigns.fieldInvalidListIDs"))
 	}
 
