@@ -130,6 +130,10 @@ func (e *Emailer) Name() string {
 
 // Push pushes a message to the server.
 func (e *Emailer) Push(m models.Message) error {
+	if BeforePush != nil { // denma: internal/messenger/email/denma.go
+		BeforePush()
+	}
+
 	// Pick the from-address-routed pool if there is one, else default
 	// to the full pool (empty key) for roundrobin.
 	pool := e.pools[""]

@@ -276,7 +276,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 		core = initCore(fbOptinNotify, queries, db, i18n, ko)
 
 		// Campaign manager.
-		mgr = initCampaignManager(msgrs, queries, urlCfg, core, media, i18n, ko)
+		mgr = initCampaignManager(denmaLimitSending(msgrs, ko), queries, urlCfg, core, media, i18n, ko) // denma: one send limit for all centers (cmd/denma_sending.go)
 
 		// Bulk importer.
 		importer = initImporter(queries, db, core, i18n, ko, nf)
@@ -292,8 +292,8 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 
 	// Initialize the bounce manager that processes bounces from webhooks and
 	// POP3 mailbox scanning.
-	if ko.Bool("bounce.enabled") {
-		bounce = initBounceManager(core.RecordBounce, queries.RecordBounce, lo, ko)
+	if ko.Bool("bounce.enabled") && ko.String("denma.center") == "" { // denma: the hub takes every center's bounces (cmd/denma_bounces.go)
+		bounce = initBounceManager(denmaBounceCB(core.RecordBounce, ko), queries.RecordBounce, lo, ko)
 	}
 
 	// Initialize the global admin/sub e-mail notifier.
@@ -309,7 +309,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 
 	// Initialize the bounce manager that processes bounces from webhooks and
 	// POP3 mailbox scanning.
-	if ko.Bool("bounce.enabled") {
+	if bounce != nil { // denma: was ko.Bool("bounce.enabled"); not in centers
 		go bounce.Run()
 	}
 

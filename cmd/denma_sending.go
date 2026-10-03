@@ -1,0 +1,152 @@
+package main
+
+// denma: one send limit for all centers. Each center has its own campaign
+// manager, which keeps listmonk's limits (concurrency × message rate per
+// second, and the sliding window) for itself; with hundreds of centers,
+// those alone would let them send together at hundreds of times the rate the
+// mail provider allows (SES's sending rate and daily quota are the account's).
+// So the hub's sending settings, which every center shares, are also the
+// limit for everything the process sends, all centers and messengers
+// together: never more than concurrency × message rate messages in any one
+// second, nor more than the sliding window's (if on) in any window.
+//
+// E-mail waits in the SMTP messenger itself (email.BeforePush), so that
+// notifications, opt-in confirmations, password resets and invites, which
+// don't go through the campaign manager, count too; other messengers
+// (postbacks) wait in a wrapper given to the managers. A center sending alone
+// still gets the full rate; several share it, in the order they asked.
+//
+// Multi-center mode only.
+
+import (
+	"sync"
+	"time"
+
+	"github.com/knadh/koanf/v2"
+	"github.com/knadh/listmonk/internal/manager"
+	"github.com/knadh/listmonk/internal/messenger/email"
+	"github.com/knadh/listmonk/models"
+)
+
+// denmaPacer gives each message a time to go: no earlier than the one before
+// it, at least a second and denmaSendMargin after the rate-th one before it
+// (so never more than rate in any second, while a second's worth may go at
+// once, as listmonk's managers send them), and within the sliding window's
+// limit if set.
+type denmaPacer struct {
+	mu      sync.Mutex
+	rate    int
+	winDur  time.Duration
+	winRate int
+
+	slots    []time.Time // the last rate messages' times, oldest first
+	winStart time.Time
+	winCount int
+}
+
+// denmaSendMargin is added to the second, so that messages that reach the
+// provider up to this much later or sooner than they left still never make
+// more than rate in a second there.
+const denmaSendMargin = 100 * time.Millisecond
+
+// denmaSendPacer is the process's one limit.
+var (
+	denmaSendPacer = &denmaPacer{}
+	denmaHookEmail sync.Once
+)
+
+// wait blocks until it's this message's turn.
+func (p *denmaPacer) wait() {
+	p.mu.Lock()
+	now := time.Now()
+	slot := now
+	if n := len(p.slots); n > 0 {
+		if last := p.slots[n-1]; last.After(slot) {
+			slot = last
+		}
+		if n == p.rate {
+			if t := p.slots[0].Add(time.Second + denmaSendMargin); t.After(slot) {
+				slot = t
+			}
+		}
+	}
+	if p.winRate > 0 {
+		if slot.Sub(p.winStart) >= p.winDur {
+			p.winStart, p.winCount = slot, 0
+		}
+		if p.winCount >= p.winRate {
+			p.winStart, p.winCount = p.winStart.Add(p.winDur), 0
+			slot = p.winStart
+			lo.Printf("denma: all centers have sent %d messages in %s, the hub's limit; the next ones wait until %s",
+				p.winRate, p.winDur, slot.Format(time.TimeOnly))
+		}
+		p.winCount++
+	}
+	if len(p.slots) == p.rate {
+		p.slots = append(p.slots[:0], p.slots[1:]...)
+	}
+	p.slots = append(p.slots, slot)
+	p.mu.Unlock()
+
+	if d := slot.Sub(now); d > 0 {
+		time.Sleep(d)
+	}
+}
+
+// configure sets the limits to ko's: listmonk's for one install
+// (concurrency × message rate per second, and the sliding window if it's on).
+func (p *denmaPacer) configure(ko *koanf.Koanf) {
+	rate := max(ko.Int("app.concurrency"), 1) * max(ko.Int("app.message_rate"), 1)
+	var winDur time.Duration
+	var winRate int
+	if ko.Bool("app.message_sliding_window") && ko.Int("app.message_sliding_window_rate") > 0 &&
+		ko.Duration("app.message_sliding_window_duration") > time.Second {
+		winDur, winRate = ko.Duration("app.message_sliding_window_duration"), ko.Int("app.message_sliding_window_rate")
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.rate != rate {
+		// Keep the latest messages' times, so a new rate counts them.
+		if len(p.slots) > rate {
+			p.slots = append([]time.Time(nil), p.slots[len(p.slots)-rate:]...)
+		}
+		p.rate = rate
+	}
+	if p.winDur != winDur || p.winRate != winRate {
+		p.winDur, p.winRate, p.winStart, p.winCount = winDur, winRate, time.Time{}, 0
+	}
+}
+
+// denmaPacedMessenger is a (non e-mail) messenger whose messages wait for the
+// shared limit.
+type denmaPacedMessenger struct {
+	manager.Messenger
+}
+
+func (m denmaPacedMessenger) Push(msg models.Message) error {
+	denmaSendPacer.wait()
+	return m.Messenger.Push(msg)
+}
+
+// denmaLimitSending puts an app's sending under the shared limit, which it
+// sets to the app's settings (the hub's, which every center shares; the
+// latest app to load sets them, as a settings save reloads the hub and then
+// each center). It returns the messengers for the campaign manager.
+func denmaLimitSending(msgrs []manager.Messenger, ko *koanf.Koanf) []manager.Messenger {
+	if !ko.Bool("denma.multi_center") {
+		return msgrs
+	}
+	denmaSendPacer.configure(ko)
+	denmaHookEmail.Do(func() { email.BeforePush = denmaSendPacer.wait })
+
+	out := make([]manager.Messenger, len(msgrs))
+	for i, m := range msgrs {
+		if _, ok := m.(*email.Emailer); ok {
+			out[i] = m // waits in Push
+			continue
+		}
+		out[i] = denmaPacedMessenger{Messenger: m}
+	}
+	return out
+}

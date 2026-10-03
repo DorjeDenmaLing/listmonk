@@ -260,6 +260,15 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 			if ctr == nil {
 				return echo.NewHTTPError(http.StatusNotFound, "center not found")
 			}
+			// Bounce webhooks from the mail provider are the hub's, which
+			// records each in its center (cmd/denma_bounces.go).
+			if strings.HasPrefix(rest, "webhooks/service/") {
+				r := c.Request().Clone(c.Request().Context())
+				r.URL.Path = "/" + rest
+				r.URL.RawPath = ""
+				c.Echo().ServeHTTP(c.Response(), r) // as a request to the hub
+				return nil
+			}
 			// Settings are the hub's: its pages, and none of the APIs here.
 			if denmaCenterSettingsPath("/" + rest) {
 				if strings.HasPrefix(rest, "admin/") {
@@ -347,9 +356,10 @@ func denmaEveryMinute(a *App, at int, fn func()) (int, error) {
 }
 
 // denmaHubPath reports whether the hub serves a path: its admin and API, the
-// health check, and the static files its pages use.
+// health check, the static files its pages use, and the bounce webhooks (for
+// every center, cmd/denma_bounces.go).
 func denmaHubPath(p string) bool {
-	for _, pre := range []string{"/admin", "/api/", "/public/", "/health"} {
+	for _, pre := range []string{"/admin", "/api/", "/public/", "/health", "/webhooks/"} {
 		if p == strings.TrimSuffix(pre, "/") || strings.HasPrefix(p, pre) {
 			return true
 		}
@@ -984,6 +994,9 @@ func (d *denmaCenters) watchBaseReload(old *App) {
 // for in-flight requests, and any import running in it, the rest.
 func denmaRetire(old *App, original bool) {
 	old.manager.StopScanning()
+	if old.bounce != nil {
+		old.bounce.StopScanning() // the hub's bounce mailbox
+	}
 	if old.crons != nil {
 		old.crons.Stop()
 	}
