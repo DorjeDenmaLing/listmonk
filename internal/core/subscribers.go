@@ -162,6 +162,10 @@ func (c *Core) QuerySubscribers(searchStr, queryExp string, listIDs []int, subSt
 		return nil, 0, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))
 	}
+	// denma: done with the transaction before loading lists on another
+	// connection: holding both, as many requests at once as the pool has
+	// connections (a center has 4) wait for each other forever.
+	_ = tx.Rollback()
 
 	// Lazy load lists for each subscriber.
 	if err := out.LoadLists(c.q.GetSubscriberListsLazy); err != nil {
