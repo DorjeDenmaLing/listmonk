@@ -272,8 +272,8 @@ func (a *App) denmaCheckUserUnique(username, email string) error {
 // own (a center's slug, or "" for the hub) has.
 func (d *denmaCenters) checkUnique(own, username, email string) error {
 	for _, v := range []struct{ what, cond, value string }{
-		{"username", `LOWER(username) = LOWER($1)`, username},
-		{"e-mail address", `LOWER(email) = LOWER($1)`, email},
+		{"Username", `LOWER(username) = LOWER($1)`, username},
+		{"E-mail address", `LOWER(email) = LOWER($1)`, email},
 	} {
 		if v.value == "" {
 			continue
@@ -287,8 +287,7 @@ func (d *denmaCenters) checkUnique(own, username, email string) error {
 			if acc.Slug == own {
 				continue // this app's own, which listmonk checks
 			}
-			return echo.NewHTTPError(http.StatusBadRequest,
-				fmt.Sprintf("That %s belongs to a user of another center (or the hub). A person can be a user of one center only.", v.what))
+			return echo.NewHTTPError(http.StatusBadRequest, v.what+" already taken")
 		}
 	}
 	return nil
