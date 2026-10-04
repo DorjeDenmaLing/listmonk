@@ -4,12 +4,23 @@
 	Refresh, and the user's round avatar opening Profile and Logout (and, ours,
 	the theme). On phones a menu button on the right opens the sidebar
 	(partials/denma/sidebar.html) below it, as 6.2.0's menu.
+
+	The logo is listmonk's unless the hub's settings give another
+	(denma-admin-logo-settings), in the hub and every center; its icon on
+	narrow screens is then the one given, or the logo itself.
 */}}
 {{ define "denma-topnav" }}
+{{- $logo := DenmaAdminLogo }}
 <nav data-topnav class="denma-topnav">
 	<a href="{{ URI "/admin" }}" class="denma-brand" aria-label="{{ .L.T "menu.dashboard" }}">
+		{{- if $logo }}
+		{{- $icon := DenmaAdminIcon }}
+		<span class="logo denma-logo-custom"><img src="{{ $logo }}" alt="" /></span>
+		<img class="favicon" src="{{ or $icon $logo }}" alt="" />
+		{{- else }}
 		<span class="logo">{{ template "denma-logo" . }}</span>
 		<img class="favicon" src="{{ URI "/admin/static/favicon.png" }}?v={{ .AssetVersion }}" alt="listmonk" />
+		{{- end }}
 	</a>
 	<div class="denma-topnav-end">
 		{{ template "denma-superadmin-notice" . }}
@@ -30,6 +41,29 @@
 		<button data-sidebar-toggle type="button" class="denma-burger" aria-label="Menu"><span></span><span></span><span></span></button>
 	</div>
 </nav>
+{{ end }}
+
+{{/* Under the hub's Settings -> General (partials/settings/general.html): the
+	top bar's logo, for the hub and every center. Centers' own logos (their
+	Config pages) are for their public pages and e-mails. */}}
+{{ define "denma-admin-logo-settings" }}
+{{- if DenmaIsHub }}
+<fieldset class="card" data-keywords="admin logo top bar nav navigation branding icon">
+	<legend>Admin logo</legend>
+	<label data-field>
+		Logo
+		<input name="denma.admin_logo_url" type="url" pattern="https?://.*" maxlength="300"
+			placeholder="https://example.org/logo.png" x-model="form['denma.admin_logo_url']" data-testid="admin-logo" />
+		<small data-hint>Shown in place of listmonk's logo at the top left of the admin, in the hub and every center. Empty for listmonk's. About 32 pixels high shows best; it doesn't change with the dark theme, so pick one that reads on both.</small>
+	</label>
+	<label data-field>
+		Icon for narrow screens
+		<input name="denma.admin_icon_url" type="url" pattern="https?://.*" maxlength="300"
+			placeholder="https://example.org/icon.png" x-model="form['denma.admin_icon_url']" data-testid="admin-icon" />
+		<small data-hint>A small square version, shown instead of the logo on narrow screens. Empty to use the logo there too.</small>
+	</label>
+</fieldset>
+{{- end }}
 {{ end }}
 
 {{/* A user's round avatar: their picture, or their username's first letter. */}}

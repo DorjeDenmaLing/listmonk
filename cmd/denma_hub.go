@@ -554,4 +554,21 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 	funcs["DenmaIsHub"] = func() bool {
 		return denmaHub != nil && u.RootPath == denmaHub.current().urlCfg.RootPath
 	}
+	// DenmaAdminLogo and DenmaAdminIcon are the top bar's logo and its icon on
+	// narrow screens (partials/denma/topnav.html), from the hub's settings
+	// (Settings -> General), in the hub and every center; "" for listmonk's.
+	// Read from the hub as each page renders, so saving them shows everywhere
+	// without reloading the centers.
+	funcs["DenmaAdminLogo"] = func() string {
+		if denmaHub == nil {
+			return ""
+		}
+		return denmaHub.current().ko.String("denma.admin_logo_url")
+	}
+	funcs["DenmaAdminIcon"] = func() string {
+		if denmaHub == nil {
+			return ""
+		}
+		return denmaHub.current().ko.String("denma.admin_icon_url")
+	}
 }

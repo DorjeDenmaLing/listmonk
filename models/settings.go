@@ -31,6 +31,9 @@ type Settings struct {
 
 	// denma: the hub's daily sending limit, for every center (cmd/denma_daily.go).
 	DenmaDailyLimit int `json:"denma.daily_limit"`
+	// denma: the hub's logo for the admin's top bar, in every center (partials/denma/topnav.html).
+	DenmaAdminLogoURL string `json:"denma.admin_logo_url"`
+	DenmaAdminIconURL string `json:"denma.admin_icon_url"`
 
 	PrivacyIndividualTracking bool     `json:"privacy.individual_tracking"`
 	PrivacyDisableTracking    bool     `json:"privacy.disable_tracking"`

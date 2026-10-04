@@ -40,6 +40,8 @@
 		</div>
 	</fieldset>
 
+	{{ template "denma-admin-logo-settings" . }}{{/* denma: the top bar's logo, partials/denma/topnav.html */}}
+
 	<fieldset class="card" data-keywords="from email address admin notification emails sender">
 		<legend>{{ .L.T "subscribers.email" }}</legend>
 		<label data-field>

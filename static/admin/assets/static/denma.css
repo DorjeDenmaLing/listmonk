@@ -1094,12 +1094,29 @@ svg.denma-logo {
       margin-top: 15px;
     }
 
+    /* The hub's logo (Settings -> General), centered in the bar. */
+    .logo.denma-logo-custom {
+      margin-top: 8px;
+
+      img {
+        display: block;
+        width: auto;
+        max-width: 215px;
+        height: 32px;
+        max-height: none;
+        object-fit: contain;
+        object-position: left center;
+      }
+    }
+
     .favicon {
       display: none;
       height: 24px;
       width: auto;
+      max-width: 120px;
       max-height: none;
       margin-top: 12px;
+      object-fit: contain;
     }
   }
 
