@@ -38,6 +38,7 @@ func denmaBounceCB(own func(models.Bounce) error, ko *koanf.Koanf) func(models.B
 		return own
 	}
 	return func(b models.Bounce) error {
+		denmaBounceSeen() // for System (cmd/denma_system.go)
 		if denmaHub == nil {
 			return fmt.Errorf("bounce for %s before the centers started", b.Email)
 		}

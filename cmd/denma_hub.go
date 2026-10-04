@@ -554,6 +554,10 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 	funcs["DenmaIsHub"] = func() bool {
 		return denmaHub != nil && u.RootPath == denmaHub.current().urlCfg.RootPath
 	}
+	// DenmaSourceURL is the fork's source (cmd/denma_system.go).
+	funcs["DenmaSourceURL"] = func() string {
+		return denmaSourceURL
+	}
 	// DenmaAdminLogo and DenmaAdminIcon are the top bar's logo and its icon on
 	// narrow screens (partials/denma/topnav.html), from the hub's settings
 	// (Settings -> General), in the hub and every center; "" for listmonk's.

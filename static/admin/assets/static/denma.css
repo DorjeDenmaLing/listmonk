@@ -407,11 +407,25 @@ svg.denma-logo {
     }
 }
 
-/* ---- Settings -> System (views/denma-system.html) ---- */
+/* ---- System (views/denma-system.html) ---- */
 .denma-system {
     dd {
         margin: 0;
         text-align: right;
+    }
+
+    /* Largest centers: name, then size on the right. */
+    .denma-system-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+
+        li {
+            display: flex;
+            justify-content: space-between;
+            gap: var(--space-3);
+            padding: 2px 0;
+        }
     }
 
     .denma-break {

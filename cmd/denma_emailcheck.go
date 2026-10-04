@@ -357,7 +357,7 @@ func denmaStartEmailChecks(a *App) {
 		checked = map[string]time.Time{} // "id email" -> when
 		applied = map[int]time.Time{}    // subscriber ID -> when the shared blocklist was applied
 	)
-	if _, err := denmaEveryMinute(a, 30, func() {
+	if _, err := denmaEveryMinute(a, 30, "domain-check", func() {
 		if !mu.TryLock() {
 			return
 		}

@@ -209,7 +209,7 @@ func denmaStartAutomations(a *App) {
 	}
 
 	var mu sync.Mutex
-	if _, err := denmaEveryMinute(a, 0, func() {
+	if _, err := denmaEveryMinute(a, 0, "automations", func() {
 		if !mu.TryLock() {
 			return
 		}

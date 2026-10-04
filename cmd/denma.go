@@ -14,50 +14,21 @@ import (
 	"net/http"
 	"path"
 
-	"github.com/jmoiron/sqlx/types"
 	"github.com/labstack/echo/v4"
 )
 
 // initDenmaAdminHandlers registers the denma admin pages on the authenticated admin group.
 func initDenmaAdminHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/calendar"), a.ViewDenmaCalendar)
-	g.GET(path.Join(uriAdmin, "/settings/system"), a.ViewDenmaSystem)
+	g.GET(path.Join(uriAdmin, "/system"), a.ViewDenmaSystem) // cmd/denma_system.go
+	// System's old address, under Settings.
+	g.GET(path.Join(uriAdmin, "/settings/system"), func(c echo.Context) error {
+		return c.Redirect(http.StatusMovedPermanently, path.Join(a.urlCfg.RootPath, uriAdmin, "/system"))
+	})
 	initDenmaHubHandlers(g, a)
 	initDenmaCenterHandlers(g, a)
 	initDenmaAutomationHandlers(g, a)
 	initDenmaTagHandlers(g, a)
-}
-
-type denmaSystemView struct {
-	adminView
-	System systemStats
-	About  about
-	DB     struct {
-		Version string  `json:"version"`
-		SizeMB  float64 `json:"size_mb"`
-	}
-}
-
-// ViewDenmaSystem renders Settings -> System: the server stats that upstream
-// shows on the dashboard (getSystemStats in dashboard.go), plus what listmonk
-// collects for /api/about: version, build, database and host.
-func (a *App) ViewDenmaSystem(c echo.Context) error {
-	v := newAdminView(c, a.i18n.T("dashboard.system"), "", "settings.system")
-	if !v.Can("settings:get") {
-		return echo.NewHTTPError(http.StatusForbidden, a.i18n.Ts("globals.messages.permissionDenied", "name", "settings:get"))
-	}
-
-	out := denmaSystemView{adminView: v, System: getSystemStats(), About: a.about}
-
-	// The database's version and size, now (a.about has them from startup).
-	var info types.JSONText
-	if err := a.db.QueryRow(a.queries.GetDBInfo).Scan(&info); err != nil {
-		a.log.Printf("error getting database info: %v", err)
-	} else if err := info.Unmarshal(&out.DB); err != nil {
-		a.log.Printf("error reading database info: %v", err)
-	}
-
-	return c.Render(http.StatusOK, "admin-denma-system", out)
 }
 
 // ViewDenmaCalendar renders the campaign calendar. Campaigns are loaded by the page

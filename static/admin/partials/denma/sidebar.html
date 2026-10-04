@@ -6,8 +6,8 @@
 	Automations, Media and Analytics as top-level items. listmonk's items and
 	permissions are kept; Media and Analytics keep their page IDs.
 
-	In the hub (superadmins): Dashboard, Centers, Analytics, Activity, Users and
-	Settings. In a center: listmonk's items and ours; its settings are the
+	In the hub (superadmins): Dashboard, Centers, Analytics, Activity, Users,
+	Settings and System. In a center: listmonk's items and ours; its settings are the
 	hub's, and it has Activity (its own log) and a Config page for its own
 	details (cmd/denma_center.go). Superadmins go back to the hub with the top
 	bar's button.
@@ -141,10 +141,14 @@
 					{{- end }}
 					{{- if Can $u "settings:get" }}
 					<li><a href="{{ URI "/admin/settings/logs" }}" {{ IsNav $p "settings.logs" }} data-cy="logs">{{ template "denma-icon" "format-list-bulleted-square" }}<span>{{ .L.T "menu.logs" }}</span></a></li>
-					<li><a href="{{ URI "/admin/settings/system" }}" {{ IsNav $p "settings.system" }} data-cy="system">{{ template "denma-icon" "information-outline" }}<span>{{ .L.T "dashboard.system" }}</span></a></li>
 					{{- end }}
 				</ul>
 			</details>
+		</li>
+		{{- end }}
+		{{- if and (or (not DenmaHubURL) DenmaIsHub) (Can $u "settings:get") }}{{/* cmd/denma_system.go */}}
+		<li>
+			<a href="{{ URI "/admin/system" }}" {{ IsNav $p "denma.system" }} data-cy="system">{{ template "denma-icon" "information-outline" }}<span>{{ .L.T "dashboard.system" }}</span></a>
 		</li>
 		{{- end }}
 
@@ -179,7 +183,7 @@
 	credit, linking to this fork's source. The AGPL v3 requires offering the
 	running version's source to everyone who uses it over the network. */}}
 {{ define "denma-powered-by" }}
-<p class="denma-powered-by">{{ .L.T "public.poweredBy" }} <a href="https://github.com/DorjeDenmaLing/listmonk" target="_blank" rel="noopener" title="Source code (AGPL v3)">listmonk</a></p>
+<p class="denma-powered-by">{{ .L.T "public.poweredBy" }} <a href="{{ DenmaSourceURL }}" target="_blank" rel="noopener" title="Source code (AGPL v3)">listmonk</a></p>
 {{ end }}
 
 {{/* An icon of listmonk v6.2.0 (assets/static/denma-icons.svg), by name. */}}

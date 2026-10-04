@@ -319,6 +319,7 @@ func (d *denmaCenters) loadAll(list []*denmaCenter, workers int) {
 	wg.Wait()
 	lo.Printf("denma: %d of %d centers loaded in %s, %d at a time (total time per step: %s)",
 		len(d.loaded()), len(list), time.Since(start).Round(time.Millisecond), workers, &d.timings)
+	denmaStartup.set(start, len(d.loaded()), len(list), time.Since(start)) // for System
 }
 
 // denmaStartingPage answers for a center that's still loading after a start:
@@ -339,16 +340,21 @@ background:#fff;color:#333}@media (prefers-color-scheme:dark){body{background:#1
 // second of the minute set by its center (plus at seconds), so that the
 // centers' jobs spread over the minute rather than all running at once, and
 // a center's jobs (at different at) don't run together: each would need a
-// connection of its own. Errors are logged; it returns (0, nil).
-func denmaEveryMinute(a *App, at int, fn func()) (int, error) {
+// connection of its own. Each finished run is recorded under job, for System
+// (cmd/denma_system.go). Errors are logged; it returns (0, nil).
+func denmaEveryMinute(a *App, at int, job string, fn func()) (int, error) {
+	center := a.ko.String("denma.center")
 	h := fnv.New32a()
-	_, _ = h.Write([]byte(a.ko.String("denma.center")))
+	_, _ = h.Write([]byte(center))
 	offset := time.Duration((int(h.Sum32()%30)+at)%60) * time.Second
 
 	// An @every job's first run is a minute after it's added; a job added
 	// to a cron that has since stopped (a replaced app) never runs.
 	time.AfterFunc(offset, func() {
-		if _, err := a.crons.Add("@every 1m", fn); err != nil {
+		if _, err := a.crons.Add("@every 1m", func() {
+			fn()
+			denmaJobRan(job, center)
+		}); err != nil {
 			a.log.Printf("denma: error adding a job: %v", err)
 		}
 	})

@@ -339,19 +339,25 @@ var denmaFigures = struct {
 }{m: map[string]denmaFigure{}}
 
 type denmaFigure struct {
-	at time.Time
-	v  any
+	at  time.Time
+	ttl time.Duration
+	v   any
 }
 
 // denmaCached returns what's kept under key if it's fresh, or else f's
 // result, which it keeps unless f failed.
 func denmaCached[T any](key string, f func() (T, error)) (T, error) {
+	return denmaCachedFor(key, denmaFiguresTTL, f)
+}
+
+// denmaCachedFor is denmaCached, keeping f's result for ttl.
+func denmaCachedFor[T any](key string, ttl time.Duration, f func() (T, error)) (T, error) {
 	now := time.Now()
 	c := &denmaFigures
 	c.Lock()
 	e, ok := c.m[key]
 	c.Unlock()
-	if ok && now.Sub(e.at) < denmaFiguresTTL {
+	if ok && now.Sub(e.at) < e.ttl {
 		return e.v.(T), nil
 	}
 
@@ -363,13 +369,13 @@ func denmaCached[T any](key string, f func() (T, error)) (T, error) {
 	defer c.Unlock()
 	if now.Sub(c.pruned) > denmaFiguresTTL {
 		for k, e := range c.m {
-			if now.Sub(e.at) >= denmaFiguresTTL {
+			if now.Sub(e.at) >= e.ttl {
 				delete(c.m, k)
 			}
 		}
 		c.pruned = now
 	}
-	c.m[key] = denmaFigure{at: now, v: v}
+	c.m[key] = denmaFigure{at: now, ttl: ttl, v: v}
 	return v, nil
 }
 

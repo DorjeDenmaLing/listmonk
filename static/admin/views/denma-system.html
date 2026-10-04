@@ -4,9 +4,12 @@
 {{- $s := $d.System -}}
 {{- $a := $d.About -}}
 
-{{/* denma: Settings -> System (cmd/denma.go). The Resources card is upstream's
-     System card from the dashboard (views/dashboard.html), moved here; the rest
-     is what listmonk collects for /api/about. */}}
+{{/* denma: System (cmd/denma_system.go). The Resources card is upstream's
+     System card from the dashboard (views/dashboard.html), moved here; the
+     listmonk, Database and Host cards are what listmonk collects for
+     /api/about. In the hub ($h), the centers' use of them: connections and
+     sizes, uploads, and background jobs. */}}
+{{- $h := $d.Hub -}}
 <section class="denma-system">
 	<header class="page-header">
 		<h1 class="page-title">{{ .L.T "dashboard.system" }}</h1>
@@ -42,7 +45,13 @@
 				<dl class="vstack gap-4">
 					<div class="hstack justify-between"><dt>Version</dt><dd class="text-light">{{ $a.Version }}</dd></div>
 					<div class="hstack justify-between"><dt>Build</dt><dd class="text-light denma-break">{{ $a.Build }}</dd></div>
+					<div class="hstack justify-between"><dt>Source</dt><dd class="denma-break">
+						{{- if $d.CommitURL }}<a href="{{ $d.CommitURL }}" target="_blank" rel="noopener" data-testid="system-commit">Commit {{ $d.Commit }}</a>
+						{{- else }}<a href="{{ DenmaSourceURL }}" target="_blank" rel="noopener">GitHub</a>{{ end }}</dd></div>
 					<div class="hstack justify-between"><dt>Go</dt><dd class="text-light">{{ $a.GoVersion }}</dd></div>
+					{{- with $h }}{{ with .Startup }}{{ if .Total }}
+					<div class="hstack justify-between"><dt>Centers at start</dt><dd class="text-light">{{ .Loaded }} of {{ .Total }} loaded in {{ .Took }}, {{ .Ago }}</dd></div>
+					{{- end }}{{ end }}{{ end }}
 				</dl>
 			</article>
 		</div>
@@ -58,6 +67,22 @@
 					</div>
 					{{- end }}
 					<div class="hstack justify-between"><dt>Size</dt><dd class="text-light">{{ if $d.DB.Version }}{{ FormatNumber (int $d.DB.SizeMB) }} MB{{ else }}—{{ end }}</dd></div>
+					{{- with $h }}
+					{{- if .ConnsMax }}
+					<div class="vstack gap-1" data-testid="system-connections">
+						<dt class="hstack justify-between">Connections<span class="text-light">{{ .ConnsUsed }} / {{ .ConnsMax }}</span></dt>
+						<dd><meter min="0" max="100" value="{{ .ConnsPct }}" optimum="30" low="70" high="90" title="{{ .ConnsPct }}%"></meter></dd>
+					</div>
+					{{- end }}
+					<div class="hstack justify-between"><dt>App pools</dt><dd class="text-light">{{ .PoolOpen }} open, {{ .PoolInUse }} in use (hub + {{ sub .PoolApps 1 }} centers, up to {{ .PoolMaxEach }} each)</dd></div>
+					<div class="hstack justify-between"><dt>Centers' data</dt><dd class="text-light">{{ .CentersSize }}</dd></div>
+					{{- if .Largest }}
+					<div class="vstack gap-1">
+						<dt>Largest centers</dt>
+						<dd><ol class="denma-system-list">{{ range .Largest }}<li><span>{{ .Name }}</span><span class="text-light">{{ .Size }}</span></li>{{ end }}</ol></dd>
+					</div>
+					{{- end }}
+					{{- end }}
 				</dl>
 			</article>
 		</div>
@@ -71,6 +96,53 @@
 				</dl>
 			</article>
 		</div>
+
+		{{- with $h }}
+		<div class="col-6">
+			<article class="card" data-testid="system-uploads">
+				<header class="mb-4"><h5>{{ Icon "upload" }} Uploads</h5></header>
+				<dl class="vstack gap-4">
+					{{- with .Uploads }}
+					{{- if eq .Provider "s3" }}
+					<div class="hstack justify-between"><dt>Stored in</dt><dd class="text-light denma-break">S3, bucket {{ .Bucket }}</dd></div>
+					<p class="text-light text-8">Sizes aren't measured on S3; see the bucket's metrics in AWS.</p>
+					{{- else }}
+					<div class="hstack justify-between"><dt>All centers</dt><dd class="text-light">{{ .Size }}</dd></div>
+					{{- if .DiskTotal }}
+					<div class="vstack gap-1">
+						<dt class="hstack justify-between">Disk<span class="text-light">{{ .DiskUsed }} / {{ .DiskTotal }}, {{ .DiskFree }} free</span></dt>
+						<dd><meter min="0" max="100" value="{{ .DiskPct }}" optimum="30" low="70" high="90" title="{{ .DiskPct }}%"></meter></dd>
+					</div>
+					{{- end }}
+					{{- if .Largest }}
+					<div class="vstack gap-1">
+						<dt>Largest centers</dt>
+						<dd><ol class="denma-system-list">{{ range .Largest }}<li><span>{{ .Name }}</span><span class="text-light">{{ .Size }}</span></li>{{ end }}</ol></dd>
+					</div>
+					{{- end }}
+					{{- end }}
+					{{- end }}
+				</dl>
+			</article>
+		</div>
+
+		<div class="col-6">
+			<article class="card" data-testid="system-jobs">
+				<header class="mb-4"><h5>{{ Icon "clock" }} Background jobs</h5></header>
+				<dl class="vstack gap-4">
+					{{- range .Jobs }}
+					<div class="hstack justify-between"><dt>{{ .Name }}</dt><dd class="text-light">
+						{{- if .LastAgo }}Ran {{ .LastAgo }}; {{ .Recent }} of {{ .Of }} centers in the last 3 minutes{{ else }}Not run yet{{ end }}</dd></div>
+					{{- end }}
+					<div class="hstack justify-between"><dt>Bounces received</dt><dd class="text-light">
+						{{- if .BouncesSince }}{{ FormatNumber .BouncesSince }} since the start, the last {{ .BounceLastAgo }}{{ else }}None since the start{{ end }}</dd></div>
+					<div class="hstack justify-between"><dt>Latest bounce</dt><dd class="text-light">{{ or .BounceLatest "None recorded" }}</dd></div>
+					<div class="hstack justify-between"><dt>Shared blocklist</dt><dd class="text-light">{{ FormatNumber .Blocked }} addresses{{ with .BlockedLast }}, the last added {{ . }}{{ end }}</dd></div>
+				</dl>
+				<p class="text-light text-8 mt-4">Each center checks new subscribers' e-mail domains and sends due automations every minute. Bounces arrive from the mail provider for all centers at the hub; if none have come in a long while, check its bounce notifications.</p>
+			</article>
+		</div>
+		{{- end }}
 	</div>
 </section>
 
