@@ -14,9 +14,10 @@ package main
 //     text and visual editors). Alpine still evaluates its own attributes (it
 //     needs 'unsafe-eval'), so the rich text editor's content is x-ignore
 //     (partials/richtext-editor.html).
-//   - Pages that show center content (previews, view in browser, the
-//     archive, uploads) are sandboxed: no scripts, and an origin of their
-//     own, so nothing in them acts as the viewer.
+//   - Pages that show center content (previews, view in browser for
+//     campaigns and automations, the archive, uploads) are sandboxed: no
+//     scripts, and an origin of their own, so nothing in them acts as the
+//     viewer.
 
 import (
 	"crypto/rand"
@@ -45,9 +46,10 @@ func denmaAdminCSP(c echo.Context) string {
 const denmaSandboxPolicy = "sandbox allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation; object-src 'none'"
 
 // reDenmaContentPath matches the paths, under the hub's or a center's root,
-// that show campaign or template HTML: the admin's previews, view in browser,
-// and the public archive.
-var reDenmaContentPath = regexp.MustCompile(`^/(api/campaigns/\d+/(preview|preview/archive|text)|api/templates/(\d+/)?preview|campaign/[^/]+/[^/]+|archive|archive\.xml|archive/.+)$`)
+// that show campaign, automation or template HTML: the admin's previews, view
+// in browser (campaigns', and automations', cmd/denma_automations.go), and the
+// public archive.
+var reDenmaContentPath = regexp.MustCompile(`^/(api/campaigns/\d+/(preview|preview/archive|text)|api/templates/(\d+/)?preview|campaign/[^/]+/[^/]+|automation/[^/]+/[^/]+|archive|archive\.xml|archive/.+)$`)
 
 // denmaSandbox sandboxes the response to a request for p (under app's root)
 // if it shows content: a content path, or one of app's uploads, which may be
