@@ -175,6 +175,13 @@
 </nav>
 {{ end }}
 
+{{/* At the bottom of the sidebar (views/base.html's footer): listmonk's
+	credit, linking to this fork's source. The AGPL v3 requires offering the
+	running version's source to everyone who uses it over the network. */}}
+{{ define "denma-powered-by" }}
+<p class="denma-powered-by">{{ .L.T "public.poweredBy" }} <a href="https://github.com/DorjeDenmaLing/listmonk" target="_blank" rel="noopener" title="Source code (AGPL v3)">listmonk</a></p>
+{{ end }}
+
 {{/* An icon of listmonk v6.2.0 (assets/static/denma-icons.svg), by name. */}}
 {{ define "denma-icon" }}{{ Icon . "denma-icons.svg" }}{{ end }}
 

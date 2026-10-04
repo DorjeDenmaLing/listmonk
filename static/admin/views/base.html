@@ -49,6 +49,7 @@
 			{{ template "denma-sidebar" . }}{{/* denma: the sidebar as in listmonk v6.2.0, partials/denma/sidebar.html */}}
 
 			<footer id="footer">
+				{{ template "denma-powered-by" . }}{{/* denma: the credit and source link, partials/denma/sidebar.html */}}
 				<span class="text-light text-8" title="Page render time">{{ .ReqDuration }}</span>
 			</footer>
 		</aside>

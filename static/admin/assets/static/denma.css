@@ -1310,9 +1310,28 @@ svg.denma-logo {
   background: var(--denma-nav-bg);
   box-shadow: 0 0 3px var(--denma-nav-line);
 
-  /* listmonk's page render time: not in 6.2.0. */
+  /* At the bottom: the credit and source link (denma-powered-by), without
+     listmonk's page render time (not in 6.2.0). */
   > footer {
-    display: none;
+    padding: 11.25px 25px;
+    border-top: 1px solid var(--denma-nav-line);
+    color: var(--denma-nav-text);
+    font-size: 13px;
+
+    > span {
+      display: none;
+    }
+  }
+
+  .denma-powered-by {
+    margin: 0;
+
+    a,
+    a:hover {
+      padding: 0;
+      background: none;
+      color: var(--denma-nav-primary);
+    }
   }
 }
 
@@ -1486,6 +1505,10 @@ svg.denma-logo {
     overflow-y: auto;
     transform: none;
     box-shadow: 0 8px 16px rgb(10 10 10 / 0.1);
+  }
+
+  #app > aside[data-sidebar] > footer {
+    padding-left: 11.25px;
   }
 
   #app[data-sidebar-open] > aside[data-sidebar] {
