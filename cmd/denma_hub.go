@@ -385,6 +385,11 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "The admin's e-mail address isn't valid.")
 	}
+	// The admin is the new center's user only (cmd/denma_login.go): every
+	// other center's users and the hub's count.
+	if err := d.checkUnique(req.Slug, req.AdminUsername, adminEmail); err != nil {
+		return err
+	}
 	if req.FromEmail == "" {
 		req.FromEmail = denmaFromEmail(req.Name, d.current().ko.String("app.from_email"))
 	}
@@ -553,6 +558,21 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 	// DenmaIsHub reports whether the page is the hub's.
 	funcs["DenmaIsHub"] = func() bool {
 		return denmaHub != nil && u.RootPath == denmaHub.current().urlCfg.RootPath
+	}
+	// DenmaLoginURL and DenmaForgotURL are the sign-in and forgotten password
+	// forms' addresses (public/templates): with centers, everyone's
+	// (cmd/denma_login.go); else listmonk's, under root.
+	funcs["DenmaLoginURL"] = func(root string) string {
+		if denmaHub == nil {
+			return root + "/admin/login"
+		}
+		return denmaLoginPath
+	}
+	funcs["DenmaForgotURL"] = func(root string) string {
+		if denmaHub == nil {
+			return root + "/admin/forgot"
+		}
+		return denmaForgotPath
 	}
 	// DenmaSourceURL is the fork's source (cmd/denma_system.go).
 	funcs["DenmaSourceURL"] = func() string {

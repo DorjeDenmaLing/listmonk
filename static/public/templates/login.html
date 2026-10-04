@@ -5,7 +5,7 @@
 <section class="login">
 	<h2>{{ .L.T "users.login"}}</h2>
 	{{ if .Data.PasswordEnabled }}
-	<form method="post" action="{{ .RootURL }}/admin/login" class="form">
+	<form method="post" action="{{ DenmaLoginURL .RootURL }}" class="form">{{/* denma: everyone's sign-in (cmd/denma_login.go) */}}
 		<div>
 			<input type="hidden" name="nonce" value="{{ .Data.Nonce }}" />
 			<input type="hidden" name="next" value="{{ .Data.NextURI }}" />
@@ -38,7 +38,7 @@
 	</form>
 	{{ end }}
 
-	<p class="center small"><a href="{{ .RootURL }}/admin/forgot">{{ .L.T "users.forgotPassword" }}</a></p>
+	<p class="center small"><a href="{{ DenmaForgotURL .RootURL }}">{{ .L.T "users.forgotPassword" }}</a></p>
 
 </section>
 

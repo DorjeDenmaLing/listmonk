@@ -265,6 +265,9 @@ func (a *App) CreateUser(c echo.Context) error {
 	if err := a.denmaCheckAssign(c, u.UserRoleID, u.ListRoleID); err != nil {
 		return err
 	}
+	if err := a.denmaCheckUserUnique(u.Username, u.Email.String); err != nil { // denma: one center per person (cmd/denma_login.go)
+		return err
+	}
 
 	// Create the user in the DB.
 	user, err := a.core.CreateUser(u)
@@ -308,6 +311,9 @@ func (a *App) UpdateUser(c echo.Context) error {
 	// Get the user ID.
 	id := getID(c)
 	if err := a.denmaCheckUser(c, id); err != nil { // denma: one they see, with no more than they have (cmd/denma_hierarchy.go)
+		return err
+	}
+	if err := a.denmaCheckUserUnique(u.Username, email); err != nil { // denma: one center per person (cmd/denma_login.go)
 		return err
 	}
 	if u.Type != auth.UserTypeAPI {

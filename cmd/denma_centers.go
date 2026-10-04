@@ -233,6 +233,10 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 	// anything else to the hub's (main()'s, until it's reloaded).
 	srv.Pre(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			// Signing in, for everyone (cmd/denma_login.go).
+			if done, err := d.loginRoute(c, next); done {
+				return err
+			}
 			p := c.Request().URL.Path
 			if !strings.HasPrefix(p, denmaCenterPath) {
 				// The hub has no subscribers of its own: of listmonk's public
@@ -320,6 +324,7 @@ func (d *denmaCenters) loadAll(list []*denmaCenter, workers int) {
 	lo.Printf("denma: %d of %d centers loaded in %s, %d at a time (total time per step: %s)",
 		len(d.loaded()), len(list), time.Since(start).Round(time.Millisecond), workers, &d.timings)
 	denmaStartup.set(start, len(d.loaded()), len(list), time.Since(start)) // for System
+	d.warnSharedUsers()                                                    // cmd/denma_login.go
 }
 
 // denmaStartingPage answers for a center that's still loading after a start:
