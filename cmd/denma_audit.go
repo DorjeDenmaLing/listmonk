@@ -74,7 +74,7 @@ var denmaAuditGets = map[string]bool{
 
 // Changes on these routes aren't by a signed-in user (subscribers, mail
 // servers): listmonk records them where they belong.
-var denmaAuditPublic = regexp.MustCompile(`^/(subscription|webhooks|link|campaign|archive|api/public|auth/oidc)`)
+var denmaAuditPublic = regexp.MustCompile(`^/(subscription|webhooks|link|campaign|archive|api/public|auth/oidc|signup)`)
 
 var denmaAuditInit sync.Once
 
@@ -471,6 +471,14 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return "Removed the sending domain " + target
 	case "PUT /api/denma/center":
 		return "Changed the center's details"
+	case "POST /api/denma/center/signup-hooks":
+		return fmt.Sprintf("Added the sign-up webhook %q", str("name"))
+	case "PUT /api/denma/center/signup-hooks/:id":
+		return fmt.Sprintf("Changed sign-up webhook %s (%q)", target, str("name"))
+	case "POST /api/denma/center/signup-hooks/:id/key":
+		return fmt.Sprintf("Gave sign-up webhook %s a new address", target)
+	case "DELETE /api/denma/center/signup-hooks/:id":
+		return "Deleted sign-up webhook " + target
 	case "POST /api/denma/campaigns/:id/resend":
 		return "Resent " + label("campaign") + " to those it couldn't send to"
 	case "POST /api/denma/tags":

@@ -424,6 +424,7 @@ func initDenmaAutomationAPIHandlers(g *echo.Group, a *App) {
 
 // initDenmaPublicHandlers registers the public pages (handlers.go).
 func initDenmaPublicHandlers(g *echo.Group, a *App) {
+	initDenmaSignupPublicHandlers(g, a) // cmd/denma_signup.go
 	if denmaAutomationsOn(a) {
 		g.GET("/automation/:autoUUID/:subUUID", noIndex(a.hasUUID(a.ViewDenmaAutomationMessage, "autoUUID", "subUUID")))
 	}

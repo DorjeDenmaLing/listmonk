@@ -897,6 +897,67 @@ svg.denma-logo {
     object-fit: contain;
   }
 }
+
+/* Its sign-up webhooks (cmd/denma_signup.go), below the form. */
+.denma-signup {
+  padding-top: 0;
+
+  .denma-signup-url {
+    flex: 1;
+    min-width: 16rem;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.8rem;
+  }
+
+  td .hstack {
+    flex-wrap: nowrap;
+  }
+
+  .denma-signup-actions button {
+    white-space: nowrap;
+  }
+
+  .denma-signup-help {
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    > div {
+      padding-top: var(--space-3, 0.75rem);
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 1.25rem;
+    }
+  }
+
+  .denma-signup-code {
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-size: 0.8rem;
+    margin: 0;
+  }
+
+  dialog fieldset {
+    border: 0;
+    padding: 0;
+    margin: 0;
+  }
+
+  @media (max-width: 769px) {
+    .denma-signup-url {
+      min-width: 0;
+    }
+
+    .denma-signup-actions {
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+  }
+}
+
 /* Automations (views/denma-automations.html, denma-automation.html). */
 .denma-automation {
   .denma-auto-on {

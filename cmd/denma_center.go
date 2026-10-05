@@ -4,7 +4,8 @@ package main
 // details, which aren't the hub's settings (denmaCenterOwnSettings): its
 // name, logo, favicon and language, and its sender and admin notification
 // e-mails. For users with center:manage (Center Admins, and superadmins).
-// Saving reloads the center.
+// Saving reloads the center. Its sign-up webhooks (cmd/denma_signup.go) are
+// saved on their own.
 
 import (
 	"encoding/json"
@@ -122,6 +123,11 @@ type denmaCenterView struct {
 	Lists           []denmaOption
 	VisualTemplates []denmaOption
 	Designs         []denmaOption // cmd/denma_design.go
+
+	// Sign-up webhooks (cmd/denma_signup.go), and the lists they can have.
+	SignupHooks   []denmaSignupHook
+	SignupLists   []denmaOption
+	SignupPerHour int
 }
 
 // denmaOption is a list or template to choose.
@@ -204,6 +210,15 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	view.DomainsOn = denmaDomainsOn()
+	if view.SignupHooks, err = a.signupHooks(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	view.SignupLists, view.SignupPerHour = []denmaOption{}, denmaSignupPerHour
+	for _, l := range view.Lists {
+		if l.Optin == "double" {
+			view.SignupLists = append(view.SignupLists, l)
+		}
+	}
 	return c.Render(http.StatusOK, "admin-denma-center", view)
 }
 
