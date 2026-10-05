@@ -45,13 +45,18 @@
 					</label>
 
 					<template x-if="form.type !== 'api'">
+						{{- if and DenmaInCenter (not $d.IsNew) }}{{/* denma: a person's, theirs to change (cmd/denma_people.go) */}}
+						<div data-field>
+							<span class="denma-static-label">{{ .L.T "subscribers.email" }}</span>
+							<span class="denma-static" x-text="form.email" data-testid="user-email"></span>
+							<small data-hint>Theirs to change, on their Profile page.</small>
+						</div>
+						{{- else }}
 						<label data-field>
 							{{ .L.T "subscribers.email" }}
-							<input name="email" type="email" maxlength="200" required x-model="form.email" {{ if and DenmaInCenter (not $d.IsNew) }}readonly{{ end }} />
-							{{- if and DenmaInCenter (not $d.IsNew) }}
-							<small data-hint>Theirs to change, on their Profile page.</small>{{/* denma: cmd/denma_people.go */}}
-							{{- end }}
+							<input name="email" type="email" maxlength="200" required x-model="form.email" />
 						</label>
+						{{- end }}
 					</template>
 
 					<div data-field>

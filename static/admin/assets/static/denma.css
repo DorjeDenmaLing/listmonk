@@ -2,6 +2,34 @@
    (assets/css/style.css, Oat) so light and dark themes both work.
    Linked from views/base.html. */
 
+/* ---- Fields that can't be edited don't look editable ---- */
+/* A fixed value, shown as text under its label (a center's address, a
+   person's e-mail address in a center). */
+.denma-static-label {
+  display: block;
+  font-size: var(--text-7);
+  font-weight: var(--font-medium);
+}
+.denma-static {
+  display: block;
+  margin-block-start: var(--space-1);
+  font-size: var(--text-7);
+  line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
+}
+/* Read-only inputs, there to be read or copied (an invite link, the OIDC
+   callback, the automatic plain text): no field border or text cursor. */
+:where(input, textarea)[readonly] {
+  background-color: var(--muted);
+  border-color: transparent;
+  cursor: default;
+  &:focus,
+  &:focus-visible {
+    border-color: transparent;
+    box-shadow: none;
+  }
+}
+
 /* ---- Top bar logo (partials/denma/logo.html), same size as listmonk's <img> ---- */
 svg.denma-logo {
     display: block;

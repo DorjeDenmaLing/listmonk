@@ -27,9 +27,9 @@
 				<small data-hint>Shown in the admin, on the public pages and in e-mails.</small>
 			</label>
 			<div data-field>
-				<label>Address</label>
-				<input type="text" value="{{ $d.Address }}" readonly />
-				<small data-hint>Set when the center was created.</small>
+				<span class="denma-static-label">Address</span>
+				<span class="denma-static" data-testid="center-address">{{ $d.Address }}</span>
+				<small data-hint>Set when the center was created; it can't be changed.</small>
 			</div>
 			<div data-field>
 				<label for="center-lang">Language</label>
