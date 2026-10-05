@@ -455,6 +455,8 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return fmt.Sprintf("Created center %s %q", str("slug"), str("name"))
 	case "PUT /api/denma/centers/:slug/status":
 		return fmt.Sprintf("Set center %s to %s", target, str("status"))
+	case "POST /api/denma/subscribers/resubscribe":
+		return "Sent " + str("email") + " a confirmation to subscribe again"
 	case "POST /api/denma/domains":
 		return "Added the sending domain " + str("domain")
 	case "POST /api/denma/domains/:domain/check":

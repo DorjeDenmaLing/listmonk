@@ -6,8 +6,9 @@ package main
 // automation's or an opt-in's link, and the one-click List-Unsubscribe that
 // Gmail and Yahoo send without the page), blocklists the subscriber in this
 // center and unsubscribes them from all its lists. No campaign, tag or
-// automation reaches them again, and a sign-up form can't re-add them; an
-// admin can. Other centers aren't affected. The preferences page keeps the
+// automation reaches them again. Signing up again sends them a confirmation,
+// and only confirming brings them back (cmd/denma_resubscribe.go); an admin
+// can too. Other centers aren't affected. The preferences page keeps the
 // name and the privacy choices, without lists
 // (static/public/templates/subscription.html).
 

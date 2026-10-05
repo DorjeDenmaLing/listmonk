@@ -448,6 +448,9 @@ func (a *App) OptinPage(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
+	if done, err := a.denmaResubOptin(c, subUUID, confirm); done { // denma: re-subscribing (cmd/denma_resubscribe.go)
+		return err
+	}
 
 	// Validate list UUIDs if there are incoming UUIDs in the request.
 	if len(req.ListUUIDs) > 0 {
@@ -878,6 +881,9 @@ func (a *App) processSubForm(c echo.Context) (bool, error) {
 		sub, err := a.core.GetSubscriber(0, "", req.Email)
 		if err != nil {
 			return false, err
+		}
+		if sub.Status == models.SubscriberStatusBlockListed { // denma: re-subscribing (cmd/denma_resubscribe.go)
+			return a.denmaResubForm(sub, listUUIDs)
 		}
 
 		// Update the subscriber's subscriptions in the DB.
