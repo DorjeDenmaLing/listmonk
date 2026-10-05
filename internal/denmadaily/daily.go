@@ -1,5 +1,8 @@
 // Package denmadaily counts the e-mails sent in the last 24 hours against a
 // daily limit, by the minute, in memory and in the database (cmd/denma_daily.go).
+// Campaigns and automations stop short of the limit by a reserve (a
+// percentage of it), which is left for opt-in confirmations, password resets,
+// invites and notifications.
 package denmadaily
 
 import (
@@ -25,6 +28,7 @@ type Minute struct {
 type Counter struct {
 	mu      sync.Mutex
 	limit   int
+	reserve int           // percent of limit that campaigns leave
 	minutes []Minute      // the last 24 hours', oldest first
 	total   int           // their sum
 	pending map[int64]int // counted since the last save
@@ -131,35 +135,41 @@ func (d *Counter) Add() {
 	d.pending[m]++
 }
 
-// SetLimit sets the limit (the hub's setting; 0 for none).
-func (d *Counter) SetLimit(n int) {
+// SetLimit sets the limit (the hub's setting; 0 for none) and the reserve,
+// the percentage of it that campaigns and automations leave (0-100).
+func (d *Counter) SetLimit(n, reservePct int) {
 	d.mu.Lock()
 	d.limit = max(n, 0)
+	d.reserve = min(max(reservePct, 0), 100)
 	d.mu.Unlock()
 }
 
 // Status is the count against the limit.
 type Status struct {
-	Sent    int
-	Limit   int
-	Left    int       // with a limit
-	FreesAt time.Time // when one more can go, if it's reached
+	Sent          int
+	Limit         int
+	CampaignLimit int       // the limit less the reserve: campaigns' and automations'
+	Reserve       int       // the reserve, in percent
+	Left          int       // for campaigns, with a limit
+	FreesAt       time.Time // when one more campaign message can go, if it's reached
 }
 
-// Status returns the count, the limit and, if it's reached, when the next
-// e-mail can go: when enough of the oldest minutes drop out of the 24 hours.
+// Status returns the count, the limit and, if campaigns' share of it is
+// reached, when the next campaign message can go: when enough of the oldest
+// minutes drop out of the 24 hours.
 func (d *Counter) Status() Status {
 	now := time.Now()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.expire(now)
-	s := Status{Sent: d.total, Limit: d.limit}
+	s := Status{Sent: d.total, Limit: d.limit, Reserve: d.reserve}
 	if d.limit == 0 {
 		return s
 	}
-	s.Left = max(d.limit-d.total, 0)
+	s.CampaignLimit = d.limit - d.limit*d.reserve/100
+	s.Left = max(s.CampaignLimit-d.total, 0)
 	if s.Left == 0 {
-		need := d.total - d.limit + 1
+		need := d.total - s.CampaignLimit + 1
 		for _, m := range d.minutes {
 			if need -= m.N; need <= 0 {
 				s.FreesAt = time.Unix((m.Minute+dayMinutes+1)*60, 0)
@@ -170,8 +180,9 @@ func (d *Counter) Status() Status {
 	return s
 }
 
-// Left returns how many more e-mails may go now (-1 without a limit), and
-// logs when the limit is reached and when sending goes on.
+// Left returns how many more campaign and automation e-mails may go now (-1
+// without a limit), and logs when their share of the limit is reached and
+// when sending goes on.
 func (d *Counter) Left() int {
 	s := d.Status()
 	if s.Limit == 0 {
@@ -181,8 +192,8 @@ func (d *Counter) Left() int {
 	defer d.mu.Unlock()
 	if s.Left == 0 && !d.waiting {
 		d.waiting = true
-		d.log.Printf("denma: the daily limit of %d e-mails is reached; campaigns and automations wait until about %s",
-			s.Limit, s.FreesAt.Format("15:04"))
+		d.log.Printf("denma: %d e-mails sent in 24 hours, the daily limit of %d less its %d%% reserve; campaigns and automations wait until about %s",
+			s.Sent, s.Limit, s.Reserve, s.FreesAt.Format("15:04"))
 	} else if s.Left > 0 && d.waiting {
 		d.waiting = false
 		d.log.Printf("denma: under the daily limit again; sending goes on")

@@ -29,7 +29,7 @@
 			{{- $daily := DenmaDailySending }}{{/* cmd/denma_daily.go */}}
 			<p class="denma-daily" data-testid="hub-daily">
 				{{- if $daily.Limit }}
-					<span>Last 24 hours: <strong>{{ FormatNumber $daily.Sent }}</strong> of the daily limit of {{ FormatNumber $daily.Limit }}{{ if not $daily.FreesAt.IsZero }}, reached: campaigns wait until about {{ $daily.FreesAt.Format "15:04" }}{{ end }}.</span>
+					<span>Last 24 hours: <strong>{{ FormatNumber $daily.Sent }}</strong> of the daily limit of {{ FormatNumber $daily.Limit }}{{ if not $daily.FreesAt.IsZero }}. Campaigns and automations have reached their {{ FormatNumber $daily.CampaignLimit }} and wait until about {{ $daily.FreesAt.Format "15:04" }}; confirmations and password resets still go{{ end }}.</span>
 					<progress value="{{ $daily.Sent }}" max="{{ $daily.Limit }}"></progress>
 				{{- else }}
 					<span>Last 24 hours: <strong>{{ FormatNumber $daily.Sent }}</strong> e-mails, all centers. No daily limit is set (<a href="{{ URI "/admin/settings" }}#tab=performance">Settings → Performance</a>).</span>

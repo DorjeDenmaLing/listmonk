@@ -660,7 +660,7 @@ func initCampaignManager(msgrs []manager.Messenger, q *models.Queries, u *UrlCon
 		ArchiveURL:            u.ArchiveURL,
 		RootURL:               u.RootURL,
 		UnsubHeader:           ko.Bool("privacy.unsubscribe_header"),
-		SlidingWindow:         ko.Bool("app.message_sliding_window"),
+		SlidingWindow:         ko.Bool("app.message_sliding_window") && !ko.Bool("denma.multi_center"), // denma: the hub's daily limit instead (cmd/denma_sending.go)
 		SlidingWindowDuration: ko.Duration("app.message_sliding_window_duration"),
 		SlidingWindowRate:     ko.Int("app.message_sliding_window_rate"),
 		ScanInterval:          time.Second * 5,

@@ -31,6 +31,9 @@ type Settings struct {
 
 	// denma: the hub's daily sending limit, for every center (cmd/denma_daily.go).
 	DenmaDailyLimit int `json:"denma.daily_limit"`
+	// denma: the percentage of it that campaigns and automations leave for
+	// opt-ins, password resets and notifications.
+	DenmaDailyReserve int `json:"denma.daily_reserve"`
 	// denma: the hub's logo for the admin's top bar, in every center (partials/denma/topnav.html).
 	DenmaAdminLogoURL string `json:"denma.admin_logo_url"`
 	DenmaAdminIconURL string `json:"denma.admin_icon_url"`

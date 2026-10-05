@@ -34,12 +34,18 @@
 		<label data-field>
 			E-mails in any 24 hours, all centers together
 			<input type="number" name="denma.daily_limit" min="0" max="100000000" placeholder="0" x-model.number="form['denma.daily_limit']" data-testid="daily-limit" />
-			<small data-hint>0 for no limit. Set it a little below your mail provider's daily quota (Amazon SES: the account's sending quota), as it's counted the same way, over a rolling 24 hours. When it's reached, campaigns and automations wait and carry on as older sends drop out of the 24 hours. Opt-in confirmations, password resets and notifications always go, and count.</small>
+			<small data-hint>0 for no limit. Set it to your mail provider's daily quota (Amazon SES: the account's sending quota) or a little below, as it's counted the same way, over a rolling 24 hours.</small>
 		</label>
-		<p class="denma-daily-now" data-testid="daily-now">{{ FormatNumber $daily.Sent }} sent in the last 24 hours{{ if $daily.Limit }} of {{ FormatNumber $daily.Limit }}{{ if not $daily.FreesAt.IsZero }}: reached; sending goes on at about {{ $daily.FreesAt.Format "15:04" }}{{ end }}{{ end }}.</p>
+		<label data-field :aria-disabled="!form['denma.daily_limit']">
+			Kept for confirmations and password resets (%)
+			<input type="number" name="denma.daily_reserve" min="0" max="50" placeholder="5" :disabled="!form['denma.daily_limit']" x-model.number="form['denma.daily_reserve']" data-testid="daily-reserve" />
+			<small data-hint>Campaigns and automations stop this much short of the limit, and carry on as older sends drop out of the 24 hours, so that opt-in confirmations, password resets, invites and notifications can still go. Those always go, and count.</small>
+		</label>
+		<p class="denma-daily-now" data-testid="daily-now">{{ FormatNumber $daily.Sent }} sent in the last 24 hours{{ if $daily.Limit }} of {{ FormatNumber $daily.Limit }}; campaigns and automations up to {{ FormatNumber $daily.CampaignLimit }}{{ if not $daily.FreesAt.IsZero }}, reached: they go on at about {{ $daily.FreesAt.Format "15:04" }}{{ end }}{{ end }}.</p>
 	</fieldset>
 	{{- end }}
 
+	{{- if not DenmaIsHub }}{{/* denma: the hub's daily limit replaces it (cmd/denma_sending.go) */}}
 	<fieldset class="card" data-keywords="sliding window rate limit throttle duration cap sending">
 		<legend>{{ .L.T "settings.performance.slidingWindow" }}</legend>
 		<label data-field>
@@ -58,6 +64,7 @@
 				<small data-hint>{{ .L.T "settings.performance.slidingWindowDurationHelp" }}</small>
 			</label>
 	</fieldset>
+	{{- end }}
 
 	<fieldset class="card" data-keywords="cache slow queries dashboard cron interval materialized stats">
 		<legend>{{ .L.T "settings.performance.cacheSlowQueries" }}</legend>

@@ -157,6 +157,9 @@ func (a *App) UpdateSettings(c echo.Context) error {
 	if err := a.denmaHubSender(&set); err != nil { // denma: the hub's name, at the address given (cmd/denma_hub.go)
 		return err
 	}
+	if err := denmaCheckDailySettings(&set); err != nil { // denma: cmd/denma_daily.go
+		return err
+	}
 
 	// Get the existing settings.
 	cur, err := a.core.GetSettings()

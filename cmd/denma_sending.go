@@ -8,7 +8,11 @@ package main
 // So the hub's sending settings, which every center shares, are also the
 // limit for everything the process sends, all centers and messengers
 // together: never more than concurrency × message rate messages in any one
-// second, nor more than the sliding window's (if on) in any window.
+// second.
+//
+// listmonk's sliding window isn't used with several centers (each center's
+// manager would keep its own, in memory, and here it would hold up password
+// resets and opt-ins with campaigns); the hub's daily limit replaces it.
 //
 // E-mail waits in the SMTP messenger itself (email.BeforePush), so that
 // notifications, opt-in confirmations, password resets and invites, which
@@ -34,17 +38,11 @@ import (
 // denmaPacer gives each message a time to go: no earlier than the one before
 // it, at least a second and denmaSendMargin after the rate-th one before it
 // (so never more than rate in any second, while a second's worth may go at
-// once, as listmonk's managers send them), and within the sliding window's
-// limit if set.
+// once, as listmonk's managers send them).
 type denmaPacer struct {
-	mu      sync.Mutex
-	rate    int
-	winDur  time.Duration
-	winRate int
-
-	slots    []time.Time // the last rate messages' times, oldest first
-	winStart time.Time
-	winCount int
+	mu    sync.Mutex
+	rate  int
+	slots []time.Time // the last rate messages' times, oldest first
 }
 
 // denmaSendMargin is added to the second, so that messages that reach the
@@ -73,18 +71,6 @@ func (p *denmaPacer) wait() {
 			}
 		}
 	}
-	if p.winRate > 0 {
-		if slot.Sub(p.winStart) >= p.winDur {
-			p.winStart, p.winCount = slot, 0
-		}
-		if p.winCount >= p.winRate {
-			p.winStart, p.winCount = p.winStart.Add(p.winDur), 0
-			slot = p.winStart
-			lo.Printf("denma: all centers have sent %d messages in %s, the hub's limit; the next ones wait until %s",
-				p.winRate, p.winDur, slot.Format(time.TimeOnly))
-		}
-		p.winCount++
-	}
 	if len(p.slots) == p.rate {
 		p.slots = append(p.slots[:0], p.slots[1:]...)
 	}
@@ -96,16 +82,10 @@ func (p *denmaPacer) wait() {
 	}
 }
 
-// configure sets the limits to ko's: listmonk's for one install
-// (concurrency × message rate per second, and the sliding window if it's on).
+// configure sets the limit to ko's: listmonk's for one install (concurrency
+// × message rate per second).
 func (p *denmaPacer) configure(ko *koanf.Koanf) {
 	rate := max(ko.Int("app.concurrency"), 1) * max(ko.Int("app.message_rate"), 1)
-	var winDur time.Duration
-	var winRate int
-	if ko.Bool("app.message_sliding_window") && ko.Int("app.message_sliding_window_rate") > 0 &&
-		ko.Duration("app.message_sliding_window_duration") > time.Second {
-		winDur, winRate = ko.Duration("app.message_sliding_window_duration"), ko.Int("app.message_sliding_window_rate")
-	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -115,9 +95,6 @@ func (p *denmaPacer) configure(ko *koanf.Koanf) {
 			p.slots = append([]time.Time(nil), p.slots[len(p.slots)-rate:]...)
 		}
 		p.rate = rate
-	}
-	if p.winDur != winDur || p.winRate != winRate {
-		p.winDur, p.winRate, p.winStart, p.winCount = winDur, winRate, time.Time{}, 0
 	}
 }
 
@@ -142,7 +119,7 @@ func denmaLimitSending(msgrs []manager.Messenger, ko *koanf.Koanf) []manager.Mes
 	}
 	denmaSendPacer.configure(ko)
 	if ko.String("denma.center") == "" {
-		denmaDaily.SetLimit(ko.Int("denma.daily_limit")) // the hub's setting
+		denmaDaily.SetLimit(ko.Int("denma.daily_limit"), ko.Int("denma.daily_reserve")) // the hub's settings
 	}
 	denmaHookEmail.Do(func() {
 		email.BeforePush = func() {

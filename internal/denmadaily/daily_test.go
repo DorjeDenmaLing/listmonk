@@ -48,7 +48,7 @@ func TestDailyFreesAt(t *testing.T) {
 	if got := time.Until(s.FreesAt).Round(time.Minute); got < 839*time.Minute || got > 841*time.Minute {
 		t.Fatalf("frees in %v, want about 840m", got)
 	}
-	d.SetLimit(15)
+	d.SetLimit(15, 0)
 	if d.Left() != 5 {
 		t.Fatalf("left %d at limit 15, want 5", d.Left())
 	}
@@ -84,8 +84,32 @@ func TestDailyWaitStops(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("still waiting after the campaign stopped")
 	}
-	d.SetLimit(2)
+	d.SetLimit(2, 0)
 	if !d.Wait(func() bool { return false }) {
 		t.Fatal("under the limit, a message should go")
+	}
+}
+
+// Campaigns stop short of the limit by the reserve, which other e-mails may
+// still use.
+func TestDailyReserve(t *testing.T) {
+	d := counter(0, [2]int{60, 90})
+	d.SetLimit(100, 5)
+	s := d.Status()
+	if s.CampaignLimit != 95 || s.Left != 5 {
+		t.Fatalf("campaign limit %d, left %d; want 95 and 5", s.CampaignLimit, s.Left)
+	}
+	for range 5 {
+		d.Add()
+	}
+	if s := d.Status(); s.Left != 0 || s.FreesAt.IsZero() {
+		t.Fatalf("at 95 of 100 with a 5%% reserve: left %d, frees at %v; want reached", s.Left, s.FreesAt)
+	}
+	// Opt-ins and resets still go (they're only counted), past the limit too.
+	for range 10 {
+		d.Add()
+	}
+	if s := d.Status(); s.Sent != 105 || s.Left != 0 {
+		t.Fatalf("sent %d, left %d", s.Sent, s.Left)
 	}
 }
