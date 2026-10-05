@@ -295,6 +295,7 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		g.POST(path.Join(uriAdmin, "/forgot"), a.ForgotPage)
 		g.GET(path.Join(uriAdmin, "/reset"), a.ResetPage)
 		g.POST(path.Join(uriAdmin, "/reset"), a.ResetPage)
+		initDenmaLoginHandlers(g, a) // denma: everyone's sign-in, /login (cmd/denma_login.go)
 
 		if a.cfg.Security.OIDC.Enabled {
 			g.POST("/auth/oidc", a.OIDCLogin)

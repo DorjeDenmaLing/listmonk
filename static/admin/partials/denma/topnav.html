@@ -2,7 +2,8 @@
 	denma: the top bar, in place of listmonk's (views/base.html), looking and
 	working as in listmonk v6.2.0: the logo (the favicon on narrow screens),
 	Refresh, and the user's round avatar opening Profile and Logout (and, ours,
-	the theme). On phones a menu button on the right opens the sidebar
+	the theme, and for someone who's a user of more than one center, their
+	other centers, to switch to: cmd/denma_people.go). On phones a menu button on the right opens the sidebar
 	(partials/denma/sidebar.html) below it, as 6.2.0's menu.
 
 	The logo is listmonk's unless the hub's settings give another
@@ -33,6 +34,14 @@
 			<menu popover id="user-menu">
 				<a href="{{ URI "/admin/user/profile" }}" class="denma-user-name"><strong>{{ .Username }}</strong><small>{{ .Name }}</small></a>
 				<a href="{{ URI "/admin/user/profile" }}" role="menuitem">{{ template "denma-icon" "account-outline" }} {{ $.L.T "users.profile" }}</a>
+				{{- with DenmaOtherCenters .ID }}
+				<div class="denma-user-centers" role="group" aria-label="Switch to another of your centers">
+					<small>Switch to</small>
+					{{- range . }}
+					<a href="{{ URI "/admin/switch" }}/{{ .Slug }}" role="menuitem" data-testid="switch-center">{{ template "denma-icon" "domain" }} {{ .Name }}</a>
+					{{- end }}
+				</div>
+				{{- end }}
 				<a href="#" role="menuitem" @click.prevent="fetch('{{ URI "/api/logout" }}', { method: 'POST' }).then(() => { document.location.href = '{{ URI "/admin/login" }}'; })">{{ template "denma-icon" "logout-variant" }} {{ $.L.T "users.logout" }}</a>
 				{{ template "denma-theme-switch" $ }}
 			</menu>

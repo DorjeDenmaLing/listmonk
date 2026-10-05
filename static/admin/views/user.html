@@ -36,7 +36,7 @@
 					<label data-field>
 						{{ .L.T "users.username" }}
 						<input name="username" maxlength="200" required autocomplete="off" pattern="[a-zA-Z0-9_\-\.@]+$" autofocus x-model="form.username" />
-						<small data-hint>{{ .L.T "users.usernameHelp" }}</small>
+						<small data-hint>{{ if DenmaInCenter }}How they're shown in this center. For someone new, also the username they can sign in with.{{ else }}{{ .L.T "users.usernameHelp" }}{{ end }}</small>
 					</label>
 
 					<label data-field>
@@ -47,7 +47,10 @@
 					<template x-if="form.type !== 'api'">
 						<label data-field>
 							{{ .L.T "subscribers.email" }}
-							<input name="email" type="email" maxlength="200" required x-model="form.email" />
+							<input name="email" type="email" maxlength="200" required x-model="form.email" {{ if and DenmaInCenter (not $d.IsNew) }}readonly{{ end }} />
+							{{- if and DenmaInCenter (not $d.IsNew) }}
+							<small data-hint>Theirs to change, on their Profile page.</small>{{/* denma: cmd/denma_people.go */}}
+							{{- end }}
 						</label>
 					</template>
 
@@ -60,6 +63,18 @@
 					</div>
 				</fieldset>
 
+				{{- if DenmaInCenter }}{{/* denma: people sign in with their own account (cmd/denma_people.go) */}}
+				<template x-if="form.type !== 'api'">
+					<fieldset class="card" data-testid="denma-signin">
+						<legend>Signing in</legend>
+						{{- if $d.IsNew }}
+						<p>They're e-mailed an invitation: a link to set their password, or, if they have an account already, word that they can now sign in to this center with it. They sign in at <a href="/login">/login</a> with their e-mail address or username.</p>
+						{{- else }}
+						<p>They sign in at <a href="/login">/login</a> with their e-mail address or username. Their password and two-factor sign-in are their own; they can reset a forgotten password from the sign-in page.</p>
+						{{- end }}
+					</fieldset>
+				</template>
+				{{- else }}
 				<template x-if="form.type !== 'api'">
 					<fieldset class="card">
 						<legend>{{ .L.T "users.password" }}</legend>
@@ -76,6 +91,7 @@
 						</label>
 					</fieldset>
 				</template>
+				{{- end }}
 
 				<fieldset class="card">
 					<legend>{{ .L.Tc "users.roles" 2 }}</legend>

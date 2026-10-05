@@ -291,7 +291,6 @@ func (a *App) ResetPage(c echo.Context) error {
 	)
 
 	// Validate token and email (don't delete it yet, as we may need it for POST).
-	a.denmaRestoreInvite(email, token)            // denma: a center invite after a restart (cmd/denma_invites.go)
 	data, err := tmptokens.Check(a.tmpKey(email)) // denma: per center
 	if err != nil {
 		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
@@ -596,7 +595,7 @@ func (a *App) doForgotPassword(c echo.Context) error {
 	}
 
 	// If the password login is disabled, do not proceed, but show success message to prevent email enumeration.
-	if !user.PasswordLogin {
+	if !user.PasswordLogin || a.denmaIsMember(user.ID) { // denma: a person's password is reset at /login/forgot (cmd/denma_login.go)
 		return c.Render(http.StatusOK, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.resetLinkSent")))
 	}
 
@@ -678,7 +677,7 @@ func (a *App) doResetPassword(c echo.Context, token, email string) error {
 	}
 
 	// Password login is disabled for the user.
-	if !user.PasswordLogin {
+	if !user.PasswordLogin || a.denmaIsMember(user.ID) { // denma: a person's password is reset at /login/forgot (cmd/denma_login.go)
 		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("public.invalidFeature")))
 	}
 
@@ -687,7 +686,6 @@ func (a *App) doResetPassword(c echo.Context, token, email string) error {
 		a.log.Printf("error updating user password: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
 	}
-	a.denmaInviteUsed(email) // denma: cmd/denma_invites.go
 
 	// Invalidate all existing sessions for the user after password reset.
 	if err := a.core.DeleteUserSessions(user.ID, ""); err != nil {
@@ -764,7 +762,7 @@ func (a *App) GenerateTOTPQR(c echo.Context) error {
 
 	// Generate a new TOTP key.
 	key, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      a.cfg.SiteName,
+		Issuer:      a.denmaTOTPIssuer(), // denma: the hub's name, for a person (cmd/denma_people.go)
 		AccountName: u.Email.String,
 	})
 	if err != nil {

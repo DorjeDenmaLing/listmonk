@@ -1215,7 +1215,8 @@ svg.denma-logo {
       opacity: 1;
     }
 
-    > a {
+    > a,
+    .denma-user-centers > a {
       display: flex;
       align-items: center;
       gap: 4px;
@@ -1232,6 +1233,20 @@ svg.denma-logo {
       .icon {
         width: 15px;
         height: 15px;
+      }
+    }
+
+    /* A person's other centers (cmd/denma_people.go). */
+    .denma-user-centers {
+      margin: 7.5px 0;
+      padding-top: 7.5px;
+      border-top: 1px solid var(--denma-nav-line);
+
+      > small {
+        display: block;
+        padding: 0 15px 2px;
+        color: var(--denma-nav-text);
+        font-size: 11.25px;
       }
     }
 
@@ -1711,4 +1726,19 @@ svg.denma-logo {
   margin: 0;
   font-size: var(--text-7);
   color: var(--muted-foreground);
+}
+
+/* The hub's People page (views/denma-people.html). */
+.denma-people {
+  .denma-table-tools {
+    padding: 16px 16px 0;
+
+    input[type="search"] {
+      width: min(100%, 26em);
+    }
+  }
+
+  .denma-person-center + .denma-person-center {
+    margin-top: 4px;
+  }
 }

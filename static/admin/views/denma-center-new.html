@@ -47,6 +47,7 @@
 						<label data-field>
 							Username
 							<input name="admin_username" maxlength="200" required minlength="3" pattern="[a-zA-Z0-9_\-\.@]+" autocomplete="off" x-model="form.admin_username" />
+							<small data-hint>For someone new. Someone who already has an account (as another center's user) keeps theirs, and their password.</small>
 						</label>
 					</fieldset>
 				</section>
@@ -64,16 +65,30 @@
 		<div class="page-content content">
 			<article class="card vstack gap-4" data-testid="center-created">
 				<h3>{{ Icon "check-circle" }} <span x-text="form.name"></span> is ready</h3>
-				<p x-show="created.email_sent">
-					<span x-text="form.admin_name"></span> has been e-mailed a link to set their password. You can also pass it on yourself; it works for 7 days, until it's used or listmonk restarts.
-				</p>
-				<p x-show="!created.email_sent" class="text-danger">
-					The e-mail to <span x-text="form.admin_email"></span> couldn't be sent (see Settings &rarr; Logs). Pass on this link to set their password; it works for 7 days, until it's used or listmonk restarts.
-				</p>
-				<div class="hstack gap-2">
-					<input type="text" readonly :value="created.invite_url" class="denma-invite" @focus="$event.target.select()" />
-					<button type="button" class="outline" @click="copy">{{ Icon "copy" }} Copy</button>
-				</div>
+				<template x-if="created.invite_url">
+					<div class="vstack gap-4">
+						<p x-show="created.email_sent">
+							<span x-text="form.admin_name"></span> has been e-mailed a link to set their password. You can also pass it on yourself; it works for 7 days, until it's used.
+						</p>
+						<p x-show="!created.email_sent" class="text-danger">
+							The e-mail to <span x-text="form.admin_email"></span> couldn't be sent (see Settings &rarr; Logs). Pass on this link to set their password; it works for 7 days, until it's used.
+						</p>
+						<div class="hstack gap-2">
+							<input type="text" readonly :value="created.invite_url" class="denma-invite" @focus="$event.target.select()" />
+							<button type="button" class="outline" @click="copy">{{ Icon "copy" }} Copy</button>
+						</div>
+					</div>
+				</template>
+				<template x-if="!created.invite_url">
+					<div>
+						<p x-show="created.email_sent">
+							<span x-text="form.admin_email"></span> already has an account, so they're its admin with it, and have been e-mailed that they can sign in to it at <a :href="created.login_url" x-text="created.login_url"></a>. The username above wasn't used: they keep theirs.
+						</p>
+						<p x-show="!created.email_sent" class="text-danger">
+							<span x-text="form.admin_email"></span> already has an account, so they're its admin with it, but the e-mail telling them couldn't be sent (see Settings &rarr; Logs). Let them know they can sign in to it at <a :href="created.login_url" x-text="created.login_url"></a>.
+						</p>
+					</div>
+				</template>
 				<div class="hstack gap-2">
 					<a :href="`{{ URI "/admin/centers" }}/${created.slug}/open`" class="button" data-variant="primary">{{ Icon "arrow-up-right" }} Open the center</a>
 					<a href="{{ URI "/admin/centers" }}" class="button outline">All centers</a>

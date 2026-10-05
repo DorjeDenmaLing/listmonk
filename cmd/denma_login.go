@@ -2,57 +2,70 @@ package main
 
 // denma: one sign-in page for everyone, at /login (and /login/forgot for a
 // forgotten password), outside /admin: the web server keeps the hub's admin
-// behind Cloudflare Access, for superadmins, while the centers' admins sign
-// in with listmonk's own login. Someone signs in with their username and
-// password and lands in the center that has them as a user, or the hub.
+// behind Cloudflare Access, for superadmins, while people sign in here.
 //
-// A username or e-mail address belongs to one place only, the hub or one
-// center (denmaCheckUserUnique, from listmonk's users handlers and the hub's
-// New center form): a person is a user of one center. The superadmins'
-// accounts in centers (cmd/denma_hub.go) don't count; they have no password.
+// A superadmin (a hub user) signs in with listmonk's own sign-in, the hub's,
+// and lands in the hub. Anyone else is a person (cmd/denma_people.go), who
+// signs in with their e-mail address or username, their password and, if
+// they've turned it on, a two-factor code (/login/twofa), and lands in their
+// center. Someone who is a user of more than one center chooses one
+// (/login/centers), unless the page they wanted was in one of them, and can
+// switch between them later from the menu under their picture. A wrong
+// password, or a name nobody has, gets listmonk's usual message.
 //
-// The page is the hub's listmonk sign-in page. On a post, the account is
-// found in the hub and the running centers, its password checked there, and
-// the post handed to that app's own sign-in (cmd/auth.go), which sets its
-// session (or asks for the 2FA code) and records it in the activity log
-// (cmd/denma_audit.go), as if the person had signed in at its own page. A
-// wrong password, or a username nobody has, is the hub's to answer, with
-// listmonk's usual message, so the page never tells which center a
-// username belongs to. A forgotten password is e-mailed by the center the
-// address belongs to; the page says the same either way.
+// A forgotten password is e-mailed to the person (or the superadmin) with
+// that address, as a link to /login/reset; the page says the same either way.
+// The same page sets a new person's first password (addMember).
 //
-// The old sign-in pages, the hub's and each center's (/c/<slug>/admin/login,
-// where listmonk sends someone who isn't signed in), send people here, with
-// the page they wanted.
+// These are the hub's pages (initDenmaLoginHandlers); the hub's server hands
+// /login and what's under it to the hub's router before anything else
+// (loginRoute). The old sign-in pages, the hub's and each center's
+// (/c/<slug>/admin/login, where listmonk sends someone who isn't signed in),
+// send people here, with the page they wanted.
 
 import (
-	"fmt"
+	"bytes"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/knadh/listmonk/internal/i18n"
+	"github.com/knadh/listmonk/internal/notifs"
+	"github.com/knadh/listmonk/internal/tmptokens"
 	"github.com/knadh/listmonk/internal/utils"
+	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
-	"github.com/lib/pq"
+	"github.com/pquerna/otp/totp"
 )
 
 const (
-	denmaLoginPath  = "/login"
-	denmaForgotPath = "/login/forgot"
+	denmaLoginPath   = "/login"
+	denmaForgotPath  = "/login/forgot"
+	denmaTwofaPath   = "/login/twofa"
+	denmaCentersPath = "/login/centers"
+	denmaResetPath   = "/login/reset"
+
+	// The signing-in-so-far cookie: after the password, for the two-factor
+	// code; after that, for choosing a center.
+	denmaLoginCookie = "denma_login"
+	denmaLoginTTL    = 10 * time.Minute
+
+	// Wrong two-factor codes before starting again.
+	denmaTwofaTries = 5
 )
 
-// loginRoute handles the sign-in paths before the hub's and the centers'
-// routers (srv.Pre, cmd/denma_centers.go), reporting whether it did.
+// loginRoute hands the sign-in pages to the hub's router, before the hub's
+// and the centers' routing (srv.Pre, cmd/denma_centers.go), reporting whether
+// it did.
 func (d *denmaCenters) loginRoute(c echo.Context, next echo.HandlerFunc) (bool, error) {
 	req := c.Request()
 	p := req.URL.Path
 	get := req.Method == http.MethodGet || req.Method == http.MethodHead
 
 	switch {
-	case p == denmaLoginPath:
-		return true, d.login(c, next)
-	case p == denmaForgotPath:
-		return true, d.forgot(c, next)
+	case p == denmaLoginPath || strings.HasPrefix(p, denmaLoginPath+"/"):
+		return true, d.toHub(c, next)
 	case get && (p == "/admin/login" || p == "/admin/forgot"):
 		return true, c.Redirect(http.StatusFound, denmaLoginRedirect(p, "", req.URL.Query()))
 	case get && strings.HasPrefix(p, denmaCenterPath):
@@ -85,242 +98,332 @@ func denmaLoginRedirect(p, prefix string, q url.Values) string {
 	return denmaLoginPath + "?next=" + url.QueryEscape(n)
 }
 
-// login shows the sign-in page, and signs someone in where they're a user.
-func (d *denmaCenters) login(c echo.Context, next echo.HandlerFunc) error {
-	req := c.Request()
-	if req.Method != http.MethodPost {
-		return d.toHub(c, next, "/admin/login") // listmonk's page, which posts here
-	}
-
-	var (
-		username = strings.TrimSpace(c.FormValue("username"))
-		password = strings.TrimSpace(c.FormValue("password"))
-		nextURI  = utils.SanitizeURI(c.FormValue("next"))
-	)
-	ctr, err := d.signInCenter(username, password)
-	if err != nil {
-		lo.Printf("denma: error finding where %q signs in: %v", username, err)
-	}
-	if ctr == nil {
-		// The hub's account, or none (the hub's sign-in then fails, as for a
-		// wrong password).
-		if strings.HasPrefix(nextURI, denmaCenterPath) {
-			nextURI = uriAdmin
-		}
-		denmaSetForm(req, "next", nextURI)
-		return d.toHub(c, next, "/admin/login")
-	}
-
-	// The center's: the page wanted there, if it was one of its pages.
-	prefix := denmaCenterPath + ctr.Slug
-	if rest, ok := strings.CutPrefix(nextURI, prefix); ok && strings.HasPrefix(rest, "/") {
-		nextURI = rest
-	} else {
-		nextURI = uriAdmin
-	}
-	denmaSetForm(req, "next", nextURI)
-	d.toCenter(c, ctr, "/admin/login", c.Response())
-	return nil
-}
-
-// signInCenter is the running center where username's password is right, or
-// nil for the hub's account or none. A username is in one place only; before
-// that was required, several could have it, and the first whose password is
-// right is the one (the hub's first).
-func (d *denmaCenters) signInCenter(username, password string) (*denmaCenter, error) {
-	if username == "" || password == "" {
-		return nil, nil
-	}
-	accs, err := d.accounts(`username = $1 AND password_login AND status = 'enabled'`, username, true)
-	if err != nil {
-		return nil, err
-	}
-	for _, acc := range accs {
-		app := d.current()
-		if acc.ctr != nil {
-			app = acc.ctr.app
-		}
-		if _, err := app.core.LoginUser(username, password); err != nil {
-			continue
-		}
-		return acc.ctr, nil
-	}
-	return nil, nil
-}
-
-// forgot shows the forgotten password page, and has the center (or hub) that
-// the address belongs to e-mail a link to set a new one.
-func (d *denmaCenters) forgot(c echo.Context, next echo.HandlerFunc) error {
-	req := c.Request()
-	if req.Method != http.MethodPost {
-		return d.toHub(c, next, "/admin/forgot")
-	}
-
-	email := strings.ToLower(strings.TrimSpace(c.FormValue("email")))
-	accs, err := d.accounts(`LOWER(email) = $1 AND password_login AND status = 'enabled'`, email, true)
-	if err != nil {
-		lo.Printf("denma: error finding the account for a forgotten password: %v", err)
-	}
-	hub := false
-	for _, acc := range accs {
-		if acc.ctr == nil {
-			hub = true
-			continue
-		}
-		// The center sends the e-mail (its page isn't shown).
-		d.toCenter(c, acc.ctr, "/admin/forgot", &denmaDiscardWriter{h: http.Header{}})
-	}
-	if !hub {
-		// The hub sends nothing, and shows the same message.
-		denmaSetForm(req, "email", "")
-	}
-	return d.toHub(c, next, "/admin/forgot")
-}
-
-// toHub has the hub answer the request, as one for path.
-func (d *denmaCenters) toHub(c echo.Context, next echo.HandlerFunc, path string) error {
-	req := c.Request()
-	req.URL.Path, req.URL.RawPath = path, ""
+// toHub has the hub's router answer the request.
+func (d *denmaCenters) toHub(c echo.Context, next echo.HandlerFunc) error {
 	if r := d.baseRouter(); r != nil {
-		r.ServeHTTP(c.Response(), req)
+		r.ServeHTTP(c.Response(), c.Request())
 		return nil
 	}
 	return next(c)
 }
 
-// toCenter has a center answer the request, as one for path, writing to w.
-func (d *denmaCenters) toCenter(c echo.Context, ctr *denmaCenter, path string, w http.ResponseWriter) {
-	r := c.Request().Clone(c.Request().Context()) // with the form, already read
-	r.URL.Path, r.URL.RawPath = path, ""
-	ctr.router.ServeHTTP(&denmaPrefixWriter{ResponseWriter: w, prefix: denmaCenterPath + ctr.Slug}, r)
+// initDenmaLoginHandlers registers the sign-in pages, in the hub (with
+// centers).
+func initDenmaLoginHandlers(g *echo.Group, a *App) {
+	if !a.ko.Bool("denma.multi_center") || a.ko.String("denma.center") != "" {
+		return
+	}
+	g.GET(denmaLoginPath, a.LoginPage) // listmonk's page, which posts here
+	g.POST(denmaLoginPath, a.DenmaLogin)
+	g.GET(denmaForgotPath, a.ForgotPage)
+	g.POST(denmaForgotPath, a.DenmaForgot)
+	g.GET(denmaTwofaPath, a.DenmaLoginTwofa)
+	g.POST(denmaTwofaPath, a.DenmaLoginTwofa)
+	g.GET(denmaCentersPath, a.DenmaLoginCenters)
+	g.POST(denmaCentersPath, a.DenmaLoginCenters)
+	g.GET(denmaResetPath, a.DenmaLoginReset)
+	g.POST(denmaResetPath, a.DenmaLoginReset)
 }
 
-// denmaSetForm changes a value of a request's form, already read.
-func denmaSetForm(r *http.Request, key, value string) {
-	if r.Form != nil {
-		r.Form.Set(key, value)
-	}
-	if r.PostForm != nil {
-		r.PostForm.Set(key, value)
-	}
+// denmaLoginState is someone signing in, between pages: who, and the page
+// they wanted.
+type denmaLoginState struct {
+	PersonID int
+	Next     string
+	Choosing bool // signed in, choosing a center; else, the two-factor code is next
+	Tries    int  // wrong two-factor codes
 }
 
-// denmaDiscardWriter is a response nobody sees.
-type denmaDiscardWriter struct{ h http.Header }
+func denmaLoginKey(token string) string { return "denma-login:" + token }
 
-func (w *denmaDiscardWriter) Header() http.Header         { return w.h }
-func (w *denmaDiscardWriter) Write(b []byte) (int, error) { return len(b), nil }
-func (w *denmaDiscardWriter) WriteHeader(int)             {}
-
-// denmaAccount is a user in the hub (ctr nil) or a center.
-type denmaAccount struct {
-	Slug string `db:"slug"` // "" for the hub
-	ID   int    `db:"id"`
-	ctr  *denmaCenter
-}
-
-// accounts finds the users matching cond ($1 is value) in the hub and every
-// center (only the running ones, with running), the hub's first. The
-// superadmins' accounts in centers aren't among them, nor API users.
-func (d *denmaCenters) accounts(cond, value string, running bool) ([]denmaAccount, error) {
-	var centers []struct {
-		ID     int    `db:"id"`
-		Slug   string `db:"slug"`
-		Schema string `db:"schema_name"`
+// setLoginState keeps st for the next page, in a cookie of its own (for
+// /login's pages only).
+func (a *App) setLoginState(c echo.Context, st *denmaLoginState) error {
+	token, err := generateRandomString(tmpAuthTokenLen)
+	if err != nil {
+		return err
 	}
-	if err := d.current().db.Select(&centers, `SELECT c.id, c.slug, c.schema_name FROM denma.centers c
-		WHERE EXISTS (SELECT 1 FROM information_schema.tables t WHERE t.table_schema = c.schema_name AND t.table_name = 'users')
-		ORDER BY c.slug`); err != nil {
-		return nil, err
-	}
-
-	parts := []string{fmt.Sprintf(`SELECT '' AS slug, id FROM %s.users WHERE type = 'user' AND (%s)`,
-		pq.QuoteIdentifier(d.baseSchema), cond)}
-	for _, ce := range centers {
-		if running && d.get(ce.Slug) == nil {
-			continue
-		}
-		parts = append(parts, fmt.Sprintf(`SELECT %s AS slug, id FROM %s.users WHERE type = 'user' AND (%s)
-			AND id NOT IN (SELECT center_user_id FROM denma.center_superadmins WHERE center_id = %d)`,
-			pq.QuoteLiteral(ce.Slug), pq.QuoteIdentifier(ce.Schema), cond, ce.ID))
-	}
-
-	var out []denmaAccount
-	if err := d.current().db.Select(&out, strings.Join(parts, " UNION ALL "), value); err != nil {
-		return nil, err
-	}
-	for i := range out {
-		if out[i].Slug != "" {
-			out[i].ctr = d.get(out[i].Slug)
-		}
-	}
-	return out, nil
-}
-
-// denmaCheckUserUnique refuses a username or e-mail address, of a user being
-// created or changed in this app, that another center or the hub has: a
-// person is a user of one place, where /login signs them in. listmonk checks
-// for the same in the app itself.
-func (a *App) denmaCheckUserUnique(username, email string) error {
-	if denmaHub == nil {
-		return nil
-	}
-	return denmaHub.checkUnique(a.ko.String("denma.center"), username, email) // "" in the hub
-}
-
-// checkUnique refuses a username or e-mail address that a user anywhere but
-// own (a center's slug, or "" for the hub) has.
-func (d *denmaCenters) checkUnique(own, username, email string) error {
-	for _, v := range []struct{ what, cond, value string }{
-		{"Username", `LOWER(username) = LOWER($1)`, username},
-		{"E-mail address", `LOWER(email) = LOWER($1)`, email},
-	} {
-		if v.value == "" {
-			continue
-		}
-		accs, err := d.accounts(v.cond, v.value, false)
-		if err != nil {
-			lo.Printf("denma: error checking that a user is in one center only: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "Couldn't check the username and e-mail address. Try again.")
-		}
-		for _, acc := range accs {
-			if acc.Slug == own {
-				continue // this app's own, which listmonk checks
-			}
-			return echo.NewHTTPError(http.StatusBadRequest, v.what+" already taken")
-		}
-	}
+	tmptokens.Set(denmaLoginKey(token), denmaLoginTTL, st)
+	c.SetCookie(&http.Cookie{
+		Name:     denmaLoginCookie,
+		Value:    token,
+		Path:     denmaLoginPath,
+		MaxAge:   int(denmaLoginTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   strings.HasPrefix(a.urlCfg.RootURL, "https://"),
+		SameSite: http.SameSiteLaxMode,
+	})
 	return nil
 }
 
-// warnSharedUsers logs the usernames and e-mail addresses that more than one
-// place has, from before each had to be in one place only: /login signs
-// such a person in at the first where their password is right. Called after
-// the centers load.
-func (d *denmaCenters) warnSharedUsers() {
-	var shared []string
-	q := `SELECT LOWER(u) FROM (` + d.userNamesSQL() + `) t GROUP BY LOWER(u) HAVING COUNT(DISTINCT slug) > 1 ORDER BY 1 LIMIT 20`
-	if err := d.current().db.Select(&shared, q); err != nil {
-		lo.Printf("denma: error checking for users in more than one center: %v", err)
+// loginState returns the signing-in-so-far, or nil.
+func (a *App) loginState(c echo.Context) *denmaLoginState {
+	ck, err := c.Cookie(denmaLoginCookie)
+	if err != nil || ck.Value == "" {
+		return nil
+	}
+	v, err := tmptokens.Check(denmaLoginKey(ck.Value))
+	if err != nil {
+		return nil
+	}
+	st, _ := v.(*denmaLoginState)
+	return st
+}
+
+func (a *App) clearLoginState(c echo.Context) {
+	if ck, err := c.Cookie(denmaLoginCookie); err == nil {
+		tmptokens.Delete(denmaLoginKey(ck.Value))
+	}
+	c.SetCookie(&http.Cookie{Name: denmaLoginCookie, Path: denmaLoginPath, MaxAge: -1, HttpOnly: true})
+}
+
+// DenmaLogin signs someone in: a superadmin with listmonk's sign-in, a person
+// with theirs.
+func (a *App) DenmaLogin(c echo.Context) error {
+	var (
+		start    = time.Now()
+		username = strings.TrimSpace(c.FormValue("username"))
+		password = strings.TrimSpace(c.FormValue("password"))
+		next     = utils.SanitizeURI(c.FormValue("next"))
+	)
+	// As long as listmonk's (doLogin), whoever it is.
+	defer func() {
+		if d := time.Since(start); d < 100*time.Millisecond {
+			time.Sleep(100*time.Millisecond - d)
+		}
+	}()
+
+	var hubUser bool
+	if err := a.db.Get(&hubUser, `SELECT EXISTS (SELECT 1 FROM users WHERE LOWER(username) = LOWER($1) AND type = 'user')`, username); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if hubUser {
+		// A center's page can't be theirs: they open centers from the hub.
+		if strings.HasPrefix(next, denmaCenterPath) {
+			c.Request().Form.Set("next", uriAdmin) // read already, by FormValue
+		}
+		return a.LoginPage(c)
+	}
+
+	var p denmaPerson
+	err := a.db.Get(&p, `SELECT `+denmaPersonCols+` FROM denma.people p
+		WHERE (LOWER(p.username) = LOWER($1) OR LOWER(p.email) = LOWER($1))
+		AND p.password IS NOT NULL AND crypt($2, p.password) = p.password`, username, password)
+	if err != nil || username == "" || password == "" {
+		return a.renderLoginPage(c, echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidLogin")))
+	}
+	return a.denmaPasswordOK(c, &p, next)
+}
+
+// denmaPasswordOK carries on once a person's password is right: the
+// two-factor code, if they have it on, then their center.
+func (a *App) denmaPasswordOK(c echo.Context, p *denmaPerson, next string) error {
+	if p.TwofaKey.Valid {
+		if err := a.setLoginState(c, &denmaLoginState{PersonID: p.ID, Next: next}); err != nil {
+			return err
+		}
+		return c.Redirect(http.StatusFound, denmaTwofaPath)
+	}
+	return a.denmaSignedIn(c, p.ID, next)
+}
+
+// denmaSignedIn takes a person who has signed in to their center: the one
+// they're a user of, the one the page they wanted is in, or the one they
+// choose.
+func (a *App) denmaSignedIn(c echo.Context, personID int, next string) error {
+	d := denmaHub
+	if _, err := a.db.Exec(`UPDATE denma.people SET loggedin_at = NOW() WHERE id = $1`, personID); err != nil {
+		a.log.Printf("denma: error recording a sign-in: %v", err)
+	}
+	ms, err := d.centersOf(personID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if len(ms) == 0 {
+		a.clearLoginState(c)
+		return a.renderLoginPage(c, echo.NewHTTPError(http.StatusForbidden,
+			"Your account isn't active in any center at the moment. Ask your center's admin."))
+	}
+
+	pick := -1
+	for i, m := range ms {
+		if strings.HasPrefix(next, denmaCenterPath+m.Slug+"/") {
+			pick = i
+		}
+	}
+	if pick < 0 && len(ms) == 1 {
+		pick = 0
+	}
+	if pick < 0 {
+		if err := a.setLoginState(c, &denmaLoginState{PersonID: personID, Choosing: true}); err != nil {
+			return err
+		}
+		return c.Redirect(http.StatusFound, denmaCentersPath)
+	}
+
+	a.clearLoginState(c)
+	ctr, err := d.enter(c, ms[pick])
+	if err != nil {
+		return a.renderLoginPage(c, err)
+	}
+	// The page they wanted, if it was one of this center's.
+	root := strings.TrimSuffix(ctr.app.urlCfg.RootPath, "/")
+	rest, ok := strings.CutPrefix(next, denmaCenterPath+ctr.Slug)
+	if !ok || !strings.HasPrefix(rest, "/") {
+		rest = uriAdmin
+	}
+	return c.Redirect(http.StatusFound, root+rest)
+}
+
+// denmaLoginPage is the data of the sign-in pages here.
+type denmaLoginPage struct {
+	Title       string
+	Description string
+	Error       string
+	Centers     []denmaMembership // to choose from
+	Token       string            // a set-password link's
+	Email       string
+}
+
+// DenmaLoginTwofa asks a person for their two-factor code, once their
+// password was right.
+func (a *App) DenmaLoginTwofa(c echo.Context) error {
+	st := a.loginState(c)
+	if st == nil || st.Choosing {
+		return c.Redirect(http.StatusFound, denmaLoginPath)
+	}
+	out := denmaLoginPage{Title: a.i18n.T("users.twoFA")}
+	if c.Request().Method != http.MethodPost {
+		return c.Render(http.StatusOK, "denma-login-twofa", out)
+	}
+
+	p, err := denmaHub.person(st.PersonID)
+	if err != nil || p == nil || !p.TwofaKey.Valid {
+		a.clearLoginState(c)
+		return c.Redirect(http.StatusFound, denmaLoginPath)
+	}
+	code := strings.TrimSpace(c.FormValue("totp_code"))
+	c.Request().Form.Set("username", p.Username) // who, for the activity log (cmd/denma_audit.go)
+	if !strHasLen(code, 6, 6) || !totp.Validate(code, p.TwofaKey.String) {
+		st.Tries++
+		if st.Tries >= denmaTwofaTries {
+			a.clearLoginState(c)
+			return a.renderLoginPage(c, echo.NewHTTPError(http.StatusForbidden, "Too many wrong codes. Sign in again."))
+		}
+		out.Error = a.i18n.T("globals.messages.invalidValue")
+		return c.Render(http.StatusOK, "denma-login-twofa", out)
+	}
+	return a.denmaSignedIn(c, p.ID, st.Next)
+}
+
+// DenmaLoginCenters lets a person who's a user of more than one center choose
+// one, once they've signed in.
+func (a *App) DenmaLoginCenters(c echo.Context) error {
+	st := a.loginState(c)
+	if st == nil || !st.Choosing {
+		return c.Redirect(http.StatusFound, denmaLoginPath)
+	}
+	ms, err := denmaHub.centersOf(st.PersonID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if c.Request().Method == http.MethodPost {
+		slug := c.FormValue("center")
+		if p, err := denmaHub.person(st.PersonID); err == nil && p != nil {
+			c.Request().Form.Set("username", p.Username) // who, for the activity log (cmd/denma_audit.go)
+		}
+		for _, m := range ms {
+			if m.Slug == slug {
+				a.clearLoginState(c)
+				ctr, err := denmaHub.enter(c, m)
+				if err != nil {
+					return a.renderLoginPage(c, err)
+				}
+				return c.Redirect(http.StatusFound, strings.TrimSuffix(ctr.app.urlCfg.RootPath, "/")+uriAdmin)
+			}
+		}
+	}
+	return c.Render(http.StatusOK, "denma-login-centers", denmaLoginPage{Title: "Choose a center", Centers: ms})
+}
+
+// DenmaForgot e-mails a person with this address a link to set a new
+// password, and has the hub do the same for a superadmin's (listmonk's
+// page, which says the same whether or not anyone has the address).
+func (a *App) DenmaForgot(c echo.Context) error {
+	email := strings.ToLower(strings.TrimSpace(c.FormValue("email")))
+	if utils.ValidateEmail(email) {
+		p, err := denmaHub.personByEmail(a.db, email)
+		if err != nil {
+			a.log.Printf("denma: error finding the person for a forgotten password: %v", err)
+		}
+		if p != nil {
+			a.denmaSendReset(p)
+		}
+	}
+	return a.ForgotPage(c)
+}
+
+// denmaSendReset e-mails a person a link to set a new password, as listmonk
+// does (doForgotPassword).
+func (a *App) denmaSendReset(p *denmaPerson) {
+	token, err := denmaHub.newToken(p.ID, passwordResetTTL)
+	if err != nil {
+		a.log.Printf("denma: error making a reset link for %s: %v", p.Email, err)
 		return
 	}
-	if len(shared) > 0 {
-		lo.Printf("denma: %d usernames or e-mail addresses are users of more than one center or the hub (/login signs them in at the first where the password is right; rename all but one): %s",
-			len(shared), strings.Join(shared, ", "))
+	var msg bytes.Buffer
+	if err := a.notifs.Tpls.ExecuteTemplate(&msg, notifs.TplForgotPassword, struct {
+		ResetURL string
+		L        *i18n.I18n
+	}{denmaHub.resetURL(p, token), a.i18n}); err != nil {
+		a.log.Printf("error compiling notification template '%s': %v", notifs.TplForgotPassword, err)
+		return
+	}
+	subject, body := notifs.GetTplSubject(a.i18n.T("email.forgotPassword.subject"), msg.Bytes())
+	if err := a.emailMsgr.Push(models.Message{
+		From:    a.cfg.FromEmail,
+		To:      []string{p.Email},
+		Subject: subject,
+		Body:    body,
+	}); err != nil {
+		a.log.Printf("error sending reset email: %s", err)
 	}
 }
 
-// userNamesSQL lists every user's username and e-mail address (u) and where
-// it is (slug), as accounts finds them.
-func (d *denmaCenters) userNamesSQL() string {
-	parts := []string{fmt.Sprintf(`SELECT '' AS slug, username AS u FROM %[1]s.users WHERE type = 'user'
-		UNION ALL SELECT '', email FROM %[1]s.users WHERE type = 'user' AND email <> ''`, pq.QuoteIdentifier(d.baseSchema))}
-	for _, ctr := range d.loaded() {
-		s := pq.QuoteIdentifier(denmaSchemaName(ctr.Slug))
-		not := fmt.Sprintf(`id NOT IN (SELECT center_user_id FROM denma.center_superadmins WHERE center_id = %d)`, ctr.ID)
-		parts = append(parts, fmt.Sprintf(`SELECT %[1]s, username FROM %[2]s.users WHERE type = 'user' AND %[3]s
-			UNION ALL SELECT %[1]s, email FROM %[2]s.users WHERE type = 'user' AND email <> '' AND %[3]s`,
-			pq.QuoteLiteral(ctr.Slug), s, not))
+// DenmaLoginReset sets a person's password from a link (a new person's, or
+// a forgotten password's), then signs them in.
+func (a *App) DenmaLoginReset(c echo.Context) error {
+	var (
+		token = strings.TrimSpace(c.QueryParam("token"))
+		email = strings.ToLower(strings.TrimSpace(c.QueryParam("email")))
+	)
+	invalid := func() error {
+		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
 	}
-	return strings.Join(parts, " UNION ALL ")
+	p, err := denmaHub.tokenPerson(email, token)
+	if err != nil || p == nil {
+		return invalid()
+	}
+
+	out := denmaLoginPage{Title: a.i18n.T("users.resetPassword"), Token: token, Email: email}
+	if c.Request().Method != http.MethodPost {
+		return c.Render(http.StatusOK, "denma-login-reset", out)
+	}
+	password, password2 := c.FormValue("password"), c.FormValue("password2")
+	switch {
+	case !strHasLen(password, 8, stdInputMaxLen):
+		out.Error = a.i18n.Ts("globals.messages.invalidFields", "name", "password")
+	case password != password2:
+		out.Error = a.i18n.T("users.passwordMismatch")
+	}
+	if out.Error != "" {
+		return c.Render(http.StatusOK, "denma-login-reset", out)
+	}
+
+	// Once only: the link goes with the new password (setPassword).
+	if err := denmaHub.setPassword(p.ID, password, ""); err != nil {
+		a.log.Printf("denma: error setting %s's password: %v", p.Email, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
+	}
+	return a.denmaPasswordOK(c, p, "")
 }

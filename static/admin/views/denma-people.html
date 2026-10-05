@@ -1,0 +1,73 @@
+{{ define "admin-denma-people" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+{{/* denma: the hub's People page: everyone who signs in at /login, the
+	centers they're users of and their role in each (cmd/denma_people.go,
+	assets/js/views/denma-people.js). Centers manage their own users; here
+	superadmins can turn off someone's two-factor sign-in. */}}
+<section class="denma-people" x-data="denmaPeople" x-cloak>
+	<header class="page-header">
+		<h1 class="page-title">People <span class="text-light">({{ len $d.People }})</span></h1>
+		<p class="text-light">Everyone who signs in at <a href="/login">/login</a>. Each center adds and manages its own users; someone added to more than one center by the same e-mail address is one person here, with one password.</p>
+	</header>
+
+	<div class="card page-content has-table">
+		<div class="denma-table-tools hstack gap-2 mb-4">
+			<input type="search" x-model="q" placeholder="Find a name, e-mail address, username or center" aria-label="Find" data-testid="people-find" />
+		</div>
+		<div class="table-wrapper">
+			<table>
+				<thead>
+					<tr>
+						<th>Person</th>
+						<th>{{ .L.T "subscribers.email" }}</th>
+						<th>Centers</th>
+						<th>Two-factor</th>
+						<th>{{ .L.T "users.lastLogin" }}</th>
+						<th class="actions align-right"></th>
+					</tr>
+				</thead>
+				<tbody>
+					{{- range $d.People }}
+					{{- $find := printf "%s %s %s" .Name .Email .Username }}{{ range .Centers }}{{ $find = printf "%s %s %s" $find .Name .Slug }}{{ end }}
+					<tr data-testid="person-row" data-id="{{ .ID }}" x-show="shows({{ ToJSON (lower $find) }})">
+						<td>
+							<strong>{{ .Name }}</strong>
+							<div class="text-light text-8">@{{ .Username }}</div>
+						</td>
+						<td data-label="{{ $.L.T "subscribers.email" }}">
+							{{ .Email }}
+							{{- if not .HasPassword }}<div>{{ Badge "Invited" "enum status-scheduled" }}</div>{{ end }}
+						</td>
+						<td data-label="Centers">
+							{{- range .Centers }}
+							<div class="hstack gap-1 denma-person-center">
+								<span>{{ .Name }}</span>
+								{{ Badge .Role }}
+								{{- if eq .Status "disabled" }}{{ Badge (list (Dot) ($.L.T "users.status.disabled")) "enum status-disabled" }}{{ end }}
+							</div>
+							{{- else }}
+							<span class="text-light">&mdash;</span>
+							{{- end }}
+						</td>
+						<td data-label="Two-factor">{{ if .TwofaKey.Valid }}On{{ else }}<span class="text-light">Off</span>{{ end }}</td>
+						<td class="date-stack" data-label="{{ $.L.T "users.lastLogin" }}">{{ if .LoggedInAt.Valid }}{{ NiceDate .LoggedInAt }}{{ else }}<span class="text-light">&mdash;</span>{{ end }}</td>
+						<td class="actions align-right">
+							{{- if .TwofaKey.Valid }}
+							<button type="button" class="small outline" data-testid="btn-twofa-off" :disabled="isLoading('people')" @click.prevent="twofaOff({{ .ID }}, {{ ToJSON .Name }})">Turn off two-factor</button>
+							{{- end }}
+						</td>
+					</tr>
+					{{- else }}
+					{{ template "empty-state" 6 }}
+					{{- end }}
+				</tbody>
+			</table>
+		</div>
+	</div>
+</section>
+
+<script type="module" src="{{ URI "/admin/static/js/views/denma-people.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

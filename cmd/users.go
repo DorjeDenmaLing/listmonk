@@ -265,7 +265,10 @@ func (a *App) CreateUser(c echo.Context) error {
 	if err := a.denmaCheckAssign(c, u.UserRoleID, u.ListRoleID); err != nil {
 		return err
 	}
-	if err := a.denmaCheckUserUnique(u.Username, u.Email.String); err != nil { // denma: one center per person (cmd/denma_login.go)
+	if done, err := a.denmaCreateMember(c, u); done { // denma: in a center, a person, by e-mail address (cmd/denma_people.go)
+		return err
+	}
+	if err := a.denmaCheckUserUnique(u); err != nil { // denma: not a person's username (cmd/denma_people.go)
 		return err
 	}
 
@@ -313,7 +316,10 @@ func (a *App) UpdateUser(c echo.Context) error {
 	if err := a.denmaCheckUser(c, id); err != nil { // denma: one they see, with no more than they have (cmd/denma_hierarchy.go)
 		return err
 	}
-	if err := a.denmaCheckUserUnique(u.Username, email); err != nil { // denma: one center per person (cmd/denma_login.go)
+	if done, err := a.denmaUpdateMember(c, id, u); done { // denma: a person's account (cmd/denma_people.go)
+		return err
+	}
+	if err := a.denmaCheckUserUnique(u); err != nil { // denma: not a person's username (cmd/denma_people.go)
 		return err
 	}
 	if u.Type != auth.UserTypeAPI {
@@ -390,6 +396,7 @@ func (a *App) DeleteUser(c echo.Context) error {
 	if err := a.core.DeleteUsers([]int{id}); err != nil {
 		return err
 	}
+	a.denmaUsersDeleted([]int{id}) // denma: cmd/denma_people.go
 
 	// Cache the API token for in-memory, off-DB /api/* request auth.
 	if _, err := cacheUsers(a.core, a.auth); err != nil {
@@ -416,6 +423,7 @@ func (a *App) DeleteUsers(c echo.Context) error {
 	if err := a.core.DeleteUsers(ids); err != nil {
 		return err
 	}
+	a.denmaUsersDeleted(ids) // denma: cmd/denma_people.go
 
 	// Cache the API token for in-memory, off-DB /api/* request auth.
 	if _, err := cacheUsers(a.core, a.auth); err != nil {
@@ -439,6 +447,10 @@ func (a *App) GetUserProfile(c echo.Context) error {
 
 // UpdateUserProfile update's the current user's profile.
 func (a *App) UpdateUserProfile(c echo.Context) error {
+	if done, err := a.denmaUpdateOwnAccount(c); done { // denma: a person's, for all their centers (cmd/denma_people.go)
+		return err
+	}
+
 	// Get the authenticated user.
 	user := auth.GetUser(c)
 
@@ -504,6 +516,9 @@ func (a *App) EnableTOTP(c echo.Context) error {
 	if secret == "" || code == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidFields"))
 	}
+	if done, err := a.denmaEnableTOTP(c, secret, code); done { // denma: a person's (cmd/denma_people.go)
+		return err
+	}
 
 	// If password login is disabled, can't enable TOTP.
 	if !u.PasswordLogin {
@@ -550,6 +565,9 @@ func (a *App) DisableTOTP(c echo.Context) error {
 	// Validate password.
 	if !strHasLen(password, 8, stdInputMaxLen) {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "password"))
+	}
+	if done, err := a.denmaDisableTOTP(c, password); done { // denma: a person's (cmd/denma_people.go)
+		return err
 	}
 
 	// Verify the password.

@@ -30,6 +30,9 @@
 			<a href="{{ URI "/admin/centers" }}" {{ IsNav $p "denma.centers" }} data-cy="centers">{{ template "denma-icon" "domain" }}<span>Centers</span></a>
 		</li>
 		<li>
+			<a href="{{ URI "/admin/people" }}" {{ IsNav $p "denma.people" }} data-cy="people">{{ template "denma-icon" "account-multiple" }}<span>People</span></a>
+		</li>
+		<li>
 			<a href="{{ URI "/admin/analytics" }}" {{ IsNav $p "denma.analytics" }} data-cy="analytics">{{ template "denma-icon" "chart-bar" }}<span>{{ .L.T "globals.terms.analytics" }}</span></a>
 		</li>
 		<li>

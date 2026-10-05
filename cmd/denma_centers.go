@@ -324,7 +324,6 @@ func (d *denmaCenters) loadAll(list []*denmaCenter, workers int) {
 	lo.Printf("denma: %d of %d centers loaded in %s, %d at a time (total time per step: %s)",
 		len(d.loaded()), len(list), time.Since(start).Round(time.Millisecond), workers, &d.timings)
 	denmaStartup.set(start, len(d.loaded()), len(list), time.Since(start)) // for System
-	d.warnSharedUsers()                                                    // cmd/denma_login.go
 }
 
 // denmaStartingPage answers for a center that's still loading after a start:
@@ -439,7 +438,7 @@ func denmaInitRegistry(db *sqlx.DB) error {
 	if err := denmaInitDailySends(db); err != nil { // cmd/denma_daily.go
 		return err
 	}
-	return denmaInitInvites(db) // cmd/denma_invites.go
+	return denmaInitPeople(db) // cmd/denma_people.go
 }
 
 // denmaSeedCenters registers centers listed as "slug:Name,slug2:Name 2" if
@@ -758,7 +757,8 @@ func (d *denmaCenters) provisionRoles(db *sqlx.DB) error {
 // adopt keeps a center in step with the hub on every load: its address under
 // the hub's (also for an existing install, such as DDL's, whose links move
 // from / to /c/<slug>/), its uploads in its own folder, the roles the hub
-// relies on, no Super Admins but the hub's, and the features' triggers.
+// relies on, no Super Admins but the hub's, its users people, and the
+// features' triggers.
 func (d *denmaCenters) adopt(c *denmaCenter, db *sqlx.DB) error {
 	root := strings.TrimSuffix(d.current().urlCfg.RootURL, "/") + denmaCenterPath + c.Slug
 	if _, err := db.Exec(`UPDATE settings SET value = to_jsonb($1::text), updated_at = NOW()
@@ -772,6 +772,9 @@ func (d *denmaCenters) adopt(c *denmaCenter, db *sqlx.DB) error {
 		return err
 	}
 	if err := d.ownAdmins(c, db); err != nil { // cmd/denma_hierarchy.go
+		return err
+	}
+	if err := d.adoptPeople(c, db); err != nil { // cmd/denma_people.go
 		return err
 	}
 	return d.features(c, db) // cmd/denma_features.go

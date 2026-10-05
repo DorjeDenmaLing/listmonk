@@ -26,6 +26,7 @@ func initDenmaAdminHandlers(g *echo.Group, a *App) {
 		return c.Redirect(http.StatusMovedPermanently, path.Join(a.urlCfg.RootPath, uriAdmin, "/system"))
 	})
 	initDenmaHubHandlers(g, a)
+	initDenmaPeopleHandlers(g, a) // cmd/denma_people.go
 	initDenmaCenterHandlers(g, a)
 	initDenmaAutomationHandlers(g, a)
 	initDenmaTagHandlers(g, a)

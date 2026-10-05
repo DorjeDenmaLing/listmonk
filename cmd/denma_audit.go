@@ -6,8 +6,9 @@ package main
 // username), when, from where (IP), what (a description, the route, the
 // target and its name), whether it worked (the HTTP status), and the request
 // (query and body, with passwords, secrets and tokens removed and long values
-// cut). So are sign-ins (and failed ones), sign-outs, password resets, a
-// superadmin opening a center, and data exports. Reading pages and searching
+// cut). So are sign-ins (and failed ones: at /login, in the hub's log, and
+// entering a center, in its own), sign-outs, password resets, a superadmin
+// opening a center, and data exports. Reading pages and searching
 // aren't.
 //
 // A center's log is on its Activity page, for those who can use its Config
@@ -152,10 +153,14 @@ func denmaAuditTarget(a *App, c echo.Context, route string) (string, string) {
 		"media":       `SELECT filename FROM media WHERE id = $1`,
 		"roles":       `SELECT name FROM roles WHERE id = $1`,
 		"automations": `SELECT name FROM denma_automations WHERE id = $1`,
+		"people":      `SELECT username FROM denma.people WHERE id = $1`,
 	}[denmaAuditResource(route)]
 	id, err := strconv.Atoi(target)
 	if q == "" || err != nil {
 		return target, ""
+	}
+	if denmaAuditResource(route) == "people" && a.denmaInCenter() {
+		return target, "" // the hub's people aren't a center's to see (cmd/denma_people.go)
 	}
 	var name string
 	_ = a.db.Get(&name, q, id)
@@ -352,7 +357,32 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 			return "Signed in (2FA)"
 		}
 		return "Failed two-factor sign-in"
-	case "POST /admin/forgot":
+	case "POST /login": // everyone's (cmd/denma_login.go)
+		switch {
+		case status != http.StatusFound:
+			return "Failed to sign in"
+		case strings.Contains(location, "/login/twofa"):
+			return "Signed in with a password (2FA next)"
+		case strings.Contains(location, "/login/centers"):
+			return "Signed in (choosing a center)"
+		}
+		return "Signed in"
+	case "POST /login/twofa":
+		if status == http.StatusFound && !strings.HasPrefix(location, "/login") {
+			return "Signed in (2FA)"
+		}
+		if status == http.StatusFound && strings.HasPrefix(location, "/login/centers") {
+			return "Signed in (2FA, choosing a center)"
+		}
+		return "Failed two-factor sign-in"
+	case "POST /login/centers":
+		return "Chose a center"
+	case "POST /login/reset":
+		if status == http.StatusFound {
+			return "Set a password"
+		}
+		return "Failed to set a password"
+	case "POST /admin/forgot", "POST /login/forgot":
 		return "Asked for a password reset"
 	case "POST /admin/reset":
 		return "Reset a password"
@@ -408,6 +438,8 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return "Sent a transactional e-mail"
 	case "PUT /api/profile":
 		return "Changed their own profile"
+	case "DELETE /api/denma/people/:id/twofa":
+		return "Turned off two-factor sign-in for " + label("person")
 	case "PUT /api/users/:id/twofa":
 		return "Turned on two-factor sign-in for " + label("user")
 	case "DELETE /api/users/:id/twofa":

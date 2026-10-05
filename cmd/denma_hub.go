@@ -14,11 +14,9 @@ package main
 // (cmd/denma_hierarchy.go).
 
 import (
-	"bytes"
 	"fmt"
 	"html/template"
 	"net/http"
-	"net/url"
 	"path"
 	"sort"
 	"strings"
@@ -27,18 +25,11 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/denmadaily"
-	"github.com/knadh/listmonk/internal/notifs"
-	"github.com/knadh/listmonk/internal/tmptokens"
-	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/lib/pq"
 	null "gopkg.in/volatiletech/null.v6"
 )
-
-// denmaInviteTTL is how long a new center admin's set-password link works,
-// across restarts (cmd/denma_invites.go).
-const denmaInviteTTL = 7 * 24 * time.Hour
 
 // initDenmaHubHandlers registers the hub's pages (on the admin group). The
 // hub's home is its dashboard (views/dashboard.html).
@@ -62,6 +53,7 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	initDenmaSearchAPIHandlers(g, a)
 	initDenmaTagAPIHandlers(g, a) // cmd/denma_tags.go
 	initDenmaRetryHandlers(g, a)  // cmd/denma_retries.go
+	initDenmaPeopleAPIHandlers(g, a)
 	g.GET("/api/denma/audit", a.DenmaGetAudit)
 	initDenmaMaintenanceHandlers(g, a) // cmd/denma_maintenance.go
 }
@@ -385,10 +377,16 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "The admin's e-mail address isn't valid.")
 	}
-	// The admin is the new center's user only (cmd/denma_login.go): every
-	// other center's users and the hub's count.
-	if err := d.checkUnique(req.Slug, req.AdminUsername, adminEmail); err != nil {
-		return err
+	// A new person's username must be free (an existing person, by e-mail
+	// address, keeps theirs).
+	if p, err := d.personByEmail(d.db(), adminEmail); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	} else if p == nil {
+		if taken, err := d.usernameTaken(d.db(), req.AdminUsername, 0); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		} else if taken {
+			return errDenmaUsernameTaken
+		}
 	}
 	if req.FromEmail == "" {
 		req.FromEmail = denmaFromEmail(req.Name, d.current().ko.String("app.from_email"))
@@ -413,7 +411,18 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 	}
 	d.set(ctr)
 
-	invite, sent, err := d.addCenterAdmin(ctr, req.AdminUsername, req.AdminName, adminEmail)
+	// Its admin: a person (cmd/denma_people.go), new or not.
+	var roleID int
+	if err := ctr.app.db.Get(&roleID, `SELECT id FROM roles WHERE name = $1 AND type = 'user'`, denmaCenterAdminRole); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("The center was created, but not its admin: finding the %s role: %v", denmaCenterAdminRole, err))
+	}
+	_, inv, err := d.addMember(ctr, auth.User{
+		Username:   req.AdminUsername,
+		Name:       req.AdminName,
+		Email:      null.StringFrom(adminEmail),
+		UserRoleID: roleID,
+		Status:     auth.UserStatusEnabled,
+	})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("The center was created, but not its admin: %v", err))
 	}
@@ -421,8 +430,9 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{map[string]any{
 		"slug":       ctr.Slug,
 		"path":       path.Join(ctr.app.urlCfg.RootPath, uriAdmin),
-		"invite_url": invite,
-		"email_sent": sent,
+		"invite_url": inv.URL, // "" for someone who has an account already
+		"email_sent": inv.Sent,
+		"login_url":  d.loginURL(),
 	}})
 }
 
@@ -435,83 +445,6 @@ func denmaFromEmail(name, base string) string {
 	}
 	return fmt.Sprintf("%q <%s>", name, addr)
 }
-
-// addCenterAdmin creates a center's admin, with the Center Admin role and an
-// unguessable password, and e-mails them a link to set their own.
-func (d *denmaCenters) addCenterAdmin(ctr *denmaCenter, username, name, email string) (string, bool, error) {
-	app := ctr.app
-
-	var roleID int
-	if err := app.db.Get(&roleID, `SELECT id FROM roles WHERE name = $1 AND type = 'user'`, denmaCenterAdminRole); err != nil {
-		return "", false, fmt.Errorf("finding the %s role: %v", denmaCenterAdminRole, err)
-	}
-	pw, err := generateRandomString(32)
-	if err != nil {
-		return "", false, err
-	}
-	if _, err := app.core.CreateUser(auth.User{
-		Username:      username,
-		Name:          name,
-		Email:         null.String{String: email, Valid: true},
-		PasswordLogin: true,
-		Password:      null.String{String: pw, Valid: true},
-		Type:          auth.UserTypeUser,
-		UserRoleID:    roleID,
-		Status:        auth.UserStatusEnabled,
-	}); err != nil {
-		return "", false, err
-	}
-
-	// A set-password link: the reset-password page, with a longer-lived token.
-	token, err := generateRandomString(tmpAuthTokenLen)
-	if err != nil {
-		return "", false, err
-	}
-	tmptokens.Set(app.tmpKey(email), denmaInviteTTL, token)
-	if err := d.saveInvite(ctr, email, token, denmaInviteTTL); err != nil { // cmd/denma_invites.go
-		lo.Printf("denma: error saving the invite for %s (it works until a restart): %v", email, err)
-	}
-	link := fmt.Sprintf("%s/admin/reset?token=%s&email=%s", app.urlCfg.RootURL, token, url.QueryEscape(email))
-
-	// The e-mail, in the center's notification look (header and footer from
-	// its e-mail templates, which --static-dir may replace wholesale, so the
-	// invite itself is defined here).
-	var body bytes.Buffer
-	tpl, err := app.notifs.Tpls.Clone()
-	if err == nil {
-		_, err = tpl.New("denma-center-invite").Parse(denmaInviteTpl)
-	}
-	if err == nil {
-		err = tpl.ExecuteTemplate(&body, "denma-center-invite", map[string]any{
-			"ResetURL": link,
-			"Site":     app.ko.String("app.site_name"),
-			"Username": username,
-			"Days":     int(denmaInviteTTL.Hours() / 24),
-		})
-	}
-	if err != nil {
-		lo.Printf("denma: error rendering the invite for %s: %v", email, err)
-		return link, false, nil
-	}
-	subject, b := notifs.GetTplSubject(fmt.Sprintf("Your %s account", app.ko.String("app.site_name")), body.Bytes())
-	if err := app.emailMsgr.Push(models.Message{
-		From:    app.cfg.FromEmail,
-		To:      []string{email},
-		Subject: subject,
-		Body:    b,
-	}); err != nil {
-		lo.Printf("denma: error sending the invite to %s: %v", email, err)
-		return link, false, nil
-	}
-	return link, true, nil
-}
-
-const denmaInviteTpl = `{{ template "header" . }}
-<h2>Your {{ .Site }} account</h2>
-<p>An account has been made for you to manage {{ .Site }}'s mailing lists. Your username is <strong>{{ .Username }}</strong>.</p>
-<p><a href="{{ .ResetURL }}" class="button">Set your password</a></p>
-<p style="color: #666; font-size: 12px;">This link works for {{ .Days }} days. After that, use "Forgot password" on the login page.</p>
-{{ template "footer" }}`
 
 // DenmaSetCenterStatus enables or disables a center.
 func (a *App) DenmaSetCenterStatus(c echo.Context) error {
@@ -558,6 +491,19 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 	// DenmaIsHub reports whether the page is the hub's.
 	funcs["DenmaIsHub"] = func() bool {
 		return denmaHub != nil && u.RootPath == denmaHub.current().urlCfg.RootPath
+	}
+	// DenmaInCenter reports whether the page is a center's, whose users are
+	// people (cmd/denma_people.go).
+	funcs["DenmaInCenter"] = func() bool {
+		return denmaHub != nil && u.RootPath != denmaHub.current().urlCfg.RootPath
+	}
+	// DenmaOtherCenters is a person's other centers, for the menu under their
+	// picture (partials/denma/topnav.html); userID is their account here.
+	funcs["DenmaOtherCenters"] = func(userID int) []denmaOtherCenter {
+		if denmaHub == nil || u.RootPath == denmaHub.current().urlCfg.RootPath {
+			return nil
+		}
+		return denmaOtherCenters(path.Base(u.RootPath), userID)
 	}
 	// DenmaLoginURL and DenmaForgotURL are the sign-in and forgotten password
 	// forms' addresses (public/templates): with centers, everyone's

@@ -10,8 +10,8 @@
 			<input type="hidden" name="nonce" value="{{ .Data.Nonce }}" />
 			<input type="hidden" name="next" value="{{ .Data.NextURI }}" />
 			<p>
-				<label for="username">{{ .L.T "users.username" }}</label>
-				<input id="username" type="text" name="username" autofocus required minlength="3" />
+				<label for="username">{{ if DenmaHubURL }}{{ .L.T "users.username" }} or e-mail address{{ else }}{{ .L.T "users.username" }}{{ end }}</label>{{/* denma: a person's either (cmd/denma_login.go) */}}
+				<input id="username" type="text" name="username" autofocus required minlength="3" autocomplete="username" />
 			</p>
 			<p>
 				<label for="password">{{ .L.T "users.password" }}</label>
