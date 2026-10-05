@@ -364,12 +364,21 @@ func (a *App) DenmaForgot(c echo.Context) error {
 }
 
 // denmaSendReset e-mails a person a link to set a new password, as listmonk
-// does (doForgotPassword).
+// does (doForgotPassword). It's sent by one of their centers (the first, by
+// name, they can sign in to), with its sender, look and language, as all
+// their e-mails are; the hub sends it only if none is running.
 func (a *App) denmaSendReset(p *denmaPerson) {
 	token, err := denmaHub.newToken(p.ID, passwordResetTTL)
 	if err != nil {
 		a.log.Printf("denma: error making a reset link for %s: %v", p.Email, err)
 		return
+	}
+	if ms, err := denmaHub.centersOf(p.ID); err != nil {
+		a.log.Printf("denma: error finding the centers of %s for a reset link: %v", p.Email, err)
+	} else if len(ms) > 0 {
+		if ctr := denmaHub.get(ms[0].Slug); ctr != nil {
+			a = ctr.app
+		}
 	}
 	var msg bytes.Buffer
 	if err := a.notifs.Tpls.ExecuteTemplate(&msg, notifs.TplForgotPassword, struct {

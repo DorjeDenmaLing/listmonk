@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/mail"
 	"path"
 	"sort"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/denmadaily"
+	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/lib/pq"
@@ -231,7 +233,6 @@ func (a *App) ViewDenmaCenters(c echo.Context) error {
 type denmaNewCenterView struct {
 	adminView
 	CenterURL string // the address prefix, e.g. https://news.example.org/c/
-	FromEmail string // the hub's sender, as the example
 }
 
 // ViewDenmaNewCenter renders the form for creating a center.
@@ -244,7 +245,6 @@ func (a *App) ViewDenmaNewCenter(c echo.Context) error {
 	return c.Render(http.StatusOK, "admin-denma-center-new", denmaNewCenterView{
 		adminView: newAdminView(c, "New center", "", "denma.centers"),
 		CenterURL: strings.TrimSuffix(base.urlCfg.RootURL, "/") + denmaCenterPath,
-		FromEmail: base.ko.String("app.from_email"),
 	})
 }
 
@@ -373,6 +373,9 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 	case !strHasLen(req.AdminName, 1, 200):
 		return echo.NewHTTPError(http.StatusBadRequest, "Enter the admin's name.")
 	}
+	if _, err := mail.ParseAddress(req.FromEmail); err != nil || len(req.FromEmail) > 300 {
+		return echo.NewHTTPError(http.StatusBadRequest, `Enter the center's sender, as name@example.org or "Name" <name@example.org>.`)
+	}
 	adminEmail, err := a.importer.SanitizeEmail(req.AdminEmail)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "The admin's e-mail address isn't valid.")
@@ -388,10 +391,6 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 			return errDenmaUsernameTaken
 		}
 	}
-	if req.FromEmail == "" {
-		req.FromEmail = denmaFromEmail(req.Name, d.current().ko.String("app.from_email"))
-	}
-
 	ctr, err := denmaRegisterCenter(d.base.db, req.Slug, req.Name, "")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -436,14 +435,21 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 	}})
 }
 
-// denmaFromEmail is a center's default sender: its name, at the hub's
-// address (the domain the mail servers send for).
-func denmaFromEmail(name, base string) string {
-	addr := base
-	if i := strings.LastIndex(base, "<"); i >= 0 {
-		addr = strings.TrimSuffix(strings.TrimSpace(base[i+1:]), ">")
+// denmaHubSender is the hub's sender (app.from_email) from its settings
+// form: the address entered there, as "Superadmin e-mails from"
+// (partials/settings/general.html), with the hub's name. Only superadmins'
+// own e-mails use it (password resets, the hub's notices); every center has
+// its own sender, on its Config page.
+func (a *App) denmaHubSender(set *models.Settings) error {
+	if denmaHub == nil || a.denmaInCenter() {
+		return nil
 	}
-	return fmt.Sprintf("%q <%s>", name, addr)
+	addr, err := mail.ParseAddress(strings.TrimSpace(set.AppFromEmail))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Superadmin e-mails from isn't an e-mail address.")
+	}
+	set.AppFromEmail = fmt.Sprintf("%q <%s>", strings.TrimSpace(set.AppSiteName), addr.Address)
+	return nil
 }
 
 // DenmaSetCenterStatus enables or disables a center.

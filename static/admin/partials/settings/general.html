@@ -44,12 +44,21 @@
 
 	<fieldset class="card" data-keywords="from email address admin notification emails sender">
 		<legend>{{ .L.T "subscribers.email" }}</legend>
+		{{- if DenmaIsHub }}{{/* denma: the hub's sender is only superadmins' (cmd/denma_hub.go: denmaHubSender) */}}
+		<label data-field>
+			Superadmin e-mails from
+			<input name="app.from_email" type="email" maxlength="300" required placeholder="noreply@example.org" data-testid="hub-sender"
+				:value="(form['app.from_email'] || '').replace(/^.*<([^>]+)>\s*$/, '$1')" @input="form['app.from_email'] = $event.target.value" />
+			<small data-hint>The address of e-mails to superadmins (password resets, the hub's notices), with the site name above as the sender's name. Use an address the mail servers can send for. Centers' e-mails come from each center's own sender, on its Config page.</small>
+		</label>
+		{{- else }}
 		<label data-field>
 			{{ .L.T "settings.general.fromEmail" }}
 			<input name="app.from_email" pattern="((.+?)\s)?<(.+?)@(.+?)>" maxlength="300"
 				placeholder="Listmonk <noreply@listmonk.yoursite.com>" x-model="form['app.from_email']" />
 			<small data-hint>{{ .L.T "settings.general.fromEmailHelp" }}</small>
 		</label>
+		{{- end }}
 
 		<label data-field>
 			{{ .L.T "settings.general.adminNotifEmails" }}

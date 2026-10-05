@@ -28,8 +28,8 @@
 						</label>
 						<label data-field>
 							Sender
-							<input name="from_email" maxlength="300" x-model="form.from_email" :placeholder="fromPlaceholder" />
-							<small data-hint>The From of the center's e-mails. Leave empty for the center's name at the shared address.</small>
+							<input name="from_email" maxlength="300" required x-model="form.from_email" placeholder='"Center name" &lt;name@example.org&gt;' />
+							<small data-hint>The From of the center's e-mails, as on its Config page, where its admins can change it. Use an address the mail servers can send for.</small>
 						</label>
 					</fieldset>
 
@@ -98,9 +98,6 @@
 	</template>
 </section>
 
-<script nonce="{{ .CSPNonce }}">
-	window._denmaFromEmail = {{ $d.FromEmail }};
-</script>
 <script type="module" src="{{ URI "/admin/static/js/views/denma-centers.js" }}?v={{ .AssetVersion }}" defer></script>
 
 {{ template "admin-footer" . -}}

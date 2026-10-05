@@ -13,13 +13,6 @@ function slugify(name) {
     .replace(/-+$/, '');
 }
 
-// The shared sender address with the center's name, as the server defaults it.
-function fromEmail(name) {
-  const base = window._denmaFromEmail || '';
-  const m = base.match(/<([^>]+)>/);
-  return `"${name || 'Center name'}" <${m ? m[1] : base}>`;
-}
-
 // The new center form.
 function denmaNewCenter() {
   return {
@@ -28,10 +21,6 @@ function denmaNewCenter() {
     },
     slugEdited: false,
     created: null,
-
-    get fromPlaceholder() {
-      return fromEmail(this.form.name);
-    },
 
     onName() {
       if (!this.slugEdited) {

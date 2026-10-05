@@ -30,7 +30,7 @@
 			<div class="accordion-body">
 				<template x-if="smtpTestItem === n">
 					<fieldset class="card mb-8 mt-8">
-						<p><strong>{{ .L.T "settings.general.fromEmail" }}</strong>: <span x-text="form['app.from_email']"></span></p>
+						<p><strong>{{ if DenmaIsHub }}From (Superadmin e-mails from){{ else }}{{ .L.T "settings.general.fromEmail" }}{{ end }}</strong>: <span x-text="form['app.from_email']"></span></p>{{/* denma: the hub's sender (cmd/denma_hub.go: denmaHubSender) */}}
 						<fieldset class="group">
 							<legend>{{ .L.T "settings.smtp.toEmail" }}</legend>
 							<input type="email" required placeholder="email@site.com" :class="`test-email-${n}`" x-model="testEmail" />
