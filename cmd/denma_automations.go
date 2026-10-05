@@ -237,6 +237,10 @@ func (a *App) runAutomations() {
 	}
 }
 
+// denmaAutoHeld is when each automation (center/ID) last logged that it's
+// waiting for its sender's domain, to log it once an hour.
+var denmaAutoHeld sync.Map
+
 func (a *App) runAutomation(auto denmaAutomation) {
 	// The hub's daily limit (cmd/denma_daily.go): no more than what's left of
 	// it; the rest are sent on a later run.
@@ -245,6 +249,21 @@ func (a *App) runAutomation(auto denmaAutomation) {
 		return
 	} else if left > 0 {
 		limit = min(limit, left)
+	}
+
+	// Nothing goes while SES has said it hasn't verified the sender's domain
+	// (cmd/denma_domains.go): those due wait, and go once it has.
+	from := auto.FromEmail
+	if from == "" {
+		from = a.cfg.FromEmail
+	}
+	if err := a.denmaCheckSenderReady(from); err != nil {
+		key := fmt.Sprintf("%s/%d", a.ko.String("denma.center"), auto.ID)
+		if t, ok := denmaAutoHeld.Load(key); !ok || time.Since(t.(time.Time)) > time.Hour {
+			denmaAutoHeld.Store(key, time.Now())
+			a.log.Printf("denma: automation %q waits: %v", auto.Name, err)
+		}
+		return
 	}
 
 	// Mark who's due as sent first, so that no one gets it twice.
@@ -661,6 +680,13 @@ func (a *App) DenmaTestAutomation(c echo.Context) error {
 	email, err := a.importer.SanitizeEmail(f.TestEmail)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Enter the address to send the test to.")
+	}
+	from := f.FromEmail
+	if from == "" {
+		from = a.cfg.FromEmail
+	}
+	if err := a.denmaCheckSenderReady(from); err != nil { // cmd/denma_domains.go
+		return denmaBadRequest(err)
 	}
 	if a.emailMsgr == nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "There's no e-mail server set up to send it.")

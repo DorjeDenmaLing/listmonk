@@ -236,6 +236,14 @@ func (a *App) validateTxMessage(m models.TxMessage) (models.TxMessage, error) {
 	if m.FromEmail == "" {
 		m.FromEmail = a.cfg.FromEmail
 	}
+	// denma: from the center's domains, once SES has verified them, and with
+	// no headers that change the sender (cmd/denma_domains.go).
+	if err := a.denmaCheckSenderReady(m.FromEmail); err != nil {
+		return m, denmaBadRequest(err)
+	}
+	if err := a.denmaCheckHeaders(m.Headers); err != nil {
+		return m, denmaBadRequest(err)
+	}
 
 	if m.Messenger == "" {
 		m.Messenger = emailMsgr

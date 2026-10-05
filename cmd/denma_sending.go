@@ -122,6 +122,7 @@ func denmaLimitSending(msgrs []manager.Messenger, ko *koanf.Koanf) []manager.Mes
 		denmaDaily.SetLimit(ko.Int("denma.daily_limit"), ko.Int("denma.daily_reserve")) // the hub's settings
 	}
 	denmaHookEmail.Do(func() {
+		email.DenmaDropSenderHeaders = true // cmd/denma_domains.go, denmaCheckHeaders
 		email.BeforePush = func() {
 			denmaSendPacer.wait()
 			denmaDaily.Add()

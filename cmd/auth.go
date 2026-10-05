@@ -631,12 +631,14 @@ func (a *App) doForgotPassword(c echo.Context) error {
 	subject, body := notifs.GetTplSubject(a.i18n.T("email.forgotPassword.subject"), msg.Bytes())
 
 	// Send the email.
-	if err := a.emailMsgr.Push(models.Message{
+	m := models.Message{
 		From:    a.cfg.FromEmail,
 		To:      []string{email},
 		Subject: subject,
 		Body:    body,
-	}); err != nil {
+	}
+	a.denmaSetSystemSender(&m) // denma: cmd/denma_domains.go
+	if err := a.emailMsgr.Push(m); err != nil {
 		a.log.Printf("error sending reset email: %s", err)
 	}
 

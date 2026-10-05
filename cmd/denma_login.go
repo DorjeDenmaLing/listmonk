@@ -389,12 +389,13 @@ func (a *App) denmaSendReset(p *denmaPerson) {
 		return
 	}
 	subject, body := notifs.GetTplSubject(a.i18n.T("email.forgotPassword.subject"), msg.Bytes())
-	if err := a.emailMsgr.Push(models.Message{
-		From:    a.cfg.FromEmail,
+	m := models.Message{
 		To:      []string{p.Email},
 		Subject: subject,
 		Body:    body,
-	}); err != nil {
+	}
+	a.denmaSetSystemSender(&m) // the hub's address until SES has verified the center's (cmd/denma_domains.go)
+	if err := a.emailMsgr.Push(m); err != nil {
 		a.log.Printf("error sending reset email: %s", err)
 	}
 }

@@ -41,6 +41,10 @@ type Notifs struct {
 	lo *log.Logger
 
 	opt Opt
+
+	// denma: DenmaSender, if set, is who its e-mails are from, and the
+	// Reply-To if any (cmd/denma_domains.go, denmaSystemSender).
+	DenmaSender func() (from, replyTo string)
 }
 
 var (
@@ -101,10 +105,23 @@ func (no *Notifs) Notify(toEmails []string, subject, tplName string, data any, h
 
 	subject, body = GetTplSubject(subject, body)
 
+	from := no.opt.FromEmail
+	if no.DenmaSender != nil { // denma
+		var replyTo string
+		if from, replyTo = no.DenmaSender(); replyTo != "" {
+			h := textproto.MIMEHeader{}
+			for k, v := range hdr {
+				h[k] = v
+			}
+			h.Set("Reply-To", replyTo)
+			hdr = h
+		}
+	}
+
 	m := models.Message{
 		Messenger:   "email",
 		ContentType: no.opt.ContentType,
-		From:        no.opt.FromEmail,
+		From:        from, // denma: was no.opt.FromEmail
 		To:          toEmails,
 		Subject:     subject,
 		Body:        body,

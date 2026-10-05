@@ -514,12 +514,13 @@ func (d *denmaCenters) sendInvite(ctr *denmaCenter, p *denmaPerson, link string)
 		subject = fmt.Sprintf("Your %s account", site)
 	}
 	subject, b := notifs.GetTplSubject(subject, body.Bytes())
-	if err := app.emailMsgr.Push(models.Message{
-		From:    app.cfg.FromEmail,
+	msg := models.Message{
 		To:      []string{p.Email},
 		Subject: subject,
 		Body:    b,
-	}); err != nil {
+	}
+	app.denmaSetSystemSender(&msg) // the hub's address until SES has verified the center's (cmd/denma_domains.go)
+	if err := app.emailMsgr.Push(msg); err != nil {
 		lo.Printf("denma: error sending the invite to %s: %v", p.Email, err)
 		return false
 	}

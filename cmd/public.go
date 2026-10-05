@@ -737,7 +737,7 @@ func (a *App) SelfExportSubscriberData(c echo.Context) error {
 
 	// E-mail the data as a JSON attachment to the subscriber.
 	const fname = "data.json"
-	if err := a.emailMsgr.Push(models.Message{
+	dm := models.Message{
 		From:    a.cfg.FromEmail,
 		To:      []string{data.Email},
 		Subject: subject,
@@ -749,7 +749,9 @@ func (a *App) SelfExportSubscriberData(c echo.Context) error {
 				Header:  manager.MakeAttachmentHeader(fname, "base64", "application/json"),
 			},
 		},
-	}); err != nil {
+	}
+	a.denmaSetSystemSender(&dm) // denma: cmd/denma_domains.go
+	if err := a.emailMsgr.Push(dm); err != nil {
 		a.log.Printf("error e-mailing subscriber profile: %s", err)
 		return c.Render(http.StatusInternalServerError, tplMessage,
 			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.Ts("public.errorProcessingRequest")))

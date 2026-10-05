@@ -32,6 +32,7 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
+	"net/textproto"
 	"path"
 	"regexp"
 	"sort"
@@ -47,6 +48,7 @@ import (
 	sesv2types "github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/koanf/v2"
+	"github.com/knadh/listmonk/internal/messenger/email"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
 	"github.com/lib/pq"
@@ -1516,19 +1518,94 @@ func (a *App) denmaCheckSenderReady(from string) error {
 	if dom == "" || a.denmaCenterOf() == nil || !denmaDomainsOn() {
 		return nil
 	}
+	if !a.denmaDomainRefused(dom) {
+		return nil
+	}
+	return fmt.Errorf("Amazon SES hasn't verified %s yet, so nothing can be sent from it. Its DNS records are on the hub's Sending domains page; it's checked again every few minutes.", dom)
+}
+
+// denmaDomainRefused reports whether SES has said it hasn't verified a
+// sending domain (false if it's not been checked yet, or SES couldn't be
+// asked: SES itself refuses what it hasn't verified).
+func (a *App) denmaDomainRefused(dom string) bool {
 	var st struct {
 		Checked bool   `db:"checked"`
 		State   []byte `db:"state"`
 	}
 	if err := a.db.Get(&st, `SELECT checked_at IS NOT NULL AS checked, state FROM denma.sending_domains WHERE domain = $1`, dom); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		if !errors.Is(err, sql.ErrNoRows) {
+			a.log.Printf("denma: error reading the sending domain %s: %v", dom, err)
+		}
+		return false
 	}
 	var s denmaDomainState
 	_ = json.Unmarshal(st.State, &s)
-	if !st.Checked || s.CanSend || (s.Error != "" && !s.SES.Exists) {
+	return st.Checked && !s.CanSend && !(s.Error != "" && !s.SES.Exists)
+}
+
+// denmaSystemSender is who a center's own e-mails are from: opt-in
+// confirmations (re-subscribing too), notifications, invites, password resets
+// and data exports. That's its sender, unless its domain isn't one of its
+// sending domains or SES has said it hasn't verified it (a new center's, at
+// first): then the hub's address (its "Superadmin e-mails from"), under the
+// center's name, with the center's sender as the Reply-To. Campaigns,
+// automations and transactional messages never use the hub's address: they
+// wait for, or are refused until, the center's domain.
+func (a *App) denmaSystemSender() (from, replyTo string) {
+	from = a.cfg.FromEmail
+	ctr := a.denmaCenterOf()
+	if ctr == nil || denmaHub == nil || !denmaDomainsOn() {
+		return from, ""
+	}
+	dom := denmaSenderDomain(from)
+	var mine bool
+	if err := a.db.Get(&mine, `SELECT EXISTS (SELECT 1 FROM denma.sending_domain_centers WHERE center_id = $1 AND domain = $2)`, ctr.ID, dom); err != nil {
+		a.log.Printf("denma: error reading the center's sending domains: %v", err)
+		return from, ""
+	}
+	if mine && !a.denmaDomainRefused(dom) {
+		return from, ""
+	}
+	hub, err := mail.ParseAddress(denmaHub.current().cfg.FromEmail)
+	if err != nil {
+		return from, ""
+	}
+	name := a.cfg.SiteName
+	if addr, err := mail.ParseAddress(from); err == nil && addr.Name != "" {
+		name = addr.Name
+	}
+	return (&mail.Address{Name: name, Address: hub.Address}).String(), from
+}
+
+// denmaSetSystemSender sets a center's own e-mail's sender, and Reply-To if
+// any (denmaSystemSender).
+func (a *App) denmaSetSystemSender(m *models.Message) {
+	from, replyTo := a.denmaSystemSender()
+	m.From = from
+	if replyTo != "" {
+		if m.Headers == nil {
+			m.Headers = textproto.MIMEHeader{}
+		}
+		m.Headers.Set("Reply-To", replyTo)
+	}
+}
+
+// denmaCheckHeaders refuses a center's message headers (a campaign's, or a
+// transactional message's) that would change who it's from, past the sender
+// checks: From, Sender, Return-Path, Resent-From, Resent-Sender and X-SES-*
+// (email.DenmaSenderHeader). The e-mail messenger leaves them out anyway.
+func (a *App) denmaCheckHeaders(hdrs models.Headers) error {
+	if a.denmaCenterOf() == nil {
 		return nil
 	}
-	return fmt.Errorf("Amazon SES hasn't verified %s yet, so nothing can be sent from it. Its DNS records are on the hub's Sending domains page; it's checked again every few minutes.", dom)
+	for _, set := range hdrs {
+		for k := range set {
+			if email.DenmaSenderHeader(k) {
+				return fmt.Errorf("The header %s can't be set: it would change who the e-mail is from, or how Amazon SES sends it. The sender is set by From, and Reply-To can be set.", strings.TrimSpace(k))
+			}
+		}
+	}
+	return nil
 }
 
 // denmaCheckHubSender refuses a hub sender on a domain that isn't one of the

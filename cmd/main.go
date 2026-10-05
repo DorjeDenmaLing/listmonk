@@ -382,6 +382,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 
 	// i18n JSON string for admin HTML pages.
 	app.adminI18nJS = app.makeAdminJSI18n()
+	nf.DenmaSender = app.denmaSystemSender // denma: cmd/denma_domains.go
 
 	denmaStartAutomations(app) // denma: cmd/denma_automations.go
 	denmaStartEmailChecks(app) // denma: cmd/denma_emailcheck.go

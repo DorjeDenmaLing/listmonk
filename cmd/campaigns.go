@@ -905,6 +905,9 @@ func (a *App) validateCampaignFields(c campReq) (campReq, error) {
 	if len(c.Headers) == 0 {
 		c.Headers = make([]map[string]string, 0)
 	}
+	if err := a.denmaCheckHeaders(c.Headers); err != nil { // denma: cmd/denma_domains.go
+		return c, err
+	}
 
 	// Validate and initialize attribs.
 	if c.Attribs != nil {

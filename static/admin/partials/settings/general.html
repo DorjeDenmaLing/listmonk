@@ -49,7 +49,7 @@
 			Superadmin e-mails from
 			<input name="app.from_email" type="email" maxlength="300" required placeholder="noreply@example.org" data-testid="hub-sender"
 				:value="(form['app.from_email'] || '').replace(/^.*<([^>]+)>\s*$/, '$1')" @input="form['app.from_email'] = $event.target.value" />
-			<small data-hint>The address of e-mails to superadmins (password resets, the hub's notices), with the site name above as the sender's name. With Amazon SES, it has to be at one of the Sending domains, whose bounce settings new domains copy. Centers' e-mails come from each center's own sender, on its Config page.</small>
+			<small data-hint>The address of e-mails to superadmins (password resets, the hub's notices), with the site name above as the sender's name. With Amazon SES, it has to be at one of the Sending domains, whose bounce settings new domains copy. Centers' e-mails come from each center's own sender, on its Config page. Until Amazon SES has verified a center's domain (a new center's, at first), its opt-in confirmations, invites, password resets and notices come from this address instead, under the center's name and with the center's sender as the Reply-To, so use a neutral one, such as noreply@ at the hub's domain. Its campaigns and automations never do: they wait for the center's domain.</small>
 		</label>
 		{{- else }}
 		<label data-field>
