@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/knadh/koanf/v2"
+	"github.com/knadh/listmonk/internal/auth"
 	"github.com/labstack/echo/v4"
 	"github.com/lib/pq"
 )
@@ -107,6 +108,7 @@ type denmaCenterView struct {
 	Form    denmaCenterForm
 	Address string
 	Langs   []i18nLang
+	Super   bool // a superadmin, who alone can turn unsubscribe everywhere off
 
 	// For the features' choices.
 	Lists           []denmaOption
@@ -178,6 +180,7 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	view := denmaCenterView{adminView: v, Form: form, Address: a.urlCfg.RootURL, Langs: langs,
+		Super: v.Profile.UserRole.ID == auth.SuperAdminRoleID,
 		Lists: []denmaOption{}, VisualTemplates: []denmaOption{}}
 	if err := a.db.Select(&view.Lists, `SELECT id, name, optin::TEXT AS optin FROM lists ORDER BY name`); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -246,6 +249,16 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	}
 	if err := a.denmaCheckFeatures(&f); err != nil {
 		return bad(err.Error())
+	}
+	// Only a superadmin can turn unsubscribe everywhere off.
+	if !f.UnsubscribeEverywhere && auth.GetUser(c).UserRole.ID != auth.SuperAdminRoleID {
+		cur, err := a.centerForm()
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		if cur.UnsubscribeEverywhere {
+			return echo.NewHTTPError(http.StatusForbidden, "Only a superadmin can turn off unsubscribing from all lists.")
+		}
 	}
 	// Save each setting.
 	b, _ := json.Marshal(f)

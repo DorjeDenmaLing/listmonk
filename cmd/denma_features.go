@@ -9,6 +9,7 @@ package main
 //     from any list blocklists the subscriber and unsubscribes them from every
 //     list, whatever path did it (the admin, an import, the API; a
 //     subscriber's own unsubscribe always does, cmd/denma_unsubscribe.go).
+//     On unless a superadmin turns it off (cmd/denma_center.go).
 //   - Automatic plain text (denma.plain_text_auto): every campaign's plain-
 //     text version is made from the email as sent (its template included) on
 //     each save, unless the campaign's "Edit the plain-text version by hand"
@@ -57,12 +58,12 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 6
+const denmaFeaturesVersion = 7
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
 var denmaFeatureDefaults = map[string]any{
-	"denma.unsubscribe_everywhere": false,
+	"denma.unsubscribe_everywhere": true,
 	"denma.plain_text_auto":        true,
 	"denma.utm_domains":            []string{},
 	"denma.signup_holding_list":    0,
@@ -106,6 +107,13 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		b, _ := json.Marshal(v)
 		if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ($1, $2::JSONB)
 			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, k, string(b)); err != nil {
+			return err
+		}
+	}
+	// Version 7 turned unsubscribe everywhere on for every center, once; since,
+	// only a superadmin can turn it off.
+	if ver < 7 {
+		if _, err := tx.Exec(`UPDATE settings SET value = 'true'::JSONB WHERE key = 'denma.unsubscribe_everywhere'`); err != nil {
 			return err
 		}
 	}
