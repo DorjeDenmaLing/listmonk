@@ -41,6 +41,7 @@ func initDenmaHubHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/centers/:slug/open"), a.DenmaOpenCenter)
 	g.GET(path.Join(uriAdmin, "/activity"), a.ViewDenmaActivity) // and a center's
 	g.GET(path.Join(uriAdmin, "/analytics"), a.ViewDenmaHubAnalytics)
+	initDenmaDomainHandlers(g, a) // cmd/denma_domains.go
 }
 
 // initDenmaAPIHandlers registers the hub's API (on the /api group).
@@ -56,6 +57,7 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	initDenmaTagAPIHandlers(g, a) // cmd/denma_tags.go
 	initDenmaRetryHandlers(g, a)  // cmd/denma_retries.go
 	initDenmaPeopleAPIHandlers(g, a)
+	initDenmaDomainAPIHandlers(g, a) // cmd/denma_domains.go
 	g.GET("/api/denma/audit", a.DenmaGetAudit)
 	initDenmaMaintenanceHandlers(g, a) // cmd/denma_maintenance.go
 }
@@ -376,6 +378,11 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 	if _, err := mail.ParseAddress(req.FromEmail); err != nil || len(req.FromEmail) > 300 {
 		return echo.NewHTTPError(http.StatusBadRequest, `Enter the center's sender, as name@example.org or "Name" <name@example.org>.`)
 	}
+	// Its domain is added for it (cmd/denma_domains.go).
+	domain := denmaSenderDomain(req.FromEmail)
+	if !reDenmaDomain.MatchString(domain) {
+		return echo.NewHTTPError(http.StatusBadRequest, "The sender's domain isn't one that can be set up for sending.")
+	}
 	adminEmail, err := a.importer.SanitizeEmail(req.AdminEmail)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "The admin's e-mail address isn't valid.")
@@ -426,13 +433,22 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("The center was created, but not its admin: %v", err))
 	}
 
-	return c.JSON(http.StatusOK, okResp{map[string]any{
+	// The sender's domain, for the center: set up in SES, if it isn't.
+	out := map[string]any{
 		"slug":       ctr.Slug,
 		"path":       path.Join(ctr.app.urlCfg.RootPath, uriAdmin),
 		"invite_url": inv.URL, // "" for someone who has an account already
 		"email_sent": inv.Sent,
 		"login_url":  d.loginURL(),
-	}})
+	}
+	if denmaDomainsOn() {
+		st, err := d.addDomain(domain, "bounce."+domain, []int{ctr.ID})
+		out["domain"], out["domain_url"], out["domain_can_send"] = domain, path.Join(a.urlCfg.RootPath, uriAdmin, "domains", domain), st.CanSend
+		if err != nil {
+			out["domain_warning"] = err.Error()
+		}
+	}
+	return c.JSON(http.StatusOK, okResp{out})
 }
 
 // denmaHubSender is the hub's sender (app.from_email) from its settings
@@ -447,6 +463,9 @@ func (a *App) denmaHubSender(set *models.Settings) error {
 	addr, err := mail.ParseAddress(strings.TrimSpace(set.AppFromEmail))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Superadmin e-mails from isn't an e-mail address.")
+	}
+	if err := a.denmaCheckHubSender(addr.Address); err != nil { // cmd/denma_domains.go
+		return denmaBadRequest(err)
 	}
 	set.AppFromEmail = fmt.Sprintf("%q <%s>", strings.TrimSpace(set.AppSiteName), addr.Address)
 	return nil

@@ -113,6 +113,11 @@ type denmaCenterView struct {
 	Langs   []i18nLang
 	Super   bool // a superadmin, who alone can turn unsubscribe everywhere off
 
+	// The center's sending domains (cmd/denma_domains.go), and whether the
+	// hub checks senders against them.
+	Domains   []denmaCenterDomain
+	DomainsOn bool
+
 	// For the features' choices.
 	Lists           []denmaOption
 	VisualTemplates []denmaOption
@@ -195,6 +200,10 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 	if err := a.db.Select(&view.Designs, `SELECT id, name, '' AS optin FROM templates WHERE type = 'design' ORDER BY name`); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	if view.Domains, err = a.denmaCenterDomains(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	view.DomainsOn = denmaDomainsOn()
 	return c.Render(http.StatusOK, "admin-denma-center", view)
 }
 
@@ -219,6 +228,9 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	}
 	if _, err := mail.ParseAddress(f.FromEmail); err != nil {
 		return bad(`The sender isn't a valid address. Use name@example.org or "Name" <name@example.org>.`)
+	}
+	if err := a.denmaCheckSender(f.FromEmail); err != nil { // cmd/denma_domains.go
+		return denmaBadRequest(err)
 	}
 	emails := []string{}
 	for _, e := range f.NotifyEmails {

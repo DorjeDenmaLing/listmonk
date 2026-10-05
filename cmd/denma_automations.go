@@ -529,6 +529,9 @@ func (a *App) validateAutomation(c echo.Context, f *denmaAutoForm) error {
 		if _, err := mail.ParseAddress(f.FromEmail); err != nil {
 			return bad(`The sender isn't a valid address. Use name@example.org or "Name" <name@example.org>.`)
 		}
+		if err := a.denmaCheckSender(f.FromEmail); err != nil { // cmd/denma_domains.go
+			return denmaBadRequest(err)
+		}
 	}
 	if f.DelayMinutes < 0 || f.DelayMinutes > denmaAutoMaxDelay {
 		return bad("The wait can be up to a year.")

@@ -568,6 +568,10 @@ func (a *App) UpdateCampaignStatus(c echo.Context) error {
 		return err
 	}
 
+	if err := a.denmaCheckCampaignStart(id, req.Status); err != nil { // denma: cmd/denma_domains.go
+		return err
+	}
+
 	// Update the campaign status in the DB.
 	out, err := a.core.UpdateCampaignStatus(id, req.Status)
 	if err != nil {
@@ -748,6 +752,9 @@ func (a *App) TestCampaign(c echo.Context) error {
 	if len(req.SubscriberEmails) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("campaigns.noSubsToTest"))
 	}
+	if err := a.denmaCheckSenderReady(req.FromEmail); err != nil { // denma: cmd/denma_domains.go
+		return denmaBadRequest(err)
+	}
 
 	// Sanitize subscriber e-mails.
 	for i := range req.SubscriberEmails {
@@ -843,6 +850,9 @@ func (a *App) validateCampaignFields(c campReq) (campReq, error) {
 		if _, err := a.importer.SanitizeEmail(c.FromEmail); err != nil {
 			return c, errors.New(a.i18n.T("campaigns.fieldInvalidFromEmail"))
 		}
+	}
+	if err := a.denmaCheckSender(c.FromEmail); err != nil { // denma: on the center's domains (cmd/denma_domains.go)
+		return c, err
 	}
 
 	if !strHasLen(c.Name, 1, stdInputMaxLen) {

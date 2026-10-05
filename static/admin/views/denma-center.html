@@ -63,8 +63,18 @@
 			<label data-field>
 				Sender
 				<input name="from_email" maxlength="300" required x-model="form.from_email" placeholder='"Center name" &lt;name@example.org&gt;' />
-				<small data-hint>The From of campaigns that don't set their own, and of system e-mails. Use an address the mail servers can send for.</small>
+				<small data-hint>The From of campaigns that don't set their own, and of system e-mails.{{ if $d.DomainsOn }} It has to be at one of the center's domains, which Amazon SES has to verify before anything can be sent from them; a superadmin adds them.{{ else }} Use an address the mail servers can send for.{{ end }}</small>
 			</label>
+			{{- if $d.DomainsOn }}
+			<div data-field data-testid="center-domains">
+				<span class="denma-static-label">Sending domains</span>
+				{{- range $d.Domains }}
+				<span class="denma-static hstack gap-2" data-domain="{{ .Domain }}">{{ .Domain }} {{ Badge (list (Dot) .Label) (printf "enum %s" .Badge) }}</span>
+				{{- else }}
+				<span class="denma-static text-light">None yet: ask a superadmin to add the center's domain.</span>
+				{{- end }}
+			</div>
+			{{- end }}
 			<label data-field>
 				Admin e-mails
 				<textarea name="notify_emails" rows="3" x-model="notify" placeholder="admin@example.org"></textarea>

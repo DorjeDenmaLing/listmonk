@@ -29,7 +29,7 @@
 						<label data-field>
 							Sender
 							<input name="from_email" maxlength="300" required x-model="form.from_email" placeholder='"Center name" &lt;name@example.org&gt;' />
-							<small data-hint>The From of the center's e-mails, as on its Config page, where its admins can change it. Use an address the mail servers can send for.</small>
+							<small data-hint>The From of the center's e-mails, as on its Config page, where its admins can change it to another address at its domains. Its domain is added for the center under Sending domains, where you'll find the DNS records to send to whoever manages the center's DNS; nothing can be sent from it until Amazon SES has verified them.</small>
 						</label>
 					</fieldset>
 
@@ -87,6 +87,16 @@
 						<p x-show="!created.email_sent" class="text-danger">
 							<span x-text="form.admin_email"></span> already has an account, so they're its admin with it, but the e-mail telling them couldn't be sent (see Settings &rarr; Logs). Let them know they can sign in to it at <a :href="created.login_url" x-text="created.login_url"></a>.
 						</p>
+					</div>
+				</template>
+				<template x-if="created.domain">
+					<div class="vstack gap-2" data-testid="center-domain">
+						<p x-show="created.domain_can_send">Its sender's domain, <strong x-text="created.domain"></strong>, is verified in Amazon SES, so it can send now.</p>
+						<p x-show="!created.domain_can_send">
+							<strong>Next:</strong> it can't send until Amazon SES has verified its sender's domain, <strong x-text="created.domain"></strong>. Send its DNS records to whoever manages the center's DNS.
+						</p>
+						<p x-show="created.domain_warning" class="text-danger" x-text="created.domain_warning"></p>
+						<div><a :href="created.domain_url" class="button outline" data-testid="btn-domain">{{ Icon "mail" }} <span x-text="`${created.domain}'s DNS records`"></span></a></div>
 					</div>
 				</template>
 				<div class="hstack gap-2">

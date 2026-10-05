@@ -1,0 +1,169 @@
+{{ define "admin-denma-domain" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+{{/* denma: a sending domain's page: what Amazon SES says, its DNS records
+	(to send to whoever manages the center's DNS), and the centers it's for
+	(cmd/denma_domains.go, assets/js/views/denma-domains.js). */}}
+<script nonce="{{ .CSPNonce }}">
+	window._denmaDomain = {{ ToJSON (index $d.Domains 0) }};
+	window._denmaCenters = {{ ToJSON $d.Centers }};
+	window._denmaDomainRef = {{ ToJSON $d.Ref }};
+</script>
+<section class="denma-domain" x-data="denmaDomain" x-cloak>
+	<header class="page-header hstack justify-between">
+		<div class="hstack gap-2">
+			<a href="{{ URI "/admin/domains" }}" class="back" aria-label="Back">{{ Icon "chevron-left" }}</a>
+			<h1 class="page-title" x-text="d.domain"></h1>
+			<span class="badge enum" :class="d.badge" data-testid="domain-status"><span class="dot">&#9679;</span> <span x-text="d.label"></span></span>
+		</div>
+		<div class="hstack gap-2">
+			{{- if not $d.Off }}
+			<button type="button" class="outline" data-testid="btn-check" :disabled="isLoading('domain')" :aria-busy="isLoading('domain')" @click="onCheck">{{ Icon "refresh-cw" }} Check now</button>
+			{{- end }}
+			<ot-dropdown>
+				<button popovertarget="domain-actions" type="button" class="ghost more icon" aria-label="More">{{ Icon "more-vertical" }}</button>
+				<menu popover id="domain-actions">
+					{{- if not $d.Off }}
+					<button type="button" role="menuitem" class="ghost" data-testid="btn-mail-from" @click.prevent="onMailFrom">{{ Icon "edit-2" }} Change the bounce subdomain</button>
+					{{- end }}
+					<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-remove" @click.prevent="onRemove">{{ Icon "trash-2" }} Remove</button>
+				</menu>
+			</ot-dropdown>
+		</div>
+	</header>
+
+	<div class="page-content vstack gap-6">
+		{{- if $d.Off }}
+		<p class="denma-note" role="note">{{ Icon "info" }} {{ $d.Off }}</p>
+		{{- end }}
+
+		<article class="card vstack gap-3" data-testid="domain-ses">
+			<h3>Amazon SES</h3>
+			<p x-show="!d.checked_at" class="text-light">Not checked yet: it's checked within a minute, or with Check now.</p>
+			<p x-show="d.state.error" class="text-danger" data-testid="domain-error">It couldn't be checked: <span x-text="d.state.error"></span></p>
+			<p x-show="d.state.status === 'ready'">Verified, with all its records in place: the centers below can send from it.</p>
+			<p x-show="d.state.status === 'incomplete'">Verified, so the centers below can send from it. What's left below is for mail providers' trust (DMARC, SPF) and the hub's bounce tracking.</p>
+			<p x-show="d.state.status === 'failed'">Amazon SES couldn't verify it, so nothing can be sent from it. See what to fix below.</p>
+			<p x-show="d.checked_at && d.state.status === 'missing'">Amazon SES doesn't have it, so nothing can be sent from it.</p>
+			<p x-show="d.state.status === 'waiting'">Waiting for its DNS records. Amazon SES looks for them for 72 hours; nothing can be sent from it until it finds them.</p>
+			<template x-if="d.state.ses.exists">
+				<dl class="denma-domain-checks">
+					<dt>Verified for sending</dt>
+					<dd data-testid="check-verified"><span x-text="d.state.ses.verified ? 'Yes' : 'Not yet'"></span><span class="text-light" x-show="d.state.ses.verify_error" x-text="` (${d.state.ses.verify_error})`"></span></dd>
+					<dt>DKIM</dt>
+					<dd data-testid="check-dkim" x-text="sesWord(d.state.ses.dkim)"></dd>
+					<dt>Bounce subdomain</dt>
+					<dd data-testid="check-mail-from"><span x-text="d.state.ses.mail_from || 'None'"></span><span class="text-light" x-show="d.state.ses.mail_from" x-text="`: ${sesWord(d.state.ses.mail_from_status)}`"></span></dd>
+					<dt>Bounces and complaints</dt>
+					<dd data-testid="check-notifications" x-text="notifWords()"></dd>
+					<dt>Checked</dt>
+					<dd x-text="checkedText()"></dd>
+				</dl>
+			</template>
+			<template x-for="(i, n) in (d.state.issues || [])" :key="n">
+				<div class="denma-domain-issue hstack gap-3 justify-between" data-testid="domain-issue">
+					<span>{{ Icon "alert-triangle" }} <span x-text="i.text"></span></span>
+					<template x-if="i.fix">
+						<button type="button" class="small" :data-testid="`btn-fix-${i.fix}`" :disabled="isLoading('domain')" @click="onFix(i.fix)" x-text="fixWords(i.fix)"></button>
+					</template>
+				</div>
+			</template>
+		</article>
+
+		<article class="card vstack gap-3" data-testid="domain-records" x-show="(d.state.records || []).length">
+			<header class="hstack gap-3 justify-between">
+				<h3>DNS records</h3>
+				<button type="button" class="outline small" data-testid="btn-copy-all" x-show="needed().length" @click="copyAll">{{ Icon "copy" }} Copy what's needed (CSV)</button>
+			</header>
+			<p class="text-light">For whoever manages {{ (index $d.Domains 0).Domain }}'s DNS. <span x-text="needed().length ? `${needed().length} of ${d.state.records.length} still to add or change.` : 'All are in place.'"></span> Most DNS providers want the name without the domain (as shown); some want it in full. Any TTL will do.</p>
+			<div class="table-wrapper">
+				<table class="denma-records">
+					<thead>
+						<tr><th>Type</th><th>Name</th><th>Value</th><th>Status</th></tr>
+					</thead>
+					<tbody>
+						<template x-for="(r, n) in d.state.records" :key="n">
+							<tr data-testid="record-row" :data-kind="r.kind" :data-status="r.status">
+								<td data-label="Type"><code x-text="r.type"></code></td>
+								<td data-label="Name">
+									<button type="button" class="ghost small denma-copy" title="Copy" @click="copy(r.host)"><code x-text="r.host"></code></button>
+									<div class="text-light text-8" x-text="r.name"></div>
+								</td>
+								<td data-label="Value">
+									<template x-if="r.value"><button type="button" class="ghost small denma-copy" title="Copy" @click="copy(r.value)"><code x-text="r.value"></code></button></template>
+								</td>
+								<td data-label="Status">
+									<span class="badge small enum" :class="recordBadge(r)"><span class="dot">&#9679;</span> <span x-text="recordWords(r)"></span></span>
+									<template x-if="r.status !== 'ok' && (r.found || []).length">
+										<div class="text-8">Found: <template x-for="f in r.found"><code class="denma-found" x-text="f"></code></template></div>
+									</template>
+									<div class="text-8 text-light" x-show="r.note" x-text="r.note"></div>
+								</td>
+							</tr>
+						</template>
+					</tbody>
+				</table>
+			</div>
+			<p class="text-8 text-light">DKIM signs the center's e-mails; SPF, on the bounce subdomain, lets Amazon SES send for it; DMARC tells mail providers what to do with mail that fails both. A DMARC record already there is kept as it is, and p=none can be made stricter later, once mail passes.</p>
+		</article>
+
+		<article class="card vstack gap-3" data-testid="domain-centers">
+			<h3>Centers</h3>
+			<p class="text-light">Their senders (on their Config pages, campaigns and automations) can be at {{ (index $d.Domains 0).Domain }}.<span x-show="d.hub"> It's also the hub's sender's domain (Settings &rarr; General).</span></p>
+			<ul class="denma-domain-centers">
+				<template x-for="c in d.centers" :key="c.slug">
+					<li class="hstack gap-2" data-testid="domain-center" :data-slug="c.slug">
+						<span x-text="c.name"></span>
+						<template x-if="isSender(c)"><span class="badge small">Its sender</span></template>
+						<button type="button" class="ghost small icon" :aria-label="`Remove ${c.name}`" :title="isSender(c) ? 'Its sender is at this domain: change it first' : 'Remove'"
+							:disabled="isSender(c) || isLoading('domain')" @click="onRemoveCenter(c)" data-testid="btn-remove-center">{{ Icon "x" }}</button>
+					</li>
+				</template>
+				<li x-show="!d.centers.length" class="text-light">None yet.</li>
+			</ul>
+			<div class="denma-domain-add-center" data-field>
+				<label for="domain-center">Add a center</label>
+				{{ template "denma-center-picker" dict "ID" "domain-center" "TestID" "domain-add-center" }}
+			</div>
+		</article>
+	</div>
+
+	<dialog x-ref="removeDialog">
+		<form @submit.prevent="onSubmitRemove">
+			<div class="dialog-card content">
+				<header class="dialog-head"><h4 class="dialog-title">Remove <span x-text="d.domain"></span></h4></header>
+				<section class="dialog-body vstack gap-3">
+					<p>Its centers can't use it in their senders any more. Centers whose sender is at it, and the hub's, have to change it first.</p>
+					<label><input type="checkbox" x-model="removeSES" data-testid="remove-ses" /> Also delete it from Amazon SES</label>
+					<p class="text-8 text-light" x-show="removeSES">Nothing can be sent from it then, by anything that uses this AWS account. Have its DKIM records (the CNAMEs) removed from its DNS too: left pointing at Amazon SES, they could be taken over.</p>
+				</section>
+				<footer class="dialog-foot hstack gap-3 justify-end">
+					<button type="button" class="outline" @click="$refs.removeDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+					<button type="submit" data-variant="danger" data-testid="btn-remove-save" :disabled="isLoading('domain')">Remove</button>
+				</footer>
+			</div>
+		</form>
+	</dialog>
+
+	<dialog x-ref="mailFromDialog">
+		<form @submit.prevent="onSubmitMailFrom">
+			<div class="dialog-card content">
+				<header class="dialog-head"><h4 class="dialog-title">Change the bounce subdomain</h4></header>
+				<section class="dialog-body vstack gap-3">
+					<label data-field>
+						Bounce subdomain
+						<input x-model="mailFrom" maxlength="253" required autocomplete="off" spellcheck="false" data-testid="mail-from" />
+						<small data-hint>A subdomain that doesn't receive mail. Its MX and SPF records then have to be added there, and until Amazon SES finds them, bounces come back to Amazon SES's own address.</small>
+					</label>
+				</section>
+				<footer class="dialog-foot hstack gap-3 justify-end">
+					<button type="button" class="outline" @click="$refs.mailFromDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+					<button type="submit" data-variant="primary" data-testid="btn-mail-from-save" :disabled="isLoading('domain')">Change</button>
+				</footer>
+			</div>
+		</form>
+	</dialog>
+</section>
+<script type="module" src="{{ URI "/admin/static/js/views/denma-domains.js" }}?v={{ .AssetVersion }}" defer></script>
+{{ template "admin-footer" . -}}
+{{ end }}

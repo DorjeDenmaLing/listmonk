@@ -223,6 +223,7 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 		d.starting[c.Slug] = true
 	}
 	go d.loadAll(list, base.ko.Int("denma.center_load_workers"))
+	go d.watchDomains() // cmd/denma_domains.go
 
 	// The hub's settings saves (and Reload) rebuild it in place, as for the
 	// centers: they signal on a channel of their own, while main() keeps the
@@ -437,6 +438,9 @@ func denmaInitRegistry(db *sqlx.DB) error {
 		return err
 	}
 	if err := denmaInitDailySends(db); err != nil { // cmd/denma_daily.go
+		return err
+	}
+	if err := denmaInitDomains(db); err != nil { // cmd/denma_domains.go
 		return err
 	}
 	return denmaInitPeople(db) // cmd/denma_people.go

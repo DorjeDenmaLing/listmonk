@@ -867,8 +867,8 @@ func (d *denmaCenters) enter(c echo.Context, m denmaMembership) (*denmaCenter, e
 
 // denmaOtherCenter is a center in a person's switcher.
 type denmaOtherCenter struct {
-	Slug string `db:"slug"`
-	Name string `db:"name"`
+	Slug string `db:"slug" json:"slug"`
+	Name string `db:"name" json:"name"`
 }
 
 // denmaOtherCenters lists, for the menu under a person's picture, their

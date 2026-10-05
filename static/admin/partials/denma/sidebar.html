@@ -6,8 +6,8 @@
 	Automations, Media and Analytics as top-level items. listmonk's items and
 	permissions are kept; Media and Analytics keep their page IDs.
 
-	In the hub (superadmins): Dashboard, Centers, Analytics, Activity, Users,
-	Settings and System. In a center: listmonk's items and ours; its settings are the
+	In the hub (superadmins): Dashboard, Centers, People, Sending domains,
+	Analytics, Activity, Users, Settings and System. In a center: listmonk's items and ours; its settings are the
 	hub's, and it has Activity (its own log) and a Config page for its own
 	details (cmd/denma_center.go). Superadmins go back to the hub with the top
 	bar's button.
@@ -31,6 +31,9 @@
 		</li>
 		<li>
 			<a href="{{ URI "/admin/people" }}" {{ IsNav $p "denma.people" }} data-cy="people">{{ template "denma-icon" "account-multiple" }}<span>People</span></a>
+		</li>
+		<li>
+			<a href="{{ URI "/admin/domains" }}" {{ IsNav $p "denma.domains" }} data-cy="domains">{{ template "denma-icon" "email-check-outline" }}<span>Sending domains</span></a>
 		</li>
 		<li>
 			<a href="{{ URI "/admin/analytics" }}" {{ IsNav $p "denma.analytics" }} data-cy="analytics">{{ template "denma-icon" "chart-bar" }}<span>{{ .L.T "globals.terms.analytics" }}</span></a>

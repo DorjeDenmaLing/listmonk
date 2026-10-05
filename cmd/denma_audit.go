@@ -455,6 +455,18 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return fmt.Sprintf("Created center %s %q", str("slug"), str("name"))
 	case "PUT /api/denma/centers/:slug/status":
 		return fmt.Sprintf("Set center %s to %s", target, str("status"))
+	case "POST /api/denma/domains":
+		return "Added the sending domain " + str("domain")
+	case "POST /api/denma/domains/:domain/check":
+		return "Checked the sending domain " + target
+	case "POST /api/denma/domains/:domain/fix":
+		return fmt.Sprintf("Changed the sending domain %s in Amazon SES (%s)", target, str("action"))
+	case "POST /api/denma/domains/:domain/centers":
+		return fmt.Sprintf("Let center %s send from %s", str("slug"), target)
+	case "DELETE /api/denma/domains/:domain/centers/:slug":
+		return "Stopped a center sending from " + target
+	case "DELETE /api/denma/domains/:domain":
+		return "Removed the sending domain " + target
 	case "PUT /api/denma/center":
 		return "Changed the center's details"
 	case "POST /api/denma/campaigns/:id/resend":

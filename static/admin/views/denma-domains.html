@@ -1,0 +1,117 @@
+{{ define "admin-denma-domains" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+{{/* denma: the hub's Sending domains page: the domains Amazon SES sends
+	from, the centers each is for, and whether SES has verified them
+	(cmd/denma_domains.go, assets/js/views/denma-domains.js). Each one's DNS
+	records are on its own page (views/denma-domain.html). */}}
+<script nonce="{{ .CSPNonce }}">
+	window._denmaDomains = {{ ToJSON $d.Domains }};
+	window._denmaCenters = {{ ToJSON $d.Centers }};
+</script>
+<section class="denma-domains" x-data="denmaDomains" x-cloak>
+	<header class="page-header hstack justify-between">
+		<h1 class="page-title">Sending domains <span class="text-light">({{ len $d.Domains }})</span></h1>
+		{{- if not $d.Off }}
+		<button type="button" data-variant="primary" data-testid="btn-add-domain" @click="onAdd">{{ Icon "plus" }} Add domain</button>
+		{{- end }}
+	</header>
+
+	<div class="page-content vstack gap-4">
+		<p class="text-light denma-domains-intro">Every center sends through Amazon SES, which only sends from domains it has verified. Add a center's domain for it, then send the DNS records on the domain's page to whoever manages the center's DNS. SES finds them on its own, usually within an hour; until then the center's campaigns can't start. A center's senders have to be at its domains.</p>
+
+		{{- if $d.Off }}
+		<p class="denma-note" role="note" data-testid="domains-off">{{ Icon "info" }} {{ $d.Off }}</p>
+		{{- else }}
+		<p class="denma-note" role="note" data-testid="domains-ref">{{ Icon "info" }}
+			Amazon SES, {{ $d.Region }}.
+			{{- if $d.Ref.Error }}
+			<strong>New domains can't copy the hub's bounce settings:</strong> {{ $d.Ref.Error }} New domains take them from the domain of the hub's sender (Settings &rarr; General).
+			{{- else }}
+			New domains send their bounces and complaints to the hub as {{ $d.Ref.Domain }} (the hub's sender's domain) does{{ if $d.Ref.ConfigSet }}, with its configuration set, {{ $d.Ref.ConfigSet }}{{ end }}.
+			{{- end }}
+		</p>
+		{{- end }}
+
+		<div class="card has-table">
+			<div class="hstack gap-2 denma-table-tools mb-4">
+				<input type="search" class="denma-find" x-model="tbl.q" @input="tblFind()" placeholder="Find a domain or center" aria-label="Find a domain or center" data-testid="table-find" />
+				<select x-model="tbl.status" @change="tblFind()" aria-label="Status" data-testid="table-status">
+					<option value="">Any status</option>
+					<option value="ready">Ready</option>
+					<option value="incomplete">Can send; to finish</option>
+					<option value="waiting">Waiting for DNS</option>
+					<option value="failed">Failed</option>
+					<option value="missing">Not in Amazon SES</option>
+					<option value="error">Couldn't check</option>
+				</select>
+			</div>
+			<div class="table-wrapper">
+				<table>
+					<thead>
+						<tr>
+							{{ template "denma-th" dict "Key" "name" "Label" "Domain" }}
+							{{ template "denma-th" dict "Key" "centers" "Label" "Centers" }}
+							{{ template "denma-th" dict "Key" "status" "Label" "Status" }}
+							{{ template "denma-th" dict "Key" "checked" "Label" "Checked" "First" "desc" }}
+						</tr>
+					</thead>
+					<tbody>
+						<template x-for="r in tblPage()" :key="r.domain">
+							<tr data-testid="domain-row" :data-domain="r.domain">
+								<td>
+									<a :href="url(r.domain)" x-text="r.domain"></a>
+									<template x-if="r.hub"><div class="text-light text-8">The hub's sender</div></template>
+								</td>
+								<td data-label="Centers">
+									<span x-text="r.centerNames"></span>
+									<template x-if="!r.centers.length"><span class="text-light">None</span></template>
+								</td>
+								<td data-label="Status">
+									<span class="badge small enum" :class="r.badge"><span class="dot">&#9679;</span> <span x-text="r.label"></span></span>
+								</td>
+								<td class="date-stack" data-label="Checked" x-text="r.checkedText"></td>
+							</tr>
+						</template>
+						<template x-if="!rows.length">
+							<tr><td colspan="4" class="text-light">No sending domains yet.{{ if not $d.Off }} Add the first with Add domain.{{ end }}</td></tr>
+						</template>
+					</tbody>
+				</table>
+			</div>
+			{{ template "denma-pager" }}
+		</div>
+	</div>
+
+	<dialog x-ref="addDialog">
+		<form @submit.prevent="onSubmitAdd">
+			<div class="dialog-card content">
+				<header class="dialog-head"><h4 class="dialog-title">Add domain</h4></header>
+				<section class="dialog-body vstack gap-3">
+					<label data-field>
+						Domain
+						<input x-model="add.domain" x-ref="addDomain" @input="onDomain" maxlength="253" required placeholder="example.org" autocomplete="off" spellcheck="false" data-testid="add-domain" />
+						<small data-hint>The part after @ in the center's addresses. It's added to Amazon SES (or taken as it is there, if it's in SES already).</small>
+					</label>
+					<label data-field>
+						Bounce subdomain
+						<input x-model="add.mail_from" @input="mailFromEdited = true" maxlength="253" required autocomplete="off" spellcheck="false" data-testid="add-mail-from" />
+						<small data-hint>Bounces come back to an address here (the Return-Path), so that SPF passes for the domain. It has to be a subdomain that doesn't receive mail: <em>bounce.</em> is usual.</small>
+					</label>
+					<div data-field>
+						<label for="add-center">For the center</label>
+						{{ template "denma-center-picker" dict "ID" "add-center" "TestID" "add-center" }}
+						<small data-hint>Its senders can then be at this domain. More centers can be added on the domain's page.</small>
+					</div>
+				</section>
+				<footer class="dialog-foot hstack gap-3 justify-end">
+					<button type="button" class="outline" @click="$refs.addDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+					<button type="submit" data-variant="primary" data-testid="btn-add-domain-save" :disabled="!add.domain.trim() || isLoading('domains')" :aria-busy="isLoading('domains')">Add domain</button>
+				</footer>
+			</div>
+		</form>
+	</dialog>
+</section>
+<script type="module" src="{{ URI "/admin/static/js/views/denma-domains.js" }}?v={{ .AssetVersion }}" defer></script>
+{{ template "admin-footer" . -}}
+{{ end }}

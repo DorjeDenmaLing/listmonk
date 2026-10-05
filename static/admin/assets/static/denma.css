@@ -1770,3 +1770,147 @@ svg.denma-logo {
     margin-top: 4px;
   }
 }
+
+/* The hub's Sending domains pages (views/denma-domains.html, denma-domain.html). */
+.denma-note {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-medium, 6px);
+  background: var(--muted);
+  font-size: var(--text-7);
+
+  svg {
+    flex: none;
+    margin-top: 2px;
+  }
+}
+
+.denma-domains {
+  .denma-domains-intro {
+    margin: 0;
+    max-width: 60em;
+  }
+
+  /* The picker in the Add domain form: as wide as its fields. */
+  dialog .denma-picker input[role="combobox"] {
+    width: 100%;
+  }
+
+  .denma-table-tools {
+    padding: 16px 16px 0;
+    flex-wrap: wrap;
+
+    input[type="search"] {
+      width: min(100%, 26em);
+    }
+  }
+}
+
+.denma-domain {
+  .page-header .page-title {
+    overflow-wrap: anywhere;
+  }
+
+  h3 {
+    margin: 0;
+    font-size: var(--text-5);
+  }
+
+  .denma-domain-checks {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-1) var(--space-4);
+    margin: 0;
+    font-size: var(--text-7);
+
+    dt {
+      color: var(--muted-foreground);
+    }
+
+    dd {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .denma-domain-issue {
+    flex-wrap: wrap;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-medium, 6px);
+    background: var(--muted);
+    font-size: var(--text-7);
+
+    svg {
+      vertical-align: -2px;
+    }
+
+    button {
+      flex: none;
+    }
+  }
+
+  /* A name or value: the button copies it. */
+  .denma-copy {
+    padding: 2px 4px;
+    height: auto;
+    min-height: 0;
+    text-align: left;
+    white-space: normal;
+
+    code {
+      overflow-wrap: anywhere;
+      word-break: break-all;
+    }
+  }
+
+  .denma-found {
+    display: inline-block;
+    margin: 2px 4px 0 0;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
+
+  .denma-records td {
+    vertical-align: top;
+  }
+
+  .denma-domain-centers {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+
+    button.icon {
+      padding: 2px;
+      min-height: 0;
+      height: auto;
+    }
+  }
+
+  .denma-domain-add-center {
+    max-width: 26em;
+  }
+
+  .denma-domain-add-center .denma-picker input[role="combobox"] {
+    width: 100%;
+  }
+
+  dialog label input[type="checkbox"] {
+    margin-right: var(--space-1);
+  }
+}
+
+@media (max-width: 640px) {
+  .denma-domain .denma-domain-checks {
+    grid-template-columns: 1fr;
+
+    dd {
+      margin-bottom: var(--space-2);
+    }
+  }
+}
