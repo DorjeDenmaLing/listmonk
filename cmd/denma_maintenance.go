@@ -2,7 +2,7 @@ package main
 
 // denma: Maintenance (Settings -> Maintenance) for every center. The page is
 // the hub's (centers don't show settings), but the data it cleans up
-// (orphan and blocklisted subscribers, unconfirmed subscriptions, old
+// (orphan subscribers, unconfirmed subscriptions, old
 // analytics) is the centers'; the hub has none. So in the hub its API acts on
 // one center, chosen on the page (views/maintenance.html), or on every
 // running center, several at a time. A center's own listmonk handler does the
@@ -91,8 +91,15 @@ func denmaEachCenter(ctrs []*denmaCenter, fn func(*App) (int, error)) (int, erro
 	return total, nil
 }
 
-// DenmaGCSubscribers deletes orphan or blocklisted subscribers.
+// DenmaGCSubscribers deletes orphan subscribers. Not blocklisted ones, which
+// listmonk's page offers too: every unsubscribe blocklists
+// (cmd/denma_unsubscribe.go), so deleting them would forget that they opted
+// out, and an import or an API call could add them again.
 func (a *App) DenmaGCSubscribers(c echo.Context) error {
+	if denmaHub != nil && c.Param("type") == "blocklisted" {
+		return echo.NewHTTPError(http.StatusBadRequest,
+			"Blocklisted subscribers can't be deleted: they include everyone who unsubscribed, and deleting them would forget that they opted out.")
+	}
 	ctrs, err := a.denmaMaintainIn(c)
 	switch {
 	case err != nil:
@@ -102,14 +109,10 @@ func (a *App) DenmaGCSubscribers(c echo.Context) error {
 	case len(ctrs) == 1:
 		return ctrs[0].app.GCSubscribers(c)
 	}
-	typ := c.Param("type")
-	if typ != "blocklisted" && typ != "orphan" {
+	if c.Param("type") != "orphan" {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))
 	}
 	n, err := denmaEachCenter(ctrs, func(app *App) (int, error) {
-		if typ == "blocklisted" {
-			return app.core.DeleteBlocklistedSubscribers()
-		}
 		return app.core.DeleteOrphanSubscribers()
 	})
 	if err != nil {

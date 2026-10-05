@@ -19,7 +19,9 @@
 						Data
 						<select aria-label="Data" x-model="subscriberType">
 							<option value="orphan">{{ .L.T "dashboard.orphanSubs" }}</option>
+							{{- if not DenmaIsHub }}{{/* denma: unsubscribing blocklists, so deleting them would forget who opted out (cmd/denma_maintenance.go) */}}
 							<option value="blocklisted">{{ .L.T "subscribers.status.blocklisted" }}</option>
+							{{- end }}
 						</select>
 						<small data-hint>{{ .L.T "maintenance.orphanHelp" }}</small>
 					</label>
