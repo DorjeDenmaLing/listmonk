@@ -72,6 +72,21 @@
 			</label>
 		</fieldset>
 
+		{{/* The design for e-mails and pages (cmd/denma_design.go). */}}
+		<fieldset class="card" data-testid="center-design">
+			<legend>Design</legend>
+			<label data-field>
+				Design for e-mails and pages
+				<select x-model.number="form.design_template" data-testid="design-template">
+					<option value="0">None (listmonk's look)</option>
+					{{- range $d.Designs }}
+					<option value="{{ .ID }}">{{ .Name }}</option>
+					{{- end }}
+				</select>
+				<small data-hint>A design template (Campaigns &rarr; Templates, type Design) frames the center's automatic e-mails (opt-in confirmations, data exports, and its staff's invites, password resets and notices) and its public pages (unsubscribe, opt-in, sign-up); the wording stays the standard. Every center has its own, "Center design (e-mails and pages)", with the logo above; it can be edited but not deleted or copied. A new design starts from the same layout, with an HTML block holding <code>&lt;div data-content&gt;(Page content will appear here)&lt;/div&gt;</code> where each e-mail's or page's own text goes. Links only campaigns have, such as unsubscribe and view in browser, can't be in a design.</small>
+			</label>
+		</fieldset>
+
 		{{/* The features (cmd/denma_features.go). */}}
 		<fieldset class="card" data-testid="center-subscribers">
 			<legend>Subscribers</legend>

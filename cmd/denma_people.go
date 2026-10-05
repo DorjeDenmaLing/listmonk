@@ -40,6 +40,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/url"
 	"path"
@@ -489,26 +490,21 @@ func (d *denmaCenters) addMember(ctr *denmaCenter, u auth.User) (auth.User, denm
 
 // sendInvite e-mails a person who's been made a user of ctr, in its
 // notification look (header and footer from its e-mail templates, which
-// --static-dir may replace wholesale, so the invite itself is defined here):
-// with link, to set their password; without, that they can sign in.
+// --static-dir may replace wholesale, so the invite itself is defined here,
+// added to them when the center loads: denmaAddInviteTpl): with link, to set
+// their password; without, that they can sign in.
 func (d *denmaCenters) sendInvite(ctr *denmaCenter, p *denmaPerson, link string) bool {
 	app := ctr.app
 	site := app.ko.String("app.site_name")
 	var body bytes.Buffer
-	tpl, err := app.notifs.Tpls.Clone()
-	if err == nil {
-		_, err = tpl.New("denma-invite").Parse(denmaInviteTpl)
-	}
-	if err == nil {
-		err = tpl.ExecuteTemplate(&body, "denma-invite", map[string]any{
-			"ResetURL": link,
-			"LoginURL": d.loginURL(),
-			"Site":     site,
-			"Email":    p.Email,
-			"Username": p.Username,
-			"Days":     int(denmaInviteTTL.Hours() / 24),
-		})
-	}
+	err := app.notifs.Tpls.ExecuteTemplate(&body, "denma-invite", map[string]any{
+		"ResetURL": link,
+		"LoginURL": d.loginURL(),
+		"Site":     site,
+		"Email":    p.Email,
+		"Username": p.Username,
+		"Days":     int(denmaInviteTTL.Hours() / 24),
+	})
 	if err != nil {
 		lo.Printf("denma: error rendering the invite for %s: %v", p.Email, err)
 		return false
@@ -528,6 +524,14 @@ func (d *denmaCenters) sendInvite(ctr *denmaCenter, p *denmaPerson, link string)
 		return false
 	}
 	return true
+}
+
+// denmaAddInviteTpl adds the invite to a center's e-mail templates, before
+// they're first used (html/template can't add to, or copy, a set that has
+// been executed).
+func denmaAddInviteTpl(tpls *template.Template) error {
+	_, err := tpls.New("denma-invite").Parse(denmaInviteTpl)
+	return err
 }
 
 const denmaInviteTpl = `{{ template "header" . }}

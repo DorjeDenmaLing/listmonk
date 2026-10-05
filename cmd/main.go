@@ -57,6 +57,7 @@ type App struct {
 	bufLog     *buflog.BufLog
 	notifs     *notifs.Notifs // denma: the app's own e-mail notifier (one App per center)
 	crons      *cron.Cron     // denma: stopped when a center is reloaded
+	design     *denmaDesign   // denma: the center's design for e-mails and pages (cmd/denma_design.go)
 
 	about         about
 	fnOptinNotify func(models.Subscriber, []int) (int, error)
@@ -309,6 +310,20 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 	// Initialize and cache tx templates in memory.
 	initTxTemplates(mgr, core)
 
+	// denma: the invite e-mail, added before the templates are first used
+	// (cmd/denma_people.go); and a center's design frames its e-mails
+	// (cmd/denma_design.go).
+	if err := denmaAddInviteTpl(nf.Tpls); err != nil {
+		lo.Printf("denma: error adding the invite e-mail template: %v", err)
+	}
+	design := loadDenmaDesign(db, ko, mgr, lo)
+	if design != nil {
+		if err := design.applyMail(nf.Tpls); err != nil {
+			lo.Printf("denma: the design for e-mails and pages isn't used: %v", err)
+			design = nil
+		}
+	}
+
 	// Initialize the bounce manager that processes bounces from webhooks and
 	// POP3 mailbox scanning.
 	if bounce != nil { // denma: was ko.Bool("bounce.enabled"); not in centers
@@ -344,8 +359,9 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 		log:        lo,
 		events:     evStream,
 		bufLog:     bufLog,
-		notifs:     nf,    // denma
-		crons:      crons, // denma
+		notifs:     nf,     // denma
+		crons:      crons,  // denma
+		design:     design, // denma
 
 		pg: paginator.New(paginator.Opt{
 			DefaultPerPage: 20,

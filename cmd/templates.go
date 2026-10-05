@@ -35,9 +35,11 @@ var (
 type templatesView struct {
 	adminView
 
-	Templates   []models.Template
-	Type        string
-	DenmaVisual int // denma: the default visual template (cmd/denma_features.go)
+	Templates      []models.Template
+	Type           string
+	DenmaVisual    int // denma: the default visual template (cmd/denma_features.go)
+	DenmaDesign    int // denma: the design for e-mails and pages, and the center's own (cmd/denma_design.go)
+	DenmaOwnDesign int
 }
 
 // templateView is the admin page view for creating/editing a single template.
@@ -46,6 +48,8 @@ type templateView struct {
 
 	IsNew    bool
 	Template models.Template
+
+	DenmaNewDesign map[string]string // denma: a new design's start (cmd/denma_design.go)
 }
 
 // ViewTemplates renders the HTML list view for templates.
@@ -62,7 +66,10 @@ func (a *App) ViewTemplates(c echo.Context) error {
 		Templates: out,
 		Type:      typ,
 
-		DenmaVisual: a.denmaVisualTemplate(), // denma
+		// denma: the default visual template (cmd/denma_features.go) and the designs (cmd/denma_design.go)
+		DenmaVisual:    a.denmaVisualTemplate(),
+		DenmaDesign:    a.ko.Int("denma.design_template"),
+		DenmaOwnDesign: a.denmaDefaultDesignID(),
 	}
 
 	return c.Render(http.StatusOK, "admin-templates", data)
@@ -74,6 +81,9 @@ func (a *App) ViewNewTemplate(c echo.Context) error {
 		adminView: newAdminView(c, a.i18n.T("templates.newTemplate")+" / "+a.i18n.T("globals.terms.templates"), "", "campaigns.templates"),
 		IsNew:     true,
 		Template:  models.Template{Type: models.TemplateTypeCampaign},
+	}
+	if a.denmaInCenter() { // denma: a new design starts from the center's layout (cmd/denma_design.go)
+		data.DenmaNewDesign = a.denmaNewDesign()
 	}
 
 	return c.Render(http.StatusOK, "admin-template", data)
@@ -187,10 +197,16 @@ func (a *App) CreateTemplate(c echo.Context) error {
 	} else {
 		funcs = a.manager.GenericTemplateFuncs()
 	}
+	if o.Type == denmaTemplateTypeDesign { // denma: a design's (cmd/denma_design.go)
+		funcs = denmaDesignFuncs(funcs, a.ko)
+	}
 
 	// Compile the template and validate.
 	if err := o.Compile(funcs); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if err := a.denmaCheckTemplate(0, o); err != nil { // denma: a design that works, not a copy of the center's (cmd/denma_design.go)
+		return err
 	}
 
 	// Create the template the in the DB.
@@ -214,6 +230,9 @@ func (a *App) UpdateTemplate(c echo.Context) error {
 	if err := c.Bind(&o); err != nil {
 		return err
 	}
+	if t, err := a.core.GetTemplate(getID(c), true); err == nil { // denma: its type is the stored one (a design's, cmd/denma_design.go)
+		o.Type = t.Type
+	}
 	if err := a.validateTemplate(o); err != nil {
 		return err
 	}
@@ -227,6 +246,9 @@ func (a *App) UpdateTemplate(c echo.Context) error {
 	} else {
 		funcs = a.manager.GenericTemplateFuncs()
 	}
+	if o.Type == denmaTemplateTypeDesign { // denma: a design's (cmd/denma_design.go)
+		funcs = denmaDesignFuncs(funcs, a.ko)
+	}
 
 	// Compile the template and validate.
 	if err := o.Compile(funcs); err != nil {
@@ -235,9 +257,15 @@ func (a *App) UpdateTemplate(c echo.Context) error {
 
 	// Update the template in the DB.
 	id := getID(c)
+	if err := a.denmaCheckTemplate(id, o); err != nil { // denma: a design that works, and the center's own (cmd/denma_design.go)
+		return err
+	}
 	out, err := a.core.UpdateTemplate(id, o.Name, o.Subject, []byte(o.Body), o.BodySource)
 	if err != nil {
 		return err
+	}
+	if a.denmaIsDesign(id) { // denma: reloaded, so its e-mails and pages use the new design
+		a.denmaReloadCenter()
 	}
 
 	// If it's a transactional template, cache it.
@@ -295,6 +323,9 @@ func (a *App) validateTemplate(o models.Template) error {
 
 // previewTemplate renders the HTML preview of a template.
 func (a *App) previewTemplate(tpl models.Template) ([]byte, error) {
+	if tpl.Type == denmaTemplateTypeDesign { // denma: a design (cmd/denma_design.go)
+		return a.denmaPreviewDesign(tpl.Body)
+	}
 	var out []byte
 	if tpl.Type == models.TemplateTypeCampaign || tpl.Type == models.TemplateTypeCampaignVisual {
 		camp := models.Campaign{

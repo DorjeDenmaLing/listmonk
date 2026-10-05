@@ -66,6 +66,7 @@ var denmaCenterOwnSettings = []string{
 	// And those on the center's Config page (cmd/denma_center.go).
 	"app.site_name", "app.logo_url", "app.favicon_url", "app.lang",
 	"app.from_email", "app.notify_emails",
+	"denma.design_template", "denma.default_design", // cmd/denma_design.go
 }
 
 // denmaCenterSettingsPath reports whether a path (in a center) is one of the

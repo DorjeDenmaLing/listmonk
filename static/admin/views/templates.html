@@ -51,7 +51,9 @@
 							</td>
 							<td>
 								<div class="hstack">
-									{{- if eq .Type "tx" }}
+									{{- if eq .Type "design" }}{{/* denma: cmd/denma_design.go */}}
+										<a href="{{ $base }}?type={{ .Type }}" title="Frames the center's automatic e-mails and public pages">{{ Badge (list (Icon "grid") "Design") "enum" }}</a>
+									{{- else if eq .Type "tx" }}
 										<a href="{{ $base }}?type={{ .Type }}" title="{{ $.L.T "globals.buttons.view" }} {{ $.L.Tc "globals.terms.tx" 1 }}">{{ Badge (list (Icon "terminal") ($.L.Tc "globals.terms.tx" 1)) "enum" }}</a>
 									{{- else }}
 										<a href="{{ $base }}?type={{ .Type }}" title="{{ $.L.T "globals.buttons.view" }} {{ $.L.Tc "globals.terms.campaign" 1 }}">{{ Badge (list (Icon "send") ($.L.Tc "globals.terms.campaign" 1)) "enum" }}</a>
@@ -75,11 +77,13 @@
 										<hr />
 										<a href="{{ $base }}/{{ .ID }}" role="menuitem" class="button ghost" data-testid="btn-edit">{{ Icon "edit-2" }} {{ $.L.T "globals.buttons.edit" }}</a>
 										{{- if $canManage }}
+											{{- if ne .ID $d.DenmaOwnDesign }}{{/* denma: the center's design can't be copied (cmd/denma_design.go) */}}
 											<button type="button" role="menuitem" class="ghost" data-testid="btn-clone" @click.prevent="onClone({{ .ID }}, {{ ToJSON .Name }})">{{ Icon "copy" }} {{ $.L.T "globals.buttons.clone" }}</button>
+											{{- end }}
 											{{- if and (not .IsDefault) (eq .Type "campaign") }}
 												<button type="button" role="menuitem" class="ghost" data-testid="btn-set-default" :disabled="isLoading('templates')" @click.prevent="onSetDefault({{ .ID }}, {{ ToJSON .Name }})">{{ Icon "check-circle" }} {{ $.L.T "templates.makeDefault" }}</button>
 											{{- end }}
-											{{- if and (not .IsDefault) (ne .ID $d.DenmaVisual) }}{{/* denma: nor the default visual template */}}
+											{{- if and (not .IsDefault) (ne .ID $d.DenmaVisual) (ne .ID $d.DenmaDesign) (ne .ID $d.DenmaOwnDesign) }}{{/* denma: nor the default visual template, nor the designs (cmd/denma_design.go) */}}
 												<hr />
 												<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-delete" :disabled="isLoading('templates')" @click.prevent="onDelete({{ .ID }}, {{ ToJSON .Name }})">{{ Icon "trash-2" }} {{ $.L.T "globals.buttons.delete" }}</button>
 											{{- end }}

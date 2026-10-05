@@ -1026,6 +1026,11 @@ func initHTTPRouter(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.Fi
 	if err != nil {
 		lo.Fatalf("error parsing public templates: %v", err)
 	}
+	if app.design != nil { // denma: the center's design frames its pages (cmd/denma_design.go)
+		if err := app.design.applyPages(pubTpl); err != nil {
+			app.log.Printf("denma: the design isn't used for pages: %v", err)
+		}
+	}
 
 	// Admin templates live in /admin/views and /admin/partials, plus nested
 	// module partials like /admin/partials/settings. Glob both levels and parse

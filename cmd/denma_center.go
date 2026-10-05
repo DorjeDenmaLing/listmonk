@@ -30,6 +30,7 @@ var denmaCenterFields = []string{
 	// The features (cmd/denma_features.go).
 	"denma.unsubscribe_everywhere", "denma.plain_text_auto", "denma.utm_domains",
 	"denma.signup_holding_list", "denma.signup_target_list", "denma.visual_template",
+	"denma.design_template", // cmd/denma_design.go
 }
 
 // denmaPermissions adds ours to listmonk's permissions (permissions.json), so
@@ -93,6 +94,7 @@ type denmaCenterForm struct {
 	SignupHoldingList     int      `json:"signup_holding_list"`
 	SignupTargetList      int      `json:"signup_target_list"`
 	VisualTemplate        int      `json:"visual_template"`
+	DesignTemplate        int      `json:"design_template"` // cmd/denma_design.go
 }
 
 var denmaFormKeys = map[string]string{
@@ -101,6 +103,7 @@ var denmaFormKeys = map[string]string{
 	"unsubscribe_everywhere": "denma.unsubscribe_everywhere", "plain_text_auto": "denma.plain_text_auto",
 	"utm_domains": "denma.utm_domains", "signup_holding_list": "denma.signup_holding_list",
 	"signup_target_list": "denma.signup_target_list", "visual_template": "denma.visual_template",
+	"design_template": "denma.design_template",
 }
 
 type denmaCenterView struct {
@@ -113,6 +116,7 @@ type denmaCenterView struct {
 	// For the features' choices.
 	Lists           []denmaOption
 	VisualTemplates []denmaOption
+	Designs         []denmaOption // cmd/denma_design.go
 }
 
 // denmaOption is a list or template to choose.
@@ -181,11 +185,14 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 	}
 	view := denmaCenterView{adminView: v, Form: form, Address: a.urlCfg.RootURL, Langs: langs,
 		Super: v.Profile.UserRole.ID == auth.SuperAdminRoleID,
-		Lists: []denmaOption{}, VisualTemplates: []denmaOption{}}
+		Lists: []denmaOption{}, VisualTemplates: []denmaOption{}, Designs: []denmaOption{}}
 	if err := a.db.Select(&view.Lists, `SELECT id, name, optin::TEXT AS optin FROM lists ORDER BY name`); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	if err := a.db.Select(&view.VisualTemplates, `SELECT id, name, '' AS optin FROM templates WHERE type = 'campaign_visual' ORDER BY name`); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if err := a.db.Select(&view.Designs, `SELECT id, name, '' AS optin FROM templates WHERE type = 'design' ORDER BY name`); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return c.Render(http.StatusOK, "admin-denma-center", view)
@@ -260,6 +267,7 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusForbidden, "Only a superadmin can turn off unsubscribing from all lists.")
 		}
 	}
+	oldLogo := a.ko.String("app.logo_url")
 	// Save each setting.
 	b, _ := json.Marshal(f)
 	var vals map[string]json.RawMessage
@@ -277,6 +285,7 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	a.denmaDesignLogoChanged(oldLogo, f.LogoURL) // the center's design shows its logo (cmd/denma_design.go)
 
 	// The hub's list shows the registry's name for centers that aren't running.
 	slug := a.ko.String("denma.center")
@@ -284,17 +293,20 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 		a.log.Printf("denma: error renaming center %s in the registry: %v", slug, err)
 	}
 
-	// Reload, now or once any running campaign has finished.
-	ctr := denmaHub.get(slug)
-	reloading := true
+	return c.JSON(http.StatusOK, okResp{map[string]bool{"reloading": a.denmaReloadCenter()}})
+}
+
+// denmaReloadCenter reloads the center a is, now or once any running
+// campaign has finished, reporting whether it's now.
+func (a *App) denmaReloadCenter() bool {
+	ctr := denmaHub.get(a.ko.String("denma.center"))
 	if ctr != nil && ctr.app == a && a.manager.HasRunningCampaigns() {
 		a.Lock()
 		a.needsRestart = true
 		a.Unlock()
 		go denmaHub.reloadWhenIdle(ctr)
-		reloading = false
-	} else {
-		denmaSignalReload(a)
+		return false
 	}
-	return c.JSON(http.StatusOK, okResp{map[string]bool{"reloading": reloading}})
+	denmaSignalReload(a)
+	return true
 }

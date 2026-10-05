@@ -24,7 +24,9 @@ package main
 //     opt-in) is moved to the other list, confirmed, with
 //     attribs.consent_confirmed_at.
 //   - A default visual template (denma.visual_template): new visual campaigns
-//     start from it, and it can't be deleted (as listmonk's default template).
+//     start from it, and it can't be deleted (as listmonk's default template),
+//     nor can the design for e-mails and pages (denma.design_template) or the
+//     center's own (denma.default_design, cmd/denma_design.go).
 //   - Imports are marked (always): subscribers an import adds get
 //     attribs.imported_at, and automations skip them (cmd/denma_automations.go).
 //   - Subscriber tags (always, cmd/denma_tags.go): the center's tags
@@ -58,7 +60,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 7
+const denmaFeaturesVersion = 11
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -69,6 +71,7 @@ var denmaFeatureDefaults = map[string]any{
 	"denma.signup_holding_list":    0,
 	"denma.signup_target_list":     0,
 	"denma.visual_template":        0,
+	"denma.design_template":        0, // cmd/denma_design.go
 }
 
 // features installs the features' triggers in a center (db, its schema)
@@ -80,6 +83,13 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	}
 	if ver == denmaFeaturesVersion {
 		return nil
+	}
+	// Version 11 added designs' template type (cmd/denma_design.go), outside
+	// the transaction: a new enum value can't be used in the one adding it.
+	if ver < 11 {
+		if _, err := db.Exec(`ALTER TYPE template_type ADD VALUE IF NOT EXISTS 'design'`); err != nil {
+			return fmt.Errorf("adding the design template type: %v", err)
+		}
 	}
 
 	tx, err := db.Beginx()
@@ -119,6 +129,19 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	}
 	if _, err := tx.Exec(denmaFeaturesSQL); err != nil {
 		return fmt.Errorf("installing the triggers: %v", err)
+	}
+	// Version 9 gave every center its own design (cmd/denma_design.go).
+	if ver < 9 {
+		if err := denmaAddDefaultDesign(tx); err != nil {
+			return fmt.Errorf("adding the center's design: %v", err)
+		}
+	}
+	// Version 11: the center's designs, made as visual templates, are designs.
+	if ver < 11 {
+		if _, err := tx.Exec(`UPDATE templates SET type = 'design' WHERE type = 'campaign_visual' AND id IN (
+			SELECT (value #>> '{}')::INT FROM settings WHERE key IN ('denma.default_design', 'denma.design_template'))`); err != nil {
+			return fmt.Errorf("making the designs designs: %v", err)
+		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)
 		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, strconv.Itoa(denmaFeaturesVersion)); err != nil {
@@ -524,7 +547,9 @@ CREATE TRIGGER denma_campaign_add_template
 CREATE OR REPLACE FUNCTION denma_protect_visual_template() RETURNS trigger
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
-    IF OLD.id = coalesce((denma_setting('denma.visual_template') #>> '{}')::INT, 0) THEN
+    IF OLD.id IN (coalesce((denma_setting('denma.visual_template') #>> '{}')::INT, 0),
+                  coalesce((denma_setting('denma.design_template') #>> '{}')::INT, 0),
+                  coalesce((denma_setting('denma.default_design') #>> '{}')::INT, 0)) THEN
         RETURN NULL;  -- skipped; listmonk reports it as for its default template
     END IF;
     RETURN OLD;
@@ -739,6 +764,15 @@ func (a *App) denmaCheckFeatures(f *denmaCenterForm) error {
 		var n int
 		if err := a.db.Get(&n, `SELECT COUNT(*) FROM templates WHERE id = $1 AND type = 'campaign_visual'`, f.VisualTemplate); err != nil || n == 0 {
 			return fmt.Errorf("the default visual template doesn't exist")
+		}
+	}
+	if f.DesignTemplate != 0 { // cmd/denma_design.go
+		body, err := denmaDesignBody(a.db, f.DesignTemplate)
+		if err != nil {
+			return err
+		}
+		if _, err := renderDenmaDesign(body, a.manager.GenericTemplateFuncs(), a.ko); err != nil {
+			return err
 		}
 	}
 	return nil
