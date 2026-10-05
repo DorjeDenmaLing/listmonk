@@ -21,9 +21,12 @@ block2 AS (
 ),
 bounce AS (
     -- Record the bounce if the subscriber is not already blocklisted;
+    -- denma: complaints and hard bounces are recorded for the blocklisted too:
+    -- unsubscribing blocklists, and a complaint often comes after the
+    -- unsubscribe it came with (cmd/denma_resubscribe.go reads them).
     INSERT INTO bounces (subscriber_id, campaign_id, type, source, meta, created_at)
     SELECT (SELECT id FROM sub), (SELECT id FROM camp), $4, $5, $6, $7
-    WHERE NOT EXISTS (SELECT 1 WHERE (SELECT status FROM sub) = 'blocklisted' OR (SELECT num FROM num) > $8)
+    WHERE NOT EXISTS (SELECT 1 WHERE ((SELECT status FROM sub) = 'blocklisted' AND $4 = 'soft') OR (SELECT num FROM num) > $8)
 )
 -- This delete  will only run when $9 = 'delete' and the number of bounces exceed $8.
 DELETE FROM subscribers
