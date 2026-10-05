@@ -870,10 +870,6 @@ svg.denma-logo {
   }
 }
 /* Automations (views/denma-automations.html, denma-automation.html). */
-.denma-automations .denma-lede {
-  margin: calc(-1 * var(--space-3)) 0 var(--space-4);
-}
-
 .denma-automation {
   .denma-auto-on {
     margin: 0;
@@ -1610,9 +1606,6 @@ svg.denma-logo {
 
 /* Subscriber tags (cmd/denma_tags.go): the Tags page (views/denma-tags.html),
    and tags shown on the subscriber and campaign pages. */
-.denma-tags .denma-lede {
-  margin: calc(-1 * var(--space-3)) 0 var(--space-4);
-}
 .denma-tag {
   display: inline-block;
   padding: 0 var(--space-2);
