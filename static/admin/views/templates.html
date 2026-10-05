@@ -45,7 +45,7 @@
 						<tr data-testid="template-row" data-id="{{ .ID }}">
 							<td>
 								<a href="{{ $base }}/{{ .ID }}" class="unstyled" data-testid="btn-edit">{{ .Name }}</a>
-								{{ if .IsDefault }}{{ Badge ($.L.T "templates.default") }}{{ end }}
+								{{ if .IsDefault }}{{ if $d.DenmaVisual }}<span title="Rich text, HTML and Markdown campaigns use this template unless they choose another.">{{ Badge "Default (HTML)" }}</span>{{ else }}{{ Badge ($.L.T "templates.default") }}{{ end }}{{ end }}{{/* denma: beside the default visual template */}}
 								{{- if and $d.DenmaVisual (eq .ID $d.DenmaVisual) }}<span title="New visual campaigns start from this template. It can't be deleted.">{{ Badge "Default (visual)" }}</span>{{ end }}{{/* denma: cmd/denma_features.go */}}
 								{{- if eq .Type "tx" }}<p class="text-light">{{ .Subject }}</p>{{ end }}
 							</td>

@@ -23,10 +23,12 @@ package main
 //     someone who confirms their subscription to the holding list (double
 //     opt-in) is moved to the other list, confirmed, with
 //     attribs.consent_confirmed_at.
-//   - A default visual template (denma.visual_template): new visual campaigns
-//     start from it, and it can't be deleted (as listmonk's default template),
-//     nor can the design for e-mails and pages (denma.design_template) or the
-//     center's own (denma.default_design, cmd/denma_design.go).
+//   - A default visual template (denma.visual_template): new campaigns are
+//     Visual and start from it, and it can't be deleted (as listmonk's default
+//     template), nor can the design for e-mails and pages
+//     (denma.design_template) or the center's own (denma.default_design,
+//     cmd/denma_design.go). Every center has a default visual template:
+//     listmonk's sample one, unless it chose another (denmaAddVisualDefault).
 //   - Imports are marked (always): subscribers an import adds get
 //     attribs.imported_at, and automations skip them (cmd/denma_automations.go).
 //   - Subscriber tags (always, cmd/denma_tags.go): the center's tags
@@ -134,6 +136,12 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 9 {
 		if err := denmaAddDefaultDesign(tx); err != nil {
 			return fmt.Errorf("adding the center's design: %v", err)
+		}
+	}
+	// Version 10 gave every center without one a default visual template.
+	if ver < 10 {
+		if err := denmaAddVisualDefault(tx); err != nil {
+			return fmt.Errorf("adding the default visual template: %v", err)
 		}
 	}
 	// Version 11: the center's designs, made as visual templates, are designs.
@@ -694,6 +702,38 @@ INSERT INTO denma_tags (tag) SELECT DISTINCT unnest(denma_tags) FROM campaigns O
 // none).
 func (a *App) denmaVisualTemplate() int {
 	return a.ko.Int("denma.visual_template")
+}
+
+// denmaAddVisualDefault makes listmonk's sample visual template the center's
+// default visual template (in tx, its schema) if it has none: the one
+// listmonk installed, or a new one from the same files. listmonk's own
+// default template stays the one for rich text, HTML and Markdown.
+func denmaAddVisualDefault(tx *sqlx.Tx) error {
+	var id int
+	if err := tx.Get(&id, `SELECT COALESCE((SELECT t.id FROM settings s JOIN templates t ON t.id = (s.value #>> '{}')::INT AND t.type = 'campaign_visual'
+		WHERE s.key = 'denma.visual_template'), 0)`); err != nil || id != 0 {
+		return err
+	}
+	if err := tx.Get(&id, `SELECT COALESCE((SELECT MIN(id) FROM templates WHERE type = 'campaign_visual' AND name = 'Sample visual template'), 0)`); err != nil {
+		return err
+	}
+	if id == 0 {
+		body, err := fs.Read("/static/email-templates/default-visual.tpl")
+		if err != nil {
+			return err
+		}
+		src, err := fs.Read("/static/email-templates/default-visual.json")
+		if err != nil {
+			return err
+		}
+		if err := tx.Get(&id, `INSERT INTO templates (name, type, subject, body, body_source) VALUES ('Sample visual template', 'campaign_visual', '', $1, $2) RETURNING id`,
+			string(body), string(src)); err != nil {
+			return err
+		}
+	}
+	_, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.visual_template', $1::TEXT::JSONB)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`, strconv.Itoa(id))
+	return err
 }
 
 // denmaNewCampaignFormat is a new campaign's format: Visual if the center has

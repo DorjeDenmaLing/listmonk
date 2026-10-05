@@ -688,9 +688,14 @@ func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) error {
 
 	install(migList[len(migList)-1].version, db, fs, false, false)
 
-	// A clean center: none of listmonk's samples, and not the admin that
-	// LISTMONK_ADMIN_USER creates (that's the hub's superadmin, with its password).
-	if _, err := db.Exec(`DELETE FROM campaigns; DELETE FROM subscribers; DELETE FROM lists; DELETE FROM sessions; DELETE FROM users;`); err != nil {
+	// A clean center: none of listmonk's samples but two templates, its
+	// default campaign template (for rich text, HTML and Markdown campaigns)
+	// and its sample visual template, which becomes the default visual
+	// template when the center loads (cmd/denma_features.go), as does its
+	// design (cmd/denma_design.go); and not the admin that LISTMONK_ADMIN_USER
+	// creates (that's the hub's superadmin, with its password).
+	if _, err := db.Exec(`DELETE FROM campaigns; DELETE FROM templates WHERE NOT is_default AND type <> 'campaign_visual';
+		DELETE FROM subscribers; DELETE FROM lists; DELETE FROM sessions; DELETE FROM users;`); err != nil {
 		return fmt.Errorf("removing the sample data: %v", err)
 	}
 	if err := d.provisionRoles(db); err != nil {
