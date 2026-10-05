@@ -865,11 +865,14 @@ func (a *App) processSubForm(c echo.Context) (bool, error) {
 	}
 
 	// Insert the subscriber into the DB.
-	_, hasOptin, err := a.core.InsertSubscriber(models.Subscriber{
+	newSub, hasOptin, err := a.core.InsertSubscriber(models.Subscriber{ // denma: was _
 		Name:   req.Name,
 		Email:  req.Email,
 		Status: models.SubscriberStatusEnabled,
 	}, nil, listUUIDs, false, true)
+	if err == nil && newSub.Status == models.SubscriberStatusBlockListed { // denma: an address that opted out before (cmd/denma_optouts.go)
+		return a.denmaResubForm(newSub, listUUIDs)
+	}
 	if err == nil {
 		return hasOptin, nil
 	}

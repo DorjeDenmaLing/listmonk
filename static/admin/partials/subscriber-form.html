@@ -54,10 +54,10 @@
 <div data-field>
 	<label for="sub-status">{{ $root.L.T "globals.fields.status" }}</label>
 	<select name="status" id="sub-status" required x-model="form.status">
-		<option value="enabled">{{ $root.L.T "subscribers.status.enabled" }}</option>
+		<option value="enabled"{{ if $root.Data.DenmaOptOut }} disabled{{ end }}>{{ $root.L.T "subscribers.status.enabled" }}</option>{{/* denma: cmd/denma_optouts.go */}}
 		<option value="blocklisted">{{ $root.L.T "subscribers.status.blocklisted" }}</option>
 	</select>
-	<small data-hint>{{ $root.L.T "subscribers.blocklistedHelp" }}</small>
+	<small data-hint>{{ $root.L.T "subscribers.blocklistedHelp" }}{{ if $root.Data.DenmaOptOut }} They opted out, so they can't be enabled here.{{ end }}</small>
 </div>
 {{- end }}
 

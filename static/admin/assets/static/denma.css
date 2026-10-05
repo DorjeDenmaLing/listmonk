@@ -958,6 +958,26 @@ svg.denma-logo {
   }
 }
 
+/* A subscriber who opted out (views/subscriber.html, cmd/denma_optouts.go). */
+.denma-optout {
+  padding-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 0.75rem);
+
+  .denma-note {
+    margin: 0;
+  }
+
+  .denma-optout-lists {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+}
+
 /* Automations (views/denma-automations.html, denma-automation.html). */
 .denma-automation {
   .denma-auto-on {

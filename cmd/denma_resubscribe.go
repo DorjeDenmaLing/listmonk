@@ -10,11 +10,13 @@ package main
 // subscribes them to the lists they signed up for, not those they left.
 //
 // Those who complained, hard-bounced or failed the domain check
-// (cmd/denma_emailcheck.go) aren't sent one: only an admin can bring them
-// back, by enabling them. Everything else that adds someone (imports, admins'
-// list changes, other API calls such as rg-sync's) leaves a blocklisted
-// subscriber out, as listmonk does: under CASL, an e-mail asking for consent
-// again has to be one they asked for.
+// (cmd/denma_emailcheck.go) aren't sent one. Someone who complained never
+// comes back (cmd/denma_optouts.go); an admin can enable those who bounced.
+// Everything else that adds someone (imports, admins' list changes, other API
+// calls such as rg-sync's) leaves a blocklisted subscriber out, as listmonk
+// does: under CASL, an e-mail asking for consent again has to be one they
+// asked for. An admin can send the confirmation from the subscriber's page
+// when they've asked for it (the same API as the web-signup Lambda's).
 //
 // An address is sent at most one such e-mail a day (and counts towards the
 // opt-in limit, cmd/denma_optins.go); a sign-up in between adds its lists to
@@ -77,7 +79,8 @@ func (a *App) denmaResubscribe(sub models.Subscriber, listIDs []int, attribs map
 		Bounced    bool `db:"bounced"`
 	}
 	if err := a.db.Get(&why, `SELECT
-		EXISTS (SELECT 1 FROM bounces WHERE subscriber_id = $1 AND type = 'complaint') AS complained,
+		EXISTS (SELECT 1 FROM bounces WHERE subscriber_id = $1 AND type = 'complaint')
+			OR EXISTS (SELECT 1 FROM denma_optouts WHERE email_hash = denma_email_hash(s.email) AND kind = 'complained') AS complained,
 		EXISTS (SELECT 1 FROM bounces WHERE subscriber_id = $1 AND type = 'hard')
 			OR COALESCE(s.attribs ? 'auto_blocklist_reason', false) AS bounced
 		FROM subscribers s WHERE s.id = $1`, sub.ID); err != nil {
@@ -256,6 +259,12 @@ func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta mo
 		return err
 	}
 	defer tx.Rollback()
+	// Their opt-out goes (cmd/denma_optouts.go): confirming is their consent.
+	// A complaint's stays, and enabling them is refused.
+	if _, err := tx.Exec(`DELETE FROM denma_optouts WHERE kind = 'unsubscribed'
+		AND email_hash = (SELECT denma_email_hash(email) FROM subscribers WHERE id = $1)`, subID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`UPDATE subscribers SET status = 'enabled', updated_at = NOW(),
 		attribs = (CASE WHEN jsonb_typeof(attribs) = 'object' THEN attribs ELSE '{}'::JSONB END) || $2::JSONB
 		WHERE id = $1`, subID, string(ab)); err != nil {

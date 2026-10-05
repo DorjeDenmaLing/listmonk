@@ -90,6 +90,8 @@ type subscriberView struct {
 	LinkClicks    []subLinkClick
 	TotalViews    int
 	TotalClicks   int
+
+	DenmaOptOut *denmaOptOut // denma: cmd/denma_optouts.go
 }
 
 // subCampaignView and subLinkClick are the parsed rows of a subscriber's activity,
@@ -184,6 +186,7 @@ func (a *App) ViewSubscriber(c echo.Context) error {
 		Subscriber: out,
 		AllLists:   allLists,
 	}
+	data.DenmaOptOut = a.denmaOptOutOf(out.Email) // denma: cmd/denma_optouts.go
 
 	return c.Render(http.StatusOK, "admin-subscriber", data)
 }
@@ -580,6 +583,9 @@ func (a *App) UpdateSubscriber(c echo.Context) error {
 
 	// Update the subscriber in the DB.
 	id := getID(c)
+	if err := a.denmaCheckOptOut(id, req.Email, req.Status); err != nil { // denma: cmd/denma_optouts.go
+		return err
+	}
 
 	// Check if the user has access to at least one of the lists on the target subscriber.
 	if err := a.hasSubPerm(user, []int{id}); err != nil {

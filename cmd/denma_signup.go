@@ -559,6 +559,12 @@ func (a *App) signupSubscribe(email, name string, listIDs []int, consent map[str
 	sub, hasOptin, err := a.core.InsertSubscriber(models.Subscriber{
 		Name: name, Email: email, Status: models.SubscriberStatusEnabled, Attribs: models.JSON(consent),
 	}, listIDs, nil, false, true)
+	if err == nil && sub.Status == models.SubscriberStatusBlockListed {
+		// An address that opted out before, and was deleted
+		// (cmd/denma_optouts.go): added blocklisted.
+		status, err := a.denmaResubscribe(sub, listIDs, consent)
+		return "opted out before: " + status, err
+	}
 	if err == nil {
 		r, err := optin(sub, hasOptin)
 		return "new subscriber: " + r, err

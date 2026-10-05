@@ -37,6 +37,50 @@
 		</div>
 	</header>
 
+	{{- with $d.DenmaOptOut }}{{/* denma: cmd/denma_optouts.go */}}
+	<div class="page-content content denma-optout" x-data="denmaOptOut" data-testid="optout">
+		<p class="denma-note" role="note">{{ Icon "info" }}
+			<span>
+			{{- if eq .Kind "complained" }}
+				<strong>Marked one of the center's e-mails as spam</strong>{{ if not .Before }} on {{ .CreatedAt.Format "2 January 2006" }}{{ end }}, so they can't be subscribed again, by anyone.
+			{{- else }}
+				{{- if .Before }}
+				<strong>Blocklisted before unsubscribes were recorded</strong>, so taken as having unsubscribed.
+				{{- else }}
+				<strong>Unsubscribed</strong> on {{ .CreatedAt.Format "2 January 2006" }}.
+				{{- end }}
+				Only they can subscribe again: by signing up again, or by confirming an e-mail sent with the button here. Send it only if they've asked you to.
+			{{- end }}
+			</span>
+		</p>
+		{{- if and (ne .Kind "complained") ($d.Can "subscribers:manage") }}
+		<div><button type="button" class="outline" @click="onOpen" data-testid="btn-resubscribe">{{ Icon "mail" }} Send a confirmation to subscribe again</button></div>
+		<dialog x-ref="resubDialog">
+			<form @submit.prevent="onSend">
+				<div class="dialog-card content">
+					<header class="dialog-head"><h4 class="dialog-title">Send a confirmation to subscribe again</h4></header>
+					<section class="dialog-body vstack gap-3">
+						<p>{{ $sub.Email }} is sent the center's confirmation e-mail, and is subscribed to these lists only if they click it, within 7 days. One can be sent a day.</p>
+						<fieldset data-field class="denma-optout-lists">
+							<legend>Lists</legend>
+							<template x-for="l in lists" :key="l.id">
+								<label class="hstack gap-2"><input type="checkbox" :value="l.id" x-model.number="listIDs" /> <span x-text="l.name"></span></label>
+							</template>
+						</fieldset>
+					</section>
+					<footer class="dialog-foot hstack gap-3 justify-end">
+						<button type="button" class="outline" @click="$refs.resubDialog.close()">{{ $.L.T "globals.buttons.close" }}</button>
+						<button type="submit" data-variant="primary" data-testid="btn-resubscribe-send" :disabled="!listIDs.length || isLoading('resubscribe')" :aria-busy="isLoading('resubscribe')">Send</button>
+					</footer>
+				</div>
+			</form>
+		</dialog>
+		{{- end }}
+	</div>
+	<script nonce="{{ $.CSPNonce }}">window._denmaOptOutEmail = {{ $sub.Email }};</script>
+	<script type="module" src="{{ URI "/admin/static/js/views/denma-optout.js" }}?v={{ $.AssetVersion }}" defer></script>
+	{{- end }}
+
 	{{- if not $d.IsNew }}
 		<div role="tablist">
 			<a role="tab" href="{{ $base }}" {{ if eq $d.Tab "profile" }}aria-selected="true"{{ end }}>{{ Icon "user" }} {{ .L.Tc "globals.terms.subscriber" 1 }}</a>
