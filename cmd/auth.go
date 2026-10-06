@@ -388,7 +388,7 @@ func (a *App) renderLoginPage(c echo.Context, loginErr error) error {
 		Name:     "nonce",
 		Value:    nonce,
 		HttpOnly: true,
-		Path:     a.urlCfg.RootPath, // denma: was "/"; scoped to the root path (centers share a domain)
+		Path:     a.urlCfg.AdminPath, // denma: was "/"; the admin's root path
 		SameSite: http.SameSiteLaxMode,
 	})
 	out.Nonce = nonce

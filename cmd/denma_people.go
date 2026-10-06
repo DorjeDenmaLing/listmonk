@@ -825,12 +825,10 @@ func (a *App) DenmaSwitchCenter(c echo.Context) error {
 	}
 	for _, m := range ms {
 		if m.Slug == c.Param("slug") {
-			ctr, err := denmaHub.enter(c, m)
-			if err != nil {
+			if _, err := denmaHub.enter(c, m); err != nil {
 				return err
 			}
-			// In full: a center's own redirects get its prefix (denmaPrefixWriter).
-			return c.Redirect(http.StatusFound, strings.TrimSuffix(ctr.app.urlCfg.RootURL, "/")+uriAdmin)
+			return c.Redirect(http.StatusFound, uriAdmin) // now that center's (cmd/denma_place.go)
 		}
 	}
 	return echo.NewHTTPError(http.StatusNotFound, "You're not a user of that center, or your account there is disabled.")
@@ -851,10 +849,12 @@ func (d *denmaCenters) enter(c echo.Context, m denmaMembership) (*denmaCenter, e
 	if user.Status != auth.UserStatusEnabled {
 		return nil, echo.NewHTTPError(http.StatusForbidden, "Your account in that center is disabled.")
 	}
-	// The center's session cookie (its auth sets the center's cookie path).
+	// The center's session cookie (its auth names it for the center), and
+	// the admin at /admin shows it (cmd/denma_place.go).
 	if err := ctr.app.auth.SaveSession(user, "", c); err != nil {
 		return nil, err
 	}
+	denmaSetPlace(c, ctr.Slug)
 	if err := ctr.app.core.UpdateUserLogin(user.ID, ""); err != nil {
 		lo.Printf("denma: error recording %s's sign-in in center %s: %v", user.Username, ctr.Slug, err)
 	}

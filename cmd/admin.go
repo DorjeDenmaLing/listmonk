@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 type serverConfig struct {
 	RootURL            string `json:"root_url"`
+	AdminRoot          string `json:"admin_root"` // denma: the admin's root path (cmd/denma_place.go)
 	FromEmail          string `json:"from_email"`
 	PublicSubscription struct {
 		Enabled          bool        `json:"enabled"`
@@ -41,6 +43,7 @@ type serverConfig struct {
 func (a *App) makeServerConfig() (serverConfig, error) {
 	out := serverConfig{
 		RootURL:       a.urlCfg.RootURL,
+		AdminRoot:     strings.TrimSuffix(a.urlCfg.AdminPath, "/"), // denma
 		FromEmail:     a.cfg.FromEmail,
 		Lang:          a.cfg.Lang,
 		Permissions:   a.cfg.PermissionsRaw,

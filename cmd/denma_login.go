@@ -212,6 +212,7 @@ func (a *App) DenmaLogin(c echo.Context) error {
 		if next != uriAdmin && !strings.HasPrefix(next, uriAdmin+"/") {
 			c.Request().Form.Set("next", uriAdmin) // read already, by FormValue
 		}
+		denmaSetPlace(c, "") // the admin at /admin is the hub's (cmd/denma_place.go)
 		return a.LoginPage(c)
 	}
 
@@ -277,13 +278,16 @@ func (a *App) denmaSignedIn(c echo.Context, personID int, next string) error {
 	if err != nil {
 		return a.renderLoginPage(c, err)
 	}
-	// The page they wanted, if it was one of this center's.
-	root := strings.TrimSuffix(ctr.app.urlCfg.RootPath, "/")
+	// The page they wanted, if it was one of this center's: its admin is at
+	// /admin now (cmd/denma_place.go).
 	rest, ok := strings.CutPrefix(next, denmaCenterPath+ctr.Slug)
-	if !ok || !strings.HasPrefix(rest, "/") {
+	if !ok {
+		rest = next
+	}
+	if rest != uriAdmin && !strings.HasPrefix(rest, uriAdmin+"/") {
 		rest = uriAdmin
 	}
-	return c.Redirect(http.StatusFound, root+rest)
+	return c.Redirect(http.StatusFound, rest)
 }
 
 // denmaLoginPage is the data of the sign-in pages here.
@@ -355,11 +359,10 @@ func (a *App) DenmaLoginCenters(c echo.Context) error {
 		for _, m := range ms {
 			if m.Slug == slug {
 				a.clearLoginState(c)
-				ctr, err := denmaHub.enter(c, m)
-				if err != nil {
+				if _, err := denmaHub.enter(c, m); err != nil {
 					return a.renderLoginPage(c, err)
 				}
-				return c.Redirect(http.StatusFound, strings.TrimSuffix(ctr.app.urlCfg.RootPath, "/")+uriAdmin)
+				return c.Redirect(http.StatusFound, uriAdmin) // now that center's (cmd/denma_place.go)
 			}
 		}
 	}

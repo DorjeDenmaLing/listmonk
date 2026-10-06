@@ -246,9 +246,27 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 				// pages it keeps only what its admin needs. (Links in e-mails
 				// sent before an install became a center, at /, are the web
 				// server's to forward to /c/<slug>/.)
-				switch {
-				case p == "/":
+				if p == "/" {
 					return c.Redirect(http.StatusFound, uriAdmin)
+				}
+				// The admin at /admin (and /api) is the center the place
+				// cookie says, or the hub's (cmd/denma_place.go).
+				if denmaAdminRequest(p) {
+					if ctr := d.placeCenter(c, p); ctr != nil {
+						denmaSandbox(ctr.app, c.Response().Header(), p)
+						ctr.router.ServeHTTP(c.Response(), c.Request())
+						return nil
+					}
+					if slug := denmaPlace(c); slug != "" {
+						switch {
+						case !denmaHubOnlyPath(p) && d.isStarting(slug):
+							return denmaStartingPage(c)
+						case d.get(slug) == nil || (c.Request().Method == http.MethodGet && strings.HasPrefix(p, uriAdmin)):
+							denmaSetPlace(c, "") // gone, or a hub page: the hub from now on
+						}
+					}
+				}
+				switch {
 				case !denmaHubPath(p):
 					return echo.NewHTTPError(http.StatusNotFound, "not found")
 				}
@@ -266,6 +284,16 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 			}
 			if ctr == nil {
 				return echo.NewHTTPError(http.StatusNotFound, "center not found")
+			}
+			// An old admin address (e-mails, bookmarks): the center, at /admin
+			// (cmd/denma_place.go).
+			if c.Request().Method == http.MethodGet && (rest == "admin" || strings.HasPrefix(rest, "admin/")) {
+				denmaSetPlace(c, slug)
+				to := "/" + rest
+				if q := c.Request().URL.RawQuery; q != "" {
+					to += "?" + q
+				}
+				return c.Redirect(http.StatusFound, to)
 			}
 			// Bounce webhooks from the mail provider are the hub's, which
 			// records each in its center (cmd/denma_bounces.go).

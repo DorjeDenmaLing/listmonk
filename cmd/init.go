@@ -72,6 +72,7 @@ const (
 type UrlConfig struct {
 	RootURL      string `koanf:"root_url"`
 	RootPath     string
+	AdminPath    string // denma: the admin's root path, "/" for every center (cmd/denma_place.go)
 	LogoURL      string `koanf:"logo_url"`
 	FaviconURL   string `koanf:"favicon_url"`
 	LoginURL     string `koanf:"login_url"`
@@ -488,9 +489,10 @@ func initUrlConfig(ko *koanf.Koanf) *UrlConfig {
 	return &UrlConfig{
 		RootURL:    root,
 		RootPath:   rootPath,
+		AdminPath:  denmaAdminPath(ko, rootPath), // denma
 		LogoURL:    ko.String("app.logo_url"),
 		FaviconURL: ko.String("app.favicon_url"),
-		LoginURL:   path.Join(rootPath, uriAdmin, "/login"), // denma: root path aware
+		LoginURL:   path.Join(denmaAdminPath(ko, rootPath), uriAdmin, "/login"), // denma: root path aware
 
 		// Static URLS.
 		// url.com/subscription/{campaign_uuid}/{subscriber_uuid}
@@ -1262,10 +1264,10 @@ func initTplFuncs(i *i18n.I18n, u *UrlConfig) template.FuncMap {
 		// server-rendered links/assets resolve correctly when the app is hosted
 		// under a sub-path. It's a no-op for a root-level install.
 		"URI": func(p string) string {
-			out, err := url.JoinPath(u.RootPath, p)
+			out, err := url.JoinPath(u.AdminPath, p) // denma: the admin's root (cmd/denma_place.go)
 			if err != nil {
-				lo.Printf("error joining path %s with root path %s: %v", p, u.RootPath, err)
-				return u.RootPath + p
+				lo.Printf("error joining path %s with root path %s: %v", p, u.AdminPath, err)
+				return u.AdminPath + p
 			}
 
 			return out
@@ -1293,7 +1295,7 @@ func initTplFuncs(i *i18n.I18n, u *UrlConfig) template.FuncMap {
 			}
 
 			name = template.HTMLEscapeString(name)
-			return template.HTML(fmt.Sprintf(`<svg class="icon"><use href="%sadmin/static/%s#icon-%s"></use></svg>`, u.RootPath, f, name))
+			return template.HTML(fmt.Sprintf(`<svg class="icon"><use href="%sadmin/static/%s#icon-%s"></use></svg>`, u.AdminPath, f, name)) // denma: AdminPath
 		},
 		// Auto-generated colour gradient CSS avatar.
 		"Avatar": makeAvatar,
@@ -1403,13 +1405,14 @@ func initAuth(co *core.Core, db *sql.DB, ko *koanf.Koanf) (bool, *auth.Auth) {
 	cb := &auth.Callbacks{
 		GetCookie: func(name string, r any) (*http.Cookie, error) {
 			c := r.(echo.Context)
-			cookie, err := c.Cookie(name)
+			cookie, err := c.Cookie(denmaCookieName(ko, name)) // denma: each center's own (cmd/denma_place.go)
 			return cookie, err
 		},
 		SetCookie: func(cookie *http.Cookie, w any) error {
 			c := w.(echo.Context)
 			cookie.SameSite = http.SameSiteLaxMode
-			cookie.Path = initUrlConfig(ko).RootPath // denma: scoped to the root path (centers share a domain)
+			cookie.Path = initUrlConfig(ko).AdminPath // denma: each center's own name, at the admin's path (cmd/denma_place.go)
+			cookie.Name = denmaCookieName(ko, cookie.Name)
 			c.SetCookie(cookie)
 			return nil
 		},

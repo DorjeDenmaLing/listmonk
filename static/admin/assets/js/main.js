@@ -117,8 +117,13 @@ function getStore() {
 
 // ==============================
 // Public constants.
-// denma: the root URL's path (e.g. /c/<center>), so the admin also works under a subpath.
+// denma: the admin's root path: the server's (admin_root: every center's admin
+// is at /admin, cmd/denma_place.go), else the root URL's path, so the admin
+// also works under a subpath.
 export const rootPath = (() => {
+  if (typeof window._LM_CONFIG?.admin_root === 'string') {
+    return window._LM_CONFIG.admin_root;
+  }
   try {
     return new URL(window._LM_CONFIG.root_url).pathname.replace(/\/+$/, '');
   } catch {

@@ -20,6 +20,9 @@
 {{- $p := .Data.PageID }}
 <nav class="denma-menu">
 	<ul>
+		{{- if DenmaHubURL }}{{/* the center (or the hub) the admin shows: they're all at /admin (cmd/denma_place.go) */}}
+		<li class="denma-menu-place" data-testid="place-name">{{ .SiteName }}</li>
+		{{- end }}
 		<li>
 			<a href="{{ URI "/admin" }}" {{ IsNav $p "dashboard" }} data-cy="dashboard">{{ template "denma-icon" "view-dashboard-variant-outline" }}<span>{{ .L.T "menu.dashboard" }}</span></a>
 		</li>

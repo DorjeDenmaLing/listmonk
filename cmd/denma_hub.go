@@ -39,6 +39,7 @@ func initDenmaHubHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/centers"), a.ViewDenmaCenters)
 	g.GET(path.Join(uriAdmin, "/centers/new"), a.ViewDenmaNewCenter)
 	g.GET(path.Join(uriAdmin, "/centers/:slug/open"), a.DenmaOpenCenter)
+	g.GET(path.Join(uriAdmin, "/hub"), a.DenmaToHub)             // cmd/denma_place.go
 	g.GET(path.Join(uriAdmin, "/activity"), a.ViewDenmaActivity) // and a center's
 	g.GET(path.Join(uriAdmin, "/analytics"), a.ViewDenmaHubAnalytics)
 	initDenmaDomainHandlers(g, a) // cmd/denma_domains.go
@@ -269,11 +270,13 @@ func (a *App) DenmaOpenCenter(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
-	// The center's session cookie (its auth sets the center's cookie path).
+	// The center's session cookie (its auth names it for the center), and
+	// the admin at /admin shows it (cmd/denma_place.go).
 	if err := ctr.app.auth.SaveSession(auth.User{Base: auth.Base{ID: userID}}, "", c); err != nil {
 		return err
 	}
-	return c.Redirect(http.StatusFound, path.Join(ctr.app.urlCfg.RootPath, uriAdmin))
+	denmaSetPlace(c, ctr.Slug)
+	return c.Redirect(http.StatusFound, uriAdmin)
 }
 
 // superadminIn returns the superadmin's own account in a center, creating it
@@ -508,7 +511,7 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 		if denmaHub == nil {
 			return ""
 		}
-		return path.Join(denmaHub.current().urlCfg.RootPath, uriAdmin)
+		return path.Join(uriAdmin, "/hub") // back from a center (cmd/denma_place.go)
 	}
 	// DenmaDailySending is the e-mails sent in the last 24 hours against the
 	// daily limit (cmd/denma_daily.go).
