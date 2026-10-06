@@ -223,7 +223,8 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 		d.starting[c.Slug] = true
 	}
 	go d.loadAll(list, base.ko.Int("denma.center_load_workers"))
-	go d.watchDomains() // cmd/denma_domains.go
+	go d.watchDomains()        // cmd/denma_domains.go
+	go d.watchPendingBounces() // cmd/denma_bounces.go
 
 	// The hub's settings saves (and Reload) rebuild it in place, as for the
 	// centers: they signal on a channel of their own, while main() keeps the
@@ -326,6 +327,7 @@ func (d *denmaCenters) loadAll(list []*denmaCenter, workers int) {
 	lo.Printf("denma: %d of %d centers loaded in %s, %d at a time (total time per step: %s)",
 		len(d.loaded()), len(list), time.Since(start).Round(time.Millisecond), workers, &d.timings)
 	denmaStartup.set(start, len(d.loaded()), len(list), time.Since(start)) // for System
+	d.retryBounces()                                                       // those that came while they loaded (cmd/denma_bounces.go)
 }
 
 // denmaStartingPage answers for a center that's still loading after a start:
@@ -441,6 +443,9 @@ func denmaInitRegistry(db *sqlx.DB) error {
 		return err
 	}
 	if err := denmaInitDomains(db); err != nil { // cmd/denma_domains.go
+		return err
+	}
+	if err := denmaInitPendingBounces(db); err != nil { // cmd/denma_bounces.go
 		return err
 	}
 	return denmaInitPeople(db) // cmd/denma_people.go
@@ -993,6 +998,7 @@ func (d *denmaCenters) enable(slug string) error {
 	}
 	d.set(&c)
 	lo.Printf("denma: center %s enabled", slug)
+	go d.retryBounces() // those that came while it was off (cmd/denma_bounces.go)
 	return nil
 }
 
