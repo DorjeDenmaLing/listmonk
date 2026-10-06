@@ -43,7 +43,6 @@ type loginTpl struct {
 	OIDCProvider     string
 	OIDCProviderLogo string
 	Error            string
-	DenmaAction      string // denma: where the form posts (denmaLoginAction, cmd/denma_login.go)
 }
 
 type oidcState struct {
@@ -368,7 +367,6 @@ func (a *App) renderLoginPage(c echo.Context, loginErr error) error {
 		OIDCProvider:     oidcProviderName,
 		OIDCProviderLogo: oidcLogo,
 		NextURI:          next,
-		DenmaAction:      a.denmaLoginAction(c), // denma
 	}
 
 	// If there was an error in the previous state (POST reqest), set it to render in the template.

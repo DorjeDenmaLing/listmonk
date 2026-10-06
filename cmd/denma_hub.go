@@ -541,9 +541,6 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 		}
 		return denmaLoginPath
 	}
-	funcs["DenmaLoginPath"] = func() string {
-		return denmaLoginPath
-	}
 	funcs["DenmaForgotURL"] = func(root string) string {
 		if denmaHub == nil {
 			return root + "/admin/forgot"

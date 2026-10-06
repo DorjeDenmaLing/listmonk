@@ -5,9 +5,7 @@ package main
 // behind Cloudflare Access, for superadmins, while people sign in here.
 //
 // A superadmin (a hub user) signs in with listmonk's own sign-in, the hub's,
-// at /admin/login, which production keeps behind Cloudflare Access, and lands
-// in the hub; /login refuses them, as anyone may try a password there. Anyone
-// else is a person (cmd/denma_people.go), who
+// and lands in the hub. Anyone else is a person (cmd/denma_people.go), who
 // signs in with their e-mail address or username, their password and, if
 // they've turned it on, a two-factor code (/login/twofa), and lands in their
 // center. Someone who is a user of more than one center chooses one
@@ -21,9 +19,9 @@ package main
 //
 // These are the hub's pages (initDenmaLoginHandlers); the hub's server hands
 // /login and what's under it to the hub's router before anything else
-// (loginRoute). Each center's old sign-in page (/c/<slug>/admin/login, where
-// listmonk sends someone who isn't signed in) sends people here, with the
-// page they wanted.
+// (loginRoute). The old sign-in pages, the hub's and each center's
+// (/c/<slug>/admin/login, where listmonk sends someone who isn't signed in),
+// send people here, with the page they wanted.
 
 import (
 	"bytes"
@@ -66,7 +64,7 @@ func (d *denmaCenters) loginRoute(c echo.Context, next echo.HandlerFunc) (bool, 
 	switch {
 	case p == denmaLoginPath || strings.HasPrefix(p, denmaLoginPath+"/"):
 		return true, d.toHub(c, next)
-	case get && p == "/admin/forgot":
+	case get && (p == "/admin/login" || p == "/admin/forgot"):
 		return true, c.Redirect(http.StatusFound, denmaLoginRedirect(p, "", req.URL.Query()))
 	case get && strings.HasPrefix(p, denmaCenterPath):
 		slug, rest, _ := strings.Cut(strings.TrimPrefix(p, denmaCenterPath), "/")
@@ -96,19 +94,6 @@ func denmaLoginRedirect(p, prefix string, q url.Values) string {
 		n = prefix + n
 	}
 	return denmaLoginPath + "?next=" + url.QueryEscape(n)
-}
-
-// denmaLoginAction is where a sign-in page's form posts (public/templates/
-// login.html): the hub's own page posts to itself, for superadmins; any other
-// to everyone's, /login. Without centers, listmonk's.
-func (a *App) denmaLoginAction(c echo.Context) string {
-	switch {
-	case denmaHub == nil:
-		return a.urlCfg.RootURL + "/admin/login"
-	case a.ko.String("denma.center") == "" && strings.HasPrefix(c.Request().URL.Path, uriAdmin):
-		return a.urlCfg.RootURL + "/admin/login"
-	}
-	return denmaLoginPath
 }
 
 // toHub has the hub's router answer the request.
@@ -216,15 +201,18 @@ func (a *App) DenmaLogin(c echo.Context) error {
 		return a.renderLoginPage(c, echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidLogin")))
 	}
 
-	// Superadmins sign in at /admin/login, behind Cloudflare Access: here,
-	// their password alone would give anyone the hub. They're told nothing
-	// more than for a wrong password.
 	var hubUser bool
 	if err := a.db.Get(&hubUser, `SELECT EXISTS (SELECT 1 FROM users WHERE LOWER(username) = LOWER($1) AND type = 'user')`, username); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	if hubUser {
-		return invalid()
+		// listmonk's own sign-in, which counts their guesses too (cmd/auth.go).
+		// They land in the hub's admin: a center's page can't be theirs (they
+		// open centers from the hub), and nothing else is at the root.
+		if next != uriAdmin && !strings.HasPrefix(next, uriAdmin+"/") {
+			c.Request().Form.Set("next", uriAdmin) // read already, by FormValue
+		}
+		return a.LoginPage(c)
 	}
 
 	var p denmaPerson
