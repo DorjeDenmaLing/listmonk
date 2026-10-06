@@ -1,0 +1,98 @@
+# denma: checks every push and pull request to ddl, and every deploy first
+# (denma-deploy.yml): builds the fork, vets it, runs the tests, starts it as
+# the cutover does (an install in public becoming the center DDL under the
+# hub) and checks /health/centers, and looks for known vulnerabilities.
+name: DDL checks
+
+on:
+  push:
+    branches: [ddl]
+  pull_request:
+    branches: [ddl]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: listmonk
+          POSTGRES_PASSWORD: listmonk
+          POSTGRES_DB: listmonk
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U listmonk" --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      LISTMONK_db__host: localhost
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the version, from the tags
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+
+      - name: Build
+        run: sh .github/denma-build.sh "$RUNNER_TEMP/listmonk"
+
+      - name: Vet
+        run: go vet ./cmd/ ./internal/...
+
+      - name: Unit tests
+        run: go test ./internal/...
+
+      # The cmd package's tests run in listmonk's process, which reads
+      # config.toml and connects to an installed database on start.
+      - name: Install, then the cmd tests
+        run: |
+          mkdir -p "$RUNNER_TEMP/run"
+          cp config.toml.sample "$RUNNER_TEMP/run/config.toml"
+          (cd "$RUNNER_TEMP/run" && "$RUNNER_TEMP/listmonk" --install --yes --idempotent)
+          go test -c -o "$RUNNER_TEMP/run/cmd.test" ./cmd
+          sh .github/denma-build.sh --stuff "$RUNNER_TEMP/run/cmd.test"
+          cd "$RUNNER_TEMP/run" && ./cmd.test -test.run 'TestDenma' -test.v
+
+      - name: Start in multi-center mode, as the cutover does
+        working-directory: ${{ runner.temp }}/run
+        env:
+          LISTMONK_app__address: 127.0.0.1:9000
+          LISTMONK_denma__multi_center: "true"
+          LISTMONK_db__params: search_path=hub
+          DENMA_SEED_CENTERS: "ddl:DDL Mailing List:public"
+          LISTMONK_ADMIN_USER: superadmin
+          LISTMONK_ADMIN_PASSWORD: ci-only-password
+        run: |
+          "$RUNNER_TEMP/listmonk" > server.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:9000/health/centers; then break; fi
+            sleep 1
+          done
+          echo
+          ok=true
+          curl -fsS http://127.0.0.1:9000/health/centers || ok=false
+          curl -fsS http://127.0.0.1:9000/c/ddl/health || ok=false
+          grep -q "moved center ddl" server.log || ok=false
+          if [ "$ok" != true ]; then cat server.log; exit 1; fi
+
+  vulnerabilities:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+      # Fails on vulnerabilities the code reaches, in Go or a module.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
