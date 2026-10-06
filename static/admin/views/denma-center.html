@@ -1,6 +1,7 @@
 {{ define "admin-denma-center" -}}
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
+{{- $canMedia := Can $d.Profile "media:get" "media:manage" -}}
 
 {{/* denma: a center's Config page, its own details (cmd/denma_center.go). */}}
 <script nonce="{{ .CSPNonce }}">
@@ -44,19 +45,28 @@
 				Logo
 				<div class="hstack gap-3 denma-center-image">
 					<input name="logo_url" type="url" maxlength="2000" placeholder="https://..." x-model="form.logo_url" />
+					{{- if $canMedia }}
+					<button type="button" class="outline" @click="openMedia('logo_url')" data-testid="logo-media">{{ Icon "image" }} Media</button>
+					{{- end }}
 					<template x-if="form.logo_url"><img :src="form.logo_url" alt="Logo preview" class="denma-center-logo" /></template>
 				</div>
-				<small data-hint>An image address, for the public pages and e-mails. Upload one in Media and copy its address. Empty for listmonk's.</small>
+				<small data-hint>An image, for the public pages and e-mails: choose one in Media (or upload it there), or give its address. Empty for listmonk's.</small>
 			</label>
 			<label data-field>
 				Favicon
 				<div class="hstack gap-3 denma-center-image">
 					<input name="favicon_url" type="url" maxlength="2000" placeholder="https://..." x-model="form.favicon_url" />
+					{{- if $canMedia }}
+					<button type="button" class="outline" @click="openMedia('favicon_url')" data-testid="favicon-media">{{ Icon "image" }} Media</button>
+					{{- end }}
 					<template x-if="form.favicon_url"><img :src="form.favicon_url" alt="Favicon preview" class="denma-center-favicon" /></template>
 				</div>
-				<small data-hint>The small icon in browser tabs, for the public pages. Empty for listmonk's.</small>
+				<small data-hint>The small icon in browser tabs, for the public pages: a small square image (PNG or ICO), from Media or an address. Empty for listmonk's.</small>
 			</label>
 		</fieldset>
+		{{- if $canMedia }}
+		{{ template "media-picker" . }}{{/* the logo's and favicon's, from Media */}}
+		{{- end }}
 
 		<fieldset class="card">
 			<legend>E-mail</legend>

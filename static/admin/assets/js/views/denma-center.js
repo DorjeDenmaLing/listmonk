@@ -12,6 +12,31 @@ function denmaCenter() {
     notify: (form.notify_emails || []).join('\n'),
     utm: (form.utm_domains || []).join('\n'),
     reloading: false,
+    mediaField: null, // the field the Media picker fills: logo_url or favicon_url
+
+    init() {
+      // What's chosen in the Media picker (partials/media-picker.html, as
+      // the campaign page's).
+      window.addEventListener('message', (e) => {
+        if (e.origin !== window.location.origin || e.source !== this.$refs.mediaFrame?.contentWindow) {
+          return;
+        }
+        if (e.data?.type === 'media-select' && this.mediaField) {
+          this.form[this.mediaField] = e.data.media.url;
+          this.$refs.mediaDialog.close();
+        }
+      });
+    },
+
+    openMedia(field) {
+      this.mediaField = field;
+      this.$refs.mediaFrame.src = `${urls.admin}/campaigns/media/fragment?t=${Date.now()}`;
+      this.$refs.mediaDialog.showModal();
+    },
+
+    onMediaClose() {
+      this.mediaField = null;
+    },
 
     async onSubmit() {
       const data = {
