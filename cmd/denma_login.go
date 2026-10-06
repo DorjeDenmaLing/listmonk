@@ -5,7 +5,9 @@ package main
 // behind Cloudflare Access, for superadmins, while people sign in here.
 //
 // A superadmin (a hub user) signs in with listmonk's own sign-in, the hub's,
-// and lands in the hub. Anyone else is a person (cmd/denma_people.go), who
+// at /admin/login, which production keeps behind Cloudflare Access, and lands
+// in the hub; /login refuses them, as anyone may try a password there. Anyone
+// else is a person (cmd/denma_people.go), who
 // signs in with their e-mail address or username, their password and, if
 // they've turned it on, a two-factor code (/login/twofa), and lands in their
 // center. Someone who is a user of more than one center chooses one
@@ -19,14 +21,15 @@ package main
 //
 // These are the hub's pages (initDenmaLoginHandlers); the hub's server hands
 // /login and what's under it to the hub's router before anything else
-// (loginRoute). The old sign-in pages, the hub's and each center's
-// (/c/<slug>/admin/login, where listmonk sends someone who isn't signed in),
-// send people here, with the page they wanted.
+// (loginRoute). Each center's old sign-in page (/c/<slug>/admin/login, where
+// listmonk sends someone who isn't signed in) sends people here, with the
+// page they wanted.
 
 import (
 	"bytes"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,9 +53,6 @@ const (
 	// code; after that, for choosing a center.
 	denmaLoginCookie = "denma_login"
 	denmaLoginTTL    = 10 * time.Minute
-
-	// Wrong two-factor codes before starting again.
-	denmaTwofaTries = 5
 )
 
 // loginRoute hands the sign-in pages to the hub's router, before the hub's
@@ -66,7 +66,7 @@ func (d *denmaCenters) loginRoute(c echo.Context, next echo.HandlerFunc) (bool, 
 	switch {
 	case p == denmaLoginPath || strings.HasPrefix(p, denmaLoginPath+"/"):
 		return true, d.toHub(c, next)
-	case get && (p == "/admin/login" || p == "/admin/forgot"):
+	case get && p == "/admin/forgot":
 		return true, c.Redirect(http.StatusFound, denmaLoginRedirect(p, "", req.URL.Query()))
 	case get && strings.HasPrefix(p, denmaCenterPath):
 		slug, rest, _ := strings.Cut(strings.TrimPrefix(p, denmaCenterPath), "/")
@@ -96,6 +96,19 @@ func denmaLoginRedirect(p, prefix string, q url.Values) string {
 		n = prefix + n
 	}
 	return denmaLoginPath + "?next=" + url.QueryEscape(n)
+}
+
+// denmaLoginAction is where a sign-in page's form posts (public/templates/
+// login.html): the hub's own page posts to itself, for superadmins; any other
+// to everyone's, /login. Without centers, listmonk's.
+func (a *App) denmaLoginAction(c echo.Context) string {
+	switch {
+	case denmaHub == nil:
+		return a.urlCfg.RootURL + "/admin/login"
+	case a.ko.String("denma.center") == "" && strings.HasPrefix(c.Request().URL.Path, uriAdmin):
+		return a.urlCfg.RootURL + "/admin/login"
+	}
+	return denmaLoginPath
 }
 
 // toHub has the hub's router answer the request.
@@ -131,7 +144,6 @@ type denmaLoginState struct {
 	PersonID int
 	Next     string
 	Choosing bool // signed in, choosing a center; else, the two-factor code is next
-	Tries    int  // wrong two-factor codes
 }
 
 func denmaLoginKey(token string) string { return "denma-login:" + token }
@@ -193,16 +205,26 @@ func (a *App) DenmaLogin(c echo.Context) error {
 		}
 	}()
 
+	// Not too many guesses (cmd/denma_throttle.go): past the limit, the
+	// password isn't checked.
+	account := a.denmaPersonKey(username)
+	if err := denmaPasswordWait(c, account); err != nil {
+		return a.renderLoginPage(c, err)
+	}
+	invalid := func() error {
+		denmaPasswordResult(c, account, false)
+		return a.renderLoginPage(c, echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidLogin")))
+	}
+
+	// Superadmins sign in at /admin/login, behind Cloudflare Access: here,
+	// their password alone would give anyone the hub. They're told nothing
+	// more than for a wrong password.
 	var hubUser bool
 	if err := a.db.Get(&hubUser, `SELECT EXISTS (SELECT 1 FROM users WHERE LOWER(username) = LOWER($1) AND type = 'user')`, username); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	if hubUser {
-		// A center's page can't be theirs: they open centers from the hub.
-		if strings.HasPrefix(next, denmaCenterPath) {
-			c.Request().Form.Set("next", uriAdmin) // read already, by FormValue
-		}
-		return a.LoginPage(c)
+		return invalid()
 	}
 
 	var p denmaPerson
@@ -210,8 +232,9 @@ func (a *App) DenmaLogin(c echo.Context) error {
 		WHERE (LOWER(p.username) = LOWER($1) OR LOWER(p.email) = LOWER($1))
 		AND p.password IS NOT NULL AND crypt($2, p.password) = p.password`, username, password)
 	if err != nil || username == "" || password == "" {
-		return a.renderLoginPage(c, echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidLogin")))
+		return invalid()
 	}
+	denmaPasswordResult(c, account, true)
 	return a.denmaPasswordOK(c, &p, next)
 }
 
@@ -304,15 +327,24 @@ func (a *App) DenmaLoginTwofa(c echo.Context) error {
 	}
 	code := strings.TrimSpace(c.FormValue("totp_code"))
 	c.Request().Form.Set("username", p.Username) // who, for the activity log (cmd/denma_audit.go)
+
+	// Wrong codes count for the person, whichever sign-in they came in
+	// (cmd/denma_throttle.go): past the limit, no code is checked.
+	key := strconv.Itoa(p.ID)
+	if wait := denmaTwofaByPerson.wait(key); wait > 0 {
+		a.clearLoginState(c)
+		return a.renderLoginPage(c, denmaTooMany(wait))
+	}
 	if !strHasLen(code, 6, 6) || !totp.Validate(code, p.TwofaKey.String) {
-		st.Tries++
-		if st.Tries >= denmaTwofaTries {
+		denmaTwofaByPerson.add(key)
+		if wait := denmaTwofaByPerson.wait(key); wait > 0 {
 			a.clearLoginState(c)
-			return a.renderLoginPage(c, echo.NewHTTPError(http.StatusForbidden, "Too many wrong codes. Sign in again."))
+			return a.renderLoginPage(c, denmaTooMany(wait))
 		}
 		out.Error = a.i18n.T("globals.messages.invalidValue")
 		return c.Render(http.StatusOK, "denma-login-twofa", out)
 	}
+	denmaTwofaByPerson.clear(key)
 	return a.denmaSignedIn(c, p.ID, st.Next)
 }
 
@@ -351,6 +383,11 @@ func (a *App) DenmaLoginCenters(c echo.Context) error {
 // page, which says the same whether or not anyone has the address).
 func (a *App) DenmaForgot(c echo.Context) error {
 	email := strings.ToLower(strings.TrimSpace(c.FormValue("email")))
+	// Not too many e-mails to one address, or requests from one client
+	// (cmd/denma_throttle.go): the page says the same, and nothing is sent.
+	if !denmaForgotAllowed(c, email) {
+		return c.Render(http.StatusOK, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.resetLinkSent")))
+	}
 	if utils.ValidateEmail(email) {
 		p, err := denmaHub.personByEmail(a.db, email)
 		if err != nil {

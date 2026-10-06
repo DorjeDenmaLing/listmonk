@@ -5,12 +5,12 @@
 <section class="login">
 	<h2>{{ .L.T "users.login"}}</h2>
 	{{ if .Data.PasswordEnabled }}
-	<form method="post" action="{{ DenmaLoginURL .RootURL }}" class="form">{{/* denma: everyone's sign-in (cmd/denma_login.go) */}}
+	<form method="post" action="{{ .Data.DenmaAction }}" class="form">{{/* denma: everyone's sign-in, or the hub's (cmd/denma_login.go) */}}
 		<div>
 			<input type="hidden" name="nonce" value="{{ .Data.Nonce }}" />
 			<input type="hidden" name="next" value="{{ .Data.NextURI }}" />
 			<p>
-				<label for="username">{{ if DenmaHubURL }}{{ .L.T "users.username" }} or e-mail address{{ else }}{{ .L.T "users.username" }}{{ end }}</label>{{/* denma: a person's either (cmd/denma_login.go) */}}
+				<label for="username">{{ if eq .Data.DenmaAction DenmaLoginPath }}{{ .L.T "users.username" }} or e-mail address{{ else }}{{ .L.T "users.username" }}{{ end }}</label>{{/* denma: a person's either (cmd/denma_login.go) */}}
 				<input id="username" type="text" name="username" autofocus required minlength="3" autocomplete="username" />
 			</p>
 			<p>
