@@ -63,6 +63,19 @@ func denmaNormTags(in []string) []string {
 	return out
 }
 
+// denmaCampaignColumnsSQL adds what listmonk's campaign queries read of ours:
+// the tags column and the failed sends (cmd/denma_retries.go).
+const denmaCampaignColumnsSQL = `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';` + denmaRetriesSQL
+
+// denmaInstallColumns adds them on a new install (install.go), before its
+// queries are prepared, as a center's features (denmaFeaturesSQL) or the hub
+// (denmaHubColumns) add them later.
+func denmaInstallColumns(db *sqlx.DB) {
+	if _, err := db.Exec(denmaCampaignColumnsSQL); err != nil {
+		lo.Fatalf("denma: error adding the campaign tags column and failed sends: %v", err)
+	}
+}
+
 // denmaHubColumns adds the campaign tags column and the failed sends' table
 // (cmd/denma_retries.go) to the hub's schema, which has no features installed
 // but runs listmonk's campaign queries (which read them), and the daily
@@ -71,7 +84,7 @@ func denmaNormTags(in []string) []string {
 // (partials/denma/topnav.html) to its settings. Called on every start
 // (denmaPrepareHub).
 func denmaHubColumns(db *sqlx.DB) {
-	if _, err := db.Exec(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';` + denmaRetriesSQL +
+	if _, err := db.Exec(denmaCampaignColumnsSQL +
 		`INSERT INTO settings (key, value) VALUES ('denma.daily_limit', '0'), ('denma.daily_reserve', '5'),
 			('denma.admin_logo_url', '""'), ('denma.admin_icon_url', '""')
 			ON CONFLICT (key) DO NOTHING;` + denmaMoveSlidingWindowSQL); err != nil {

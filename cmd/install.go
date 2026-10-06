@@ -61,6 +61,7 @@ func install(lastVer string, db *sqlx.DB, fs stuffbin.FileSystem, prompt, idempo
 	if err := installSchema(lastVer, db, fs); err != nil {
 		lo.Fatalf("error migrating DB schema: %v", err)
 	}
+	denmaInstallColumns(db) // denma: read by the campaign queries (cmd/denma_tags.go)
 
 	// Load the queries.
 	q := prepareQueries(qMap, db, ko)
