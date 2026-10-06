@@ -337,6 +337,7 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 
 		// Public health API endpoint.
 		g.GET("/health", a.HealthCheck)
+		g.GET("/health/centers", a.DenmaHealthCenters) // denma: every center running (cmd/denma_centers.go)
 		g.GET("/robots.txt", a.RobotsTxt)
 
 		// 404 pages.

@@ -344,6 +344,31 @@ background:#fff;color:#333}@media (prefers-color-scheme:dark){body{background:#1
 	return echo.NewHTTPError(http.StatusServiceUnavailable, "This center is starting up. Try again in a few seconds.")
 }
 
+// DenmaHealthCenters is the hub's /health/centers, for monitoring: OK
+// ({"data":true}) when the database answers and every enabled center is
+// running; else a 503 with how many are running, starting and failed to load.
+// /health only says the process answers, and a center's /c/<slug>/health
+// that one center: neither sees another center fail. Counts only: anyone can
+// read it.
+func (a *App) DenmaHealthCenters(c echo.Context) error {
+	d := denmaHub
+	if d == nil || a.ko.String("denma.center") != "" {
+		return echo.NewHTTPError(http.StatusNotFound, "not found")
+	}
+	var one int
+	dbOK := d.current().db.Get(&one, `SELECT 1`) == nil
+
+	d.mu.RLock()
+	running, starting, failed := len(d.bySlug), len(d.starting), len(d.failed)
+	d.mu.RUnlock()
+	if dbOK && starting == 0 && failed == 0 {
+		return c.JSON(http.StatusOK, okResp{true})
+	}
+	return c.JSON(http.StatusServiceUnavailable, map[string]any{
+		"data": false, "database": dbOK, "running": running, "starting": starting, "failed": failed,
+	})
+}
+
 // denmaEveryMinute adds a job to an app's cron that runs every minute, at a
 // second of the minute set by its center (plus at seconds), so that the
 // centers' jobs spread over the minute rather than all running at once, and
