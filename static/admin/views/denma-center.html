@@ -3,14 +3,14 @@
 {{- $d := .Data -}}
 {{- $canMedia := Can $d.Profile "media:get" "media:manage" -}}
 
-{{/* denma: a center's Config page, its own details (cmd/denma_center.go). */}}
+{{/* denma: a center's Config -> General page, its own details (cmd/denma_center.go). */}}
 <script nonce="{{ .CSPNonce }}">
 	window._denmaCenter = {{ ToJSON $d.Form }};
 </script>
 <form class="denma-center-form" x-data="denmaCenter" @submit.prevent="onSubmit" x-cloak>
 	<header class="row page-header">
 		<div class="col-8">
-			<h1 class="page-title">Config</h1>
+			<h1 class="page-title">General</h1>
 		</div>
 		<div class="col-4 hstack justify-end">
 			<button type="submit" data-variant="primary" data-testid="btn-save" :aria-busy="isLoading('center') || reloading" :disabled="isLoading('center') || reloading">
@@ -124,7 +124,7 @@
 							<option value="{{ .ID }}">{{ .Name }}</option>
 							{{- end }}{{ end }}
 						</select>
-						<small data-hint>A double opt-in list that the website's sign-up forms add people to (through a sign-up webhook, below). They get the confirmation e-mail.</small>
+						<small data-hint>A double opt-in list that the website's sign-up forms add people to (through a sign-up webhook, in Config &rarr; Webhooks). They get the confirmation e-mail.</small>
 					</label>
 				</div>
 				<div class="col-6">
@@ -167,101 +167,6 @@
 
 	</div>
 </form>
-
-{{/* Sign-up webhooks (cmd/denma_signup.go), saved as they're changed. */}}
-<script nonce="{{ .CSPNonce }}">
-	window._denmaSignupHooks = {{ ToJSON $d.SignupHooks }};
-	window._denmaSignupLists = {{ ToJSON $d.SignupLists }};
-</script>
-<section class="page-content content denma-signup" x-data="denmaSignupHooks" x-cloak data-testid="signup-hooks">
-	<fieldset class="card vstack gap-4">
-		<legend>Sign-up webhooks</legend>
-		<p class="text-light text-8">For the sign-up forms on the center's website. Each webhook has a secret address to give the form, and signs people up to its lists. They're sent the confirmation e-mail, and are subscribed once they click it. Someone who unsubscribed is sent one too, unless they marked an e-mail as spam or their address bounced. Webhooks are saved as they're changed, apart from the Save button above.</p>
-
-		<template x-if="!hooks.length">
-			<p class="text-light" data-testid="no-hooks">No webhooks yet.</p>
-		</template>
-		<template x-if="hooks.length">
-			<div class="table-wrapper">
-				<table>
-					<thead>
-						<tr><th>Name</th><th>Lists</th><th>Address</th><th>Sign-ups</th><th></th></tr>
-					</thead>
-					<tbody>
-						<template x-for="h in hooks" :key="h.id">
-							<tr data-testid="hook-row" :data-id="h.id">
-								<td data-label="Name" x-text="h.name"></td>
-								<td data-label="Lists" x-text="listNames(h)"></td>
-								<td data-label="Address">
-									<div class="hstack gap-2">
-										<input type="text" readonly class="denma-signup-url" :value="h.url" @focus="$event.target.select()" aria-label="The webhook's address" />
-										<button type="button" class="outline small" @click="copy(h)" aria-label="Copy the address">{{ Icon "copy" }}</button>
-									</div>
-								</td>
-								<td data-label="Sign-ups">
-									<span x-text="h.uses.toLocaleString()"></span>
-									<div class="text-light text-8" x-text="h.last_used_at ? `Last ${ago(h.last_used_at)}` : 'Not used yet'"></div>
-								</td>
-								<td>
-									<div class="hstack gap-1 justify-end denma-signup-actions">
-										<button type="button" class="outline small" @click="onEdit(h)" data-testid="btn-edit-hook">{{ Icon "edit-2" }} Edit</button>
-										<button type="button" class="outline small" @click="onNewKey(h)" data-testid="btn-hook-key">{{ Icon "rotate-cw" }} New address</button>
-										<button type="button" class="outline small" data-variant="danger" @click="onDelete(h)" aria-label="Delete" data-testid="btn-delete-hook">{{ Icon "trash-2" }}</button>
-									</div>
-								</td>
-							</tr>
-						</template>
-					</tbody>
-				</table>
-			</div>
-		</template>
-		<div><button type="button" class="outline" @click="onAdd" data-testid="btn-add-hook">{{ Icon "plus" }} Add webhook</button></div>
-
-		<details class="denma-signup-help">
-			<summary>Setting up a form</summary>
-			<div class="vstack gap-3">
-				<p><strong>Gravity Forms</strong> (WordPress), with its Webhooks add-on: in the form's Settings &rarr; Webhooks, add one with the webhook's address as the Request URL, Request Method <em>POST</em>, Request Format <em>JSON</em>, and Request Body <em>Select Fields</em>, with these keys:</p>
-				<ul>
-					<li><code>email</code>: the e-mail field (required).</li>
-					<li><code>name</code>, or <code>first_name</code> and <code>last_name</code>: the name fields (optional).</li>
-					<li><code>consent</code>: a consent checkbox, if the form has one. When it's sent, it has to be ticked.</li>
-					<li><code>form_id</code>, <code>entry_id</code>, <code>page_url</code>: optional (the {form_id}, {entry_id} and {embed_url} merge tags). They're kept with the subscriber's consent record.</li>
-				</ul>
-				<p><strong>Any other form or service</strong> that can POST JSON or a form with the same fields. A plain HTML form works too, and shows the "check your e-mail" page:</p>
-				<pre class="denma-signup-code" x-text="htmlForm()"></pre>
-				<p class="text-light">The address is secret only in that whoever has it can sign people up, who still have to confirm by e-mail. If it's been misused, give the webhook a new address and update the form. Each webhook takes at most {{ $d.SignupPerHour }} sign-ups an hour, and an address gets at most 5 confirmation e-mails a day.</p>
-			</div>
-		</details>
-	</fieldset>
-
-	<dialog x-ref="hookDialog">
-		<form @submit.prevent="onSubmit">
-			<div class="dialog-card content">
-				<header class="dialog-head"><h4 class="dialog-title" x-text="edit.id ? 'Edit webhook' : 'Add webhook'"></h4></header>
-				<section class="dialog-body vstack gap-3">
-					<label data-field>
-						Name
-						<input x-model="edit.name" x-ref="hookName" maxlength="200" required placeholder="Newsletter form on our website" data-testid="hook-name" />
-					</label>
-					<fieldset data-field>
-						<legend>Lists</legend>
-						<template x-for="l in lists" :key="l.id">
-							<label class="hstack gap-2"><input type="checkbox" :value="l.id" x-model.number="edit.list_ids" /> <span x-text="l.name"></span></label>
-						</template>
-						<template x-if="!lists.length">
-							<p class="text-danger">The center has no double opt-in lists. Make one on the Lists page first.</p>
-						</template>
-						<small data-hint>Double opt-in lists only, so that everyone confirms by e-mail first. To end up on a single opt-in list, choose a double opt-in list here and set Website signups (above) to move them on once they've confirmed.</small>
-					</fieldset>
-				</section>
-				<footer class="dialog-foot hstack gap-3 justify-end">
-					<button type="button" class="outline" @click="$refs.hookDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
-					<button type="submit" data-variant="primary" data-testid="btn-save-hook" :disabled="!edit.name.trim() || !edit.list_ids.length || isLoading('hooks')" :aria-busy="isLoading('hooks')">Save</button>
-				</footer>
-			</div>
-		</form>
-	</dialog>
-</section>
 
 <script type="module" src="{{ URI "/admin/static/js/views/denma-center.js" }}?v={{ .AssetVersion }}" defer></script>
 

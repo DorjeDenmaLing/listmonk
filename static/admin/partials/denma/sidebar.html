@@ -8,8 +8,8 @@
 
 	In the hub (superadmins): Dashboard, Centers, People, Sending domains,
 	Analytics, Activity, Users, Settings and System. In a center: listmonk's items and ours; its settings are the
-	hub's, and it has Activity (its own log) and a Config page for its own
-	details (cmd/denma_center.go). Superadmins go back to the hub with the top
+	hub's, and it has Activity (its own log) and Config, with General (its own
+	details) and Webhooks (cmd/denma_center.go). Superadmins go back to the hub with the top
 	bar's button.
 
 	On phones it's the menu under the top bar's menu button, with Refresh and
@@ -166,7 +166,13 @@
 			<a href="{{ URI "/admin/activity" }}" {{ IsNav $p "denma.activity" }} data-cy="activity">{{ template "denma-icon" "history" }}<span>Activity</span></a>
 		</li>
 		<li>
-			<a href="{{ URI "/admin/center" }}" {{ IsNav $p "denma.center" }} data-cy="center">{{ template "denma-icon" "wrench-outline" }}<span>Config</span></a>
+			<details {{ ExpandNav $p "config" }} name="sidebar-nav" data-cy="config">
+				<summary>{{ template "denma-icon" "wrench-outline" }}<span>Config</span></summary>
+				<ul>
+					<li><a href="{{ URI "/admin/center" }}" {{ IsNav $p "config.general" }} data-cy="center">{{ template "denma-icon" "cog-outline" }}<span>General</span></a></li>
+					<li><a href="{{ URI "/admin/center/webhooks" }}" {{ IsNav $p "config.webhooks" }} data-cy="webhooks">{{ template "denma-icon" "newspaper-variant-outline" }}<span>Webhooks</span></a></li>
+				</ul>
+			</details>
 		</li>
 		{{- end }}
 	</ul>

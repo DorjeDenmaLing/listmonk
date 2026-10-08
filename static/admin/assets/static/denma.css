@@ -898,10 +898,8 @@ svg.denma-logo {
   }
 }
 
-/* Its sign-up webhooks (cmd/denma_signup.go), below the form. */
+/* Config -> Webhooks: the sign-up webhooks (cmd/denma_signup.go). */
 .denma-signup {
-  padding-top: 0;
-
   .denma-signup-url {
     flex: 1;
     min-width: 16rem;
@@ -917,20 +915,9 @@ svg.denma-logo {
     white-space: nowrap;
   }
 
-  .denma-signup-help {
-    summary {
-      cursor: pointer;
-      font-weight: 500;
-    }
-
-    > div {
-      padding-top: var(--space-3, 0.75rem);
-    }
-
-    ul {
-      margin: 0;
-      padding-left: 1.25rem;
-    }
+  .denma-signup-help ul {
+    margin: 0;
+    padding-left: 1.25rem;
   }
 
   .denma-signup-code {

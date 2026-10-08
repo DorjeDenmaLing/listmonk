@@ -1,9 +1,10 @@
-// denma: a center's Config page (views/denma-center.html,
-// cmd/denma_center.go). Saving reloads the center; the page reloads once
-// it's back.
+// denma: a center's Config pages, General (views/denma-center.html) and
+// Webhooks (views/denma-webhooks.html), cmd/denma_center.go. Saving General
+// reloads the center; the page reloads once it's back.
 import Alpine from 'alpinejs';
 import { api, urls } from '../main.js';
 import * as u from '../utils.js';
+import { denmaTagAutocomplete } from '../denma-tags-ui.js';
 
 function denmaCenter() {
   const form = { ...(window._denmaCenter || {}) };
@@ -79,14 +80,15 @@ function ago(iso) {
   return 'just now';
 }
 
-// The Config page's sign-up webhooks (cmd/denma_signup.go), saved as they're
-// changed.
+// Config -> Webhooks: the sign-up webhooks (cmd/denma_signup.go), saved as
+// they're changed.
 function denmaSignupHooks() {
   return {
     hooks: window._denmaSignupHooks || [],
     lists: window._denmaSignupLists || [],
-    edit: { id: 0, name: '', list_ids: [] },
+    edit: { id: 0, name: '', list_ids: [], tags: [] },
     ago,
+    denmaTagAutocomplete,
 
     listNames(h) {
       const names = Object.fromEntries(this.lists.map((l) => [l.id, l.name]));
@@ -109,13 +111,13 @@ function denmaSignupHooks() {
     },
 
     onAdd() {
-      this.edit = { id: 0, name: '', list_ids: [] };
+      this.edit = { id: 0, name: '', list_ids: [], tags: [] };
       this.$refs.hookDialog.showModal();
       this.$nextTick(() => this.$refs.hookName.focus());
     },
 
     onEdit(h) {
-      this.edit = { id: h.id, name: h.name, list_ids: [...h.list_ids] };
+      this.edit = { id: h.id, name: h.name, list_ids: [...h.list_ids], tags: [...h.tags] };
       this.$refs.hookDialog.showModal();
     },
 
@@ -129,7 +131,7 @@ function denmaSignupHooks() {
     },
 
     async onSubmit() {
-      const body = { name: this.edit.name, list_ids: this.edit.list_ids };
+      const body = { name: this.edit.name, list_ids: this.edit.list_ids, tags: this.edit.tags };
       const h = this.edit.id
         ? await api('hooks', `/denma/center/signup-hooks/${this.edit.id}`, 'PUT', body)
         : await api('hooks', '/denma/center/signup-hooks', 'POST', body);

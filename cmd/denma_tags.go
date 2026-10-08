@@ -253,7 +253,7 @@ func (a *App) DenmaChangeTag(c echo.Context) error {
 	if len(from) != 1 {
 		return echo.NewHTTPError(http.StatusBadRequest, "Name one tag.")
 	}
-	var to []string
+	to := []string{} // not nil: pq.Array(nil) is NULL, which would blank every tag the subscribers have
 	switch req.Action {
 	case "rename":
 		if to = denmaNormTags([]string{req.To}); len(to) != 1 {
@@ -288,6 +288,11 @@ func (a *App) DenmaChangeTag(c echo.Context) error {
 	if err == nil {
 		res, err = tx.Exec(`UPDATE subscribers SET attribs = attribs || jsonb_build_object('tags', (attribs->'tags') - $1::TEXT || to_jsonb($2::TEXT[])),
 			updated_at = NOW() WHERE jsonb_typeof(attribs->'tags') = 'array' AND attribs->'tags' ? $1::TEXT`, from[0], pq.Array(to))
+	}
+	// Sign-up webhooks (cmd/denma_signup.go) follow it too.
+	if err == nil {
+		_, err = tx.Exec(`UPDATE denma_signup_hooks SET tags = ARRAY(SELECT DISTINCT x FROM unnest(array_remove(tags, $1::TEXT) || $2::TEXT[]) x ORDER BY x)
+			WHERE $1::TEXT = ANY(tags)`, from[0], pq.Array(to))
 	}
 	// Campaigns not yet sent follow the rename (or lose the tag).
 	if err == nil {

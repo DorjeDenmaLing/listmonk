@@ -2,9 +2,10 @@ package main
 
 // denma: sign-up webhooks, a center's own way for the forms on its website
 // to sign people up: Gravity Forms' Webhooks add-on, or any form or service
-// that can POST. A center's admins (center:manage) make them on its Config
-// page (views/denma-center.html, the Sign-up webhooks card), each with a name,
-// the lists it signs people up to, and a secret address of its own,
+// that can POST. A center's admins (center:manage) make them in its Config
+// -> Webhooks (views/denma-webhooks.html), each with a name,
+// the lists it signs people up to, optionally tags to give them (the
+// center's, cmd/denma_tags.go), and a secret address of its own,
 // <center>/signup/<token>, to paste into the form.
 //
 // A webhook does what the public subscription form does, without it having
@@ -21,6 +22,8 @@ package main
 //     not confirmed on them yet; someone who unsubscribed is sent the
 //     re-subscription confirmation (cmd/denma_resubscribe.go), unless they
 //     complained or bounced.
+//   - Its tags are added to theirs, new subscriber or not. A campaign sent to
+//     a tag reaches them only once they've confirmed.
 //   - The opt-in checks apply (the shared blocklist, the domain check, at most
 //     5 opt-in e-mails an address a day), and each webhook takes at most
 //     denmaSignupPerHour sign-ups an hour.
@@ -57,6 +60,7 @@ const (
 	denmaSignupPerHour  = 200     // sign-ups a webhook takes an hour
 	denmaSignupMaxHooks = 20      // webhooks a center can have
 	denmaSignupMaxLists = 20      // lists a webhook can have
+	denmaSignupMaxTags  = 20      // tags a webhook can have
 	denmaSignupMaxBody  = 1 << 16 // bytes
 )
 
@@ -76,22 +80,25 @@ CREATE TABLE IF NOT EXISTS denma_signup_hook_lists (
     list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
     PRIMARY KEY (hook_id, list_id)
 );
+-- The tags it gives (the center's: renaming or deleting one changes them).
+ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
 `
 
-// denmaSignupHook is a webhook, for the Config page.
+// denmaSignupHook is a webhook, for Config -> Webhooks.
 type denmaSignupHook struct {
-	ID         int           `db:"id" json:"id"`
-	Name       string        `db:"name" json:"name"`
-	Token      string        `db:"token" json:"-"`
-	URL        string        `db:"-" json:"url"`
-	ListIDs    pq.Int64Array `db:"list_ids" json:"list_ids"`
-	Uses       int           `db:"uses" json:"uses"`
-	LastUsedAt sql.NullTime  `db:"last_used_at" json:"-"`
-	LastUsed   *time.Time    `db:"-" json:"last_used_at"`
-	CreatedAt  time.Time     `db:"created_at" json:"created_at"`
+	ID         int            `db:"id" json:"id"`
+	Name       string         `db:"name" json:"name"`
+	Token      string         `db:"token" json:"-"`
+	URL        string         `db:"-" json:"url"`
+	ListIDs    pq.Int64Array  `db:"list_ids" json:"list_ids"`
+	Tags       pq.StringArray `db:"tags" json:"tags"`
+	Uses       int            `db:"uses" json:"uses"`
+	LastUsedAt sql.NullTime   `db:"last_used_at" json:"-"`
+	LastUsed   *time.Time     `db:"-" json:"last_used_at"`
+	CreatedAt  time.Time      `db:"created_at" json:"created_at"`
 }
 
-const denmaSignupHookSQL = `SELECT h.id, h.name, h.token, h.uses, h.last_used_at, h.created_at,
+const denmaSignupHookSQL = `SELECT h.id, h.name, h.token, h.tags, h.uses, h.last_used_at, h.created_at,
 	ARRAY(SELECT list_id FROM denma_signup_hook_lists hl WHERE hl.hook_id = h.id ORDER BY list_id) AS list_ids
 	FROM denma_signup_hooks h`
 
@@ -131,6 +138,9 @@ func (a *App) signupHookView(h *denmaSignupHook) {
 	if h.ListIDs == nil {
 		h.ListIDs = pq.Int64Array{}
 	}
+	if h.Tags == nil {
+		h.Tags = pq.StringArray{}
+	}
 }
 
 func (a *App) signupHook(id int) (denmaSignupHook, error) {
@@ -157,14 +167,15 @@ func (a *App) DenmaGetSignupHooks(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// denmaSignupForm is a webhook as the Config page sends it.
+// denmaSignupForm is a webhook as Config -> Webhooks sends it.
 type denmaSignupForm struct {
-	Name    string `json:"name"`
-	ListIDs []int  `json:"list_ids"`
+	Name    string   `json:"name"`
+	ListIDs []int    `json:"list_ids"`
+	Tags    []string `json:"tags"`
 }
 
-// checkSignupForm trims and checks a webhook: a name, and one or more of the
-// center's double opt-in lists.
+// checkSignupForm trims and checks a webhook: a name, one or more of the
+// center's double opt-in lists, and any of its tags.
 func (a *App) checkSignupForm(c echo.Context) (denmaSignupForm, error) {
 	var f denmaSignupForm
 	if err := c.Bind(&f); err != nil {
@@ -190,10 +201,16 @@ func (a *App) checkSignupForm(c echo.Context) (denmaSignupForm, error) {
 	for _, l := range lists {
 		if l.Optin != string(models.ListOptinDouble) {
 			return f, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(
-				"%s is single opt-in. A webhook's lists have to be double opt-in, so that whoever signs up confirms by e-mail first. To end up on a single opt-in list, use a double opt-in list here, and Website signups (above) to move them on once they've confirmed.", l.Name))
+				"%s is single opt-in. A webhook's lists have to be double opt-in, so that whoever signs up confirms by e-mail first. To end up on a single opt-in list, use a double opt-in list here, and Website signups (Config -> General) to move them on once they've confirmed.", l.Name))
 		}
 	}
 	f.ListIDs = dedupInts(f.ListIDs)
+	if f.Tags = denmaNormTags(f.Tags); len(f.Tags) > denmaSignupMaxTags {
+		return f, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Choose at most %d tags.", denmaSignupMaxTags))
+	}
+	if err := a.denmaUnknownTags(f.Tags); err != nil {
+		return f, err
+	}
 	return f, nil
 }
 
@@ -244,7 +261,7 @@ func (a *App) DenmaCreateSignupHook(c echo.Context) error {
 	}
 	defer tx.Rollback()
 	var id int
-	if err := tx.QueryRow(`INSERT INTO denma_signup_hooks (name, token) VALUES ($1, $2) RETURNING id`, f.Name, token).Scan(&id); err != nil {
+	if err := tx.QueryRow(`INSERT INTO denma_signup_hooks (name, token, tags) VALUES ($1, $2, $3) RETURNING id`, f.Name, token, pq.Array(f.Tags)).Scan(&id); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	if err := saveSignupLists(tx, id, f.ListIDs); err != nil {
@@ -260,7 +277,7 @@ func (a *App) DenmaCreateSignupHook(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{h})
 }
 
-// DenmaUpdateSignupHook renames a webhook or changes its lists.
+// DenmaUpdateSignupHook renames a webhook or changes its lists or tags.
 func (a *App) DenmaUpdateSignupHook(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -278,7 +295,7 @@ func (a *App) DenmaUpdateSignupHook(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`UPDATE denma_signup_hooks SET name = $2, updated_at = NOW() WHERE id = $1`, id, f.Name); err != nil {
+	if _, err := tx.Exec(`UPDATE denma_signup_hooks SET name = $2, tags = $3, updated_at = NOW() WHERE id = $1`, id, f.Name, pq.Array(f.Tags)); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	if err := saveSignupLists(tx, id, f.ListIDs); err != nil {
@@ -518,6 +535,13 @@ func (a *App) DenmaSignup(c echo.Context) error {
 		}
 		a.log.Printf("denma: error in sign-up webhook %d: %v", h.ID, err)
 		return reply(http.StatusInternalServerError, a.i18n.T("public.errorProcessingRequest"))
+	}
+	// Its tags (the trigger keeps them to the center's).
+	if len(h.Tags) > 0 {
+		if _, err := a.db.Exec(`UPDATE subscribers SET attribs = `+denmaTagsSet("TRUE", "$2")+`, updated_at = NOW() WHERE LOWER(email) = LOWER($1)`,
+			email, h.Tags); err != nil {
+			a.log.Printf("denma: error tagging a sign-up from webhook %d: %v", h.ID, err)
+		}
 	}
 	logf(result)
 

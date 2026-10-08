@@ -1,11 +1,11 @@
 package main
 
-// denma: a center's Config page (sidebar, in a center): the center's own
-// details, which aren't the hub's settings (denmaCenterOwnSettings): its
-// name, logo, favicon and language, and its sender and admin notification
-// e-mails. For users with center:manage (Center Admins, and superadmins).
-// Saving reloads the center. Its sign-up webhooks (cmd/denma_signup.go) are
-// saved on their own.
+// denma: a center's Config pages (sidebar, in a center). General: the
+// center's own details, which aren't the hub's settings
+// (denmaCenterOwnSettings): its name, logo, favicon and language, and its
+// sender and admin notification e-mails. Saving reloads the center.
+// Webhooks: its sign-up webhooks (cmd/denma_signup.go), saved on their own.
+// For users with center:manage (Center Admins, and superadmins).
 
 import (
 	"encoding/json"
@@ -70,9 +70,11 @@ func denmaPermissions(raw []byte, ko *koanf.Koanf) []byte {
 	return out
 }
 
-// initDenmaCenterHandlers registers the Config page and its API.
+// initDenmaCenterHandlers registers the Config pages (General and Webhooks)
+// and their API.
 func initDenmaCenterHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/center"), a.ViewDenmaCenter)
+	g.GET(path.Join(uriAdmin, "/center/webhooks"), a.ViewDenmaWebhooks)
 }
 
 func initDenmaCenterAPIHandlers(g *echo.Group, a *App) {
@@ -123,8 +125,12 @@ type denmaCenterView struct {
 	Lists           []denmaOption
 	VisualTemplates []denmaOption
 	Designs         []denmaOption // cmd/denma_design.go
+}
 
-	// Sign-up webhooks (cmd/denma_signup.go), and the lists they can have.
+// denmaWebhooksView is Config -> Webhooks: the sign-up webhooks
+// (cmd/denma_signup.go), and the lists they can have.
+type denmaWebhooksView struct {
+	adminView
 	SignupHooks   []denmaSignupHook
 	SignupLists   []denmaOption
 	SignupPerHour int
@@ -177,14 +183,23 @@ func (a *App) centerForm() (denmaCenterForm, error) {
 	return out, err
 }
 
-// ViewDenmaCenter renders the Config page.
-func (a *App) ViewDenmaCenter(c echo.Context) error {
+// centerView starts a Config page's view, for those who can use it.
+func (a *App) centerView(c echo.Context, title, pageID string) (adminView, error) {
 	if err := a.inCenter(); err != nil {
-		return err
+		return adminView{}, err
 	}
-	v := newAdminView(c, "Config", "", "denma.center")
+	v := newAdminView(c, title, "", pageID)
 	if !v.Can(denmaCenterPerm) {
-		return echo.NewHTTPError(http.StatusForbidden, a.i18n.Ts("globals.messages.permissionDenied", "name", denmaCenterPerm))
+		return v, echo.NewHTTPError(http.StatusForbidden, a.i18n.Ts("globals.messages.permissionDenied", "name", denmaCenterPerm))
+	}
+	return v, nil
+}
+
+// ViewDenmaCenter renders Config -> General.
+func (a *App) ViewDenmaCenter(c echo.Context) error {
+	v, err := a.centerView(c, "General", "config.general")
+	if err != nil {
+		return err
 	}
 	form, err := a.centerForm()
 	if err != nil {
@@ -210,16 +225,23 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	view.DomainsOn = denmaDomainsOn()
+	return c.Render(http.StatusOK, "admin-denma-center", view)
+}
+
+// ViewDenmaWebhooks renders Config -> Webhooks.
+func (a *App) ViewDenmaWebhooks(c echo.Context) error {
+	v, err := a.centerView(c, "Webhooks", "config.webhooks")
+	if err != nil {
+		return err
+	}
+	view := denmaWebhooksView{adminView: v, SignupLists: []denmaOption{}, SignupPerHour: denmaSignupPerHour}
 	if view.SignupHooks, err = a.signupHooks(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	view.SignupLists, view.SignupPerHour = []denmaOption{}, denmaSignupPerHour
-	for _, l := range view.Lists {
-		if l.Optin == "double" {
-			view.SignupLists = append(view.SignupLists, l)
-		}
+	if err := a.db.Select(&view.SignupLists, `SELECT id, name, optin::TEXT AS optin FROM lists WHERE optin = 'double' ORDER BY name`); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	return c.Render(http.StatusOK, "admin-denma-center", view)
+	return c.Render(http.StatusOK, "admin-denma-webhooks", view)
 }
 
 // DenmaUpdateCenter saves the Config page and reloads the center (after
