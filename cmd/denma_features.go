@@ -19,10 +19,10 @@ package main
 //     utm_medium=email and utm_campaign=<the campaign's name>. Links to the
 //     app's own address, with template tags, or with their own utm_ tags are
 //     left alone.
-//   - Website signups (denma.signup_holding_list, denma.signup_target_list):
-//     someone who confirms their subscription to the holding list (double
-//     opt-in) is moved to the other list, confirmed, with
-//     attribs.consent_confirmed_at.
+//   - Website signups were a setting here (a holding list, double opt-in,
+//     and the list people moved to once they'd confirmed it); they're an
+//     automation now (cmd/denma_automations.go), which version 16 made from
+//     the setting.
 //   - A default visual template (denma.visual_template): new campaigns are
 //     Visual and start from it, and it can't be deleted (as listmonk's default
 //     template), nor can the design for e-mails and pages
@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 15
+const denmaFeaturesVersion = 16
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -70,8 +70,6 @@ var denmaFeatureDefaults = map[string]any{
 	"denma.unsubscribe_everywhere": true,
 	"denma.plain_text_auto":        true,
 	"denma.utm_domains":            []string{},
-	"denma.signup_holding_list":    0,
-	"denma.signup_target_list":     0,
 	"denma.visual_template":        0,
 	"denma.design_template":        0, // cmd/denma_design.go
 }
@@ -149,6 +147,16 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		if _, err := tx.Exec(`UPDATE templates SET type = 'design' WHERE type = 'campaign_visual' AND id IN (
 			SELECT (value #>> '{}')::INT FROM settings WHERE key IN ('denma.default_design', 'denma.design_template'))`); err != nil {
 			return fmt.Errorf("making the designs designs: %v", err)
+		}
+	}
+	// Version 16: the Website signups setting is an automation.
+	if ver < 16 {
+		moved, err := denmaMigrateSignupSetting(tx)
+		if err != nil {
+			return fmt.Errorf("making the website signups' automation: %v", err)
+		}
+		if moved {
+			lo.Printf("denma: center %s: its Website signups setting is now an automation", c.Slug)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)
@@ -493,41 +501,9 @@ CREATE TRIGGER denma_campaign_utm
     WHEN (NEW.status IN ('scheduled', 'running') AND OLD.status IS DISTINCT FROM NEW.status)
     EXECUTE FUNCTION denma_campaign_utm();
 
--- Website signups: confirming the holding list moves them to the other one.
-CREATE OR REPLACE FUNCTION denma_confirm_signup() RETURNS trigger
-LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
-DECLARE
-    holding INT := coalesce((denma_setting('denma.signup_holding_list') #>> '{}')::INT, 0);
-    target INT := coalesce((denma_setting('denma.signup_target_list') #>> '{}')::INT, 0);
-BEGIN
-    IF holding = 0 OR target = 0 OR holding = target OR NEW.list_id <> holding THEN
-        RETURN NULL;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM lists WHERE id = target) THEN
-        RETURN NULL;
-    END IF;
-    IF EXISTS (SELECT 1 FROM subscribers WHERE id = NEW.subscriber_id AND status <> 'blocklisted') THEN
-        INSERT INTO subscriber_lists (subscriber_id, list_id, status, meta)
-        VALUES (NEW.subscriber_id, target, 'confirmed', NEW.meta)
-        ON CONFLICT (subscriber_id, list_id) DO UPDATE
-            SET status = 'confirmed', meta = subscriber_lists.meta || EXCLUDED.meta, updated_at = NOW()
-            WHERE subscriber_lists.status = 'unconfirmed';
-        -- Attributes may be JSON null, which || would make an array.
-        UPDATE subscribers
-        SET attribs = (CASE WHEN jsonb_typeof(attribs) = 'object' THEN attribs ELSE '{}'::JSONB END) || jsonb_build_object('consent_confirmed_at',
-                to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')),
-            updated_at = NOW()
-        WHERE id = NEW.subscriber_id;
-    END IF;
-    DELETE FROM subscriber_lists WHERE subscriber_id = NEW.subscriber_id AND list_id = holding;
-    RETURN NULL;
-END;
-$$;
+-- Website signups' holding list is an automation now (cmd/denma_automations.go).
 DROP TRIGGER IF EXISTS denma_confirm_signup ON subscriber_lists;
-CREATE TRIGGER denma_confirm_signup
-    AFTER UPDATE OF status ON subscriber_lists FOR EACH ROW
-    WHEN (NEW.status = 'confirmed' AND OLD.status IS DISTINCT FROM 'confirmed')
-    EXECUTE FUNCTION denma_confirm_signup();
+DROP FUNCTION IF EXISTS denma_confirm_signup();
 
 -- The default visual template: new visual campaigns start from it, and it
 -- can't be deleted.
@@ -758,7 +734,7 @@ func (a *App) denmaPlainAuto() bool {
 var reDenmaDomain = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$`)
 
 // denmaCheckFeatures checks and tidies the Config page's feature settings:
-// domains as bare hostnames, lists and the template that exist.
+// domains as bare hostnames, and templates that exist.
 func (a *App) denmaCheckFeatures(f *denmaCenterForm) error {
 	domains := []string{}
 	for _, d := range f.UTMDomains {
@@ -781,25 +757,6 @@ func (a *App) denmaCheckFeatures(f *denmaCenterForm) error {
 	}
 	f.UTMDomains = domains
 
-	if (f.SignupHoldingList == 0) != (f.SignupTargetList == 0) {
-		return fmt.Errorf("choose both website signup lists, or neither")
-	}
-	if f.SignupHoldingList != 0 {
-		if f.SignupHoldingList == f.SignupTargetList {
-			return fmt.Errorf("the website signup lists must be two different lists")
-		}
-		var optin string
-		if err := a.db.Get(&optin, `SELECT optin::TEXT FROM lists WHERE id = $1`, f.SignupHoldingList); err != nil {
-			return fmt.Errorf("the website signups' holding list doesn't exist")
-		}
-		if optin != "double" {
-			return fmt.Errorf("the website signups' holding list must be double opt-in: confirming it is what moves people on")
-		}
-		var n int
-		if err := a.db.Get(&n, `SELECT COUNT(*) FROM lists WHERE id = $1`, f.SignupTargetList); err != nil || n == 0 {
-			return fmt.Errorf("the list website signups move to doesn't exist")
-		}
-	}
 	if f.VisualTemplate != 0 {
 		var n int
 		if err := a.db.Get(&n, `SELECT COUNT(*) FROM templates WHERE id = $1 AND type = 'campaign_visual'`, f.VisualTemplate); err != nil || n == 0 {

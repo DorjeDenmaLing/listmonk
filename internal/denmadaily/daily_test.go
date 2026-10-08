@@ -113,3 +113,51 @@ func TestDailyReserve(t *testing.T) {
 		t.Fatalf("sent %d, left %d", s.Sent, s.Left)
 	}
 }
+
+// Automations claim their share before sending: two claims can't take the
+// same room, sends turn claims into counts, and what isn't sent is given
+// back.
+func TestDailyClaim(t *testing.T) {
+	if got, ok := counter(0).Claim(500); got != 500 || ok {
+		t.Fatalf("no limit: got %d, claimed %v; want 500, false", got, ok)
+	}
+
+	// A limit of 1,000 with a 10% reserve: 900 for campaigns and automations,
+	// 600 of them sent.
+	d := counter(1000, [2]int{5, 600})
+	d.reserve = 10
+	if got, ok := d.Claim(200); got != 200 || !ok {
+		t.Fatalf("first claim: got %d, claimed %v; want 200, true", got, ok)
+	}
+	if got, _ := d.Claim(200); got != 100 {
+		t.Fatalf("second claim: got %d, want the 100 left", got)
+	}
+	if got, _ := d.Claim(50); got != 0 {
+		t.Fatalf("third claim: got %d, want 0", got)
+	}
+	if s := d.Status(); s.Left != 0 || s.Claimed != 300 {
+		t.Fatalf("after claiming: left %d, claimed %d; want 0, 300", s.Left, s.Claimed)
+	}
+
+	// 150 of the first 200 sent, the other 50 given back.
+	for range 150 {
+		d.AddClaimed()
+	}
+	d.Release(50)
+	if s := d.Status(); s.Sent != 750 || s.Claimed != 100 || s.Left != 50 {
+		t.Fatalf("after sending: sent %d, claimed %d, left %d; want 750, 100, 50", s.Sent, s.Claimed, s.Left)
+	}
+
+	// Claims left untouched for claimTimeout are dropped.
+	d.claimAt = time.Now().Add(-claimTimeout - time.Minute)
+	if s := d.Status(); s.Claimed != 0 || s.Left != 150 {
+		t.Fatalf("after the timeout: claimed %d, left %d; want 0, 150", s.Claimed, s.Left)
+	}
+
+	// Sends that weren't claimed don't touch the claims.
+	d.Claim(10)
+	d.Add()
+	if s := d.Status(); s.Claimed != 10 || s.Sent != 751 {
+		t.Fatalf("an unclaimed send: claimed %d, sent %d; want 10, 751", s.Claimed, s.Sent)
+	}
+}

@@ -44,7 +44,6 @@ function denmaCenter() {
         ...this.form,
         notify_emails: this.notify.split(/[\n,;]+/).map((e) => e.trim()).filter(Boolean),
         utm_domains: this.utm.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean),
-        signup_target_list: this.form.signup_holding_list ? this.form.signup_target_list : 0,
       };
       const res = await api('center', '/denma/center', 'PUT', data);
       if (!res.reloading) {

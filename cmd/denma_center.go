@@ -29,8 +29,7 @@ var denmaCenterFields = []string{
 	"app.site_name", "app.logo_url", "app.favicon_url", "app.lang",
 	"app.from_email", "app.notify_emails",
 	// The features (cmd/denma_features.go).
-	"denma.unsubscribe_everywhere", "denma.plain_text_auto", "denma.utm_domains",
-	"denma.signup_holding_list", "denma.signup_target_list", "denma.visual_template",
+	"denma.unsubscribe_everywhere", "denma.plain_text_auto", "denma.utm_domains", "denma.visual_template",
 	"denma.design_template", // cmd/denma_design.go
 }
 
@@ -94,8 +93,6 @@ type denmaCenterForm struct {
 	UnsubscribeEverywhere bool     `json:"unsubscribe_everywhere"`
 	PlainTextAuto         bool     `json:"plain_text_auto"`
 	UTMDomains            []string `json:"utm_domains"`
-	SignupHoldingList     int      `json:"signup_holding_list"`
-	SignupTargetList      int      `json:"signup_target_list"`
 	VisualTemplate        int      `json:"visual_template"`
 	DesignTemplate        int      `json:"design_template"` // cmd/denma_design.go
 }
@@ -104,8 +101,7 @@ var denmaFormKeys = map[string]string{
 	"site_name": "app.site_name", "logo_url": "app.logo_url", "favicon_url": "app.favicon_url",
 	"lang": "app.lang", "from_email": "app.from_email", "notify_emails": "app.notify_emails",
 	"unsubscribe_everywhere": "denma.unsubscribe_everywhere", "plain_text_auto": "denma.plain_text_auto",
-	"utm_domains": "denma.utm_domains", "signup_holding_list": "denma.signup_holding_list",
-	"signup_target_list": "denma.signup_target_list", "visual_template": "denma.visual_template",
+	"utm_domains": "denma.utm_domains", "visual_template": "denma.visual_template",
 	"design_template": "denma.design_template",
 }
 
@@ -122,7 +118,6 @@ type denmaCenterView struct {
 	DomainsOn bool
 
 	// For the features' choices.
-	Lists           []denmaOption
 	VisualTemplates []denmaOption
 	Designs         []denmaOption // cmd/denma_design.go
 }
@@ -210,11 +205,8 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	view := denmaCenterView{adminView: v, Form: form, Address: a.urlCfg.RootURL, Langs: langs,
-		Super: v.Profile.UserRole.ID == auth.SuperAdminRoleID,
-		Lists: []denmaOption{}, VisualTemplates: []denmaOption{}, Designs: []denmaOption{}}
-	if err := a.db.Select(&view.Lists, `SELECT id, name, optin::TEXT AS optin FROM lists ORDER BY name`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
+		Super:           v.Profile.UserRole.ID == auth.SuperAdminRoleID,
+		VisualTemplates: []denmaOption{}, Designs: []denmaOption{}}
 	if err := a.db.Select(&view.VisualTemplates, `SELECT id, name, '' AS optin FROM templates WHERE type = 'campaign_visual' ORDER BY name`); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}

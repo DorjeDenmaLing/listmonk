@@ -12,9 +12,9 @@ package main
 // to be on (the hub's setting, for every center), and for private lists too:
 //
 //   - Its lists are double opt-in only, so that whoever signs up confirms by
-//     e-mail before anything else is sent; with the center's Website signups
-//     setting (cmd/denma_features.go), confirming the holding list moves them
-//     on to a single opt-in list.
+//     e-mail before anything else is sent; an automation
+//     (cmd/denma_automations.go) can move them on to a single opt-in list
+//     once they've confirmed, as every new center's does.
 //   - A new address is added, and sent the confirmation e-mail, with a consent
 //     record in its attributes (consent_at, consent_source, and the form's
 //     form_id, entry_id and page_url if sent), as the web-signup Lambda does.
@@ -201,7 +201,7 @@ func (a *App) checkSignupForm(c echo.Context) (denmaSignupForm, error) {
 	for _, l := range lists {
 		if l.Optin != string(models.ListOptinDouble) {
 			return f, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(
-				"%s is single opt-in. A webhook's lists have to be double opt-in, so that whoever signs up confirms by e-mail first. To end up on a single opt-in list, use a double opt-in list here, and Website signups (Config -> General) to move them on once they've confirmed.", l.Name))
+				"%s is single opt-in. A webhook's lists have to be double opt-in, so that whoever signs up confirms by e-mail first. To end up on a single opt-in list, use a double opt-in list here, and an automation (Automations) to move them on once they've confirmed.", l.Name))
 		}
 	}
 	f.ListIDs = dedupInts(f.ListIDs)

@@ -91,7 +91,8 @@ type subscriberView struct {
 	TotalViews    int
 	TotalClicks   int
 
-	DenmaOptOut *denmaOptOut // denma: cmd/denma_optouts.go
+	DenmaOptOut *denmaOptOut   // denma: cmd/denma_optouts.go
+	DenmaRuns   []denmaAutoRun // denma: the automations that ran for them (cmd/denma_automations.go)
 }
 
 // subCampaignView and subLinkClick are the parsed rows of a subscriber's activity,
@@ -240,6 +241,7 @@ func (a *App) ViewSubscriberActivity(c echo.Context) error {
 	for _, cl := range data.LinkClicks {
 		data.TotalClicks += cl.ClickCount
 	}
+	data.DenmaRuns = a.denmaAutoRuns(out.ID) // denma
 
 	return c.Render(http.StatusOK, "admin-subscriber", data)
 }

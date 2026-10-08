@@ -114,32 +114,7 @@
 				<span><input type="checkbox" role="switch" x-model="form.unsubscribe_everywhere" data-testid="unsubscribe-everywhere"{{ if and $d.Form.UnsubscribeEverywhere (not $d.Super) }} disabled{{ end }} /> Unsubscribing someone from one list here unsubscribes them from all</span>
 				<small data-hint>Subscribers who unsubscribe themselves (the unsubscribe link, or the e-mail app's unsubscribe button) always leave every list and are blocklisted. This does the same when someone is unsubscribed from a list here in the admin, by an import or through the API. Only a superadmin can turn it off.</small>
 			</label>
-			<div class="row">
-				<div class="col-6">
-					<label data-field>
-						Website signups wait on
-						<select x-model.number="form.signup_holding_list" data-testid="signup-holding">
-							<option value="0">No list (off)</option>
-							{{- range $d.Lists }}{{ if eq .Optin "double" }}
-							<option value="{{ .ID }}">{{ .Name }}</option>
-							{{- end }}{{ end }}
-						</select>
-						<small data-hint>A double opt-in list that the website's sign-up forms add people to (through a sign-up webhook, in Config &rarr; Webhooks). They get the confirmation e-mail.</small>
-					</label>
-				</div>
-				<div class="col-6">
-					<label data-field>
-						and, once confirmed, join
-						<select x-model.number="form.signup_target_list" :disabled="!form.signup_holding_list" data-testid="signup-target">
-							<option value="0">No list</option>
-							{{- range $d.Lists }}
-							<option value="{{ .ID }}">{{ .Name }}</option>
-							{{- end }}
-						</select>
-						<small data-hint>They're moved here, confirmed, with the date they confirmed. Don't send campaigns to the first list.</small>
-					</label>
-				</div>
-			</div>
+			<p class="text-light text-8" data-testid="signups-note">Moving website signups on to another list once they've confirmed is an automation now, in <a href="{{ URI "/admin/automations" }}">Automations</a>.</p>
 		</fieldset>
 
 		<fieldset class="card" data-testid="center-campaigns">

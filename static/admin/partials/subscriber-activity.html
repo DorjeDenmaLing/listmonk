@@ -23,6 +23,26 @@
 		</table>
 	{{- end }}
 
+	{{- if $d.DenmaRuns }}{{/* denma: cmd/denma_automations.go */}}
+		<h5 class="mt-6">Automations</h5>
+		<table data-testid="auto-runs">
+			<thead><tr><th>Automation</th><th>What it did</th><th width="20%">Last ran</th></tr></thead>
+			<tbody>
+				{{- range $d.DenmaRuns }}
+					<tr>
+						<td><a href="{{ URI "/admin/automations" }}/{{ .ID }}">{{ .Name }}</a>{{ if gt .Runs 1 }}<p class="text-light">{{ .Runs }} times</p>{{ end }}</td>
+						<td data-label="What it did">
+							{{- if eq .Status "failed" }}<span class="text-danger">Failed: {{ .Error }}</span>
+							{{- else if .Did }}{{ .Did }}
+							{{- else }}&mdash;{{ end }}
+						</td>
+						<td data-label="Last ran">{{ NiceDate .At }}</td>
+					</tr>
+				{{- end }}
+			</tbody>
+		</table>
+	{{- end }}
+
 	{{- if $d.LinkClicks }}
 		<h5 class="mt-6">{{ .L.T "campaigns.clicks" }}</h5>
 		<table>

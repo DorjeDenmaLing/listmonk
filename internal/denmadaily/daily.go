@@ -3,6 +3,15 @@
 // Campaigns and automations stop short of the limit by a reserve (a
 // percentage of it), which is left for opt-in confirmations, password resets,
 // invites and notifications.
+//
+// Campaign messages each wait for their turn (Wait). Automations send a
+// batch at once, so they claim their share of what's left first (Claim): it
+// counts against the limit straight away, so that automations in several
+// centers running in the same minute can't each take the same room. Each
+// claimed e-mail sent turns a claim into a send (AddClaimed); what an
+// automation claimed but didn't send it gives back (Release). Claims are
+// in memory only, and a claim left untouched for claimTimeout is dropped,
+// in case e-mails claimed were never sent.
 package denmadaily
 
 import (
@@ -33,6 +42,8 @@ type Counter struct {
 	total   int           // their sum
 	pending map[int64]int // counted since the last save
 	waiting bool          // the limit was reached (logged once)
+	claimed int           // claimed by automations, not sent yet
+	claimAt time.Time     // when claims last changed
 	db      *sqlx.DB
 	log     *log.Logger
 }
@@ -106,8 +117,16 @@ func (d *Counter) Save() {
 	}
 }
 
-// expire drops the minutes older than 24 hours. Call with mu held.
+// claimTimeout is how long claims last untouched before they're dropped.
+const claimTimeout = time.Hour
+
+// expire drops the minutes older than 24 hours, and claims left untouched
+// for claimTimeout. Call with mu held.
 func (d *Counter) expire(now time.Time) {
+	if d.claimed > 0 && now.Sub(d.claimAt) > claimTimeout {
+		d.log.Printf("denma: dropping %d e-mails claimed by automations an hour ago and not sent", d.claimed)
+		d.claimed = 0
+	}
 	cutoff := now.Unix()/60 - dayMinutes
 	i := 0
 	for i < len(d.minutes) && d.minutes[i].Minute <= cutoff {
@@ -135,6 +154,48 @@ func (d *Counter) Add() {
 	d.pending[m]++
 }
 
+// AddClaimed counts an e-mail sent that an automation had claimed.
+func (d *Counter) AddClaimed() {
+	d.Add()
+	d.mu.Lock()
+	if d.claimed > 0 {
+		d.claimed--
+		d.claimAt = time.Now()
+	}
+	d.mu.Unlock()
+}
+
+// Claim takes up to n of what's left for campaigns and automations, for an
+// automation's batch, and returns how many it got, and whether they're
+// claimed: without a limit, all n, unclaimed (nothing to count against).
+func (d *Counter) Claim(n int) (int, bool) {
+	if d.Left() < 0 {
+		return n, false
+	}
+	now := time.Now()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.expire(now)
+	left := max(d.limit-d.limit*d.reserve/100-d.total-d.claimed, 0)
+	got := min(max(n, 0), left)
+	if got > 0 {
+		d.claimed += got
+		d.claimAt = now
+	}
+	return got, true
+}
+
+// Release gives back n claimed e-mails that weren't sent.
+func (d *Counter) Release(n int) {
+	if n <= 0 {
+		return
+	}
+	d.mu.Lock()
+	d.claimed = max(d.claimed-n, 0)
+	d.claimAt = time.Now()
+	d.mu.Unlock()
+}
+
 // SetLimit sets the limit (the hub's setting; 0 for none) and the reserve,
 // the percentage of it that campaigns and automations leave (0-100).
 func (d *Counter) SetLimit(n, reservePct int) {
@@ -151,6 +212,7 @@ type Status struct {
 	CampaignLimit int       // the limit less the reserve: campaigns' and automations'
 	Reserve       int       // the reserve, in percent
 	Left          int       // for campaigns, with a limit
+	Claimed       int       // claimed by automations, not sent yet
 	FreesAt       time.Time // when one more campaign message can go, if it's reached
 }
 
@@ -162,14 +224,14 @@ func (d *Counter) Status() Status {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.expire(now)
-	s := Status{Sent: d.total, Limit: d.limit, Reserve: d.reserve}
+	s := Status{Sent: d.total, Limit: d.limit, Reserve: d.reserve, Claimed: d.claimed}
 	if d.limit == 0 {
 		return s
 	}
 	s.CampaignLimit = d.limit - d.limit*d.reserve/100
-	s.Left = max(s.CampaignLimit-d.total, 0)
+	s.Left = max(s.CampaignLimit-d.total-d.claimed, 0)
 	if s.Left == 0 {
-		need := d.total - s.CampaignLimit + 1
+		need := d.total + d.claimed - s.CampaignLimit + 1
 		for _, m := range d.minutes {
 			if need -= m.N; need <= 0 {
 				s.FreesAt = time.Unix((m.Minute+dayMinutes+1)*60, 0)
@@ -192,8 +254,13 @@ func (d *Counter) Left() int {
 	defer d.mu.Unlock()
 	if s.Left == 0 && !d.waiting {
 		d.waiting = true
-		d.log.Printf("denma: %d e-mails sent in 24 hours, the daily limit of %d less its %d%% reserve; campaigns and automations wait until about %s",
-			s.Sent, s.Limit, s.Reserve, s.FreesAt.Format("15:04"))
+		if s.Claimed > 0 {
+			d.log.Printf("denma: %d e-mails sent in 24 hours and %d claimed by automations, the daily limit of %d less its %d%% reserve; campaigns and other automations wait",
+				s.Sent, s.Claimed, s.Limit, s.Reserve)
+		} else {
+			d.log.Printf("denma: %d e-mails sent in 24 hours, the daily limit of %d less its %d%% reserve; campaigns and automations wait until about %s",
+				s.Sent, s.Limit, s.Reserve, s.FreesAt.Format("15:04"))
+		}
 	} else if s.Left > 0 && d.waiting {
 		d.waiting = false
 		d.log.Printf("denma: under the daily limit again; sending goes on")

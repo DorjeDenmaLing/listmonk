@@ -98,6 +98,10 @@ func (p *denmaPacer) configure(ko *koanf.Koanf) {
 	}
 }
 
+// denmaClaimHeader marks an automation's e-mail as claimed against the daily
+// limit (denmaDaily.Claim); it's taken off before the e-mail is sent.
+const denmaClaimHeader = "X-Denma-Daily-Claim"
+
 // denmaPacedMessenger is a (non e-mail) messenger whose messages wait for the
 // shared limit.
 type denmaPacedMessenger struct {
@@ -123,8 +127,14 @@ func denmaLimitSending(msgrs []manager.Messenger, ko *koanf.Koanf) []manager.Mes
 	}
 	denmaHookEmail.Do(func() {
 		email.DenmaDropSenderHeaders = true // cmd/denma_domains.go, denmaCheckHeaders
-		email.BeforePush = func() {
+		email.BeforePush = func(m models.Message) {
 			denmaSendPacer.wait()
+			// An automation's e-mail, claimed already (cmd/denma_automations.go).
+			if m.Headers != nil && m.Headers.Get(denmaClaimHeader) != "" {
+				m.Headers.Del(denmaClaimHeader)
+				denmaDaily.AddClaimed()
+				return
+			}
 			denmaDaily.Add()
 		}
 		manager.DenmaDailyWait = denmaDaily.Wait

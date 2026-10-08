@@ -99,7 +99,7 @@
 						<template x-if="!lists.length">
 							<p class="text-danger">The center has no double opt-in lists. Make one on the Lists page first.</p>
 						</template>
-						<small data-hint>Double opt-in lists only, so that everyone confirms by e-mail first. To end up on a single opt-in list, choose a double opt-in list here and set Website signups in Config &rarr; General to move them on once they've confirmed.</small>
+						<small data-hint>Double opt-in lists only, so that everyone confirms by e-mail first. To end up on a single opt-in list, choose a double opt-in list here, and an automation (Automations) moves them on once they've confirmed, as every new center's does.</small>
 					</fieldset>
 					{{ template "denma-tag-picker" dict "Model" "edit.tags" "ID" "hook-tags" "Label" "Tags (optional)" "Hint" "Given to everyone who signs up through this webhook, new or already subscribed. Pick from the center's tags; new ones are added under Subscribers -> Tags. Campaigns sent to a tag reach them once they've confirmed." }}
 				</section>

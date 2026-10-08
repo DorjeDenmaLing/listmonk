@@ -23,10 +23,9 @@
 				<thead>
 					<tr>
 						<th>Automation</th>
-						<th>Template</th>
 						<th>On</th>
-						<th class="align-right">Sent</th>
-						<th>Last sent</th>
+						<th class="align-right">Ran for</th>
+						<th>Last ran</th>
 						<th class="actions align-right"></th>
 					</tr>
 				</thead>
@@ -35,26 +34,23 @@
 					<tr data-testid="automation-row" data-id="{{ .ID }}">
 						<td>
 							<a href="{{ $base }}/{{ .ID }}" class="unstyled" data-testid="btn-edit"><strong>{{ .Name }}</strong></a>
-							<p class="text-light text-8">
-								{{- if .ListNames }}When someone joins <em>{{ .Lists }}</em>, {{ .Wait }}{{ else }}<span class="text-danger">Its lists were deleted.</span>{{ end -}}
+							<p class="text-light text-8" data-testid="auto-summary">
+								{{- with .Broken }}<span class="text-danger">{{ . }}</span>{{ else }}{{ .Summary }}{{ end -}}
 							</p>
-						</td>
-						<td data-label="Template">
-							{{- if .TemplateName }}{{ .TemplateName }}
-							<p class="text-light text-8">{{ .Subject }}</p>
-							{{- else }}<span class="text-danger">Deleted</span>{{ end }}
 						</td>
 						<td data-label="On">
 							<input type="checkbox" role="switch" aria-label="On" {{ if .Active }}checked{{ end }}
 								{{ if not $canManage }}disabled{{ end }} data-testid="switch-active"
 								@change="onToggle({{ .ID }}, {{ ToJSON .Name }}, $event)" />
 						</td>
-						<td class="align-right" data-label="Sent">
-							{{ .Sent }}
-							{{- if .Waiting }}<p class="text-light text-8" title="Joined, and will be sent it when their wait is over">{{ .Waiting }} waiting</p>{{ end }}
+						<td class="align-right" data-label="Ran for">
+							{{ .Runs }}
+							{{- if .SendEmail }}<p class="text-light text-8 text-nowrap">{{ .Sent }} sent</p>{{ end }}
+							{{- if .Waiting }}<p class="text-light text-8" title="It runs for them when their wait is over">{{ .Waiting }} waiting</p>{{ end }}
 							{{- if .Failed }}<p class="text-danger text-8">{{ .Failed }} failed</p>{{ end }}
+							{{- if .Skipped }}<p class="text-light text-8" title="They didn't meet its conditions">{{ .Skipped }} skipped</p>{{ end }}
 						</td>
-						<td class="date-stack" data-label="Last sent">{{ if .LastSentAt.Valid }}{{ NiceDate .LastSentAt.Time }}{{ else }}&mdash;{{ end }}</td>
+						<td class="date-stack" data-label="Last ran">{{ if .LastSentAt.Valid }}{{ NiceDate .LastSentAt.Time }}{{ else }}&mdash;{{ end }}</td>
 						<td class="actions align-right">
 							{{- if $canManage }}
 							<ot-dropdown>
@@ -68,10 +64,10 @@
 						</td>
 					</tr>
 					{{- else }}
-					<tr><td colspan="6">
+					<tr><td colspan="5">
 						<div class="empty-state">
 							{{ Icon "zap" }}
-							<p>No automations yet.{{ if $canManage }} Make one to welcome the people who join a list.{{ end }}</p>
+							<p>No automations yet.{{ if $canManage }} Make one to welcome the people who join a list, move them on to another list or tag them.{{ end }}</p>
 						</div>
 					</td></tr>
 					{{- end }}
@@ -80,6 +76,93 @@
 		</div>
 	</div>
 </section>
+
+{{- if $d.Automations }}
+{{/* What ran and what's coming up, by day (cmd/denma_auto_schedule.go). */}}
+<script nonce="{{ .CSPNonce }}">window._denmaSchedPeople = {{ $d.Can "subscribers:get_all" }};</script>
+<section class="card page-content denma-auto-schedule" x-data="denmaAutoSchedule" x-cloak data-testid="auto-schedule">
+	<header class="hstack gap-3 justify-between denma-sched-head">
+		<h2>Schedule</h2>
+		<div class="hstack gap-2 denma-sched-controls">
+			<select x-model.number="automation" @change="load()" aria-label="Automation" data-testid="sched-automation">
+				<option value="0">All automations</option>
+				{{- range $d.Automations }}
+				<option value="{{ .ID }}">{{ .Name }}</option>
+				{{- end }}
+			</select>
+			<div class="hstack gap-1">
+				<button type="button" class="outline small" @click="shift(-14)" aria-label="Two weeks earlier">{{ Icon "chevron-left" }}</button>
+				<button type="button" class="outline small" @click="goToday()">Today</button>
+				<button type="button" class="outline small" @click="shift(14)" aria-label="Two weeks later">{{ Icon "chevron-right" }}</button>
+			</div>
+		</div>
+	</header>
+	<p class="text-light text-8">Who the automations have already run for, and who they're still to run for once their wait is over, per day. Choose a day to see its automations.</p>
+
+	<div class="denma-sched-chart" x-ref="chart" :aria-busy="isLoading('sched')"></div>
+	<div class="denma-legend">
+		<span><i class="ran"></i>Already ran</span>
+		<span><i class="up"></i>Still to run</span>
+		<span x-show="later" class="text-light" x-text="`${later.toLocaleString()} more still to run after ${fmtDay(to, true)}`"></span>
+	</div>
+
+	<h3 class="text-7 denma-sched-day" x-text="dayTitle()"></h3>
+	<template x-if="!groups.length">
+		<p class="text-light" data-testid="sched-empty">Nothing ran or is still to run on this day.</p>
+	</template>
+	<template x-if="groups.length">
+		<div class="denma-sched-groups" data-testid="sched-groups">
+			<div class="denma-sched-row denma-sched-th" aria-hidden="true">
+				<span>Automation</span><span class="align-right denma-hint" title="People it will run for later this day, when their wait is over. They're still checked against its conditions then, so some may be skipped.">Still to run</span><span class="align-right denma-hint" title="People it has already run for this day: added to or removed from lists, tagged or untagged, or e-mailed, as it says.">Already ran</span><span></span>
+			</div>
+			<template x-for="g in groups" :key="g.id">
+				<div class="denma-sched-group">
+					<div class="denma-sched-row">
+						<div>
+							<a :href="`{{ URI "/admin/automations" }}/${g.id}`" x-text="g.name"></a>
+							<p class="text-light text-8" x-text="g.summary"></p>
+						</div>
+						<div class="align-right">
+							<span class="denma-sched-label denma-hint" title="People it will run for later this day, when their wait is over. They're still checked against its conditions then, so some may be skipped.">Still to run: </span><span x-text="g.upcoming ? g.upcoming.toLocaleString() : '—'"></span>
+							<p class="text-light text-8" x-show="g.next_at" x-text="g.next_at ? `from ${fmtTime(g.next_at)}` : ''"></p>
+						</div>
+						<div class="align-right">
+							<span class="denma-sched-label denma-hint" title="People it has already run for this day: added to or removed from lists, tagged or untagged, or e-mailed, as it says.">Already ran: </span><span x-text="g.ran ? g.ran.toLocaleString() : '—'"></span>
+							<p class="text-light text-8" x-show="g.sent" x-text="`${g.sent} e-mails sent`"></p>
+							<p class="text-danger text-8" x-show="g.failed" x-text="`${g.failed} failed`"></p>
+							<p class="text-light text-8" x-show="g.skipped" x-text="`${g.skipped} skipped`"></p>
+						</div>
+						<div class="align-right">
+							<template x-if="canSeePeople">
+								<button type="button" class="outline small text-nowrap" @click="togglePeople(g)" :aria-expanded="!!open[g.id]" data-testid="btn-sched-people" x-text="open[g.id] ? 'Hide details' : 'Details'"></button>
+							</template>
+						</div>
+					</div>
+					<template x-if="open[g.id]">
+						<div class="denma-sched-people">
+							<template x-for="kind in ['upcoming', 'ran']" :key="kind">
+								<div x-show="open[g.id][kind].total">
+									<h4 class="text-8" x-text="kind === 'upcoming' ? `Still to run (${open[g.id][kind].total.toLocaleString()})` : `Already ran (${open[g.id][kind].total.toLocaleString()})`"></h4>
+									<ul class="denma-sched-list">
+										<template x-for="p in open[g.id][kind].rows" :key="`${p.id}-${p.at}`">
+											<li>
+												<span class="text-nowrap text-light" x-text="fmtTime(p.at)"></span>
+												<a :href="`{{ URI "/admin/subscribers" }}/${p.id}`" x-text="p.email"></a>
+												<span :class="p.status === 'failed' ? 'text-danger' : 'text-light'" x-text="personNote(p)"></span>
+											</li>
+										</template>
+									</ul>
+									<button type="button" class="ghost small" x-show="open[g.id][kind].rows.length < open[g.id][kind].total" @click="morePeople(g, kind)">Show more</button>
+								</div>
+							</template>
+						</div>
+					</template>
+				</div>
+			</template>
+		</div>
+	</template>
+</section>
+{{- end }}
 
 <script type="module" src="{{ URI "/admin/static/js/views/denma-automations.js" }}?v={{ .AssetVersion }}" defer></script>
 

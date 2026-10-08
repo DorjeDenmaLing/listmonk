@@ -3,13 +3,16 @@ package email
 import (
 	"net/textproto"
 	"strings"
+
+	"github.com/knadh/listmonk/models"
 )
 
 // denma: BeforePush, if set, is called before every message any Emailer
 // sends, and may block (for a send limit shared by every app in the process,
 // cmd/denma_sending.go). Campaign messages, notifications, opt-ins and
-// password resets all pass here.
-var BeforePush func()
+// password resets all pass here. It may change the message's headers (the
+// map is the message's own), such as removing an internal one.
+var BeforePush func(m models.Message)
 
 // DenmaDropSenderHeaders, if set (multi-center), leaves a message's own
 // headers that would change who it's from (DenmaSenderHeader) out of every

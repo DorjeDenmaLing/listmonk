@@ -945,6 +945,209 @@ svg.denma-logo {
   }
 }
 
+/* The automations' schedule (views/denma-automations.html,
+   cmd/denma_auto_schedule.go): a column per day, what ran and what's coming
+   up; the colors are one blue in two steps, checked for color blindness and
+   contrast against the card in both themes. */
+.denma-auto-schedule {
+  --denma-ran: light-dark(#0055d4, #5a93ea);
+  --denma-up: light-dark(#4d8ef0, #2b5dc6);
+  margin-top: var(--space-6);
+
+  .denma-sched-head {
+    flex-wrap: wrap;
+
+    h2 {
+      margin: 0;
+      font-size: var(--text-5, 1.25rem);
+    }
+  }
+
+  .denma-sched-controls {
+    flex-wrap: wrap;
+
+    select {
+      width: 16rem;
+      max-width: 100%;
+    }
+  }
+
+  .denma-sched-chart {
+    margin-top: var(--space-4);
+    min-height: 170px;
+    transition: opacity 0.15s;
+
+    &[aria-busy="true"] {
+      opacity: 0.6;
+    }
+  }
+
+  .denma-chart {
+    display: block;
+    width: 100%;
+    height: auto;
+
+    .grid {
+      stroke: var(--border);
+    }
+
+    .axis {
+      stroke: var(--input);
+    }
+
+    .tick {
+      fill: var(--muted-foreground);
+      font-size: 11px;
+
+      &.today {
+        fill: var(--foreground);
+        font-weight: 600;
+      }
+    }
+
+    .ran {
+      fill: var(--denma-ran);
+    }
+
+    .up {
+      fill: var(--denma-up);
+    }
+
+    .hit {
+      fill: transparent;
+    }
+
+    .day {
+      cursor: pointer;
+      outline: none;
+    }
+
+    .day:hover .hit,
+    .day:focus-visible .hit {
+      fill: color-mix(in srgb, var(--primary) 6%, transparent);
+    }
+
+    .day.selected .hit {
+      fill: color-mix(in srgb, var(--primary) 12%, transparent);
+    }
+  }
+
+  .denma-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+    margin-top: var(--space-2);
+    font-size: var(--text-8);
+    color: var(--muted-foreground);
+
+    span {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    i {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+
+      &.ran {
+        background: var(--denma-ran);
+      }
+
+      &.up {
+        background: var(--denma-up);
+      }
+    }
+  }
+
+  .denma-sched-day {
+    margin: var(--space-6) 0 var(--space-3);
+  }
+
+  .denma-sched-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 8rem 9rem 8rem;
+    gap: var(--space-4);
+    align-items: start;
+    padding: var(--space-3) 0;
+
+    p {
+      margin: 0;
+    }
+  }
+
+  .denma-sched-th {
+    font-size: var(--text-8);
+    color: var(--muted-foreground);
+    border-bottom: 1px solid var(--border);
+    padding-top: 0;
+  }
+
+  .denma-sched-group {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .denma-sched-label {
+    display: none;
+  }
+
+  /* A heading with a hover hint (its title). */
+  .denma-hint {
+    cursor: help;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+
+  .denma-sched-people {
+    padding: 0 0 var(--space-4) var(--space-4);
+
+    h4 {
+      margin: var(--space-2) 0;
+    }
+  }
+
+  .denma-sched-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: var(--text-8);
+
+    li {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1) var(--space-3);
+      padding: var(--space-1) 0;
+    }
+
+    a {
+      overflow-wrap: anywhere;
+    }
+  }
+
+  @media (max-width: 769px) {
+    .denma-sched-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--space-1) var(--space-3);
+
+      > :nth-child(2),
+      > :nth-child(3) {
+        text-align: left;
+      }
+    }
+
+    .denma-sched-th {
+      display: none;
+    }
+
+    .denma-sched-label {
+      display: inline;
+      color: var(--muted-foreground);
+    }
+  }
+}
+
 /* A subscriber who opted out (views/subscriber.html, cmd/denma_optouts.go). */
 .denma-optout {
   padding-bottom: 0;

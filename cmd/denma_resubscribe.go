@@ -230,22 +230,27 @@ func (a *App) denmaResubOptin(c echo.Context, subUUID string, confirm bool) (boo
 
 // denmaResubConfirm takes a subscriber off the blocklist and confirms their
 // subscriptions to lists: each is made unconfirmed, then confirmed, as an
-// opt-in is, so that the website signups' holding list moves them on
-// (denma_confirm_signup, cmd/denma_features.go).
+// opt-in is, so that automations that confirming them sets off run
+// (cmd/denma_automations.go), such as the one moving website signups on.
 func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta models.JSON) error {
 	ids := make([]int, len(lists))
 	for i, l := range lists {
 		ids[i] = l.ID
 	}
-	// The holding list's target too: the move doesn't undo the unsubscribe
-	// from it, which this confirmation does.
-	if hold, target := a.ko.Int("denma.signup_holding_list"), a.ko.Int("denma.signup_target_list"); hold > 0 && target > 0 {
-		for _, id := range ids {
-			if id == hold {
-				ids = append(ids, target)
-				break
-			}
+	// The lists those automations add them to, that they unsubscribed from,
+	// too: an automation never re-adds someone who unsubscribed, which this
+	// confirmation undoes.
+	if denmaAutomationsOn(a) {
+		var more []int
+		if err := a.db.Select(&more, `SELECT DISTINCT add.list_id FROM denma_automations au
+			JOIN denma_automation_lists t ON t.automation_id = au.id AND t.kind = 'trigger'
+			JOIN denma_automation_lists add ON add.automation_id = au.id AND add.kind = 'add'
+			JOIN subscriber_lists sl ON sl.subscriber_id = $1 AND sl.list_id = add.list_id AND sl.status = 'unsubscribed'
+			WHERE au.active AND au.trigger_type IN ('joins', 'confirms') AND t.list_id = ANY($2) AND NOT (add.list_id = ANY($2))`,
+			subID, pq.Array(ids)); err != nil {
+			return err
 		}
+		ids = append(ids, more...)
 	}
 	if attribs == nil {
 		attribs = models.JSON{}

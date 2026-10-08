@@ -284,12 +284,26 @@ func (a *App) DenmaChangeTag(c echo.Context) error {
 			_, err = tx.Exec(`INSERT INTO denma_tags (tag) VALUES ($1) ON CONFLICT DO NOTHING`, to[0])
 		}
 	}
+	// When subscribers got it (cmd/denma_automations.go) goes with the new
+	// name first, so that renaming doesn't set off automations.
+	if err == nil && len(to) == 1 && denmaAutomationsOn(a) {
+		_, err = tx.Exec(`INSERT INTO denma_tag_log (subscriber_id, tag, added_at) SELECT subscriber_id, $2, added_at
+			FROM denma_tag_log WHERE tag = $1 ON CONFLICT DO NOTHING`, from[0], to[0])
+	}
 	// Removing the old one and adding the new; the trigger tidies the result.
 	if err == nil {
 		res, err = tx.Exec(`UPDATE subscribers SET attribs = attribs || jsonb_build_object('tags', (attribs->'tags') - $1::TEXT || to_jsonb($2::TEXT[])),
 			updated_at = NOW() WHERE jsonb_typeof(attribs->'tags') = 'array' AND attribs->'tags' ? $1::TEXT`, from[0], pq.Array(to))
 	}
-	// Sign-up webhooks (cmd/denma_signup.go) follow it too.
+	// Sign-up webhooks (cmd/denma_signup.go) and automations follow it too.
+	if err == nil && denmaAutomationsOn(a) {
+		for _, col := range []string{"trigger_tags", "if_tags", "unless_tags", "add_tags", "remove_tags"} {
+			if _, err = tx.Exec(`UPDATE denma_automations SET `+col+` = ARRAY(SELECT DISTINCT x FROM unnest(array_remove(`+col+`, $1::TEXT) || $2::TEXT[]) x ORDER BY x),
+				updated_at = NOW() WHERE $1::TEXT = ANY(`+col+`)`, from[0], pq.Array(to)); err != nil {
+				break
+			}
+		}
+	}
 	if err == nil {
 		_, err = tx.Exec(`UPDATE denma_signup_hooks SET tags = ARRAY(SELECT DISTINCT x FROM unnest(array_remove(tags, $1::TEXT) || $2::TEXT[]) x ORDER BY x)
 			WHERE $1::TEXT = ANY(tags)`, from[0], pq.Array(to))
