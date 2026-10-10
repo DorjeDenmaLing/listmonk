@@ -11,6 +11,7 @@ import * as u from '../utils.js';
 import { denmaPlainText } from '../denma-campaign.js'; // denma: automatic plain text
 import { denmaTagAutocomplete } from '../denma-tags-ui.js'; // denma: subscriber tags
 import { denmaFailures } from '../denma-failures.js'; // denma: failed sends
+import { denmaStartConfirm } from '../denma-start.js'; // denma: the start confirmation
 
 // Media tag for <ot-taginput> attachments.
 class MediaTag {
@@ -48,6 +49,7 @@ function component(camp, sel) {
     ...denmaPlainText(), // denma
     denmaTagAutocomplete, // denma
     ...denmaFailures(), // denma
+    ...denmaStartConfirm(), // denma
     isNew,
     activeTab: 'campaign',
     contentReady: false,
@@ -328,7 +330,16 @@ function component(camp, sel) {
       if (!this.canStart && !this.canSchedule) {
         return;
       }
-      if (!(await u.confirm())) {
+      // denma: what's about to be sent, and to how many (denma-start.js).
+      const p = this._payload();
+      if (!p) {
+        return;
+      }
+      const tpl = this.templatesFor('campaign').find((t) => t.id === this.form.template_id);
+      const c = {
+        ...p, id: this.form.id, lists: this.form.lists, media: this.form.media, template_name: p.content_type !== 'visual' ? tpl?.name : '',
+      };
+      if (!(await this.denmaConfirmStart(c, !this.canStart))) {
         return;
       }
 

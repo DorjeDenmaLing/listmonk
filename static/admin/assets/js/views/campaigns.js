@@ -5,9 +5,11 @@ import {
   i18n,
 } from '../main.js';
 import * as u from '../utils.js';
+import { denmaStartConfirm } from '../denma-start.js'; // denma: the start confirmation
 
 function component() {
   return {
+    ...denmaStartConfirm(), // denma
     // Preview dialog state (bound in the reusable campaign-preview partial).
     preview: {
       title: '', url: '', loading: true, templateID: null, contentType: '', archiveMeta: '', body: '',
@@ -46,6 +48,17 @@ function component() {
 
       await api('campaigns', `/campaigns/${id}/status`, 'PUT', { status });
       u.reload({ message: i18n.ts('campaigns.statusChanged', { name, status }) });
+    },
+
+    // denma: Start and Schedule show what's about to be sent, and to how many
+    // (denma-start.js), in place of onChangeStatus's plain confirmation.
+    async denmaStart(id, status) {
+      const c = await api('campaigns', `/campaigns/${id}`);
+      if (!(await this.denmaConfirmStart(c, status === 'scheduled'))) {
+        return;
+      }
+      await api('campaigns', `/campaigns/${id}/status`, 'PUT', { status });
+      u.reload({ message: i18n.ts('campaigns.statusChanged', { name: c.name, status }) });
     },
 
     async onClone(id, name) {

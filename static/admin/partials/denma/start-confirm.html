@@ -1,0 +1,58 @@
+{{/*
+	denma: the confirmation before a campaign is started or scheduled, with
+	what's about to be sent and to how many (assets/js/denma-start.js,
+	cmd/denma_start.go). In the campaign page and the Campaigns list.
+*/}}
+{{ define "denma-start-confirm" -}}
+<dialog class="denma-start-confirm" x-ref="startDialog" @close="denmaStartDone(false)" data-testid="start-confirm">
+	<template x-if="startConfirm">
+		<div class="dialog-card">
+			<header class="dialog-head">
+				<h4 class="dialog-title" x-text="startConfirm.schedule ? 'Schedule this campaign?' : 'Start sending this campaign?'"></h4>
+			</header>
+			<section class="dialog-body">
+				<dl class="denma-start-details">
+					<dt>Campaign</dt><dd x-text="startConfirm.name"></dd>
+					<dt>Subject</dt><dd x-text="startConfirm.subject"></dd>
+					<template x-if="startConfirm.previewText">
+						<div><dt>Preview text</dt><dd x-text="startConfirm.previewText"></dd></div>
+					</template>
+					<dt>From</dt><dd x-text="startConfirm.from"></dd>
+					<dt>Reply-to</dt><dd x-text="denmaStartReplyTo()"></dd>
+					<dt>To</dt>
+					<dd>
+						<span x-text="startConfirm.lists.length ? startConfirm.lists.join(', ') : 'No lists'"></span>
+						<template x-if="startConfirm.tags.length"><span class="text-light" x-text="'; and anyone tagged ' + startConfirm.tags.join(', ')"></span></template>
+					</dd>
+					<dt>Recipients</dt>
+					<dd data-testid="start-recipients">
+						<template x-if="startConfirm.loading"><span class="text-light">Counting…</span></template>
+						<template x-if="!startConfirm.loading && startConfirm.check">
+							<span><strong x-text="startConfirm.check.recipients.toLocaleString()"></strong> <span x-text="startConfirm.check.recipients === 1 ? 'person' : 'people'"></span> <span class="text-light">(not counting unsubscribed or blocklisted)</span></span>
+						</template>
+						<template x-if="!startConfirm.loading && !startConfirm.check"><span class="text-light">Couldn't count them.</span></template>
+					</dd>
+					<dt x-text="startConfirm.schedule ? 'Sends on' : 'Sends'"></dt><dd x-text="startConfirm.when"></dd>
+					<dt>Format</dt><dd x-text="startConfirm.format"></dd>
+					<template x-if="startConfirm.attachments">
+						<div><dt>Attachments</dt><dd x-text="startConfirm.attachments"></dd></div>
+					</template>
+				</dl>
+
+				<template x-if="startConfirm.check && startConfirm.check.recipients === 0">
+					<p class="denma-start-note" data-variant="danger" data-testid="start-none">No recipients selected.</p>
+				</template>
+				<template x-if="denmaStartOverCap()">
+					<p class="denma-start-note" data-testid="start-over-cap" x-text="'The center\'s daily cap leaves room for ' + startConfirm.check.sending.left.toLocaleString() + ' more e-mails now; the rest go out as the 24 hours roll on.'"></p>
+				</template>
+			</section>
+			<footer class="dialog-foot">
+				<button type="button" class="outline" @click="denmaStartDone(false)" autofocus>Cancel</button>
+				<button type="button" data-variant="primary" @click="denmaStartDone(true)" :disabled="startConfirm.loading || startConfirm.check?.recipients === 0" data-testid="start-confirm-ok">
+					<span x-text="startConfirm.schedule ? 'Schedule' : 'Start sending now'"></span>
+				</button>
+			</footer>
+		</div>
+	</template>
+</dialog>
+{{- end }}

@@ -123,6 +123,7 @@
 	{{- end }}
 
 	{{ template "campaign-preview" . }}
+	{{ template "denma-start-confirm" . }}{{/* denma */}}
 	{{- if not $isNew }}{{ template "media-picker" . }}{{ end }}
 </section>
 

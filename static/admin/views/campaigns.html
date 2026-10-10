@@ -164,10 +164,10 @@
 										<a href="{{ $base }}/{{ .ID }}" role="menuitem" class="button ghost" data-cy="btn-edit">{{ Icon "edit-2" }} {{ $.L.T "globals.buttons.edit" }}</a>
 										{{- if $d.Can "campaigns:send" }}
 											{{- if $canStart }}
-												<button type="button" role="menuitem" class="ghost" data-cy="btn-start" @click.prevent="onChangeStatus({{ .ID }}, {{ ToJSON .Name }}, 'running')">{{ Icon "send" }} {{ $.L.T "campaigns.start" }}</button>
+												<button type="button" role="menuitem" class="ghost" data-cy="btn-start" @click.prevent="denmaStart({{ .ID }}, 'running')">{{ Icon "send" }} {{ $.L.T "campaigns.start" }}</button>
 											{{- end }}
 											{{- if $canSchedule }}
-												<button type="button" role="menuitem" class="ghost" data-cy="btn-schedule" @click.prevent="onChangeStatus({{ .ID }}, {{ ToJSON .Name }}, 'scheduled', true)">{{ Icon "clock" }} {{ $.L.T "campaigns.schedule" }}</button>
+												<button type="button" role="menuitem" class="ghost" data-cy="btn-schedule" @click.prevent="denmaStart({{ .ID }}, 'scheduled')">{{ Icon "clock" }} {{ $.L.T "campaigns.schedule" }}</button>
 											{{- end }}
 											{{- if $canPause }}
 												<button type="button" role="menuitem" class="ghost" data-cy="btn-pause" @click.prevent="onChangeStatus({{ .ID }}, {{ ToJSON .Name }}, 'paused')">{{ Icon "pause" }} {{ $.L.T "campaigns.pause" }}</button>
@@ -204,6 +204,7 @@
 	</div>
 
 	{{ template "campaign-preview" . }}
+	{{ template "denma-start-confirm" . }}{{/* denma */}}
 </section>
 
 <script type="module" src="{{ URI "/admin/static/js/views/campaigns.js" }}?v={{ .AssetVersion }}" defer></script>

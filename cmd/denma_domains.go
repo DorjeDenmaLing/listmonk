@@ -1640,10 +1640,14 @@ func denmaBadRequest(err error) error {
 }
 
 // denmaCheckCampaignStart refuses to start or schedule a campaign whose
-// sender's domain SES hasn't verified.
+// sender's domain SES hasn't verified, or a draft that would go to no one
+// (cmd/denma_start.go).
 func (a *App) denmaCheckCampaignStart(id int, status string) error {
 	if status != models.CampaignStatusRunning && status != models.CampaignStatusScheduled {
 		return nil
+	}
+	if err := a.denmaCheckRecipients(id); err != nil {
+		return err
 	}
 	if a.denmaCenterOf() == nil || !denmaDomainsOn() {
 		return nil
