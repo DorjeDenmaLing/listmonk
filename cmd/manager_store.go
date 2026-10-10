@@ -69,6 +69,9 @@ func (s *store) NextSubscribers(campID, lastFetchedID, limit int) ([]models.Subs
 
 	var out []models.Subscriber
 	err := s.queries.NextCampaignSubscribers.Select(&out, camps[0].CampaignID, camps[0].CampaignType, lastFetchedID, camps[0].MaxSubscriberID, pq.Array(listIDs), limit)
+	if err == nil {
+		err = denmaAPIRecipientData(s.core.DenmaDB(), campID, out) // denma: an API campaign's data, cmd/denma_api_send.go
+	}
 	return out, err
 }
 

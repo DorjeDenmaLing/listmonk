@@ -1,0 +1,358 @@
+{{ define "admin-denma-api" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+
+{{/* denma: a center's Config -> API page: the sending API's keys
+	(cmd/denma_api.go), saved as they're changed, and how to use it. */}}
+<script nonce="{{ .CSPNonce }}">
+	window._denmaAPIKeys = {{ ToJSON $d.Keys }};
+	window._denmaAPILists = {{ ToJSON $d.Lists }};
+	window._denmaAPISpec = {{ ToJSON $d.Spec }};
+	window._denmaAPISender = {{ $d.Sender }};
+	window._denmaAPIKeepDays = {{ $d.KeepDays }};
+</script>
+<section class="denma-signup denma-api" x-data="denmaAPIKeys" x-cloak data-testid="api-keys">
+	<header class="row page-header">
+		<div class="col-8">
+			<h1 class="page-title">API</h1>
+		</div>
+		<div class="col-4 hstack justify-end">
+			<button type="button" data-variant="primary" @click="onAdd" data-testid="btn-add-key">{{ Icon "plus" }} Add key</button>
+		</div>
+	</header>
+
+	<div class="page-content content vstack gap-6">
+		{{- if $d.State.PausedAt }}
+		<div role="alert" class="hstack justify-between gap-3" data-testid="api-paused">
+			<span><strong>Sending through the API is paused</strong> (since {{ $d.State.PausedAt.Format "2006-01-02 15:04 MST" }}): {{ $d.State.PausedReason }} Its e-mails are refused and its campaigns are paused. Find out why on the Bounces page, and with whoever runs the system sending them, before resuming.{{ if not $d.Super }} A superadmin resumes it.{{ end }}</span>
+			{{- if $d.Super }}
+			<button type="button" class="small" @click="onResume" data-testid="btn-api-resume">{{ Icon "send" }} Resume</button>
+			{{- end }}
+		</div>
+		{{- end }}
+
+		<fieldset class="card vstack gap-4">
+			<legend>Keys</legend>
+			<p class="text-light text-8">For other systems (a member database, a booking system, a website) that work with this center. Each system gets a key of its own, which can do one or more of: send transactional e-mails (password resets, receipts, notices), send campaigns to the addresses it gives (without adding them to the center's lists), subscribe people to lists chosen for it, and read the unsubscribes, complaints and bounces of the people it sends to. Give each key only what its system needs. A sending key sends from its own sender, at most its daily limit of e-mails, under the center's daily cap, and skips whoever unsubscribed, complained or bounced. If a key may have leaked, delete it as leaked: that cancels its campaigns.</p>
+
+			<template x-if="!keys.length">
+				<p class="text-light" data-testid="no-keys">No keys yet.</p>
+			</template>
+			<template x-if="keys.length">
+				<div class="table-wrapper">
+					<table>
+						<thead>
+							<tr><th>Name</th><th>Used from</th><th>Webhook</th><th>Requests</th><th></th></tr>
+						</thead>
+						<tbody>
+							<template x-for="k in keys" :key="k.id">
+								<tr data-testid="key-row" :data-id="k.id" :class="k.deleted_at && 'denma-api-deleted'">
+									<td data-label="Name">
+										<span x-text="k.name"></span>
+										<div class="text-light text-8"><code x-text="`lmk_…${k.key_hint}`"></code></div>
+										<template x-if="k.deleted_at">
+											<div class="text-8 text-danger" x-text="deletedText(k)" data-testid="key-deleted"></div>
+										</template>
+										<div class="text-light text-8" x-text="canText(k)" data-testid="key-can"></div>
+										<template x-if="sends(k)">
+											<div class="text-light text-8" x-text="sendText(k)" data-testid="key-sending"></div>
+										</template>
+										<div class="text-light text-8" x-text="madeText(k)" data-testid="key-made"></div>
+										<template x-if="k.old_key_until">
+											<div class="text-8" x-text="`The key it replaced works until ${when(k.old_key_until)}.`" data-testid="key-old"></div>
+										</template>
+									</td>
+									<td data-label="Used from">
+										<span x-text="k.allowed_from.length ? k.allowed_from.join(', ') : 'Anywhere'"></span>
+									</td>
+									<td data-label="Webhook">
+										<template x-if="!k.webhook_url"><span class="text-light">None</span></template>
+										<template x-if="k.webhook_url">
+											<div class="vstack gap-1">
+												<span class="denma-api-url" x-text="k.webhook_url"></span>
+												<span class="text-8" :class="k.webhook_error ? 'text-danger' : 'text-light'" x-text="webhookStatus(k)" data-testid="webhook-status"></span>
+												<div class="hstack gap-2">
+													<input type="text" readonly class="denma-signup-url" :value="k.webhook_secret" @focus="$event.target.select()" aria-label="The webhook's signing secret" />
+													<button type="button" class="outline small" @click="copy(k.webhook_secret)" aria-label="Copy the signing secret">{{ Icon "copy" }}</button>
+												</div>
+											</div>
+										</template>
+									</td>
+									<td data-label="Requests">
+										<span x-text="k.uses.toLocaleString()"></span>
+										<div class="text-light text-8" x-text="k.last_used_at ? `Last ${ago(k.last_used_at)}, from ${k.last_ip}` : 'Not used yet'"></div>
+									</td>
+									<td>
+										<template x-if="k.deleted_at">
+											<div class="hstack gap-1 justify-end denma-signup-actions">
+												<button type="button" class="outline small" @click="onRestore(k)" data-testid="btn-restore-key">{{ Icon "rotate-ccw" }} Restore</button>
+											</div>
+										</template>
+										<template x-if="!k.deleted_at">
+										<div class="hstack gap-1 justify-end denma-signup-actions">
+											<button type="button" class="outline small" @click="onEdit(k)" data-testid="btn-edit-key">{{ Icon "edit-2" }} Edit</button>
+											<template x-if="k.webhook_url">
+												<button type="button" class="outline small" @click="onTest(k)" :aria-busy="isLoading('test')" data-testid="btn-test-webhook">{{ Icon "send" }} Test webhook</button>
+											</template>
+											<template x-if="k.webhook_url">
+												<button type="button" class="outline small" @click="onNewSecret(k)" data-testid="btn-webhook-secret">{{ Icon "refresh-cw" }} New secret</button>
+											</template>
+											<button type="button" class="outline small" @click="onNewKey(k)" data-testid="btn-new-key">{{ Icon "refresh-cw" }} New key</button>
+											<button type="button" class="outline small" data-variant="danger" @click="onDelete(k)" aria-label="Delete" data-testid="btn-delete-key">{{ Icon "trash-2" }}</button>
+										</div>
+										</template>
+									</td>
+								</tr>
+							</template>
+						</tbody>
+					</table>
+				</div>
+			</template>
+		</fieldset>
+
+		<fieldset class="card vstack gap-3" data-testid="api-sending">
+			<legend>Sending</legend>
+			<p class="text-8">In the last 24 hours the center sent <strong>{{ $d.Sending.Sent }}</strong> e-mails{{ if gt $d.Sending.Cap 0 }}, of its daily cap of {{ $d.Sending.Cap }}{{ else }}; it has no daily cap{{ end }}.</p>
+			{{- if $d.Recent }}
+			<div class="table-wrapper">
+				<table>
+					<thead><tr><th>Day (UTC)</th><th>Transactional requests</th><th>Campaigns</th><th>E-mails sent</th></tr></thead>
+					<tbody>
+						{{- range $d.Recent }}
+						<tr><td data-label="Day">{{ .Day.Format "Mon 2 Jan" }}</td><td data-label="Transactional">{{ .Messages }}</td><td data-label="Campaigns">{{ .Campaigns }}</td><td data-label="Sent">{{ .Sent }}</td></tr>
+						{{- end }}
+					</tbody>
+				</table>
+			</div>
+			{{- else }}
+			<p class="text-light text-8">Nothing sent through the API in the last week.</p>
+			{{- end }}
+		</fieldset>
+
+		<fieldset class="card vstack gap-3" data-testid="api-templates">
+			<legend>Templates</legend>
+			<p class="text-light text-8">The API names a template; make them under Campaigns &rarr; Templates, each with a name of its own. Transactional templates are for <code>/messages</code>, campaign and visual templates for <code>/campaigns</code>.</p>
+			{{- if $d.Templates }}
+			<ul class="denma-api-templates">
+				{{- range $d.Templates }}
+				<li><code>{{ .Name }}</code> <span class="text-light text-8">{{ if eq .Type "tx" }}transactional{{ else if eq .Type "campaign_visual" }}visual campaign{{ else }}campaign{{ end }}</span></li>
+				{{- end }}
+			</ul>
+			{{- else }}
+			<p class="text-light">The center has no templates yet.</p>
+			{{- end }}
+		</fieldset>
+
+		{{/* The API's reference, made from its OpenAPI description
+			(cmd/denma_api_openapi.json) by denmaAPIDocs. */}}
+		<fieldset class="card" x-data="denmaAPIDocs" data-testid="api-docs">
+			<legend>Using the API</legend>
+			<div class="vstack gap-3 denma-signup-help">
+				<p>The address is <code>{{ $d.BaseURL }}</code>. Its <a href="https://spec.openapis.org/oas/v3.1.1.html" target="_blank" rel="noopener">OpenAPI 3.1</a> description, which this reference is made from, is at <a href="{{ $d.BaseURL }}/openapi.json" target="_blank" rel="noopener" data-testid="api-openapi-link"><code>{{ $d.BaseURL }}/openapi.json</code></a>, with no key needed: import it into Postman or Insomnia, view it in Swagger UI or Redoc, or generate a client from it.</p>
+				<div x-html="md(spec.info.description)"></div>
+
+				<template x-for="g in groups" :key="g.name">
+					<section class="vstack gap-2">
+						<h4 x-text="g.name"></h4>
+						<p class="text-light text-8" x-text="g.description"></p>
+						<template x-for="o in g.ops" :key="o.key">
+							<details data-testid="api-op" :data-op="o.op.operationId">
+								<summary><strong x-text="o.method"></strong> <code x-text="o.path"></code>: <span x-text="o.op.summary"></span></summary>
+								<div class="vstack gap-3">
+									<div x-html="md(o.op.description)"></div>
+									<p class="text-8"><strong>Key:</strong> <span x-text="needs(o)"></span></p>
+
+									<template x-if="params(o).length">
+										<div class="table-wrapper">
+											<table>
+												<thead><tr><th>Parameter</th><th>In</th><th>Type</th><th>Description</th></tr></thead>
+												<tbody>
+													<template x-for="r in params(o)" :key="r.name">
+														<tr><td data-label="Parameter"><code x-text="r.name"></code><span x-show="r.required"> (required)</span></td><td data-label="In" x-text="r.in"></td><td data-label="Type" x-text="r.type"></td><td data-label="Description" x-html="md(r.desc)"></td></tr>
+													</template>
+												</tbody>
+											</table>
+										</div>
+									</template>
+
+									<template x-if="body(o).length">
+										<div class="vstack gap-1">
+											<strong class="text-8">Request (JSON)</strong>
+											<div class="table-wrapper">
+												<table>
+													<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+													<tbody>
+														<template x-for="r in body(o)" :key="r.name">
+															<tr><td data-label="Field"><code x-text="r.name"></code><span x-show="r.required"> (required)</span></td><td data-label="Type" x-text="r.type"></td><td data-label="Description" x-html="md(r.desc)"></td></tr>
+														</template>
+													</tbody>
+												</table>
+											</div>
+										</div>
+									</template>
+
+									<template x-if="curl(o)">
+										<pre class="denma-signup-code" x-text="curl(o)"></pre>
+									</template>
+
+									<template x-if="answer(o).length">
+										<div class="vstack gap-1">
+											<strong class="text-8">Answer: <code>data</code></strong>
+											<div class="table-wrapper">
+												<table>
+													<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+													<tbody>
+														<template x-for="r in answer(o)" :key="r.name">
+															<tr><td data-label="Field"><code x-text="r.name"></code></td><td data-label="Type" x-text="r.type"></td><td data-label="Description" x-html="md(r.desc)"></td></tr>
+														</template>
+													</tbody>
+												</table>
+											</div>
+										</div>
+									</template>
+
+									<div class="vstack gap-1">
+										<strong class="text-8">Responses</strong>
+										<ul>
+											<template x-for="r in responses(o)" :key="r.code">
+												<li><code x-text="r.code"></code>: <span x-html="md(r.desc, true)"></span></li>
+											</template>
+										</ul>
+									</div>
+								</div>
+							</details>
+						</template>
+					</section>
+				</template>
+			</div>
+		</fieldset>
+	</div>
+
+	{{/* A key's settings. */}}
+	<dialog x-ref="keyDialog">
+		<form @submit.prevent="onSubmit">
+			<div class="dialog-card content">
+				<header class="dialog-head"><h4 class="dialog-title" x-text="edit.id ? 'Edit key' : 'Add key'"></h4></header>
+				<section class="dialog-body vstack gap-3">
+					<label data-field>
+						Name
+						<input x-model="edit.name" x-ref="keyName" maxlength="200" required placeholder="Member database" data-testid="key-name" />
+					</label>
+					<fieldset data-field>
+						<legend>What it can do</legend>
+						<label class="hstack gap-2"><input type="checkbox" value="messages" x-model="edit.can" data-testid="key-can-messages" /> Send transactional e-mails <small class="text-light">(<code>POST /v1/messages</code>)</small></label>
+						<label class="hstack gap-2"><input type="checkbox" value="campaigns" x-model="edit.can" data-testid="key-can-campaigns" /> Send campaigns <small class="text-light">(<code>/v1/campaigns</code>)</small></label>
+						<label class="hstack gap-2"><input type="checkbox" value="subscribers" x-model="edit.can" data-testid="key-can-subscribers" /> Subscribe people to lists <small class="text-light">(<code>POST /v1/subscribers</code>)</small></label>
+						<label class="hstack gap-2"><input type="checkbox" value="events" x-model="edit.can" data-testid="key-can-events" /> Read events <small class="text-light">(<code>GET /v1/events</code>)</small></label>
+						<small data-hint>Only what its system needs. Sending needs no lists: a campaign goes to the addresses the system gives. Events are the unsubscribes, complaints and bounces of the people it sends to or subscribes, also sent to its webhook.</small>
+					</fieldset>
+					<template x-if="sends(edit)">
+						<div class="vstack gap-3">
+							<label data-field>
+								Sender
+								<input x-model="edit.sender" maxlength="300" :placeholder="centerSender" data-testid="key-sender" />
+								<small data-hint>Who its e-mails are from, always: <code>name@…</code> or <code>Name &lt;name@…&gt;</code> at one of the center's sending domains. Empty: the center's sender. The system using the key can't change it.</small>
+							</label>
+							<label data-field>
+								Daily limit
+								<input type="number" min="1" max="1000000" x-model.number="edit.daily_limit" required data-testid="key-daily-limit" />
+								<small data-hint>The most e-mails it sends in 24 hours (a campaign's recipients count when it starts). A little over what its system needs, so that a leaked key can't do much. The center's admins are told when it's reached.</small>
+							</label>
+						</div>
+					</template>
+					<label data-field>
+						Used from (recommended)
+						<textarea rows="3" x-model="edit.allowed_from" placeholder="203.0.113.4&#10;app.example.org" data-testid="key-from"></textarea>
+						<small data-hint>One per line: IP addresses, networks (203.0.113.0/24) or host names, which the key can be used from. If its system runs on a server with a fixed address, give it: a leaked key is then no use anywhere else. Empty: anywhere, as a system without a fixed address (an AWS Lambda) needs.</small>
+					</label>
+					<label data-field>
+						Webhook (optional)
+						<input type="url" x-model="edit.webhook_url" maxlength="2000" placeholder="https://example.org/listmonk-events" data-testid="key-webhook" />
+						<small data-hint>The other system's https:// address for the unsubscribes, complaints and bounces of the people it sends to (Using the API, below). The key needs to read them.</small>
+					</label>
+					<label data-field>
+						Expires (optional)
+						<input type="date" x-model="edit.expires_on" :min="tomorrow()" data-testid="key-expires" />
+						<small data-hint>It stops working at the end of this day (UTC). The center's admins are reminded 14 and 3 days before. Empty: it doesn't expire.</small>
+					</label>
+					<fieldset data-field x-show="edit.can.includes('subscribers')">
+						<legend>Lists it can subscribe people to</legend>
+						<template x-for="l in lists" :key="l.id">
+							<label class="hstack gap-2"><input type="checkbox" :value="l.id" x-model.number="edit.list_ids" /> <span x-text="`${l.name} (${l.optin} opt-in, ID ${l.id})`"></span></label>
+						</template>
+					</fieldset>
+				</section>
+				<footer class="dialog-foot hstack gap-3 justify-end">
+					<button type="button" class="outline" @click="$refs.keyDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+					<button type="submit" data-variant="primary" data-testid="btn-save-key" :disabled="!canSave() || isLoading('keys')" :aria-busy="isLoading('keys')">Save</button>
+				</footer>
+			</div>
+		</form>
+	</dialog>
+
+	{{/* A new key for a key, the old one working a while. */}}
+	<dialog x-ref="rotateDialog">
+		<form @submit.prevent="onRotate">
+			<div class="dialog-card content">
+				<header class="dialog-head"><h4 class="dialog-title" x-text="`A new key for ${rotate.name}`"></h4></header>
+				<section class="dialog-body vstack gap-3">
+					<label data-field>
+						The old key stops working
+						<select x-model.number="rotate.overlap_hours" data-testid="key-overlap">
+							<option value="0">At once</option>
+							<option value="1">In an hour</option>
+							<option value="24">In a day</option>
+							<option value="168">In a week</option>
+						</select>
+						<small data-hint>Leaving it working a while lets the system using it change over to the new one without missing a request. If the old key may have leaked, stop it at once.</small>
+					</label>
+				</section>
+				<footer class="dialog-foot hstack gap-3 justify-end">
+					<button type="button" class="outline" @click="$refs.rotateDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+					<button type="submit" data-variant="primary" data-testid="btn-rotate-key" :aria-busy="isLoading('keys')">New key</button>
+				</footer>
+			</div>
+		</form>
+	</dialog>
+
+	{{/* Deleting a key, perhaps as leaked. */}}
+	<dialog x-ref="deleteDialog">
+		<form @submit.prevent="onDeleteConfirm">
+			<div class="dialog-card content">
+				<header class="dialog-head"><h4 class="dialog-title" x-text="`Delete ${del.name}?`"></h4></header>
+				<section class="dialog-body vstack gap-3">
+					<p>Its key stops working at once. It can be restored for {{ $d.KeepDays }} days.</p>
+					<label class="hstack gap-2"><input type="checkbox" x-model="del.leaked" data-testid="key-leaked" /> It may have leaked</label>
+					<small class="text-light" x-show="!del.leaked">Campaigns it started carry on.</small>
+					<small x-show="del.leaked">Its campaigns that haven't finished are cancelled. If it's restored, it gets a new key: this one never works again.</small>
+				</section>
+				<footer class="dialog-foot hstack gap-3 justify-end">
+					<button type="button" class="outline" @click="$refs.deleteDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+					<button type="submit" data-variant="danger" data-testid="btn-delete-confirm" :aria-busy="isLoading('keys')">Delete</button>
+				</footer>
+			</div>
+		</form>
+	</dialog>
+
+	{{/* A new key, shown once. */}}
+	<dialog x-ref="newKeyDialog" @close="newKey = ''">
+		<div class="dialog-card content">
+			<header class="dialog-head"><h4 class="dialog-title">The key</h4></header>
+			<section class="dialog-body vstack gap-3">
+				<p>Copy it into the other system now: it isn't shown again. If it's lost, make a new one.</p>
+				<div class="hstack gap-2">
+					<input type="text" readonly class="denma-signup-url" :value="newKey" @focus="$event.target.select()" aria-label="The key" data-testid="new-key" />
+					<button type="button" class="outline small" @click="copy(newKey)" aria-label="Copy the key">{{ Icon "copy" }}</button>
+				</div>
+			</section>
+			<footer class="dialog-foot hstack gap-3 justify-end">
+				<button type="button" data-variant="primary" @click="$refs.newKeyDialog.close()">Done</button>
+			</footer>
+		</div>
+	</dialog>
+</section>
+
+<script type="module" src="{{ URI "/admin/static/js/views/denma-center.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

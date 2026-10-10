@@ -945,6 +945,39 @@ svg.denma-logo {
   }
 }
 
+/* Config -> API: the sending API's keys (cmd/denma_api.go), with the
+   webhooks' styles. */
+.denma-api {
+  .denma-api-url {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.8rem;
+    word-break: break-all;
+  }
+
+  .denma-api-templates {
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+
+  /* A deleted key, until it's restored or gone. */
+  tr.denma-api-deleted td:not(:last-child) {
+    opacity: 0.6;
+  }
+
+  details summary {
+    cursor: pointer;
+  }
+
+  details[open] summary {
+    margin-bottom: var(--space-2);
+  }
+
+  details p,
+  details pre {
+    margin: 0 0 var(--space-2);
+  }
+}
+
 /* The automations' schedule (views/denma-automations.html,
    cmd/denma_auto_schedule.go): a column per day, what ran and what's coming
    up; the colors are one blue in two steps, checked for color blindness and

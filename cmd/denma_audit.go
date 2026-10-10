@@ -479,6 +479,34 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return fmt.Sprintf("Gave sign-up webhook %s a new address", target)
 	case "DELETE /api/denma/center/signup-hooks/:id":
 		return "Deleted sign-up webhook " + target
+	case "POST /api/denma/center/api-keys": // cmd/denma_api.go
+		return fmt.Sprintf("Added the API key %q", str("name"))
+	case "PUT /api/denma/center/api-keys/:id":
+		return fmt.Sprintf("Changed API key %s (%q)", target, str("name"))
+	case "POST /api/denma/center/api-keys/:id/key":
+		return fmt.Sprintf("Replaced API key %s", target)
+	case "POST /api/denma/center/api-keys/:id/webhook-secret":
+		return fmt.Sprintf("Gave API key %s's webhook a new secret", target)
+	case "POST /api/denma/center/api-keys/:id/webhook-test":
+		return fmt.Sprintf("Tested API key %s's webhook", target)
+	case "DELETE /api/denma/center/api-keys/:id":
+		return "Deleted API key " + target
+	case "POST /api/denma/center/api/resume":
+		return "Resumed sending through the API"
+	case "POST /api/denma/center/api-keys/:id/restore":
+		return "Restored API key " + target
+	case "POST /v1/messages": // the API, by a key (denmaAuditWrite)
+		return "Sent a transactional e-mail"
+	case "POST /v1/campaigns":
+		return "Made a campaign"
+	case "POST /v1/campaigns/:id/recipients":
+		return "Added recipients to " + label("campaign")
+	case "POST /v1/campaigns/:id/start":
+		return "Started " + label("campaign")
+	case "POST /v1/campaigns/:id/cancel":
+		return "Cancelled " + label("campaign")
+	case "POST /v1/subscribers":
+		return "Subscribed someone"
 	case "POST /api/denma/campaigns/:id/resend":
 		return "Resent " + label("campaign") + " to those it couldn't send to"
 	case "POST /api/denma/tags":

@@ -76,6 +76,7 @@ func denmaPermissions(raw []byte, ko *koanf.Koanf) []byte {
 func initDenmaCenterHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/center"), a.ViewDenmaCenter)
 	g.GET(path.Join(uriAdmin, "/center/webhooks"), a.ViewDenmaWebhooks)
+	initDenmaAPIAdminHandlers(g, a) // cmd/denma_api.go
 }
 
 func initDenmaCenterAPIHandlers(g *echo.Group, a *App) {

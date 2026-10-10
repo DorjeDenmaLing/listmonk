@@ -81,6 +81,9 @@ func (s *store) DenmaRetrySubscribers(campID, afterID, limit int, all bool) ([]m
 	err := s.core.DenmaDB().Select(&out, `SELECT s.* FROM denma_send_failures f JOIN subscribers s ON s.id = f.subscriber_id
 		WHERE f.campaign_id = $1 AND s.id > $2 AND ($4 OR f.temporary) AND f.retries < $5 AND s.status != 'blocklisted'
 		ORDER BY s.id LIMIT $3`, campID, afterID, limit, all, len(denmaRetryWaits))
+	if err == nil {
+		err = denmaAPIRecipientData(s.core.DenmaDB(), campID, out) // an API campaign's data (cmd/denma_api_send.go)
+	}
 	return out, err
 }
 

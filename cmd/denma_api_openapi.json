@@ -1,0 +1,790 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "Listmonk Shambhala sending API",
+    "version": "1.0.0",
+    "summary": "Send a center's e-mail, and subscribe people to its lists, from another system.",
+    "description": "For other systems (a member database, a booking system, a website) that work with a center: they send transactional e-mails and campaigns from the center's templates, and subscribe people to its lists. Each center has its own API, at its own address, and its own keys, made on its Config -> API page.\n\nEach key can do only what it was allowed to: send transactional e-mails (`messages`), send campaigns (`campaigns`), subscribe people to the lists chosen for it (`subscribers`), and/or read the events about the addresses it has sent to or subscribed (`events`). Each operation that needs one says so in `x-denma-can`; anything else is refused with a 403. `GET /` says what a key can do, and when it expires, if it does.\n\nRequests and answers are JSON. A successful answer is `{\"data\": ...}`; an error is `{\"message\": \"...\"}` with its status. Unknown fields in a request are refused, so a typo isn't silently ignored. A request is at most 16 MB, and a key makes at most 600 requests a minute. An address that sends 20 keys that don't work in 15 minutes is refused for a while.\n\nE-mail is sent from the key's sender (set with the key: the center's, or another address at its sending domains), at most the key's daily limit of e-mails in 24 hours, under the center's daily cap, and never to anyone who complained, bounced, or whose domain can't receive mail; campaigns also skip whoever unsubscribed. Answers say who wasn't sent to, but not why: a key's events say it, for the addresses it sends to. The center's sending through the API pauses on its own if its hard bounces reach 5% or its complaints 0.1% (Amazon SES's review levels); a superadmin resumes it."
+  },
+  "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
+  "servers": [
+    {
+      "url": "https://news.dorjedenmaling.org/c/{center}/v1",
+      "description": "A center's API. The copy of this document served by a center (`GET /openapi.json`) has that center's address here.",
+      "variables": {
+        "center": {
+          "default": "dorje-denma-ling",
+          "description": "The center's address name, as in its public pages' address."
+        }
+      }
+    }
+  ],
+  "security": [
+    { "apiKey": [] }
+  ],
+  "tags": [
+    { "name": "Key", "description": "The key and the center's templates." },
+    { "name": "Transactional e-mail", "description": "Password resets, receipts and notices." },
+    { "name": "Campaigns", "description": "A campaign to the addresses given, without adding them to the center's lists." },
+    { "name": "Subscribers", "description": "Subscribe people to the lists chosen for the key." },
+    { "name": "Events", "description": "Unsubscribes, complaints, bounces and blocklistings of the addresses the key has sent to or subscribed, so that the other system can stop e-mailing them too." }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "tags": ["Key"],
+        "operationId": "getStatus",
+        "summary": "Test a key",
+        "description": "Which center and key this is, what the key can do, and how the center's sending stands.",
+        "responses": {
+          "200": {
+            "description": "The key works.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StatusAnswer" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": ["Key"],
+        "operationId": "getOpenAPI",
+        "summary": "This description",
+        "description": "This OpenAPI document, with the center's own address in `servers`. Needs no key.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The OpenAPI document.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/templates": {
+      "get": {
+        "tags": ["Key"],
+        "operationId": "listTemplates",
+        "summary": "List the templates",
+        "description": "The center's templates the API can name. They're made in the center, under Campaigns -> Templates, each with a name of its own: transactional templates (`tx`) for `POST /messages`, campaign and visual campaign templates for `POST /campaigns`.",
+        "responses": {
+          "200": {
+            "description": "The templates, transactional first, by name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Template" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/messages": {
+      "post": {
+        "tags": ["Transactional e-mail"],
+        "operationId": "sendMessage",
+        "summary": "Send a transactional e-mail",
+        "description": "A password reset, receipt or notice, to an address or up to 50, from a transactional template, from the key's sender. The template uses `{{ .Tx.Data.<name> }}` for `data`, and `{{ .Subscriber.Name }}`.\n\nIt goes to people who unsubscribed too, as it's not marketing; not to those who complained, bounced, or whose domain can't receive mail (`skipped`, \"not sent\"). Each new address is added to the center as a subscriber without lists, so that its bounces and complaints are recorded.\n\nAll of it fits under the key's daily limit and the center's daily cap, or none of it is sent (429).",
+        "x-denma-can": "messages",
+        "parameters": [
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MessageRequest" },
+              "example": {
+                "template": "Password reset",
+                "to": "ann@example.org",
+                "name": "Ann",
+                "data": { "link": "https://example.org/reset/abc" }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Who it was sent to, and who wasn't. The same `Idempotency-Key` again gets this answer, and sends nothing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/MessageResult" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "503": { "$ref": "#/components/responses/Paused" }
+        }
+      }
+    },
+    "/campaigns": {
+      "post": {
+        "tags": ["Campaigns"],
+        "operationId": "createCampaign",
+        "summary": "Make (and start) a campaign",
+        "description": "A campaign to the `recipients` given (up to 10,000 a request), from a campaign or visual template, from the key's sender. The recipients go on a list of the campaign's own, not the center's lists, which is deleted a week after the campaign is done. Each recipient's `attribs` are the campaign's, kept on that list, for `{{ .Subscriber.Attribs.<name> }}` in its e-mails (over the subscriber's own); they don't change the subscriber. A new address is added to the center with its name; a subscriber the center has keeps theirs, unless it's a stand-in (their address). The campaign's `data` is `{{ .Campaign.Attribs.data.<name> }}`. With a campaign template, `body` (HTML) fills its `{{ template \"content\" . }}`.\n\nIt starts once its addresses are checked, within seconds (`\"status\": \"starting\"`), or at `send_at`, and appears on the center's Campaigns page tagged `api`. Its recipients count against the key's daily limit when it starts (429 if they don't fit). Those who unsubscribed, complained or bounced are skipped, and listed in `skipped` (\"not sent\").\n\nFor more than 10,000 recipients, make it with `\"start\": false`, add the rest with `POST /campaigns/{id}/recipients`, then `POST /campaigns/{id}/start`.",
+        "x-denma-can": "campaigns",
+        "parameters": [
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CampaignRequest" },
+              "example": {
+                "template": "Monthly news",
+                "subject": "October news",
+                "data": { "headline": "Autumn retreats" },
+                "recipients": [
+                  { "email": "ann@example.org", "name": "Ann", "attribs": { "member_id": 42 } }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The campaign. The same `Idempotency-Key` again gets the campaign it made, and makes nothing.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CampaignAnswer" }
+              }
+            }
+          },
+          "400": {
+            "description": "The request isn't valid, or (when starting) no one can be sent the campaign: every recipient was skipped. Nothing was made.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/Error" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "skipped": {
+                          "type": "array",
+                          "items": { "$ref": "#/components/schemas/Skip" }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "503": { "$ref": "#/components/responses/Paused" }
+        }
+      }
+    },
+    "/campaigns/{id}": {
+      "parameters": [
+        { "$ref": "#/components/parameters/CampaignID" }
+      ],
+      "get": {
+        "tags": ["Campaigns"],
+        "operationId": "getCampaign",
+        "summary": "How a campaign is going",
+        "description": "One of the key's campaigns: its status, and how many were sent it, failed, opened, clicked and bounced.",
+        "x-denma-can": "campaigns",
+        "responses": {
+          "200": {
+            "description": "The campaign.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CampaignAnswer" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/campaigns/{id}/recipients": {
+      "parameters": [
+        { "$ref": "#/components/parameters/CampaignID" }
+      ],
+      "post": {
+        "tags": ["Campaigns"],
+        "operationId": "addCampaignRecipients",
+        "summary": "Add recipients",
+        "description": "Adds up to 10,000 recipients to a campaign made with `\"start\": false`, before it's started.",
+        "x-denma-can": "campaigns",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["recipients"],
+                "additionalProperties": false,
+                "properties": {
+                  "recipients": {
+                    "type": "array",
+                    "maxItems": 10000,
+                    "items": { "$ref": "#/components/schemas/Recipient" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The campaign, with who was skipped.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CampaignAnswer" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/campaigns/{id}/start": {
+      "parameters": [
+        { "$ref": "#/components/parameters/CampaignID" }
+      ],
+      "post": {
+        "tags": ["Campaigns"],
+        "operationId": "startCampaign",
+        "summary": "Start a campaign",
+        "description": "Starts a campaign made with `\"start\": false`: within seconds, or at its `send_at`. Its recipients count against the key's daily limit (429 if they don't fit).",
+        "x-denma-can": "campaigns",
+        "responses": {
+          "200": {
+            "description": "The campaign, starting.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CampaignAnswer" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "503": { "$ref": "#/components/responses/Paused" }
+        }
+      }
+    },
+    "/campaigns/{id}/cancel": {
+      "parameters": [
+        { "$ref": "#/components/parameters/CampaignID" }
+      ],
+      "post": {
+        "tags": ["Campaigns"],
+        "operationId": "cancelCampaign",
+        "summary": "Cancel a campaign",
+        "description": "Cancels a campaign before it starts, while it's scheduled, or while it's sending.",
+        "x-denma-can": "campaigns",
+        "responses": {
+          "200": {
+            "description": "The campaign, cancelled.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CampaignAnswer" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/subscribers": {
+      "post": {
+        "tags": ["Subscribers"],
+        "operationId": "subscribe",
+        "summary": "Subscribe someone",
+        "description": "Adds someone to some of the lists the key can subscribe people to (chosen on Config -> API). With `\"confirmed\": true` (they've agreed already), they're subscribed at once; it needs a record of when and how they agreed, in `attribs.consents` (`[{\"at\": \"<RFC 3339>\", \"source\": \"<how>\"}]`). Without it, double opt-in lists send them the confirmation e-mail.\n\nSomeone who unsubscribed is subscribed again: with `\"confirmed\": true` at once, if their consent (the latest `at`) is from after they unsubscribed (else they're left alone); otherwise when they confirm the e-mail they're sent. A key re-subscribes at most 10 people a day at once; past that, they're sent the e-mail to confirm it themselves, and the center's admins are told. Not someone who complained, or whose address bounced or can't receive mail.\n\nWhat's sent is added to what the center has, never replacing it: new attributes are added, objects merged, and arrays given the items they don't have, but a value the subscriber already has is kept (named in `attribs_kept`). The name replaces only a stand-in (their address). `tags` are added to the subscriber's, never taking any away; tags the center doesn't have yet are added to its tags and named in `tags_created`.\n\nThe answer doesn't say why someone wasn't subscribed, or whether the center had them already.",
+        "x-denma-can": "subscribers",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SubscriberRequest" },
+              "example": {
+                "email": "ann@example.org",
+                "name": "Ann Lee",
+                "lists": [5],
+                "confirmed": true,
+                "attribs": {
+                  "consent_at": "2026-10-05T14:30:00Z",
+                  "consent_source": "registration form",
+                  "consents": [{ "at": "2026-10-05T14:30:00Z", "source": "registration form" }]
+                },
+                "tags": ["retreat-guru"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What became of it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/SubscriberResult" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "tags": ["Events"],
+        "operationId": "listEvents",
+        "summary": "List unsubscribes, complaints and bounces",
+        "description": "The last 30 days' events about the addresses the key has sent to or subscribed, from when it first did, oldest first: who unsubscribed, complained (marked an e-mail as spam), bounced (the address doesn't exist), or was blocklisted for another reason (its domain takes no mail, or it bounced from another center). The same events are sent to the key's webhook (`events`, under webhooks); this is for a system that can't take webhooks, or missed some. Ask again with `after` set to the answer's `after` while `more` is true.",
+        "x-denma-can": "events",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Only events after this ID; 0 (or none) for the oldest kept.",
+            "schema": { "type": "integer", "format": "int64", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "At most this many events.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of events.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/EventsPage" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    }
+  },
+  "webhooks": {
+    "events": {
+      "post": {
+        "tags": ["Events"],
+        "operationId": "eventsWebhook",
+        "summary": "Unsubscribes, complaints and bounces, as they happen",
+        "description": "The key's events (`GET /events`), sent within a minute to its webhook address (set on Config -> API, `https://` only), in order, at most 100 events a request. Answer with a 2xx; anything else is tried again later, waiting longer each time (up to 6 hours), and later events wait their turn. The Config -> API page can send a test event (`\"type\": \"test\"`).\n\nCheck the signature before trusting the request: `X-Listmonk-Signature` is `t=<unix time>,v1=<signature>`, the signature being the hex HMAC-SHA256, with the webhook's signing secret, of the time, a full stop and the request's body (`<t>.<body>`). Compare it in constant time, and refuse a request whose `t` is more than 5 minutes from your clock, so that a request someone captured can't be sent again later.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "X-Listmonk-Signature",
+            "in": "header",
+            "required": true,
+            "description": "`t=<unix time>,v1=<hex HMAC-SHA256 of \"<t>.<body>\">`, with the webhook's signing secret.",
+            "schema": { "type": "string", "examples": ["t=1760104800,v1=5f8e0c..."] }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["center", "events"],
+                "properties": {
+                  "center": { "type": "string", "description": "The center's name." },
+                  "events": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": { "$ref": "#/components/schemas/Event" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Taken: the next events follow." },
+          "default": { "description": "Not taken: these events are sent again later." }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "lmk_...",
+        "description": "The key, made on the center's Config -> API page and shown once: `Authorization: Bearer lmk_...`. It can be limited to requests from some addresses, and can expire. When it's replaced, the old key can keep working for a while (up to a week), for the system using it to change over."
+      }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "description": "Any text up to 200 characters, unique to this send. The same key again (from the same API key) gets the first request's answer and sends nothing more, so a retry after a timeout never sends twice.",
+        "schema": { "type": "string", "maxLength": 200 }
+      },
+      "CampaignID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "The campaign's ID, from `POST /campaigns`.",
+        "schema": { "type": "integer" }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The request isn't valid; the message says why.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Unauthorized": {
+        "description": "No key, a key that isn't in use (any more), or one that has expired.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Forbidden": {
+        "description": "The key can't do this (`x-denma-can`), can't add people to a list asked for, or can't be used from this address.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "NotFound": {
+        "description": "The key has no campaign with that ID.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Conflict": {
+        "description": "A request with this `Idempotency-Key` is still being handled, or the campaign isn't in a state for this (started, cancelled).",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "TooLarge": {
+        "description": "The request is over 16 MB.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "TooManyRequests": {
+        "description": "Over 600 requests a minute for this key; too many keys that don't work from this address; or the key's daily limit or the center's daily cap leaves no room for these e-mails. The message says when to try again.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Paused": {
+        "description": "The center's sending through the API is paused (its bounce or complaint rate); a superadmin resumes it.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "description": "What's wrong, for a person to read." }
+        }
+      },
+      "Can": {
+        "type": "string",
+        "enum": ["messages", "campaigns", "subscribers", "events"],
+        "description": "Something a key can do: send transactional e-mails, send campaigns, subscribe people to its lists, read the events about the addresses it has sent to or subscribed."
+      },
+      "StatusAnswer": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["center", "key", "can", "sending", "paused", "paused_reason"],
+            "properties": {
+              "center": { "type": "string", "description": "The center's name." },
+              "key": { "type": "string", "description": "The key's name." },
+              "can": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/Can" },
+                "description": "What the key can do."
+              },
+              "expires_at": { "type": ["string", "null"], "format": "date-time", "description": "When the key stops working, if it does." },
+              "sender": { "type": "string", "description": "A sending key's: who its e-mails are from." },
+              "key_sending": {
+                "type": "object",
+                "description": "A sending key's daily limit.",
+                "required": ["daily_limit", "sent_24h", "left"],
+                "properties": {
+                  "daily_limit": { "type": "integer", "description": "The most e-mails the key sends in 24 hours." },
+                  "sent_24h": { "type": "integer", "description": "E-mails it sent (or started campaigns to) in the last 24 hours." },
+                  "left": { "type": "integer", "description": "How many more it can send now." }
+                }
+              },
+              "sending": {
+                "type": "object",
+                "required": ["daily_cap", "sent_24h", "left"],
+                "properties": {
+                  "daily_cap": { "type": "integer", "description": "The center's daily cap; 0 for none." },
+                  "sent_24h": { "type": "integer", "description": "E-mails the center sent in the last 24 hours." },
+                  "left": { "type": "integer", "description": "How many more it can send now; -1 without a cap." }
+                }
+              },
+              "paused": { "type": "boolean", "description": "Whether the center's sending through the API is paused." },
+              "paused_reason": { "type": "string" }
+            }
+          }
+        }
+      },
+      "Template": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name": { "type": "string", "description": "The name a request gives as `template`." },
+          "type": {
+            "type": "string",
+            "enum": ["tx", "campaign", "campaign_visual"],
+            "description": "`tx` for `POST /messages`; `campaign` and `campaign_visual` for `POST /campaigns`."
+          }
+        }
+      },
+      "Skip": {
+        "type": "object",
+        "required": ["email", "reason"],
+        "description": "An address that wasn't sent to (or added). Why isn't said, unless it's the request's fault: the key's events say why, for the addresses it sends to.",
+        "properties": {
+          "email": { "type": "string" },
+          "reason": { "type": "string", "examples": ["not sent", "not a valid address", "its attributes are over 10000 bytes"] }
+        }
+      },
+      "MessageRequest": {
+        "type": "object",
+        "required": ["template", "to"],
+        "additionalProperties": false,
+        "properties": {
+          "template": { "type": "string", "description": "A transactional template's name (`GET /templates`)." },
+          "to": {
+            "description": "An address, or a list of up to 50.",
+            "oneOf": [
+              { "type": "string", "format": "email" },
+              { "type": "array", "minItems": 1, "maxItems": 50, "items": { "type": "string", "format": "email" } }
+            ]
+          },
+          "name": { "type": "string", "description": "The recipient's name, for a new address (at most 200 characters are kept)." },
+          "data": { "type": "object", "description": "For the template: `{{ .Tx.Data.<name> }}`." },
+          "subject": { "type": "string", "maxLength": 1000, "description": "The subject; else the template's." },
+          "reply_to": { "type": "string", "description": "The Reply-To address, at one of the center's sending domains; else the center's, if it has one. (The sender is the key's.)" }
+        }
+      },
+      "MessageResult": {
+        "type": "object",
+        "required": ["sent", "skipped"],
+        "properties": {
+          "sent": { "type": "array", "items": { "type": "string" }, "description": "The addresses it was sent to." },
+          "skipped": { "type": "array", "items": { "$ref": "#/components/schemas/Skip" } }
+        }
+      },
+      "Recipient": {
+        "type": "object",
+        "required": ["email"],
+        "additionalProperties": false,
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "name": { "type": "string", "description": "At most 200 characters are kept." },
+          "attribs": {
+            "type": "object",
+            "description": "For the template, in this campaign's e-mails: `{{ .Subscriber.Attribs.<name> }}`, over the subscriber's own. Not added to the subscriber. Up to 10,000 bytes; no `tags`."
+          }
+        }
+      },
+      "CampaignRequest": {
+        "type": "object",
+        "required": ["template", "subject"],
+        "additionalProperties": false,
+        "properties": {
+          "template": { "type": "string", "description": "A campaign or visual campaign template's name (`GET /templates`)." },
+          "subject": { "type": "string", "minLength": 1, "maxLength": 5000, "description": "The subject; it can use template tags." },
+          "name": { "type": "string", "description": "The campaign's name on the Campaigns page; else its subject." },
+          "body": { "type": "string", "description": "HTML filling a campaign template's `{{ template \"content\" . }}`. Not with a visual template, which is the whole e-mail." },
+          "data": { "type": "object", "description": "For the template: `{{ .Campaign.Attribs.data.<name> }}`." },
+          "reply_to": { "type": "string", "description": "The Reply-To address, at one of the center's sending domains; else the center's, if it has one. (The sender is the key's.)" },
+          "tags": { "type": "array", "items": { "type": "string" }, "description": "Tags for the campaign on the Campaigns page (it's always tagged `api`)." },
+          "send_at": { "type": "string", "format": "date-time", "description": "When to send it, in the future; else now." },
+          "start": { "type": "boolean", "default": true, "description": "`false` to make it without starting it, to add recipients first." },
+          "recipients": {
+            "type": "array",
+            "maxItems": 10000,
+            "items": { "$ref": "#/components/schemas/Recipient" },
+            "description": "Who it goes to. Needed unless `\"start\": false`."
+          }
+        }
+      },
+      "Campaign": {
+        "type": "object",
+        "required": ["id", "uuid", "name", "subject", "status", "recipients", "to_send", "sent", "failed", "opens", "clicks", "bounces", "send_at", "started_at", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "integer" },
+          "uuid": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "subject": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "starting", "scheduled", "running", "paused", "cancelled", "finished"],
+            "description": "`draft`: made with `\"start\": false`; `starting`: its addresses being checked; then `scheduled` or `running`, and `finished` or `cancelled`. `paused` when the center's sending is paused."
+          },
+          "error": { "type": "string", "description": "Why it didn't start, if it didn't." },
+          "recipients": { "type": "integer", "description": "How many on its list can be sent it." },
+          "to_send": { "type": "integer" },
+          "sent": { "type": "integer" },
+          "failed": { "type": "integer" },
+          "opens": { "type": "integer", "description": "People who opened it." },
+          "clicks": { "type": "integer", "description": "People who clicked a link." },
+          "bounces": { "type": "integer" },
+          "send_at": { "type": ["string", "null"], "format": "date-time" },
+          "started_at": { "type": ["string", "null"], "format": "date-time" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "skipped": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Skip" },
+            "description": "When recipients were added: who wasn't."
+          }
+        }
+      },
+      "CampaignAnswer": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/Campaign" }
+        }
+      },
+      "SubscriberRequest": {
+        "type": "object",
+        "required": ["email", "lists"],
+        "additionalProperties": false,
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "name": { "type": "string", "description": "Their name (at most 200 characters are kept); replaces only a stand-in (their address)." },
+          "lists": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "integer" },
+            "description": "The IDs of the lists to add them to: lists the key can subscribe people to."
+          },
+          "confirmed": {
+            "type": "boolean",
+            "default": false,
+            "description": "They've agreed to be subscribed already: subscribed at once, double opt-in lists too, and again if they had unsubscribed (with a consent from after it, up to 10 a day for the key). Needs `attribs.consents`."
+          },
+          "attribs": {
+            "type": "object",
+            "description": "Added to theirs, never replacing a value they have. Up to 10,000 bytes; no `tags`. With `\"confirmed\": true`, `consents` is needed: a list of `{\"at\": \"<when they agreed, RFC 3339>\", \"source\": \"<how>\"}` (and anything else to keep with it)."
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": { "type": "string" },
+            "description": "Added to theirs; new ones are added to the center's tags."
+          }
+        }
+      },
+      "SubscriberResult": {
+        "type": "object",
+        "required": ["result", "added", "resubscribed", "tags_created", "attribs_kept"],
+        "properties": {
+          "result": {
+            "type": "string",
+            "enum": ["subscribed", "re-subscribed", "confirmation sent", "added; confirmation not sent", "not subscribed"],
+            "description": "What became of it: `subscribed`; `re-subscribed` (they had unsubscribed); `confirmation sent` (they're subscribed once they confirm the e-mail they're sent); `added; confirmation not sent` (to a double opt-in list, but the e-mail couldn't be sent now); `not subscribed` (why isn't said)."
+          },
+          "added": { "type": "array", "items": { "type": "integer" }, "description": "The lists they're on now (confirmed, or waiting to confirm)." },
+          "resubscribed": { "type": "array", "items": { "type": "integer" }, "description": "Of those, the ones they'd unsubscribed from." },
+          "tags_created": { "type": "array", "items": { "type": "string" }, "description": "Tags new to the center, added to its tags." },
+          "attribs_kept": { "type": "array", "items": { "type": "string" }, "description": "Attributes they already had another value for, which was kept (`a.b` for nested ones)." }
+        }
+      },
+      "Event": {
+        "type": "object",
+        "required": ["id", "type", "email", "reason", "campaign_id", "created_at"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "description": "Increasing; `GET /events?after=` takes it." },
+          "type": {
+            "type": "string",
+            "enum": ["unsubscribed", "complained", "bounced", "blocklisted", "test"],
+            "description": "`unsubscribed`; `complained` (marked an e-mail as spam); `bounced` (a hard bounce: the address doesn't exist); `blocklisted` for another reason (its domain takes no mail, or it bounced from another center); `test`, from the Config -> API page, to webhooks only."
+          },
+          "email": { "type": "string" },
+          "reason": { "type": "string" },
+          "campaign_id": { "type": ["integer", "null"], "description": "The campaign it came from, if known." },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "EventsPage": {
+        "type": "object",
+        "required": ["events", "after", "more"],
+        "properties": {
+          "events": { "type": "array", "items": { "$ref": "#/components/schemas/Event" } },
+          "after": { "type": "integer", "format": "int64", "description": "The last event's ID: `after` for the next page." },
+          "more": { "type": "boolean", "description": "Whether there may be more." }
+        }
+      }
+    }
+  }
+}

@@ -317,6 +317,9 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 	if err := denmaAddInviteTpl(nf.Tpls); err != nil {
 		lo.Printf("denma: error adding the invite e-mail template: %v", err)
 	}
+	if err := denmaAddAPITpls(nf); err != nil { // cmd/denma_api_events.go
+		lo.Printf("denma: error adding the API's e-mail template: %v", err)
+	}
 	design := loadDenmaDesign(db, ko, mgr, lo)
 	if design != nil {
 		if err := design.applyMail(nf.Tpls); err != nil {
@@ -388,6 +391,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 
 	denmaStartAutomations(app) // denma: cmd/denma_automations.go
 	denmaStartEmailChecks(app) // denma: cmd/denma_emailcheck.go
+	denmaStartAPIJobs(app)     // denma: cmd/denma_api_events.go
 
 	return app
 }

@@ -148,29 +148,33 @@ func (s *SES) ProcessBounce(b []byte) (models.Bounce, error) {
 	}
 
 	// Look for the campaign ID in headers.
-	campUUID := ""
+	// denma: and the subscriber's, which e-mails without a campaign carry
+	// (the sending API's, cmd/denma_api_send.go), so that the hub finds
+	// their center (cmd/denma_bounces.go).
+	campUUID, subUUID := "", ""
 	if !m.Mail.HeadersTruncated {
 		for _, h := range m.Mail.Headers {
 			key, ok := h["name"]
-			if !ok || key != models.EmailHeaderCampaignUUID {
-				continue
-			}
-
-			campUUID, ok = h["value"]
 			if !ok {
 				continue
 			}
-			break
+			switch key {
+			case models.EmailHeaderCampaignUUID:
+				campUUID = h["value"]
+			case models.EmailHeaderSubscriberUUID:
+				subUUID = h["value"]
+			}
 		}
 	}
 
 	return models.Bounce{
-		Email:        strings.ToLower(m.Mail.Destination[0]),
-		CampaignUUID: campUUID,
-		Type:         typ,
-		Source:       "ses",
-		Meta:         json.RawMessage(n.Message),
-		CreatedAt:    time.Time(m.Mail.Timestamp),
+		Email:          strings.ToLower(m.Mail.Destination[0]),
+		CampaignUUID:   campUUID,
+		SubscriberUUID: subUUID,
+		Type:           typ,
+		Source:         "ses",
+		Meta:           json.RawMessage(n.Message),
+		CreatedAt:      time.Time(m.Mail.Timestamp),
 	}, nil
 }
 

@@ -12,11 +12,17 @@ package main
 // Those who complained, hard-bounced or failed the domain check
 // (cmd/denma_emailcheck.go) aren't sent one. Someone who complained never
 // comes back (cmd/denma_optouts.go); an admin can enable those who bounced.
+//
+// The sending API's POST /v1/subscribers (cmd/denma_api_send.go) does the
+// same, and with "confirmed" (the caller vouches that they ticked the box
+// themselves, as rg-sync's Retreat Guru registrations do) re-subscribes them
+// at once, without the e-mail.
+//
 // Everything else that adds someone (imports, admins' list changes, other API
-// calls such as rg-sync's) leaves a blocklisted subscriber out, as listmonk
-// does: under CASL, an e-mail asking for consent again has to be one they
-// asked for. An admin can send the confirmation from the subscriber's page
-// when they've asked for it (the same API as the web-signup Lambda's).
+// calls) leaves a blocklisted subscriber out, as listmonk does: under CASL,
+// an e-mail asking for consent again has to be one they asked for. An admin
+// can send the confirmation from the subscriber's page when they've asked
+// for it (the same API as the web-signup Lambda's).
 //
 // An address is sent at most one such e-mail a day (and counts towards the
 // opt-in limit, cmd/denma_optins.go); a sign-up in between adds its lists to
@@ -71,31 +77,8 @@ func (a *App) denmaResubscribe(sub models.Subscriber, listIDs []int, attribs map
 	if sub.Status != models.SubscriberStatusBlockListed {
 		return denmaResubNotBlocked, nil
 	}
-
-	// Why they're blocklisted: a complaint or an address that can't receive
-	// mail keeps them out.
-	var why struct {
-		Complained bool `db:"complained"`
-		Bounced    bool `db:"bounced"`
-	}
-	if err := a.db.Get(&why, `SELECT
-		EXISTS (SELECT 1 FROM bounces WHERE subscriber_id = $1 AND type = 'complaint')
-			OR EXISTS (SELECT 1 FROM denma_optouts WHERE email_hash = denma_email_hash(s.email) AND kind = 'complained') AS complained,
-		EXISTS (SELECT 1 FROM bounces WHERE subscriber_id = $1 AND type = 'hard')
-			OR COALESCE(s.attribs ? 'auto_blocklist_reason', false) AS bounced
-		FROM subscribers s WHERE s.id = $1`, sub.ID); err != nil {
-		return "", err
-	}
-	if _, shared := denmaSharedBlock(a.db, sub.Email); shared {
-		why.Bounced = true
-	}
-	switch {
-	case why.Complained:
-		a.log.Printf("denma: not re-subscribing subscriber %d: they complained", sub.ID)
-		return denmaResubComplained, nil
-	case why.Bounced:
-		a.log.Printf("denma: not re-subscribing subscriber %d: their address bounced or can't receive mail", sub.ID)
-		return denmaResubBounced, nil
+	if why, err := a.denmaResubRefused(sub); err != nil || why != "" {
+		return why, err
 	}
 
 	// The lists, merged with a pending re-subscription's (unless it's expired).
@@ -143,6 +126,36 @@ func (a *App) denmaResubscribe(sub models.Subscriber, listIDs []int, attribs map
 	}
 	a.log.Printf("denma: sent subscriber %d a confirmation to re-subscribe", sub.ID)
 	return denmaResubSent, nil
+}
+
+// denmaResubRefused says why a blocklisted subscriber can't subscribe again,
+// or "" if they can: a complaint (denmaResubComplained) or an address that
+// can't receive mail (denmaResubBounced) keeps them out.
+func (a *App) denmaResubRefused(sub models.Subscriber) (string, error) {
+	var why struct {
+		Complained bool `db:"complained"`
+		Bounced    bool `db:"bounced"`
+	}
+	if err := a.db.Get(&why, `SELECT
+		EXISTS (SELECT 1 FROM bounces WHERE subscriber_id = $1 AND type = 'complaint')
+			OR EXISTS (SELECT 1 FROM denma_optouts WHERE email_hash = denma_email_hash(s.email) AND kind = 'complained') AS complained,
+		EXISTS (SELECT 1 FROM bounces WHERE subscriber_id = $1 AND type = 'hard')
+			OR COALESCE(s.attribs ? 'auto_blocklist_reason', false) AS bounced
+		FROM subscribers s WHERE s.id = $1`, sub.ID); err != nil {
+		return "", err
+	}
+	if _, shared := denmaSharedBlock(a.db, sub.Email); shared {
+		why.Bounced = true
+	}
+	switch {
+	case why.Complained:
+		a.log.Printf("denma: not re-subscribing subscriber %d: they complained", sub.ID)
+		return denmaResubComplained, nil
+	case why.Bounced:
+		a.log.Printf("denma: not re-subscribing subscriber %d: their address bounced or can't receive mail", sub.ID)
+		return denmaResubBounced, nil
+	}
+	return "", nil
 }
 
 func (a *App) denmaListsByID(ids pq.Int64Array) ([]models.List, error) {
