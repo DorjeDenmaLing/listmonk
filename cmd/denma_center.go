@@ -3,7 +3,7 @@ package main
 // denma: a center's Config pages (sidebar, in a center). General: the
 // center's own details, which aren't the hub's settings
 // (denmaCenterOwnSettings): its name, logo, favicon and language, and its
-// sender and admin notification e-mails. Saving reloads the center.
+// sender, reply-to and admin notification e-mails. Saving reloads the center.
 // Webhooks: its sign-up webhooks (cmd/denma_signup.go), saved on their own.
 // For users with center:manage (Center Admins, and superadmins).
 
@@ -31,6 +31,7 @@ var denmaCenterFields = []string{
 	// The features (cmd/denma_features.go).
 	"denma.unsubscribe_everywhere", "denma.plain_text_auto", "denma.utm_domains", "denma.visual_template",
 	"denma.design_template", // cmd/denma_design.go
+	"denma.reply_to",        // cmd/denma_reply_to.go
 }
 
 // denmaPermissions adds ours to listmonk's permissions (permissions.json), so
@@ -87,6 +88,7 @@ type denmaCenterForm struct {
 	FaviconURL   string   `json:"favicon_url"`
 	Lang         string   `json:"lang"`
 	FromEmail    string   `json:"from_email"`
+	ReplyTo      string   `json:"reply_to"` // cmd/denma_reply_to.go
 	NotifyEmails []string `json:"notify_emails"`
 
 	// The features (cmd/denma_features.go).
@@ -102,7 +104,7 @@ var denmaFormKeys = map[string]string{
 	"lang": "app.lang", "from_email": "app.from_email", "notify_emails": "app.notify_emails",
 	"unsubscribe_everywhere": "denma.unsubscribe_everywhere", "plain_text_auto": "denma.plain_text_auto",
 	"utm_domains": "denma.utm_domains", "visual_template": "denma.visual_template",
-	"design_template": "denma.design_template",
+	"design_template": "denma.design_template", "reply_to": "denma.reply_to",
 }
 
 type denmaCenterView struct {
@@ -260,6 +262,10 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	}
 	if err := a.denmaCheckSender(f.FromEmail); err != nil { // cmd/denma_domains.go
 		return denmaBadRequest(err)
+	}
+	var err error
+	if f.ReplyTo, err = denmaCheckReplyTo(f.ReplyTo); err != nil { // cmd/denma_reply_to.go
+		return bad(err.Error())
 	}
 	emails := []string{}
 	for _, e := range f.NotifyEmails {

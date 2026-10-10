@@ -1578,9 +1578,13 @@ func (a *App) denmaSystemSender() (from, replyTo string) {
 }
 
 // denmaSetSystemSender sets a center's own e-mail's sender, and Reply-To if
-// any (denmaSystemSender).
+// any: the center's default reply-to (cmd/denma_reply_to.go), else
+// denmaSystemSender's.
 func (a *App) denmaSetSystemSender(m *models.Message) {
 	from, replyTo := a.denmaSystemSender()
+	if rt := a.denmaReplyTo(); rt != "" {
+		replyTo = rt
+	}
 	m.From = from
 	if replyTo != "" {
 		if m.Headers == nil {

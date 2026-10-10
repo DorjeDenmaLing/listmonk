@@ -59,10 +59,12 @@ function component() {
       const data = {
         name: newName,
         subject: c.subject,
+        preview_text: c.preview_text, // denma
         lists: (c.lists || []).map((l) => l.id),
         subscriber_tags: c.subscriber_tags || [], // denma
         type: c.type,
         from_email: c.from_email,
+        reply_to: c.reply_to, // denma
         content_type: c.content_type,
         messenger: c.messenger,
         tags: c.tags,

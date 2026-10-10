@@ -114,6 +114,8 @@ type Manager struct {
 	slidingStart time.Time
 
 	tplFuncs template.FuncMap
+
+	denmaReplyTo string // denma: the center's default reply-to (denma_reply_to.go)
 }
 
 // CampaignMessage represents an instance of campaign message to be pushed out,
@@ -558,6 +560,7 @@ func (m *Manager) worker() {
 					h.Add(hdr, val)
 				}
 			}
+			m.denmaSetReplyTo(msg.Campaign, h) // denma: denma_reply_to.go
 
 			// Set the headers.
 			out.Headers = h

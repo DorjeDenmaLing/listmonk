@@ -17,9 +17,23 @@
 			<input name="subject" maxlength="5000" x-model="form.subject" :disabled="!canEdit" required />
 		</label>
 
+		<template x-if="form.content_type !== 'plain'">{{/* denma: preview text (internal/manager/denma_preview_text.go) */}}
+			<label data-field>
+				Preview text
+				<input name="preview_text" maxlength="200" x-model="form.preview_text" :disabled="!canEdit" data-testid="preview-text" />
+				<small data-hint>The sentence most email apps show after the subject in the inbox. It isn't shown in the email itself.</small>
+			</label>
+		</template>
+
 		<label data-field>
 			{{ $root.L.T "campaigns.fromAddress" }}
 			<input name="from_email" maxlength="200" x-model="form.from_email" :disabled="!canEdit" placeholder="{{ $root.L.T "campaigns.fromAddressPlaceholder" }}" required />
+		</label>
+
+		<label data-field>{{/* denma: cmd/denma_reply_to.go */}}
+			Reply-to
+			<input name="reply_to" maxlength="300" x-model="form.reply_to" :disabled="!canEdit" placeholder="{{ with $root.Data.DenmaReplyTo }}{{ . }} (the center's){{ else }}Same as the From address{{ end }}" data-testid="campaign-reply-to" />
+			<small data-hint>Where replies to this campaign go. Empty uses {{ if $root.Data.DenmaReplyTo }}the center's reply-to (Config -> General){{ else }}the From address{{ end }}.</small>
 		</label>
 
 		{{ template "list-selector" dict "Root" $root "Model" "form.lists" "ListID" "campaign-lists" "Label" "globals.terms.lists" "Placeholder" "campaigns.sendToLists" "Disabled" "!canEdit" }}

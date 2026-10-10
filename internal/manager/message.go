@@ -46,7 +46,7 @@ func (m *CampaignMessage) render() error {
 	if err := m.Campaign.Tpl.ExecuteTemplate(&out, models.BaseTpl, m); err != nil {
 		return err
 	}
-	m.body = out.Bytes()
+	m.body = denmaAddPreviewText(m.Campaign, out.Bytes()) // denma: denma_preview_text.go
 
 	// Is there an alt body?
 	if m.Campaign.ContentType != models.CampaignContentTypePlain && m.Campaign.AltBody.Valid {

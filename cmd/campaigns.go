@@ -81,6 +81,7 @@ type campaignView struct {
 	ArchiveURL      string
 
 	DenmaPlainAuto bool               // denma: the center makes plain text automatically (cmd/denma_features.go)
+	DenmaReplyTo   string             // denma: the center's default reply-to (cmd/denma_reply_to.go)
 	DenmaFailures  *denmaSendFailures // denma: those it couldn't send to (cmd/denma_retries.go)
 }
 
@@ -111,6 +112,7 @@ func (a *App) ViewNewCampaign(c echo.Context) error {
 		Templates:       tpls,
 		AllLists:        allLists,
 		SelectedListIDs: selIDs,
+		DenmaReplyTo:    a.denmaReplyTo(), // denma
 	}
 
 	return c.Render(http.StatusOK, "admin-campaign", data)
@@ -185,6 +187,7 @@ func (a *App) ViewCampaign(c echo.Context) error {
 		ArchiveURL: archiveURL,
 
 		DenmaPlainAuto: a.denmaPlainAuto(),                   // denma
+		DenmaReplyTo:   a.denmaReplyTo(),                     // denma
 		DenmaFailures:  a.denmaCampaignFailuresView(camp.ID), // denma
 	}
 
@@ -469,7 +472,7 @@ func (a *App) CreateCampaign(c echo.Context) error {
 	}
 
 	// Validate.
-	if err := a.denmaCampaignTags(&o, c); err != nil { // denma: cmd/denma_tags.go
+	if err := a.denmaCheckCampaign(&o, c); err != nil { // denma: cmd/denma_tags.go
 		return err
 	}
 	if c, err := a.validateCampaignFields(o); err != nil {
@@ -486,7 +489,7 @@ func (a *App) CreateCampaign(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := a.denmaSaveCampaignTags(out.ID, o.SubscriberTags, &out); err != nil { // denma
+	if err := a.denmaSaveCampaign(out.ID, &o, &out); err != nil { // denma: cmd/denma_tags.go
 		return err
 	}
 
@@ -531,7 +534,7 @@ func (a *App) UpdateCampaign(c echo.Context) error {
 	user := auth.GetUser(c)
 	o.ListIDs = user.FilterListsByPerm(auth.PermTypeGet|auth.PermTypeManage, o.ListIDs)
 
-	if err := a.denmaCampaignTags(&o, c); err != nil { // denma: cmd/denma_tags.go
+	if err := a.denmaCheckCampaign(&o, c); err != nil { // denma: cmd/denma_tags.go
 		return err
 	}
 	if c, err := a.validateCampaignFields(o); err != nil {
@@ -544,7 +547,7 @@ func (a *App) UpdateCampaign(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := a.denmaSaveCampaignTags(id, o.SubscriberTags, &out); err != nil { // denma
+	if err := a.denmaSaveCampaign(id, &o, &out); err != nil { // denma: cmd/denma_tags.go
 		return err
 	}
 

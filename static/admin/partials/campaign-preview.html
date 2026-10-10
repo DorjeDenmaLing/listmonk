@@ -13,6 +13,9 @@
 				<input type="hidden" name="archive_meta" :value="preview.archiveMeta" />
 				<input type="hidden" name="body" :value="preview.body" />
 			</form>
+			<template x-if="preview.inbox">{{/* denma: the subject and preview text as an inbox shows them (views/campaign.js onPreviewContent) */}}
+				<p class="preview-inbox" data-testid="preview-inbox"><span class="text-light text-7">In the inbox:</span> <strong x-text="preview.inbox.subject"></strong> <span class="text-light" x-text="preview.inbox.text"></span></p>
+			</template>
 			<iframe id="iframe" name="campaign-preview-frame" x-ref="previewFrame" title="{{ .L.T "campaigns.preview" }}" @load="preview.loading = false"></iframe>
 		</section>
 		<footer class="dialog-foot">

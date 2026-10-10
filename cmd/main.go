@@ -306,6 +306,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 	mgr.SetNotify(func(subject string, data any) error { // denma: this app's notifier
 		return nf.NotifySystem(subject, notifs.TplCampaignStatus, data, nil)
 	})
+	mgr.DenmaSetReplyTo(ko.String("denma.reply_to")) // denma: cmd/denma_reply_to.go
 
 	// Initialize and cache tx templates in memory.
 	initTxTemplates(mgr, core)

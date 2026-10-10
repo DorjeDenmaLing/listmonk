@@ -30,7 +30,7 @@
 			<div data-field>
 				<span class="denma-static-label">Address</span>
 				<span class="denma-static" data-testid="center-address">{{ $d.Address }}</span>
-				<small data-hint>Set when the center was created; it can't be changed.</small>
+				<small data-hint>Set when the center was created.</small>
 			</div>
 			<div data-field>
 				<label for="center-lang">Language</label>
@@ -75,6 +75,11 @@
 				<input name="from_email" maxlength="300" required x-model="form.from_email" placeholder='"Center name" &lt;name@example.org&gt;' />
 				<small data-hint>The From of campaigns that don't set their own, and of system e-mails.{{ if $d.DomainsOn }} It has to be at one of the center's domains, which Amazon SES has to verify before anything can be sent from them; a superadmin adds them.{{ else }} Use an address the mail servers can send for.{{ end }}</small>
 			</label>
+			<label data-field>{{/* cmd/denma_reply_to.go */}}
+				Reply-to
+				<input name="reply_to" maxlength="300" x-model="form.reply_to" placeholder="Same as the sender" data-testid="reply-to" />
+				<small data-hint>Where replies to the center's e-mails go: its campaigns, automations, API and system e-mails. Empty sends replies to the sender. A campaign can set its own.</small>
+			</label>
 			{{- if $d.DomainsOn }}
 			<div data-field data-testid="center-domains">
 				<span class="denma-static-label">Sending domains</span>
@@ -114,7 +119,6 @@
 				<span><input type="checkbox" role="switch" x-model="form.unsubscribe_everywhere" data-testid="unsubscribe-everywhere"{{ if and $d.Form.UnsubscribeEverywhere (not $d.Super) }} disabled{{ end }} /> Unsubscribing someone from one list here unsubscribes them from all</span>
 				<small data-hint>Subscribers who unsubscribe themselves (the unsubscribe link, or the e-mail app's unsubscribe button) always leave every list and are blocklisted. This does the same when someone is unsubscribed from a list here in the admin, by an import or through the API. Only a superadmin can turn it off.</small>
 			</label>
-			<p class="text-light text-8" data-testid="signups-note">Moving website signups on to another list once they've confirmed is an automation now, in <a href="{{ URI "/admin/automations" }}">Automations</a>.</p>
 		</fieldset>
 
 		<fieldset class="card" data-testid="center-campaigns">

@@ -30,6 +30,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/listmonk/internal/auth"
@@ -64,8 +65,18 @@ func denmaNormTags(in []string) []string {
 }
 
 // denmaCampaignColumnsSQL adds what listmonk's campaign queries read of ours:
-// the tags column and the failed sends (cmd/denma_retries.go).
-const denmaCampaignColumnsSQL = `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';` + denmaRetriesSQL
+// the tags, preview text and reply-to (cmd/denma_reply_to.go) columns and
+// the failed sends (cmd/denma_retries.go).
+const denmaCampaignColumnsSQL = `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';` +
+	denmaPreviewTextSQL + denmaReplyToSQL + denmaRetriesSQL
+
+// denmaPreviewTextSQL adds the campaign's preview text (models.Campaign
+// PreviewText).
+const denmaPreviewTextSQL = `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_preview_text TEXT NOT NULL DEFAULT '';`
+
+// denmaPreviewTextMax is the most characters of preview text; inbox apps
+// show well under it.
+const denmaPreviewTextMax = 200
 
 // denmaInstallColumns adds them on a new install (install.go), before its
 // queries are prepared, as a center's features (denmaFeaturesSQL) or the hub
@@ -411,10 +422,21 @@ func sanitizeDenmaSQL(q string) string {
 	return strings.TrimSuffix(strings.TrimSpace(q), ";")
 }
 
-// denmaCampaignTags tidies a campaign's tags and checks that it may have
-// them: regular campaigns only, by users with access to all lists. Called
-// by CreateCampaign and UpdateCampaign.
-func (a *App) denmaCampaignTags(o *campReq, c echo.Context) error {
+// denmaCheckCampaign tidies a campaign's columns of ours and checks them:
+// its preview text's length, its reply-to address, and that it may have its
+// tags: regular campaigns only, by users with access to all lists. Called by
+// CreateCampaign and UpdateCampaign.
+func (a *App) denmaCheckCampaign(o *campReq, c echo.Context) error {
+	o.PreviewText = strings.TrimSpace(o.PreviewText)
+	if utf8.RuneCountInString(o.PreviewText) > denmaPreviewTextMax {
+		return echo.NewHTTPError(http.StatusBadRequest,
+			fmt.Sprintf("The preview text is too long; at most %d characters.", denmaPreviewTextMax))
+	}
+	var err error
+	if o.ReplyTo, err = denmaCheckReplyTo(o.ReplyTo); err != nil { // cmd/denma_reply_to.go
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
 	o.SubscriberTags = denmaNormTags(o.SubscriberTags)
 	if len(o.SubscriberTags) == 0 {
 		return nil
@@ -429,16 +451,21 @@ func (a *App) denmaCampaignTags(o *campReq, c echo.Context) error {
 	return a.denmaUnknownTags(o.SubscriberTags)
 }
 
-// denmaSaveCampaignTags saves a campaign's tags (after listmonk saved the
-// rest) into out, the campaign returned.
-func (a *App) denmaSaveCampaignTags(id int, tags []string, out *models.Campaign) error {
+// denmaSaveCampaign saves a campaign's columns of ours, its tags, preview
+// text and reply-to (after listmonk saved the rest), into out, the campaign
+// returned.
+func (a *App) denmaSaveCampaign(id int, o *campReq, out *models.Campaign) error {
+	tags := o.SubscriberTags
 	if tags == nil {
 		tags = []string{}
 	}
-	if _, err := a.db.Exec(`UPDATE campaigns SET denma_tags = $2 WHERE id = $1`, id, pq.Array(tags)); err != nil {
-		a.log.Printf("denma: error saving campaign %d's tags: %v", id, err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "Error saving the campaign's tags.")
+	if _, err := a.db.Exec(`UPDATE campaigns SET denma_tags = $2, denma_preview_text = $3, denma_reply_to = $4 WHERE id = $1`,
+		id, pq.Array(tags), o.PreviewText, o.ReplyTo); err != nil {
+		a.log.Printf("denma: error saving campaign %d's tags, preview text and reply-to: %v", id, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "Error saving the campaign's tags, preview text and reply-to.")
 	}
 	out.SubscriberTags = tags
+	out.PreviewText = o.PreviewText
+	out.ReplyTo = o.ReplyTo
 	return nil
 }

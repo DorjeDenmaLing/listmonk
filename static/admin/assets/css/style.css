@@ -807,6 +807,16 @@ td > .empty-state {
         padding: 0;
     }
 
+    /* denma: the subject and preview text as an inbox shows them. */
+    .preview-inbox {
+        margin: 0;
+        padding: var(--space-3) var(--space-4);
+        border-block-end: 1px solid var(--border);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
     #iframe {
         border: 0;
         max-height: 100%;

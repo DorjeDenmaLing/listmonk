@@ -57,7 +57,7 @@ function component(camp, sel) {
     _saved: false,
 
     preview: {
-      title: c.name || '', url: '', loading: true, templateID: null, contentType: '', archiveMeta: '', body: '',
+      title: c.name || '', url: '', loading: true, templateID: null, contentType: '', archiveMeta: '', body: '', inbox: null, // denma: inbox
     },
 
     form: {
@@ -67,7 +67,9 @@ function component(camp, sel) {
       type: c.type || 'regular',
       name: c.name || '',
       subject: c.subject || '',
+      preview_text: c.preview_text || '', // denma
       from_email: c.from_email || config.from_email || '',
+      reply_to: c.reply_to || '', // denma: cmd/denma_reply_to.go
       messenger: c.messenger || 'email',
       content_type: c.content_type || 'richtext',
       tags: Array.isArray(c.tags) ? c.tags : [],
@@ -246,9 +248,11 @@ function component(camp, sel) {
       return {
         name: this.form.name,
         subject: this.form.subject,
+        preview_text: this.form.preview_text, // denma
         lists: this.form.lists.map((l) => l.id),
         subscriber_tags: this.form.subscriber_tags.map(String), // denma
         from_email: this.form.from_email,
+        reply_to: this.form.reply_to, // denma
         messenger: this.form.messenger,
         type: 'regular',
         tags: this.form.tags,
@@ -277,9 +281,11 @@ function component(camp, sel) {
         archive_slug: this.form.subject,
         name: p.name,
         subject: p.subject,
+        preview_text: p.preview_text, // denma
         lists: p.lists,
         subscriber_tags: p.subscriber_tags, // denma
         from_email: p.from_email,
+        reply_to: p.reply_to, // denma
         content_type: p.content_type,
         messenger: p.messenger,
         type: 'regular',
@@ -420,6 +426,9 @@ function component(camp, sel) {
       this.preview.contentType = this.form.content_type;
       this.preview.archiveMeta = '';
       this.preview.body = this.form.body || '';
+      // denma: the subject and preview text as an inbox shows them.
+      const previewText = this.form.content_type !== 'plain' ? this.form.preview_text.trim() : '';
+      this.preview.inbox = previewText ? { subject: this.form.subject, text: previewText } : null;
       this.$refs.previewDialog.showModal();
       this.$nextTick(() => this.$refs.previewForm.submit());
     },
@@ -432,6 +441,7 @@ function component(camp, sel) {
       this.preview.contentType = this.form.content_type;
       this.preview.archiveMeta = this.form.archiveMetaStr;
       this.preview.body = '';
+      this.preview.inbox = null; // denma
       this.$refs.previewDialog.showModal();
       this.$nextTick(() => this.$refs.previewForm.submit());
     },

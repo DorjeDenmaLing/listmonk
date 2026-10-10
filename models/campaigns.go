@@ -103,6 +103,14 @@ type Campaign struct {
 	// denma: the subscriber tags the campaign is also sent to (cmd/denma_tags.go).
 	SubscriberTags pq.StringArray `db:"denma_tags" json:"subscriber_tags"`
 
+	// denma: the sentence inbox apps show after the subject, hidden at the
+	// top of the email (internal/manager/denma_preview_text.go).
+	PreviewText string `db:"denma_preview_text" json:"preview_text"`
+
+	// denma: where replies go, in place of the center's default
+	// (cmd/denma_reply_to.go); "" for the default.
+	ReplyTo string `db:"denma_reply_to" json:"reply_to"`
+
 	// denma: failed sends (cmd/denma_retries.go): when the campaign next
 	// tries them again (set: it's a retry run, sending only to them), and how
 	// many there are (the campaigns list).
