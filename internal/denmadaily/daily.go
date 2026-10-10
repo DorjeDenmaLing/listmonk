@@ -12,6 +12,9 @@
 // automation claimed but didn't send it gives back (Release). Claims are
 // in memory only, and a claim left untouched for claimTimeout is dropped,
 // in case e-mails claimed were never sent.
+//
+// Each center also has a Counter of its own (Counters), against its own
+// daily cap, which a superadmin sets on its Config page; it has no reserve.
 package denmadaily
 
 import (
@@ -46,6 +49,7 @@ type Counter struct {
 	claimAt time.Time     // when claims last changed
 	db      *sqlx.DB
 	log     *log.Logger
+	center  string // a center's counter (Counters); "" for the hub's
 }
 
 // New returns a counter without a limit, logging to lg.
@@ -254,7 +258,10 @@ func (d *Counter) Left() int {
 	defer d.mu.Unlock()
 	if s.Left == 0 && !d.waiting {
 		d.waiting = true
-		if s.Claimed > 0 {
+		if d.center != "" {
+			d.log.Printf("denma: center %s: %d e-mails sent in 24 hours and %d claimed, its daily cap of %d; its campaigns, automations and API sends wait until about %s",
+				d.center, s.Sent, s.Claimed, s.Limit, s.FreesAt.Format("15:04"))
+		} else if s.Claimed > 0 {
 			d.log.Printf("denma: %d e-mails sent in 24 hours and %d claimed by automations, the daily limit of %d less its %d%% reserve; campaigns and other automations wait",
 				s.Sent, s.Claimed, s.Limit, s.Reserve)
 		} else {
@@ -263,7 +270,11 @@ func (d *Counter) Left() int {
 		}
 	} else if s.Left > 0 && d.waiting {
 		d.waiting = false
-		d.log.Printf("denma: under the daily limit again; sending goes on")
+		if d.center != "" {
+			d.log.Printf("denma: center %s: under its daily cap again; sending goes on", d.center)
+		} else {
+			d.log.Printf("denma: under the daily limit again; sending goes on")
+		}
 	}
 	return s.Left
 }
@@ -286,5 +297,118 @@ func (d *Counter) Wait(stopped func() bool) bool {
 			wait = min(wait, max(time.Until(s.FreesAt), 10*time.Millisecond))
 		}
 		time.Sleep(wait)
+	}
+}
+
+// Counters is each center's Counter, against its own daily cap: one table
+// (denma.center_sends) and one saver for them all, so that a center's count
+// outlives its reloads.
+type Counters struct {
+	mu  sync.Mutex
+	m   map[string]*Counter
+	db  *sqlx.DB
+	log *log.Logger
+}
+
+// NewCounters returns the centers' counters, logging to lg.
+func NewCounters(lg *log.Logger) *Counters {
+	return &Counters{m: map[string]*Counter{}, log: lg}
+}
+
+// Get returns a center's counter, made without a cap on first use.
+func (cs *Counters) Get(center string) *Counter {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	c := cs.m[center]
+	if c == nil {
+		c = New(cs.log)
+		c.center = center
+		cs.m[center] = c
+	}
+	return c
+}
+
+// Init makes the counts' table, loads the last 24 hours', and saves new ones
+// every flushEvery. Call it once.
+func (cs *Counters) Init(db *sqlx.DB) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS denma.center_sends (
+		center TEXT NOT NULL,
+		minute BIGINT NOT NULL, -- Unix minutes
+		n      INTEGER NOT NULL,
+		PRIMARY KEY (center, minute)
+	)`); err != nil {
+		return err
+	}
+	var rows []struct {
+		Center string `db:"center"`
+		Minute
+	}
+	if err := db.Select(&rows, `SELECT center, minute, n FROM denma.center_sends WHERE minute > $1 ORDER BY center, minute`,
+		time.Now().Unix()/60-dayMinutes); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		c := cs.Get(r.Center)
+		c.mu.Lock()
+		c.minutes = append(c.minutes, r.Minute)
+		c.total += r.N
+		c.mu.Unlock()
+	}
+	cs.mu.Lock()
+	cs.db = db
+	cs.mu.Unlock()
+	go func() {
+		for range time.Tick(flushEvery) {
+			cs.Save()
+		}
+	}()
+	return nil
+}
+
+// Save writes every center's counts made since the last save, and forgets
+// old ones.
+func (cs *Counters) Save() {
+	cs.mu.Lock()
+	db := cs.db
+	list := make([]*Counter, 0, len(cs.m))
+	for _, c := range cs.m {
+		list = append(list, c)
+	}
+	cs.mu.Unlock()
+	if db == nil {
+		return
+	}
+
+	var (
+		centers []string
+		mins    []int64
+		ns      []int
+	)
+	for _, c := range list {
+		c.mu.Lock()
+		for m, n := range c.pending {
+			centers, mins, ns = append(centers, c.center), append(mins, m), append(ns, n)
+		}
+		c.pending = map[int64]int{}
+		c.mu.Unlock()
+	}
+	if len(centers) == 0 {
+		return
+	}
+	if _, err := db.Exec(`INSERT INTO denma.center_sends (center, minute, n) SELECT * FROM unnest($1::TEXT[], $2::BIGINT[], $3::INT[])
+		ON CONFLICT (center, minute) DO UPDATE SET n = denma.center_sends.n + EXCLUDED.n`,
+		pq.Array(centers), pq.Array(mins), pq.Array(ns)); err != nil {
+		cs.log.Printf("denma: error saving the centers' daily send counts: %v", err)
+		// Kept for the next save.
+		for i, center := range centers {
+			c := cs.Get(center)
+			c.mu.Lock()
+			c.pending[mins[i]] += ns[i]
+			c.mu.Unlock()
+		}
+		return
+	}
+	if _, err := db.Exec(`DELETE FROM denma.center_sends WHERE minute <= $1`, time.Now().Unix()/60-dayMinutes-60); err != nil {
+		cs.log.Printf("denma: error forgetting old center send counts: %v", err)
 	}
 }

@@ -95,6 +95,13 @@
 				<textarea name="notify_emails" rows="3" x-model="notify" placeholder="admin@example.org"></textarea>
 				<small data-hint>One per line. They get notices about campaigns (started, finished, paused) and imports.</small>
 			</label>
+			{{/* cmd/denma_daily.go */}}
+			<label data-field data-testid="center-daily-cap">
+				Daily sending cap
+				<input type="number" min="0" max="1000000" step="1" x-model.number="form.daily_cap"{{ if not $d.Super }} disabled{{ end }} data-testid="daily-cap" />
+				<small data-hint>The most e-mails this center sends in any 24 hours: its campaigns, automations and API e-mails. At the cap, campaigns wait and go on as the 24 hours roll on, automations wait, and the API refuses e-mails. Confirmations, password resets and notices always go. 0 is no cap{{ if not $d.Super }}; only a superadmin can change it{{ end }}.
+				Sent in the last 24 hours: {{ $d.Sending.Sent }}{{ if gt $d.Sending.Cap 0 }} of {{ $d.Sending.Cap }}{{ end }}.</small>
+			</label>
 		</fieldset>
 
 		{{/* The design for e-mails and pages (cmd/denma_design.go). */}}

@@ -24,13 +24,24 @@ package main
 // it. The first time the hub starts with it on, its rate becomes the daily
 // limit (if the window is 24 hours and no limit is set) and it's turned off
 // (denmaMoveSlidingWindow).
+//
+// Each center also has a daily cap of its own (denma.daily_cap, 0 for none),
+// which only a superadmin sets, on the center's Config -> General page: the
+// most e-mails it sends in any 24 hours, counted in denma.center_sends. It
+// counts what the center's campaign manager sends: campaigns, automations and
+// the sending API's e-mails (cmd/denma_api.go). At the cap, its campaign
+// messages wait (internal/manager/denma.go), its automations send nothing,
+// and the API refuses e-mails (429). Its opt-in confirmations, password
+// resets, invites and notifications always go, and aren't counted.
 
 import (
 	"fmt"
 	"net/http"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/knadh/koanf/v2"
 	"github.com/knadh/listmonk/internal/denmadaily"
+	"github.com/knadh/listmonk/internal/manager"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
 )
@@ -38,13 +49,98 @@ import (
 // denmaDaily is the process's count, against the hub's limit.
 var denmaDaily = denmadaily.New(lo)
 
+// denmaCenterSends is each center's count, against its own daily cap.
+var denmaCenterSends = denmadaily.NewCounters(lo)
+
+// denmaMaxDailyCap is the highest daily cap a center can have.
+const denmaMaxDailyCap = 1_000_000
+
 // denmaMaxDailyReserve is the most of the limit campaigns may be made to leave.
 const denmaMaxDailyReserve = 50
 
 // denmaInitDailySends loads and keeps the count. Called once, by
 // denmaInitRegistry.
 func denmaInitDailySends(db *sqlx.DB) error {
-	return denmaDaily.Init(db)
+	if err := denmaDaily.Init(db); err != nil {
+		return err
+	}
+	return denmaCenterSends.Init(db)
+}
+
+// denmaCenterCounter is a center's count; nil for the hub, or a single
+// install.
+func denmaCenterCounter(ko *koanf.Koanf) *denmadaily.Counter {
+	center := ko.String("denma.center")
+	if !ko.Bool("denma.multi_center") || center == "" {
+		return nil
+	}
+	return denmaCenterSends.Get(center)
+}
+
+// denmaCenterCap sets a center's cap from its settings (ko), and makes its
+// campaign messages wait for it. Called by buildApp, before the manager
+// runs. (Its Config page sets a new cap at once, as a save doesn't reload a
+// center that's sending, cmd/denma_center.go.)
+func denmaCenterCap(mgr *manager.Manager, ko *koanf.Koanf) {
+	if c := denmaCenterCounter(ko); c != nil {
+		c.SetLimit(ko.Int("denma.daily_cap"), 0)
+		mgr.DenmaSetCenterWait(c.Wait)
+	}
+}
+
+// denmaCenterClaimHeader marks an e-mail as claimed against the center's cap
+// (Counter.Claim, by automations and the API); it's taken off before the
+// e-mail is sent.
+const denmaCenterClaimHeader = "X-Denma-Center-Claim"
+
+// denmaCountedMessenger counts what a center's manager sends against its cap.
+type denmaCountedMessenger struct {
+	manager.Messenger
+	count *denmadaily.Counter
+}
+
+func (m denmaCountedMessenger) Push(msg models.Message) error {
+	if msg.Headers != nil && msg.Headers.Get(denmaCenterClaimHeader) != "" {
+		msg.Headers.Del(denmaCenterClaimHeader)
+		m.count.AddClaimed()
+	} else {
+		m.count.Add()
+	}
+	return m.Messenger.Push(msg)
+}
+
+// denmaCountSending counts a center's messengers' sends against its cap.
+func denmaCountSending(msgrs []manager.Messenger, ko *koanf.Koanf) []manager.Messenger {
+	c := denmaCenterCounter(ko)
+	if c == nil {
+		return msgrs
+	}
+	out := make([]manager.Messenger, len(msgrs))
+	for i, m := range msgrs {
+		out[i] = denmaCountedMessenger{Messenger: m, count: c}
+	}
+	return out
+}
+
+// denmaCapStatus is a center's sending against its cap, for its Config page
+// and the API.
+type denmaCapStatus struct {
+	Cap  int `json:"daily_cap"` // 0: none
+	Sent int `json:"sent_24h"`
+	Left int `json:"left"` // -1 without a cap
+}
+
+func (a *App) denmaCapStatus() denmaCapStatus {
+	c := denmaCenterCounter(a.ko)
+	if c == nil {
+		return denmaCapStatus{Left: -1}
+	}
+	s := c.Status()
+	out := denmaCapStatus{Cap: s.Limit, Sent: s.Sent, Left: -1}
+	if s.Limit > 0 {
+		out.Left = s.Left
+	}
+	return out
 }
 
 // denmaCheckDailySettings refuses a daily limit or reserve out of range.

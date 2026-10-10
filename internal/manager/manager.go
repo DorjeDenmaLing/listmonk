@@ -115,7 +115,8 @@ type Manager struct {
 
 	tplFuncs template.FuncMap
 
-	denmaReplyTo string // denma: the center's default reply-to (denma_reply_to.go)
+	denmaCenterWait func(stopped func() bool) bool // denma: the center's daily cap (denma.go)
+	denmaReplyTo    string                         // denma: the center's default reply-to (denma_reply_to.go)
 }
 
 // CampaignMessage represents an instance of campaign message to be pushed out,
@@ -520,6 +521,11 @@ func (m *Manager) worker() {
 
 			// denma: the hub's daily limit (denma.go).
 			if msg.pipe != nil && DenmaDailyWait != nil && !DenmaDailyWait(msg.pipe.stopped.Load) {
+				msg.pipe.wg.Done()
+				continue
+			}
+			// denma: and the center's own daily cap (denma.go).
+			if msg.pipe != nil && m.denmaCenterWait != nil && !m.denmaCenterWait(msg.pipe.stopped.Load) {
 				msg.pipe.wg.Done()
 				continue
 			}

@@ -279,7 +279,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 		core = initCore(fbOptinNotify, queries, db, i18n, ko)
 
 		// Campaign manager.
-		mgr = initCampaignManager(denmaLimitSending(msgrs, ko), queries, urlCfg, core, media, i18n, ko) // denma: one send limit for all centers (cmd/denma_sending.go)
+		mgr = initCampaignManager(denmaCountSending(denmaLimitSending(msgrs, ko), ko), queries, urlCfg, core, media, i18n, ko) // denma: one send limit for all centers (cmd/denma_sending.go), and each center's cap (cmd/denma_daily.go)
 
 		// Bulk importer.
 		importer = initImporter(queries, db, core, i18n, ko, nf)
@@ -336,6 +336,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 
 	// Start the campaign manager workers. The campaign batches (fetch from DB, push out
 	// messages) get processed at the specified interval.
+	denmaCenterCap(mgr, ko) // denma: the center's daily cap (cmd/denma_daily.go)
 	go mgr.Run()
 
 	// =========================================================================

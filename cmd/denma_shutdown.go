@@ -48,7 +48,8 @@ func denmaAwaitShutdown(app *App) {
 			}(a)
 		}
 		wg.Wait()
-		denmaDaily.Save() // cmd/denma_daily.go
+		denmaDaily.Save()       // cmd/denma_daily.go
+		denmaCenterSends.Save() // and each center's
 		lo.Printf("denma: campaigns saved; exiting")
 		os.Exit(0)
 	}()

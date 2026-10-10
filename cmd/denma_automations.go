@@ -545,6 +545,7 @@ var denmaAutoHeld sync.Map
 func (a *App) runAutomation(auto denmaAutomation) {
 	limit := denmaAutoBatch
 	claimed, pushed := false, 0 // its e-mails claimed against the daily limit, and pushed
+	centerClaimed := false      // and against the center's cap
 	if auto.SendEmail {
 		if a.emailMsgr == nil {
 			return
@@ -574,6 +575,17 @@ func (a *App) runAutomation(auto denmaAutomation) {
 		limit, claimed = got, ok
 		if claimed {
 			defer func() { denmaDaily.Release(got - pushed) }()
+		}
+		// And the center's own daily cap, the same way.
+		if cc := denmaCenterCounter(a.ko); cc != nil {
+			cgot, ok := cc.Claim(limit)
+			if cgot == 0 {
+				return
+			}
+			limit, centerClaimed = cgot, ok
+			if centerClaimed {
+				defer func() { cc.Release(cgot - pushed) }()
+			}
 		}
 	}
 
@@ -654,6 +666,9 @@ func (a *App) runAutomation(auto denmaAutomation) {
 		if err == nil {
 			if claimed {
 				msg.Headers.Set(denmaClaimHeader, "1") // counted against its claim when it goes (cmd/denma_sending.go)
+			}
+			if centerClaimed {
+				msg.Headers.Set(denmaCenterClaimHeader, "1") // cmd/denma_daily.go
 			}
 			err = a.manager.PushMessage(msg)
 		}

@@ -110,6 +110,12 @@ func (m *Manager) DenmaStop(wait time.Duration) bool {
 // stopped campaign's are, and sent when it resumes.
 var DenmaDailyWait func(stopped func() bool) bool
 
+// DenmaSetCenterWait sets the wait for the manager's center's own daily cap
+// (cmd/denma_daily.go), as DenmaDailyWait. Call it before Run.
+func (m *Manager) DenmaSetCenterWait(wait func(stopped func() bool) bool) {
+	m.denmaCenterWait = wait
+}
+
 // Failed sends (cmd/denma_retries.go). Each is recorded with its reason and
 // whether it's worth trying again: the mail server unreachable or answering
 // "try later" (a 4xx reply) is temporary; a 5xx reply, or a message that

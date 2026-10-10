@@ -31,6 +31,7 @@ var denmaCenterFields = []string{
 	// The features (cmd/denma_features.go).
 	"denma.unsubscribe_everywhere", "denma.plain_text_auto", "denma.utm_domains", "denma.visual_template",
 	"denma.design_template", // cmd/denma_design.go
+	"denma.daily_cap",       // superadmins only (cmd/denma_daily.go)
 	"denma.reply_to",        // cmd/denma_reply_to.go
 }
 
@@ -97,6 +98,8 @@ type denmaCenterForm struct {
 	UTMDomains            []string `json:"utm_domains"`
 	VisualTemplate        int      `json:"visual_template"`
 	DesignTemplate        int      `json:"design_template"` // cmd/denma_design.go
+
+	DailyCap int `json:"daily_cap"` // superadmins only (cmd/denma_daily.go)
 }
 
 var denmaFormKeys = map[string]string{
@@ -104,7 +107,7 @@ var denmaFormKeys = map[string]string{
 	"lang": "app.lang", "from_email": "app.from_email", "notify_emails": "app.notify_emails",
 	"unsubscribe_everywhere": "denma.unsubscribe_everywhere", "plain_text_auto": "denma.plain_text_auto",
 	"utm_domains": "denma.utm_domains", "visual_template": "denma.visual_template",
-	"design_template": "denma.design_template", "reply_to": "denma.reply_to",
+	"design_template": "denma.design_template", "daily_cap": "denma.daily_cap", "reply_to": "denma.reply_to",
 }
 
 type denmaCenterView struct {
@@ -112,12 +115,14 @@ type denmaCenterView struct {
 	Form    denmaCenterForm
 	Address string
 	Langs   []i18nLang
-	Super   bool // a superadmin, who alone can turn unsubscribe everywhere off
+	Super   bool // a superadmin, who alone can turn unsubscribe everywhere off, and set the daily cap
 
 	// The center's sending domains (cmd/denma_domains.go), and whether the
 	// hub checks senders against them.
 	Domains   []denmaCenterDomain
 	DomainsOn bool
+
+	Sending denmaCapStatus // against its daily cap (cmd/denma_daily.go)
 
 	// For the features' choices.
 	VisualTemplates []denmaOption
@@ -219,6 +224,7 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	view.DomainsOn = denmaDomainsOn()
+	view.Sending = a.denmaCapStatus()
 	return c.Render(http.StatusOK, "admin-denma-center", view)
 }
 
@@ -304,15 +310,20 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	if err := a.denmaCheckFeatures(&f); err != nil {
 		return bad(err.Error())
 	}
-	// Only a superadmin can turn unsubscribe everywhere off.
-	if !f.UnsubscribeEverywhere && auth.GetUser(c).UserRole.ID != auth.SuperAdminRoleID {
+	// Only a superadmin can turn unsubscribe everywhere off, or set the daily
+	// cap; others keep the cap as it is.
+	if auth.GetUser(c).UserRole.ID != auth.SuperAdminRoleID {
 		cur, err := a.centerForm()
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
-		if cur.UnsubscribeEverywhere {
+		if !f.UnsubscribeEverywhere && cur.UnsubscribeEverywhere {
 			return echo.NewHTTPError(http.StatusForbidden, "Only a superadmin can turn off unsubscribing from all lists.")
 		}
+		f.DailyCap = cur.DailyCap
+	}
+	if f.DailyCap < 0 || f.DailyCap > denmaMaxDailyCap {
+		return bad(fmt.Sprintf("The daily cap has to be from 0 (no cap) to %d.", denmaMaxDailyCap))
 	}
 	oldLogo := a.ko.String("app.logo_url")
 	// Save each setting.
@@ -333,6 +344,11 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	a.denmaDesignLogoChanged(oldLogo, f.LogoURL) // the center's design shows its logo (cmd/denma_design.go)
+	// The daily cap applies at once: campaigns waiting for it would hold
+	// up the reload (cmd/denma_daily.go).
+	if c := denmaCenterCounter(a.ko); c != nil {
+		c.SetLimit(f.DailyCap, 0)
+	}
 
 	// The hub's list shows the registry's name for centers that aren't running.
 	slug := a.ko.String("denma.center")

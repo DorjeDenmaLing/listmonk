@@ -161,3 +161,30 @@ func TestDailyClaim(t *testing.T) {
 		t.Fatalf("an unclaimed send: claimed %d, sent %d; want 10, 751", s.Claimed, s.Sent)
 	}
 }
+
+// Each center has its own count and cap; the hub's isn't touched.
+func TestCentersSeparate(t *testing.T) {
+	cs := NewCounters(log.New(os.Stderr, "", 0))
+	a, b := cs.Get("a"), cs.Get("b")
+	if cs.Get("a") != a {
+		t.Fatal("Get made a second counter for the same center")
+	}
+	a.SetLimit(2, 0)
+	a.Add()
+	a.Add()
+	b.Add()
+	if a.Left() != 0 || b.Left() != -1 {
+		t.Fatalf("a left %d (want 0, at its cap), b left %d (want -1, no cap)", a.Left(), b.Left())
+	}
+	if got, ok := a.Claim(5); got != 0 || !ok {
+		t.Fatalf("a claimed %d at its cap (claimed %v)", got, ok)
+	}
+	b.SetLimit(10, 0)
+	if got, _ := b.Claim(20); got != 9 {
+		t.Fatalf("b claimed %d, want the 9 left", got)
+	}
+	cs.Save() // no database yet: a no-op, counts kept
+	if a.pending[time.Now().Unix()/60] != 2 {
+		t.Fatalf("a's pending counts lost: %v", a.pending)
+	}
+}
