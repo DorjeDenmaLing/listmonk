@@ -6,10 +6,12 @@ package main
 // username), when, from where (IP), what (a description, the route, the
 // target and its name), whether it worked (the HTTP status), and the request
 // (query and body, with passwords, secrets and tokens removed and long values
-// cut). So are sign-ins (and failed ones: at /login, in the hub's log, and
-// entering a center, in its own), sign-outs, password resets, a superadmin
-// opening a center, and data exports. Reading pages and searching
-// aren't.
+// cut; a body over denmaAuditMaxBody isn't). So are sign-ins (and failed
+// ones: at /login, in the hub's log, and entering a center, in its own),
+// sign-outs, password resets, a superadmin opening a center, and data
+// exports. Reading pages and searching aren't, nor unauthenticated requests
+// (denmaAuditUnauthed). Sending API requests are recorded by key and
+// outcome, without the body.
 //
 // A center's log is on its Activity page, for those who can use its Config
 // page; the superadmins' hub has every center's, on its own Activity page
@@ -103,15 +105,25 @@ func denmaAudit(a *App) echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			// The body, for the record (put back for the handler).
+			// The body's first denmaAuditMaxBody bytes, for the record (put
+			// back for the handler). A longer body isn't recorded.
 			var body []byte
-			if strings.HasPrefix(req.Header.Get(echo.HeaderContentType), echo.MIMEApplicationJSON) && req.Body != nil {
-				b, err := io.ReadAll(req.Body)
+			tooLarge := false
+			if strings.HasPrefix(req.Header.Get(echo.HeaderContentType), echo.MIMEApplicationJSON) && req.Body != nil &&
+				!denmaAuditAPIRoute(route) {
+				b, err := io.ReadAll(io.LimitReader(req.Body, denmaAuditMaxBody+1))
 				if err != nil {
 					return err
 				}
-				body = b
-				req.Body = io.NopCloser(bytes.NewReader(b))
+				req.Body = struct {
+					io.Reader
+					io.Closer
+				}{io.MultiReader(bytes.NewReader(b), req.Body), req.Body}
+				if len(b) <= denmaAuditMaxBody {
+					body = b
+				} else {
+					tooLarge = true
+				}
 			}
 
 			// The target's name before it changes (or goes).
@@ -127,10 +139,49 @@ func denmaAudit(a *App) echo.MiddlewareFunc {
 					status = he.Code
 				}
 			}
-			a.denmaAuditWrite(c, route, target, targetName, body, status)
+			a.denmaAuditWrite(c, route, target, targetName, body, tooLarge, status)
 			return err
 		}
 	}
+}
+
+const (
+	// denmaAuditMaxBody is the most of a body the log reads.
+	denmaAuditMaxBody = 64 << 10
+	// denmaMaxBody is the most any request can send.
+	denmaMaxBody = 64 << 20
+)
+
+// denmaBodyLimit refuses a request body over denmaMaxBody.
+func denmaBodyLimit(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		req := c.Request()
+		if req.ContentLength > denmaMaxBody {
+			return echo.NewHTTPError(http.StatusRequestEntityTooLarge, fmt.Sprintf("The request is over %d MB.", denmaMaxBody>>20))
+		}
+		if req.Body != nil {
+			req.Body = http.MaxBytesReader(c.Response(), req.Body, denmaMaxBody)
+		}
+		return next(c)
+	}
+}
+
+// denmaAuditAPIRoute is whether a route is the sending API's (cmd/denma_api.go).
+func denmaAuditAPIRoute(route string) bool {
+	return route == "/v1" || strings.HasPrefix(route, "/v1/")
+}
+
+// denmaAuditUnauthed is whether a request has no user or key: an API request
+// without a working key, or a refused admin API request without a session.
+// Sign-in pages aren't /api routes, so failed sign-ins are still recorded.
+func denmaAuditUnauthed(c echo.Context, route string, status int) bool {
+	if denmaAuditAPIRoute(route) {
+		return apiKeyOf(c).ID == 0
+	}
+	if u, ok := c.Get(auth.UserHTTPCtxKey).(auth.User); ok && u.ID > 0 {
+		return false
+	}
+	return (status == http.StatusUnauthorized || status == http.StatusForbidden) && strings.HasPrefix(route, "/api/")
 }
 
 // denmaAuditTarget is the route's :id (or other parameter) and, for an
@@ -180,16 +231,27 @@ func denmaAuditResource(route string) string {
 	return parts[0]
 }
 
-func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, body []byte, status int) {
+func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, body []byte, tooLarge bool, status int) {
 	req := c.Request()
+	if denmaAuditUnauthed(c, route, status) {
+		return
+	}
 
 	var (
 		uid            *int
 		username, name string
 		role           int
 	)
+	details := map[string]any{}
 	if u, ok := c.Get(auth.UserHTTPCtxKey).(auth.User); ok && u.ID > 0 {
 		uid, username, name, role = &u.ID, u.Username, u.Name, u.UserRole.ID
+	} else if k := apiKeyOf(c); k.ID > 0 {
+		// The API: the key and what it did (apiLog), not the body.
+		name = fmt.Sprintf("API key %q", k.Name)
+		details["key_id"] = k.ID
+		if res, _ := c.Get(denmaAPIResultCtx).([]string); len(res) > 0 {
+			details["result"] = res
+		}
 	} else {
 		// Signing in, or a password reset: who it was for.
 		username = strings.TrimSpace(c.FormValue("username"))
@@ -198,11 +260,12 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 		}
 	}
 
-	details := map[string]any{}
 	if q := req.URL.Query(); len(q) > 0 {
 		details["query"] = denmaRedact(map[string][]string(q))
 	}
-	if len(body) > 0 {
+	if tooLarge {
+		details["body"] = fmt.Sprintf("(over %d KB: not recorded)", denmaAuditMaxBody>>10)
+	} else if len(body) > 0 {
 		var v any
 		if json.Unmarshal(body, &v) == nil {
 			details["body"] = denmaRedact(v)

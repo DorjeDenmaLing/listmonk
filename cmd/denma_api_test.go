@@ -5,10 +5,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/knadh/listmonk/internal/auth"
+	"github.com/labstack/echo/v4"
 )
 
 // A key limited to addresses: IPs, networks and host names.
@@ -284,6 +290,73 @@ func TestDenmaAPIConsentAt(t *testing.T) {
 	} {
 		if _, err := denmaAPIConsentAt(dec(attribs)); err == nil {
 			t.Errorf("%s: no error", name)
+		}
+	}
+}
+
+// No request is over denmaMaxBody, whether it says so or not.
+func TestDenmaBodyLimit(t *testing.T) {
+	e := echo.New()
+	h := denmaBodyLimit(func(c echo.Context) error {
+		_, err := io.Copy(io.Discard, c.Request().Body)
+		return err
+	})
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("{}"))
+	req.ContentLength = denmaMaxBody + 1
+	if err := h(e.NewContext(req, httptest.NewRecorder())); err == nil || err.(*echo.HTTPError).Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("a large Content-Length: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/", io.LimitReader(zeros{}, denmaMaxBody+10))
+	req.ContentLength = -1
+	if err := h(e.NewContext(req, httptest.NewRecorder())); err == nil {
+		t.Error("a large body without a length was read")
+	}
+	req = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"a": 1}`))
+	if err := h(e.NewContext(req, httptest.NewRecorder())); err != nil {
+		t.Errorf("a small body: %v", err)
+	}
+}
+
+type zeros struct{}
+
+func (zeros) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = '0'
+	}
+	return len(p), nil
+}
+
+// Requests refused before anyone's known aren't in the activity log; failed
+// sign-ins are.
+func TestDenmaAuditUnauthed(t *testing.T) {
+	e := echo.New()
+	ctx := func(user, key bool) echo.Context {
+		c := e.NewContext(httptest.NewRequest(http.MethodPost, "/", nil), httptest.NewRecorder())
+		if user {
+			c.Set(auth.UserHTTPCtxKey, auth.User{Base: auth.Base{ID: 3}})
+		}
+		if key {
+			c.Set(denmaAPIKeyCtx, denmaAPIAuthed{ID: 2})
+		}
+		return c
+	}
+	for _, c := range []struct {
+		route     string
+		status    int
+		user, key bool
+		skip      bool
+	}{
+		{"/v1/messages", 401, false, false, true},
+		{"/v1/messages", 200, false, false, true}, // can't be, but no key, no record
+		{"/v1/messages", 400, false, true, false},
+		{"/api/subscribers", 403, false, false, true},
+		{"/api/subscribers", 401, false, false, true},
+		{"/api/subscribers", 403, true, false, false},
+		{"/login", 200, false, false, false},
+		{"/admin/login", 401, false, false, false},
+	} {
+		if got := denmaAuditUnauthed(ctx(c.user, c.key), c.route, c.status); got != c.skip {
+			t.Errorf("%s %d user %v key %v: skipped %v, want %v", c.route, c.status, c.user, c.key, got, c.skip)
 		}
 	}
 }
