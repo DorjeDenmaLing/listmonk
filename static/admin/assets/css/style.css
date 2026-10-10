@@ -1112,9 +1112,25 @@ section.campaign {
         }
     }
 
+    /* The content editor is as tall as the screen, whichever format. */
     .editor .editor-body {
         position: relative;
-        min-height: 65vh;
+        min-height: 100dvh;
+    }
+
+    .code-editor {
+        height: 100dvh;
+    }
+
+    /* The card is the editor's frame here, so no border of its own. */
+    visual-editor {
+        border: 0;
+        border-radius: 0;
+    }
+
+    visual-editor iframe {
+        display: block;
+        min-height: 100dvh;
     }
 
     [role="tabpanel"] {
@@ -1140,11 +1156,25 @@ section.campaign {
     }
 
     richtext-editor {
-        display: block;
+        display: flex;
+        flex-direction: column;
+        min-height: 100dvh;
+
+        .rte-content {
+            flex: 1;
+        }
     }
 
     .plain-editor {
-        min-height: 65vh;
+        min-height: 100dvh;
+    }
+
+    /* denma: the plain-text version folds out of the editor card's foot,
+       so it takes the card's edge instead of a border of its own. */
+    .denma-plain-text {
+        border: 0;
+        border-block-start: 1px solid var(--border);
+        border-radius: 0 0 var(--radius-medium) var(--radius-medium);
     }
 
     .alt-body textarea {
