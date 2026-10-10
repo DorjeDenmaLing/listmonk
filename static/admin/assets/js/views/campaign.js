@@ -49,7 +49,6 @@ function component(camp, sel) {
     denmaTagAutocomplete, // denma
     ...denmaFailures(), // denma
     isNew,
-    isHeadersVisible: Array.isArray(c.headers) && c.headers.length > 0,
     activeTab: 'campaign',
     contentReady: false,
     editorReady: false,
@@ -79,7 +78,6 @@ function component(camp, sel) {
       body_source: c.body_source || null,
       altbody: c.altbody === undefined ? null : c.altbody,
       media: (Array.isArray(c.media) ? c.media : []).map((m) => new MediaTag(m.id ? m : { ...m, filename: `❌ ${m.filename}` })),
-      headersStr: JSON.stringify(c.headers || [], null, 4),
       attribsStr: c.attribs ? JSON.stringify(c.attribs, null, 4) : '{}',
       archive: !!c.archive,
       archive_slug: c.archive_slug || '',
@@ -234,12 +232,6 @@ function component(camp, sel) {
     // Save / create / test / status.
 
     _payload() {
-      let headers = [];
-      const hs = (this.form.headersStr || '').trim();
-      if (hs && hs !== '[]') {
-        try { headers = JSON.parse(hs); } catch (e) { u.toast(e.toString(), 'danger'); return null; }
-      }
-
       let attribs = null;
       const as = (this.form.attribsStr || '').trim();
       if (as) {
@@ -261,7 +253,6 @@ function component(camp, sel) {
         type: 'regular',
         tags: this.form.tags,
         send_at: (this.form.sendLater && this.form.sendAtLocal) ? new Date(this.form.sendAtLocal).toISOString() : null,
-        headers,
         attribs,
         template_id: this.form.template_id,
         content_type: this.form.content_type,
@@ -294,7 +285,6 @@ function component(camp, sel) {
         type: 'regular',
         tags: p.tags,
         send_at: p.send_at,
-        headers: p.headers,
         attribs: p.attribs,
         media: p.media,
       };

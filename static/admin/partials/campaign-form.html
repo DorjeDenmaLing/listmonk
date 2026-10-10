@@ -72,18 +72,6 @@
 			</div>
 		</fieldset>
 
-		<fieldset>
-			<label data-field>
-				<input type="checkbox" role="switch" x-model="isHeadersVisible" :disabled="!canEdit" data-cy="btn-headers" /> {{ $root.L.T "settings.smtp.customHeaders" }}
-			</label>
-
-			<template x-if="isHeadersVisible">
-				<label data-field>
-					<textarea name="headers" x-model="form.headersStr" :disabled="!canEdit" placeholder='[{"X-Custom": "value"}]'></textarea>
-					<small data-hint>{{ $root.L.T "campaigns.customHeadersHelp" }}</small>
-				</label>
-			</template>
-		</fieldset>
 		{{- if $isNew }}
 		</section>
 			<footer class="hstack justify-end mt-6">
