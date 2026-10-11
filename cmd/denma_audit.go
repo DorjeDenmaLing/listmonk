@@ -13,10 +13,14 @@ package main
 // (denmaAuditUnauthed). Sending API requests are recorded by key and
 // outcome, without the body.
 //
+// Requests about people (subscribers, imports, the hub's people) are recorded
+// without their addresses, names or attributes (denmaAuditPersonal): the
+// subscriber is named by ID.
+//
 // A center's log is on its Activity page, for those who can use its Config
 // page; the superadmins' hub has every center's, on its own Activity page
-// (both views/denma-activity.html). Rows are never changed or deleted by the
-// app.
+// (both views/denma-activity.html). Rows are never changed by the app, and
+// are deleted after the hub's denma.audit_days days (pruneAuditLog).
 
 import (
 	"bytes"
@@ -30,6 +34,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/listmonk/internal/auth"
@@ -56,7 +61,8 @@ const denmaAuditSQL = `
 		status      INT NOT NULL,
 		details     JSONB NOT NULL DEFAULT '{}' -- query, body, files
 	);
-	CREATE INDEX IF NOT EXISTS audit_log_center ON denma.audit_log (center, id DESC);`
+	CREATE INDEX IF NOT EXISTS audit_log_center ON denma.audit_log (center, id DESC);
+	CREATE INDEX IF NOT EXISTS audit_log_created ON denma.audit_log (created_at);`
 
 // denmaInitAudit creates the log (with the registry in multi-center mode).
 func denmaInitAudit(db *sqlx.DB) error {
@@ -236,6 +242,14 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 	if denmaAuditUnauthed(c, route, status) {
 		return
 	}
+	// About people: without their addresses, names or attributes.
+	personal := denmaAuditPersonal(route)
+	redact := denmaRedact
+	if personal {
+		targetName = ""
+		body = denmaRedactPersonalJSON(body)
+		redact = func(v any) any { return denmaRedact(denmaRedactPersonal(v)) }
+	}
 
 	var (
 		uid            *int
@@ -261,31 +275,31 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 	}
 
 	if q := req.URL.Query(); len(q) > 0 {
-		details["query"] = denmaRedact(map[string][]string(q))
+		details["query"] = redact(map[string][]string(q))
 	}
 	if tooLarge {
 		details["body"] = fmt.Sprintf("(over %d KB: not recorded)", denmaAuditMaxBody>>10)
 	} else if len(body) > 0 {
 		var v any
 		if json.Unmarshal(body, &v) == nil {
-			details["body"] = denmaRedact(v)
+			details["body"] = redact(v)
 		}
 	} else if req.MultipartForm != nil {
 		files := []string{}
 		for _, fs := range req.MultipartForm.File {
 			for _, f := range fs {
 				files = append(files, fmt.Sprintf("%s (%d KB)", f.Filename, f.Size/1024))
-				if targetName == "" {
+				if targetName == "" && !personal {
 					targetName = f.Filename
 				}
 			}
 		}
 		details["files"] = files
 		if len(req.MultipartForm.Value) > 0 {
-			details["form"] = denmaRedact(req.MultipartForm.Value)
+			details["form"] = redact(req.MultipartForm.Value)
 		}
 	} else if req.PostForm != nil && len(req.PostForm) > 0 {
-		details["form"] = denmaRedact(map[string][]string(req.PostForm))
+		details["form"] = redact(map[string][]string(req.PostForm))
 	}
 	if loc := c.Response().Header().Get(echo.HeaderLocation); loc != "" {
 		details["redirect"] = loc
@@ -308,6 +322,114 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 		VALUES ($1, $2, $3, $4, `+supSQL+`, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		center, uid, username, name, c.RealIP(), req.Method, req.URL.Path, route, target, action, status, string(dj)); err != nil {
 		a.log.Printf("denma: error recording %s %s in the activity log: %v", req.Method, req.URL.Path, err)
+	}
+}
+
+// denmaAuditPersonal is whether a route is about people, recorded without
+// their addresses, names or attributes: subscribers (and their imports), and
+// the hub's people.
+func denmaAuditPersonal(route string) bool {
+	switch denmaAuditResource(route) {
+	case "subscribers", "import", "people":
+		return true
+	}
+	return false
+}
+
+// Keys whose values are about a person, left out of denmaAuditPersonal's
+// requests.
+var denmaPersonalKey = regexp.MustCompile(`(?i)^(e-?mails?|names?|first_?name|last_?name|attribs|attributes)$`)
+
+// reDenmaAddress is an e-mail address in text.
+var reDenmaAddress = regexp.MustCompile(`[^\s@"'<>(),;:]+@[^\s@"'<>(),;:]+\.[a-zA-Z]{2,}`)
+
+// denmaRedactPersonal is a request's values without a person's addresses,
+// names or attributes: those keys' values, and addresses anywhere.
+func denmaRedactPersonal(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, x := range t {
+			if denmaPersonalKey.MatchString(k) {
+				out[k] = "(not recorded)"
+				continue
+			}
+			out[k] = denmaRedactPersonal(x)
+		}
+		return out
+	case map[string][]string:
+		out := make(map[string][]string, len(t))
+		for k, x := range t {
+			if denmaPersonalKey.MatchString(k) {
+				out[k] = []string{"(not recorded)"}
+				continue
+			}
+			vals := make([]string, len(x))
+			for i, s := range x {
+				vals[i] = reDenmaAddress.ReplaceAllString(s, "(an address)")
+			}
+			out[k] = vals
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, x := range t {
+			out[i] = denmaRedactPersonal(x)
+		}
+		return out
+	case string:
+		return reDenmaAddress.ReplaceAllString(t, "(an address)")
+	}
+	return v
+}
+
+// denmaRedactPersonalJSON is a JSON body through denmaRedactPersonal; one
+// that isn't JSON isn't kept.
+func denmaRedactPersonalJSON(body []byte) []byte {
+	if len(body) == 0 {
+		return body
+	}
+	var v any
+	if json.Unmarshal(body, &v) != nil {
+		return nil
+	}
+	b, err := json.Marshal(denmaRedactPersonal(v))
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// denmaAuditMaxDays is the most days the hub can keep the log for, but for
+// ever (0).
+const denmaAuditMaxDays = 3650
+
+// pruneAuditLog deletes the activity log's entries older than the hub's
+// denma.audit_days, every hour, a batch at a time.
+func (d *denmaCenters) pruneAuditLog() {
+	time.Sleep(2 * time.Minute)
+	for {
+		if hub := d.current(); hub != nil {
+			if days := hub.ko.Int("denma.audit_days"); days > 0 {
+				total := 0
+				for {
+					res, err := hub.db.Exec(`DELETE FROM denma.audit_log WHERE id IN (SELECT id FROM denma.audit_log
+						WHERE created_at < NOW() - make_interval(days => $1) LIMIT 5000)`, days)
+					if err != nil {
+						lo.Printf("denma: error deleting old activity log entries: %v", err)
+						break
+					}
+					n, _ := res.RowsAffected()
+					if total += int(n); n < 5000 {
+						break
+					}
+				}
+				if total > 0 {
+					lo.Printf("denma: deleted %d activity log entries over %d days old", total, days)
+				}
+			}
+		}
+		time.Sleep(time.Hour)
 	}
 }
 

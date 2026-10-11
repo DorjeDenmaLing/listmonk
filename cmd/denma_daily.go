@@ -155,6 +155,11 @@ func denmaCheckDailySettings(set *models.Settings) error {
 		return echo.NewHTTPError(http.StatusBadRequest,
 			fmt.Sprintf("The share kept for confirmations and password resets has to be from 0 to %d%%.", denmaMaxDailyReserve))
 	}
+	// And the activity log's (cmd/denma_audit.go).
+	if set.DenmaAuditDays < 0 || set.DenmaAuditDays > denmaAuditMaxDays {
+		return echo.NewHTTPError(http.StatusBadRequest,
+			fmt.Sprintf("The activity log keeps its entries from 1 to %d days, or for ever (0).", denmaAuditMaxDays))
+	}
 	return nil
 }
 

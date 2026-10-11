@@ -24,6 +24,17 @@
 		</label>
 	</fieldset>
 
+	{{- if DenmaIsHub }}{{/* denma: cmd/denma_audit.go */}}
+	<fieldset class="card" data-keywords="activity log audit keep days retention delete history">
+		<legend>Activity log</legend>
+		<label data-field>
+			Keep its entries for (days)
+			<input type="number" name="denma.audit_days" min="0" max="3650" placeholder="365" x-model.number="form['denma.audit_days']" data-testid="audit-days" />
+			<small data-hint>Every center's and the hub's. Older entries are deleted each hour; 0 keeps them for ever. Requests about subscribers and people are recorded without their addresses, names or attributes.</small>
+		</label>
+	</fieldset>
+	{{- end }}
+
 	<fieldset class="card" data-keywords="privacy permissions blocklist preferences export wipe gdpr data subscriber rights">
 		<legend>{{ .L.T "users.perms" }}</legend>
 		<label data-field>

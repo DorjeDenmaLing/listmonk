@@ -37,6 +37,8 @@ type Settings struct {
 	// denma: the hub's logo for the admin's top bar, in every center (partials/denma/topnav.html).
 	DenmaAdminLogoURL string `json:"denma.admin_logo_url"`
 	DenmaAdminIconURL string `json:"denma.admin_icon_url"`
+	// denma: days the activity log keeps its entries, 0 for ever (cmd/denma_audit.go).
+	DenmaAuditDays int `json:"denma.audit_days"`
 
 	PrivacyIndividualTracking bool     `json:"privacy.individual_tracking"`
 	PrivacyDisableTracking    bool     `json:"privacy.disable_tracking"`

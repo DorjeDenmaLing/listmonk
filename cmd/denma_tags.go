@@ -97,7 +97,7 @@ func denmaInstallColumns(db *sqlx.DB) {
 func denmaHubColumns(db *sqlx.DB) {
 	if _, err := db.Exec(denmaCampaignColumnsSQL +
 		`INSERT INTO settings (key, value) VALUES ('denma.daily_limit', '0'), ('denma.daily_reserve', '5'),
-			('denma.admin_logo_url', '""'), ('denma.admin_icon_url', '""')
+			('denma.admin_logo_url', '""'), ('denma.admin_icon_url', '""'), ('denma.audit_days', '365')
 			ON CONFLICT (key) DO NOTHING;` + denmaMoveSlidingWindowSQL); err != nil {
 		lo.Fatalf("denma: error adding the campaign tags column and failed sends to the hub: %v", err)
 	}

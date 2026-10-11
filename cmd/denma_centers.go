@@ -226,6 +226,7 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 	go d.loadAll(list, base.ko.Int("denma.center_load_workers"))
 	go d.watchDomains()        // cmd/denma_domains.go
 	go d.watchPendingBounces() // cmd/denma_bounces.go
+	go d.pruneAuditLog()       // cmd/denma_audit.go
 
 	// The hub's settings saves (and Reload) rebuild it in place, as for the
 	// centers: they signal on a channel of their own, while main() keeps the
