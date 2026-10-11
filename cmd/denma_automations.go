@@ -39,7 +39,8 @@ package main
 //
 // Its e-mails' unsubscribe links take the automation's UUID in place of a
 // campaign's (public.go calls denmaUnsubscribe). Their "view in browser" link
-// is /automation/<uuid>/<subscriber>.
+// is /automation/<uuid>/<subscriber>. Their links are tracked through
+// /automation/link/... (denma_automation_clicks).
 //
 // Every new center starts with one (denmaDefaultAutomation): website signups,
 // on a double opt-in list, move on to its newsletter once they've confirmed.
@@ -127,6 +128,16 @@ CREATE TABLE IF NOT EXISTS denma_automation_sends (
     sent_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     PRIMARY KEY (automation_id, subscriber_id)
 );
+
+-- Clicks on its e-mails' links (by whom only with individual tracking).
+CREATE TABLE IF NOT EXISTS denma_automation_clicks (
+    id            BIGSERIAL PRIMARY KEY,
+    automation_id INTEGER NOT NULL REFERENCES denma_automations(id) ON DELETE CASCADE,
+    link_id       INTEGER NOT NULL REFERENCES links(id) ON DELETE CASCADE,
+    subscriber_id INTEGER NULL REFERENCES subscribers(id) ON DELETE SET NULL,
+    created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS denma_automation_clicks_auto ON denma_automation_clicks (automation_id);
 
 -- Triggers, conditions and actions besides the e-mail.
 DO $$ BEGIN
@@ -332,6 +343,7 @@ type denmaAutomation struct {
 	Runs            int            `db:"runs" json:"runs"`
 	Failed          int            `db:"failed" json:"failed"`
 	Skipped         int            `db:"skipped" json:"skipped"`
+	Clicked         int            `db:"clicked" json:"clicked"`           // people who clicked a link in its e-mail
 	LastSentAt      null.Time      `db:"last_sent_at" json:"last_sent_at"` // its last run
 	Waiting         int            `db:"waiting" json:"waiting"`
 }
@@ -356,6 +368,7 @@ SELECT a.*,
     (SELECT COUNT(*) FROM denma_automation_sends d WHERE d.automation_id = a.id AND d.status IN ('sent', 'done')) AS runs,
     (SELECT COUNT(*) FROM denma_automation_sends d WHERE d.automation_id = a.id AND d.status = 'failed') AS failed,
     (SELECT COUNT(*) FROM denma_automation_sends d WHERE d.automation_id = a.id AND d.status = 'skipped') AS skipped,
+    (SELECT COUNT(DISTINCT k.subscriber_id) FROM denma_automation_clicks k WHERE k.automation_id = a.id) AS clicked,
     (SELECT MAX(sent_at) FROM denma_automation_sends d WHERE d.automation_id = a.id AND d.status <> 'skipped') AS last_sent_at,
     0 AS waiting
 FROM denma_automations a
@@ -855,9 +868,9 @@ func (a *App) autoMessage(auto denmaAutomation, tpl denmaAutoTemplate, s models.
 		emptyHTML = func(...any) template.HTML { return "" }
 	)
 	maps.Copy(funcs, a.manager.GenericTemplateFuncs())
-	// Campaign templates' functions; there's no tracking.
+	// Campaign templates' functions; links are tracked, opens aren't.
 	maps.Copy(funcs, template.FuncMap{
-		"TrackLink":      func(u string, _ ...any) string { return u },
+		"TrackLink":      func(u string, _ ...any) string { return a.autoTrackLink(u, auto.UUID, s.UUID) },
 		"TrackView":      emptyHTML,
 		"UnsubscribeURL": withURL(unsubURL),
 		"ManageURL":      withURL(unsubURL + "?manage=true"),
@@ -885,7 +898,7 @@ func (a *App) autoMessage(auto denmaAutomation, tpl denmaAutoTemplate, s models.
 	subject := strings.TrimSpace(b.String())
 	b.Reset()
 
-	body, err := template.New(models.BaseTpl).Funcs(funcs).Parse(reDenmaTrackLink.ReplaceAllString(tpl.Body, "$1"))
+	body, err := template.New(models.BaseTpl).Funcs(funcs).Parse(models.DenmaTrackHTML(reDenmaTrackLink.ReplaceAllString(tpl.Body, "$1")))
 	if err != nil {
 		return models.Message{}, fmt.Errorf("error in the template: %v", err)
 	}
@@ -916,6 +929,54 @@ func (a *App) autoMessage(auto denmaAutomation, tpl denmaAutoTemplate, s models.
 	return msg, nil
 }
 
+// denmaAutoLinks caches links' UUIDs (center, then URL).
+var denmaAutoLinks sync.Map
+
+// autoTrackLink is a link's tracked address, /automation/link/..., or the
+// link itself with tracking off.
+func (a *App) autoTrackLink(u, autoUUID, subUUID string) string {
+	if a.cfg.Privacy.DisableTracking {
+		return u
+	}
+	if !a.cfg.Privacy.IndividualTracking {
+		subUUID = "00000000-0000-0000-0000-000000000000"
+	}
+	key := a.ko.String("denma.center") + "\x00" + u
+	linkUUID, ok := denmaAutoLinks.Load(key)
+	if !ok {
+		var out string
+		if err := a.queries.CreateLink.Get(&out, uuid.Must(uuid.NewV4()), u); err != nil {
+			a.log.Printf("denma: error making an automation's tracked link: %v", err)
+			return u
+		}
+		linkUUID = out
+		denmaAutoLinks.Store(key, out)
+	}
+	return fmt.Sprintf("%s/automation/link/%s/%s/%s", strings.TrimSuffix(a.urlCfg.RootURL, "/"), linkUUID, autoUUID, subUUID)
+}
+
+// DenmaAutomationLink records a click on an automation e-mail's link and
+// redirects to it.
+func (a *App) DenmaAutomationLink(c echo.Context) error {
+	var l struct {
+		ID     int    `db:"id"`
+		URL    string `db:"url"`
+		AutoID int    `db:"auto_id"`
+	}
+	if err := a.db.Get(&l, `SELECT l.id, l.url, COALESCE((SELECT id FROM denma_automations WHERE uuid = $2), 0) AS auto_id
+		FROM links l WHERE l.uuid = $1`, c.Param("linkUUID"), c.Param("autoUUID")); err != nil {
+		return c.Render(http.StatusNotFound, tplMessage,
+			makeMsgTpl(a.i18n.T("public.notFoundTitle"), "", a.i18n.T("public.invalidLink")))
+	}
+	if l.AutoID > 0 {
+		if _, err := a.db.Exec(`INSERT INTO denma_automation_clicks (automation_id, link_id, subscriber_id)
+			VALUES ($1, $2, (SELECT id FROM subscribers WHERE uuid = $3))`, l.AutoID, l.ID, c.Param("subUUID")); err != nil {
+			a.log.Printf("denma: error recording an automation's click: %v", err)
+		}
+	}
+	return c.Redirect(http.StatusTemporaryRedirect, l.URL)
+}
+
 // initDenmaAutomationHandlers registers the automation pages.
 func initDenmaAutomationHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/automations"), a.ViewDenmaAutomations)
@@ -940,6 +1001,7 @@ func initDenmaPublicHandlers(g *echo.Group, a *App) {
 	initDenmaAPIPublicHandlers(g, a)    // cmd/denma_api_send.go
 	if denmaAutomationsOn(a) {
 		g.GET("/automation/:autoUUID/:subUUID", noIndex(a.hasUUID(a.ViewDenmaAutomationMessage, "autoUUID", "subUUID")))
+		g.GET("/automation/link/:linkUUID/:autoUUID/:subUUID", noIndex(a.hasUUID(a.DenmaAutomationLink, "linkUUID", "autoUUID", "subUUID")))
 	}
 }
 

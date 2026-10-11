@@ -216,7 +216,7 @@
 
 		{{- if not $isNew }}
 		<p class="text-light text-8" data-testid="auto-stats">
-			Ran for {{ $a.Runs }}{{ if $a.SendEmail }} ({{ $a.Sent }} e-mails sent){{ end }}{{ if $a.Failed }}, {{ $a.Failed }} failed{{ end }}{{ if $a.Skipped }}, {{ $a.Skipped }} skipped by its conditions{{ end }}.
+			Ran for {{ $a.Runs }}{{ if $a.SendEmail }} ({{ $a.Sent }} e-mails sent, {{ $a.Clicked }} {{ if eq $a.Clicked 1 }}person{{ else }}people{{ end }} clicked a link){{ end }}{{ if $a.Failed }}, {{ $a.Failed }} failed{{ end }}{{ if $a.Skipped }}, {{ $a.Skipped }} skipped by its conditions{{ end }}.
 			{{- if $a.ActiveSince.Valid }} For what's happened since {{ NiceDate $a.ActiveSince.Time true }}.{{ end }}
 			Each person's runs are on their Activity tab.
 		</p>

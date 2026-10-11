@@ -176,7 +176,12 @@ func (a *App) DenmaGCCampaignAnalytics(c echo.Context) error {
 			}
 		}
 		if typ != "views" {
-			return 0, app.core.DeleteCampaignLinkClicks(t)
+			if err := app.core.DeleteCampaignLinkClicks(t); err != nil {
+				return 0, err
+			}
+			if _, err := app.db.Exec(`DELETE FROM denma_automation_clicks WHERE created_at < $1`, t); err != nil { // cmd/denma_automations.go
+				return 0, err
+			}
 		}
 		return 0, nil
 	}); err != nil {

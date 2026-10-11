@@ -45,7 +45,7 @@
 						</td>
 						<td class="align-right" data-label="Ran for">
 							{{ .Runs }}
-							{{- if .SendEmail }}<p class="text-light text-8 text-nowrap">{{ .Sent }} sent</p>{{ end }}
+							{{- if .SendEmail }}<p class="text-light text-8 text-nowrap">{{ .Sent }} sent, {{ .Clicked }} clicked</p>{{ end }}
 							{{- if .Waiting }}<p class="text-light text-8" title="It runs for them when their wait is over">{{ .Waiting }} waiting</p>{{ end }}
 							{{- if .Failed }}<p class="text-danger text-8">{{ .Failed }} failed</p>{{ end }}
 							{{- if .Skipped }}<p class="text-light text-8" title="They didn't meet its conditions">{{ .Skipped }} skipped</p>{{ end }}
