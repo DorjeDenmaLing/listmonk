@@ -119,7 +119,7 @@ var (
 	errDenmaNoSuper = echo.NewHTTPError(http.StatusForbidden,
 		"Centers have no Super Admins: their admins are Center Admins.")
 	errDenmaAPIUser = echo.NewHTTPError(http.StatusForbidden,
-		"Only a superadmin can make or change a center's API users. Other systems use the center's sending API (Config -> API) or its sign-up webhooks (Config -> Webhooks).")
+		"There are no API users. Other systems use a center's sending API (Config -> API) or its sign-up webhooks (Config -> Webhooks).")
 	errDenmaNoUser = echo.NewHTTPError(http.StatusNotFound, "user not found")
 	errDenmaNoRole = echo.NewHTTPError(http.StatusNotFound, "role not found")
 )
@@ -185,26 +185,22 @@ func (a *App) denmaCheckUser(c echo.Context, id int) error {
 	if !denmaWithin(auth.GetUser(c), target) {
 		return errDenmaNotYours
 	}
-	if target.Type == auth.UserTypeAPI && a.denmaInCenter() && denmaBound(auth.GetUser(c)) {
-		return errDenmaAPIUser
-	}
 	return nil
 }
 
-// denmaCheckAssign checks that c's user may give a user of a type (user or
-// api) this role and list role (nil for none): ones with no more than they
-// have, and never Super Admin in a center. In a center, only superadmins make
-// API users: other systems use the sending API and sign-up webhooks.
+// denmaCheckAssign checks that c's user may give a user of a type this role
+// and list role (nil for none): ones with no more than they have, and never
+// Super Admin in a center. Nobody makes API users (cmd/denma_noapiusers.go).
 func (a *App) denmaCheckAssign(c echo.Context, typ string, roleID int, listRoleID *int) error {
+	if typ == auth.UserTypeAPI {
+		return errDenmaAPIUser
+	}
 	if roleID == auth.SuperAdminRoleID && a.denmaInCenter() {
 		return errDenmaNoSuper
 	}
 	u := auth.GetUser(c)
 	if !denmaBound(u) {
 		return nil
-	}
-	if typ == auth.UserTypeAPI && a.denmaInCenter() {
-		return errDenmaAPIUser
 	}
 	if roleID == auth.SuperAdminRoleID {
 		return errDenmaNotYours

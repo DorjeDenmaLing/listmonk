@@ -65,37 +65,7 @@
 			</table>
 		</div>
 	</div>
-
-	<fieldset class="card page-content has-table vstack gap-3" data-testid="api-users">
-		<legend>API users in centers ({{ len $d.APIUsers }})</legend>
-		<p class="text-light text-8">listmonk's own API users, which use a center's admin API with a role's permissions. Only superadmins make and change them in a center; other systems should use the center's sending API (Config &rarr; API) or its sign-up webhooks (Config &rarr; Webhooks). Delete those no system uses any more.</p>
-		<div class="table-wrapper">
-			<table>
-				<thead>
-					<tr>
-						<th>Center</th>
-						<th>API user</th>
-						<th>Role</th>
-						<th>{{ .L.T "globals.fields.createdAt" }}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{{- range $d.APIUsers }}
-					<tr data-testid="api-user-row">
-						<td data-label="Center">{{ .Center }}</td>
-						<td data-label="API user"><strong>{{ .Name }}</strong> <span class="text-light text-8">@{{ .Username }}</span>
-							{{- if eq .Status "disabled" }} {{ Badge (list (Dot) ($.L.T "users.status.disabled")) "enum status-disabled" }}{{ end }}</td>
-						<td data-label="Role">{{ if .Role }}{{ Badge .Role }}{{ else }}<span class="text-light">&mdash;</span>{{ end }}</td>
-						<td class="date-stack" data-label="{{ $.L.T "globals.fields.createdAt" }}">{{ NiceDate .CreatedAt }}</td>
-					</tr>
-					{{- else }}
-					<tr><td colspan="4" class="text-light">No center has API users.</td></tr>
-					{{- end }}
-				</tbody>
-			</table>
-		</div>
-	</fieldset>
-	</section>
+</section>
 
 <script type="module" src="{{ URI "/admin/static/js/views/denma-people.js" }}?v={{ .AssetVersion }}" defer></script>
 

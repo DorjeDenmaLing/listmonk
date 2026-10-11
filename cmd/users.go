@@ -604,6 +604,6 @@ func cacheUsers(co *core.Core, a *auth.Auth) (bool, error) {
 		}
 	}
 
-	a.CacheAPIUsers(apiUsers)
+	a.CacheAPIUsers(apiUsers[:0]) // denma: none (cmd/denma_noapiusers.go)
 	return hasUser, nil
 }

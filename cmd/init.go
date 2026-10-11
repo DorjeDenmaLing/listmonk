@@ -1453,7 +1453,7 @@ func initAuth(co *core.Core, db *sql.DB, ko *koanf.Koanf) (bool, *auth.Auth) {
 			Type:          auth.UserTypeAPI,
 		}
 		u.UserRole.ID = auth.SuperAdminRoleID
-		a.CacheAPIUser(u)
+		denmaLegacyAPIUser(u) // denma: was a.CacheAPIUser(u) (cmd/denma_noapiusers.go)
 
 		lo.Println(`WARNING: Remove the admin_username and admin_password fields from the TOML configuration file. If you are using APIs, create and use new credentials. Users are now managed via the Admin -> Settings -> Users dashboard.`)
 	}

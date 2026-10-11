@@ -92,14 +92,17 @@ func denmaInstallColumns(db *sqlx.DB) {
 // but runs listmonk's campaign queries (which read them), and the daily
 // sending limit and its reserve (cmd/denma_daily.go, which also replaces
 // listmonk's sliding window with it) and the admin's logo
-// (partials/denma/topnav.html) to its settings. Called on every start
-// (denmaPrepareHub).
+// (partials/denma/topnav.html) to its settings, and deletes any API users
+// (cmd/denma_noapiusers.go). Called on every start (denmaPrepareHub).
 func denmaHubColumns(db *sqlx.DB) {
 	if _, err := db.Exec(denmaCampaignColumnsSQL +
 		`INSERT INTO settings (key, value) VALUES ('denma.daily_limit', '0'), ('denma.daily_reserve', '5'),
 			('denma.admin_logo_url', '""'), ('denma.admin_icon_url', '""'), ('denma.audit_days', '365')
 			ON CONFLICT (key) DO NOTHING;` + denmaMoveSlidingWindowSQL); err != nil {
 		lo.Fatalf("denma: error adding the campaign tags column and failed sends to the hub: %v", err)
+	}
+	if err := denmaDeleteAPIUsers(db, "the hub"); err != nil { // cmd/denma_noapiusers.go
+		lo.Fatalf("denma: error deleting the hub's API users: %v", err)
 	}
 }
 

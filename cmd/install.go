@@ -336,7 +336,7 @@ func installUser(username, password, apiUsername string, q *models.Queries) {
 	}
 
 	// Create the admin API user.
-	if apiUsername != "" {
+	if apiUsername != "" && denmaInstallAPIUser() { // denma: none (cmd/denma_noapiusers.go)
 		// Generate a random API token.
 		tk, err := utils.GenerateRandomString(32)
 		if err != nil {

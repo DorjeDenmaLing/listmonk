@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 22
+const denmaFeaturesVersion = 23
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -179,6 +179,12 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		}
 		for _, k := range idle {
 			lo.Printf("denma: center %s: API key %q only subscribed people, which keys don't any more; a superadmin can make it a Server webhook", c.Slug, k)
+		}
+	}
+	// Version 23: no API users (cmd/denma_noapiusers.go).
+	if ver < 23 {
+		if err := denmaDeleteAPIUsers(tx, "center "+c.Slug); err != nil {
+			return fmt.Errorf("deleting the API users: %v", err)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)

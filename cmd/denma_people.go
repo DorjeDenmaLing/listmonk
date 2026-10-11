@@ -907,45 +907,7 @@ type denmaPersonCenter struct {
 
 type denmaPeopleView struct {
 	adminView
-	People   []denmaPersonRow
-	APIUsers []denmaCenterAPIUser
-}
-
-// denmaCenterAPIUser is one of a center's listmonk API users, which only
-// superadmins make there (cmd/denma_hierarchy.go), listed for review.
-type denmaCenterAPIUser struct {
-	Center    string    `db:"center"`
-	Slug      string    `db:"slug"`
-	Name      string    `db:"name"`
-	Username  string    `db:"username"`
-	Role      string    `db:"role"`
-	Status    string    `db:"status"`
-	CreatedAt time.Time `db:"created_at"`
-}
-
-// centerAPIUsers returns every center's API users, by center, in one query.
-func (d *denmaCenters) centerAPIUsers() ([]denmaCenterAPIUser, error) {
-	out := []denmaCenterAPIUser{}
-	var cs []struct {
-		Slug   string `db:"slug"`
-		Name   string `db:"name"`
-		Schema string `db:"schema_name"`
-	}
-	if err := d.db().Select(&cs, `SELECT slug, name, schema_name FROM denma.centers
-		WHERE to_regclass(quote_ident(schema_name) || '.users') IS NOT NULL ORDER BY LOWER(name)`); err != nil {
-		return nil, err
-	}
-	if len(cs) == 0 {
-		return out, nil
-	}
-	parts := make([]string, len(cs))
-	for i, c := range cs {
-		parts[i] = fmt.Sprintf(`SELECT %s AS center, %s AS slug, u.name, u.username, COALESCE(r.name, '') AS role,
-			u.status::TEXT AS status, u.created_at FROM %[3]s.users u LEFT JOIN %[3]s.roles r ON r.id = u.user_role_id
-			WHERE u.type = 'api'`, pq.QuoteLiteral(c.Name), pq.QuoteLiteral(c.Slug), pq.QuoteIdentifier(c.Schema))
-	}
-	err := d.db().Select(&out, strings.Join(parts, " UNION ALL ")+` ORDER BY 1, 4`)
-	return out, err
+	People []denmaPersonRow
 }
 
 // ViewDenmaPeople renders the hub's People page (views/denma-people.html):
@@ -997,14 +959,9 @@ func (a *App) ViewDenmaPeople(c echo.Context) error {
 		sort.Slice(cs, func(i, j int) bool { return strings.ToLower(cs[i].Name) < strings.ToLower(cs[j].Name) })
 		out[i] = denmaPersonRow{denmaPerson: p, Centers: cs}
 	}
-	apiUsers, err := d.centerAPIUsers()
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
 	return c.Render(http.StatusOK, "admin-denma-people", denmaPeopleView{
 		adminView: newAdminView(c, "People", "", "denma.people"),
 		People:    out,
-		APIUsers:  apiUsers,
 	})
 }
 
