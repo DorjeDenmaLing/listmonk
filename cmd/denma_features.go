@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 21
+const denmaFeaturesVersion = 22
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -159,6 +159,26 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		}
 		if moved {
 			lo.Printf("denma: center %s: its Website signups setting is now an automation", c.Slug)
+		}
+	}
+	// Version 22: those the API added before have no consent
+	// (cmd/denma_noconsent.go).
+	if ver < 22 {
+		res, err := tx.Exec(denmaNoConsentMigrateSQL)
+		if err != nil {
+			return fmt.Errorf("recording those the API added: %v", err)
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			lo.Printf("denma: center %s: %d subscribers the API added have no consent", c.Slug, n)
+		}
+		// Keys that only subscribed people can do nothing now: sign-up
+		// webhooks do it (cmd/denma_signup.go).
+		var idle []string
+		if err := tx.Select(&idle, `SELECT name FROM denma_api_keys WHERE can = '{}' AND deleted_at IS NULL ORDER BY id`); err != nil {
+			return fmt.Errorf("reading the API keys: %v", err)
+		}
+		for _, k := range idle {
+			lo.Printf("denma: center %s: API key %q only subscribed people, which keys don't any more; a superadmin can make it a Server webhook", c.Slug, k)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)
@@ -674,7 +694,7 @@ UPDATE subscribers SET attribs = attribs WHERE jsonb_typeof(attribs) = 'object' 
 -- The tags a campaign is sent to, besides its lists.
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';
 INSERT INTO denma_tags (tag) SELECT DISTINCT unnest(denma_tags) FROM campaigns ON CONFLICT DO NOTHING;
-` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL
+` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL
 
 // denmaVisualTemplate is the center's default visual template's ID (0 for
 // none).

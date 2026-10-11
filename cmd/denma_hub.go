@@ -121,7 +121,7 @@ type denmaPeriod struct {
 // S. is replaced with the center's schema; $1 and $2 are the period's start
 // and end.
 const denmaCenterInfoSQL = `SELECT
-	(SELECT COUNT(*) FROM S.subscribers) AS subscribers,
+	(SELECT COUNT(*) FROM S.subscribers) - ` + denmaNoConsentCountSQL + ` AS subscribers,
 	(SELECT COUNT(*) FROM S.lists) AS lists,
 	(SELECT COUNT(*) FROM S.users WHERE type = 'user' AND user_role_id <> 1) AS users,
 	(SELECT MAX(started_at) FROM S.campaigns WHERE sent > 0) AS last_sent,
@@ -150,6 +150,18 @@ SELECT
 	(SELECT COUNT(*) FROM S.bounces WHERE type = 'soft' AND created_at >= $1 AND created_at < $2) AS soft,
 	(SELECT COUNT(*) FROM S.bounces WHERE type = 'complaint' AND created_at >= $1 AND created_at < $2) AS complaint,
 	(SELECT COUNT(*) FROM S.subscribers WHERE created_at >= $1 AND created_at < $2) AS new_subscribers`
+
+// denmaNoConsentCountSQL is how many of a center's subscribers the API added
+// without consent (cmd/denma_noconsent.go), left out of its figures.
+const denmaNoConsentCountSQL = `(SELECT COUNT(*) FROM S.denma_no_consent n
+	WHERE EXISTS (SELECT 1 FROM S.subscribers s WHERE S.denma_email_hash(s.email) = n.email_hash))`
+
+// denmaHasTable is whether a schema has a table.
+func denmaHasTable(db *sqlx.DB, schema, table string) bool {
+	var ok bool
+	_ = db.Get(&ok, `SELECT to_regclass($1) IS NOT NULL`, pq.QuoteIdentifier(schema)+"."+table)
+	return ok
+}
 
 func denmaInSchema(q, schema string) string {
 	return strings.ReplaceAll(q, "S.", pq.QuoteIdentifier(schema)+".")
@@ -205,7 +217,11 @@ func (a *App) DenmaHubStats(c echo.Context) error {
 
 		f, err := denmaCached(x.Schema+"|"+key, func() (figures, error) {
 			f := figures{cur: &denmaPeriod{}, prev: &denmaPeriod{}}
-			err := db.Get(&f, denmaInSchema(denmaCenterInfoSQL, x.Schema))
+			info := denmaCenterInfoSQL
+			if !denmaHasTable(db, x.Schema, "denma_no_consent") { // not loaded since features version 22
+				info = strings.Replace(info, denmaNoConsentCountSQL, "0", 1)
+			}
+			err := db.Get(&f, denmaInSchema(info, x.Schema))
 			if err == nil {
 				err = db.Get(f.cur, denmaInSchema(denmaPeriodSQL, x.Schema), t[0], t[1])
 			}

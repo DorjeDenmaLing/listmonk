@@ -42,7 +42,7 @@ SELECT COUNT(*) FROM (
     WHERE $3 != 'optin' AND CARDINALITY($2::TEXT[]) > 0 AND s.attribs->'tags' ?| $2::TEXT[]
         AND s.status != 'blocklisted' AND EXISTS (
         SELECT 1 FROM subscriber_lists dsl JOIN lists dl ON dl.id = dsl.list_id WHERE dsl.subscriber_id = s.id
-        AND (CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status != 'unsubscribed' END))
+        AND NOT ('api-send' = ANY(COALESCE(dl.tags, '{}'))) AND (CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status != 'unsubscribed' END))
 ) x`
 
 // DenmaStartCheck answers how many a campaign would go to, with the lists

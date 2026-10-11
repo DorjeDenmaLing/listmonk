@@ -7,8 +7,10 @@ package main
 // the shared blocklist and domain checks, opt-outs, bounces, the daily cap).
 // Each system is a key, made on the center's Config -> API page
 // (views/denma-api.html) by its admins (center:manage), which can do one or
-// more of sending transactional e-mails, sending campaigns and subscribing
-// people (denmaAPICanAll). The API is at <center>/v1/ (cmd/denma_api_send.go):
+// more of sending transactional e-mails, sending campaigns and reading the
+// events (denmaAPICanAll). It sends; it doesn't subscribe people: sign-up
+// webhooks do (cmd/denma_signup.go). The API is at <center>/v1/
+// (cmd/denma_api_send.go):
 //
 //   - POST /v1/messages: a transactional e-mail (password reset, receipt,
 //     notice) to one address or a few, from one of the center's
@@ -16,10 +18,10 @@ package main
 //   - POST /v1/campaigns: a campaign to a list of addresses the caller sends,
 //     from one of the center's campaign templates, by name. Its recipients go
 //     on a list of its own, which is deleted a week after it's done.
-//   - POST /v1/subscribers: add someone to the key's lists, and tag them
-//     (rg-sync).
-//   - GET /v1/events: unsubscribes, complaints, bounces and blocklistings, as
-//     each key's webhook is also sent them (cmd/denma_api_events.go).
+//   - GET /v1/events: unsubscribes, complaints, bounces and blocklistings, and
+//     how its campaigns go, as each key's webhook ("Notifications") is also
+//     sent them (cmd/denma_api_events.go).
+//   - POST /v1/subscribers is gone (410): Server webhooks replace it.
 //
 // Templates are made beforehand, in the center (Campaigns -> Templates); the
 // API only names them. A key is sent as "Authorization: Bearer <key>", is
@@ -27,8 +29,9 @@ package main
 // requests from some addresses (IPs, networks, or host names). Each key
 // makes at most denmaAPIPerMinute requests a minute.
 //
-// A sending key has a fixed sender and a daily limit of e-mails. A key
-// re-subscribes at most denmaAPIResubPerDay people a day. Keys can expire,
+// A sending key has a fixed sender, a daily limit of e-mails, and the
+// domains the links it puts in e-mails can go to (link_domains, besides the
+// center's own: denmaAPICheckLinks). Keys can expire,
 // be replaced with an overlap, and be restored for denmaAPIKeepDeletedDays
 // days after they're deleted.
 //
@@ -62,7 +65,7 @@ import (
 
 const (
 	denmaAPIMaxKeys   = 20  // keys a center can have
-	denmaAPIMaxLists  = 20  // lists a key can add subscribers to
+	denmaAPIMaxLinks  = 20  // link domains a key can have
 	denmaAPIMaxFrom   = 20  // addresses a key can be limited to
 	denmaAPIPerMinute = 600 // requests a key makes a minute
 	denmaAPIKeyPrefix = "lmk_"
@@ -72,7 +75,6 @@ const (
 	denmaAPIListTag   = "api-send"         // on the lists of the API's campaigns
 
 	denmaAPIDefaultDailyLimit = 1000 // e-mails a sending key sends in 24 hours, to start with
-	denmaAPIResubPerDay       = 10   // people a key re-subscribes at once ("confirmed") in 24 hours
 	denmaAPIKeepDeletedDays   = 7    // days a deleted key can be restored
 	denmaAPIMaxOverlapHours   = 7 * 24
 )
@@ -101,7 +103,7 @@ CREATE TABLE IF NOT EXISTS denma_api_keys (
     created_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
--- The lists POST /v1/subscribers can add people to.
+-- The lists POST /v1/subscribers could add people to (dropped since version 22).
 CREATE TABLE IF NOT EXISTS denma_api_key_lists (
     key_id  INTEGER NOT NULL REFERENCES denma_api_keys(id) ON DELETE CASCADE,
     list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
@@ -174,6 +176,18 @@ DO $$ BEGIN
         UPDATE denma_api_keys SET can = can || ARRAY['events'];
     END IF;
 END $$;
+-- Since features version 22: keys send (and read events); sign-up webhooks
+-- subscribe (cmd/denma_signup.go). Each key's link domains.
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'denma_api_keys'::regclass AND contype = 'c'
+        AND pg_get_constraintdef(oid) LIKE '%subscribers%') THEN
+        UPDATE denma_api_keys SET can = array_remove(can, 'subscribers');
+        ALTER TABLE denma_api_keys DROP CONSTRAINT IF EXISTS denma_api_keys_can_check;
+        ALTER TABLE denma_api_keys ADD CONSTRAINT denma_api_keys_can_check CHECK (can <@ ARRAY['messages', 'campaigns', 'events']);
+    END IF;
+END $$;
+DROP TABLE IF EXISTS denma_api_key_lists;
+ALTER TABLE denma_api_keys ADD COLUMN IF NOT EXISTS link_domains TEXT[] NOT NULL DEFAULT '{}';
 -- The addresses (hashed) each key has sent to or subscribed, for its events.
 CREATE TABLE IF NOT EXISTS denma_api_contacts (
     key_id     INTEGER NOT NULL REFERENCES denma_api_keys(id) ON DELETE CASCADE,
@@ -181,7 +195,7 @@ CREATE TABLE IF NOT EXISTS denma_api_contacts (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     PRIMARY KEY (key_id, email_hash)
 );
--- Each key's use of its daily limits: send, resub. Kept two days.
+-- Each key's use of its daily limit: send. Kept two days.
 CREATE TABLE IF NOT EXISTS denma_api_usage (
     id         BIGSERIAL PRIMARY KEY,
     key_id     INTEGER NOT NULL REFERENCES denma_api_keys(id) ON DELETE CASCADE,
@@ -199,23 +213,20 @@ CREATE TABLE IF NOT EXISTS denma_api_alerts (
 );
 ` + denmaAPIEventsSQL
 
-// What a key can do. Each of the API's sending, subscribing and events
-// endpoints needs one (apiNeeds); the rest (its status, the templates) any
-// key can use.
+// What a key can do. Each of the API's sending and events endpoints needs
+// one (apiNeeds); the rest (its status, the templates) any key can use.
 const (
-	denmaAPICanMessages    = "messages"    // POST /v1/messages
-	denmaAPICanCampaigns   = "campaigns"   // /v1/campaigns...
-	denmaAPICanSubscribers = "subscribers" // POST /v1/subscribers, to the key's lists
-	denmaAPICanEvents      = "events"      // GET /v1/events, and the webhook
+	denmaAPICanMessages  = "messages"  // POST /v1/messages
+	denmaAPICanCampaigns = "campaigns" // /v1/campaigns..., and its campaigns' events
+	denmaAPICanEvents    = "events"    // GET /v1/events, and the webhook
 )
 
 var (
-	denmaAPICanAll  = []string{denmaAPICanMessages, denmaAPICanCampaigns, denmaAPICanSubscribers, denmaAPICanEvents}
+	denmaAPICanAll  = []string{denmaAPICanMessages, denmaAPICanCampaigns, denmaAPICanEvents}
 	denmaAPICanText = map[string]string{
-		denmaAPICanMessages:    "send transactional e-mails",
-		denmaAPICanCampaigns:   "send campaigns",
-		denmaAPICanSubscribers: "subscribe people to lists",
-		denmaAPICanEvents:      "read the events",
+		denmaAPICanMessages:  "send transactional e-mails",
+		denmaAPICanCampaigns: "send campaigns",
+		denmaAPICanEvents:    "read the events",
 	}
 )
 
@@ -224,11 +235,13 @@ func denmaAPISends(can []string) bool {
 	return denmaHasString(can, denmaAPICanMessages) || denmaHasString(can, denmaAPICanCampaigns)
 }
 
-// denmaAPICanForm checks what a key is to do (in denmaAPICanAll's order),
-// with how many lists it can subscribe people to.
-func denmaAPICanForm(can []string, lists int) ([]string, error) {
+// denmaAPICanForm checks what a key is to do (in denmaAPICanAll's order).
+func denmaAPICanForm(can []string) ([]string, error) {
 	out := []string{}
 	for _, s := range can {
+		if s == "subscribers" {
+			return nil, errors.New("Keys don't subscribe people any more: sign-up webhooks do (Config -> Webhooks).")
+		}
 		if !denmaHasString(denmaAPICanAll, s) {
 			return nil, fmt.Errorf("%q isn't something a key can do.", s)
 		}
@@ -238,11 +251,8 @@ func denmaAPICanForm(can []string, lists int) ([]string, error) {
 			out = append(out, s)
 		}
 	}
-	switch {
-	case len(out) == 0:
+	if len(out) == 0 {
 		return nil, errors.New("Choose what the key can do.")
-	case denmaHasString(out, denmaAPICanSubscribers) && lists == 0:
-		return nil, errors.New("Choose the lists it can subscribe people to.")
 	}
 	return out, nil
 }
@@ -265,9 +275,9 @@ type denmaAPIKey struct {
 	KeyHint         string         `db:"key_hint" json:"key_hint"`
 	Can             pq.StringArray `db:"can" json:"can"` // denmaAPICanAll
 	AllowedFrom     pq.StringArray `db:"allowed_from" json:"allowed_from"`
-	ListIDs         pq.Int64Array  `db:"list_ids" json:"list_ids"`
+	LinkDomains     pq.StringArray `db:"link_domains" json:"link_domains"`
 	WebhookURL      string         `db:"webhook_url" json:"webhook_url"`
-	WebhookSecret   string         `db:"webhook_secret" json:"webhook_secret"`
+	WebhookSecret   string         `db:"webhook_secret" json:"-"` // shown only when it's made (NewWebhookSecret)
 	WebhookFailures int            `db:"webhook_failures" json:"webhook_failures"`
 	WebhookError    string         `db:"webhook_error" json:"webhook_error"`
 	WebhookOKAt     *time.Time     `db:"webhook_ok_at" json:"webhook_ok_at"`
@@ -286,16 +296,16 @@ type denmaAPIKey struct {
 	DeletedBy       string         `db:"deleted_by" json:"deleted_by"`
 	Leaked          bool           `db:"leaked" json:"leaked"`
 
-	Key string `db:"-" json:"key,omitempty"` // only when it's made
+	Key              string `db:"-" json:"key,omitempty"`            // only when it's made
+	NewWebhookSecret string `db:"-" json:"webhook_secret,omitempty"` // only when it's made
 }
 
-const denmaAPIKeySQL = `SELECT k.id, k.name, k.key_hint, k.can, k.allowed_from, k.webhook_url, k.webhook_secret,
+const denmaAPIKeySQL = `SELECT k.id, k.name, k.key_hint, k.can, k.allowed_from, k.link_domains, k.webhook_url, k.webhook_secret,
 	k.webhook_failures, k.webhook_error, k.webhook_ok_at, k.webhook_next_at, k.uses, k.last_used_at, k.last_ip, k.created_at,
 	k.created_by, k.expires_at, k.sender, k.daily_limit, k.deleted_at, k.deleted_by, k.leaked,
 	CASE WHEN k.old_key_until > NOW() THEN k.old_key_until END AS old_key_until,
 	(SELECT COALESCE(SUM(n), 0) FROM denma_api_usage u WHERE u.key_id = k.id AND u.kind = 'send'
-		AND u.created_at > NOW() - INTERVAL '24 hours')::INT AS sent_24h,
-	ARRAY(SELECT list_id FROM denma_api_key_lists kl WHERE kl.key_id = k.id ORDER BY list_id) AS list_ids
+		AND u.created_at > NOW() - INTERVAL '24 hours')::INT AS sent_24h
 	FROM denma_api_keys k`
 
 func initDenmaAPIAdminHandlers(g *echo.Group, a *App) {
@@ -349,8 +359,8 @@ func denmaAPIKeyView(k *denmaAPIKey) {
 	if k.AllowedFrom == nil {
 		k.AllowedFrom = pq.StringArray{}
 	}
-	if k.ListIDs == nil {
-		k.ListIDs = pq.Int64Array{}
+	if k.LinkDomains == nil {
+		k.LinkDomains = pq.StringArray{}
 	}
 }
 
@@ -370,7 +380,6 @@ func (a *App) apiKey(id int) (denmaAPIKey, error) {
 type denmaAPIView struct {
 	adminView
 	Keys      []denmaAPIKey
-	Lists     []denmaOption
 	Templates []denmaAPITemplate
 	BaseURL   string
 	State     denmaAPIState
@@ -381,6 +390,7 @@ type denmaAPIView struct {
 	Spec      json.RawMessage // the OpenAPI description (cmd/denma_api_openapi.go)
 	Sender    string          // the center's, a key's unless it has its own
 	KeepDays  int             // denmaAPIKeepDeletedDays
+	Domains   []string        // the center's sending domains, which a key's links can always go to
 }
 
 // denmaAPITemplate is a template the API can name.
@@ -403,17 +413,14 @@ func (a *App) ViewDenmaAPI(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	view := denmaAPIView{adminView: v, Lists: []denmaOption{}, Templates: []denmaAPITemplate{}, Recent: []denmaAPIRecent{},
+	view := denmaAPIView{adminView: v, Templates: []denmaAPITemplate{}, Recent: []denmaAPIRecent{},
 		BaseURL: strings.TrimSuffix(a.urlCfg.RootURL, "/") + "/v1", Sending: a.denmaCapStatus(),
 		Super: v.Profile.UserRole.ID == auth.SuperAdminRoleID, PerMinute: denmaAPIPerMinute,
 		Sender: a.cfg.FromEmail, KeepDays: denmaAPIKeepDeletedDays}
 	if view.Keys, err = a.apiKeys(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	if err := a.db.Select(&view.Lists, `SELECT id, name, optin::TEXT AS optin FROM lists
-		WHERE NOT ($1 = ANY(COALESCE(tags, '{}'))) ORDER BY name`, denmaAPIListTag); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
+	view.Domains = a.apiOwnLinkDomains()
 	if view.Templates, err = a.apiTemplates(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -463,8 +470,8 @@ func (a *App) DenmaGetAPIKeys(c echo.Context) error {
 type denmaAPIKeyForm struct {
 	Name        string   `json:"name"`
 	Can         []string `json:"can"` // denmaAPICanAll
-	ListIDs     []int    `json:"list_ids"`
 	AllowedFrom []string `json:"allowed_from"`
+	LinkDomains []string `json:"link_domains"`
 	WebhookURL  string   `json:"webhook_url"`
 	Sender      string   `json:"sender"`      // a sending key's; "" for the center's
 	DailyLimit  int      `json:"daily_limit"` // a sending key's e-mails in 24 hours
@@ -486,27 +493,11 @@ func (a *App) checkAPIKeyForm(c echo.Context) (denmaAPIKeyForm, error) {
 	if !strHasLen(f.Name, 1, 200) {
 		return f, bad("Give the key a name, such as the system that uses it.")
 	}
-	f.ListIDs = dedupInts(f.ListIDs)
-	can, err := denmaAPICanForm(f.Can, len(f.ListIDs))
+	can, err := denmaAPICanForm(f.Can)
 	if err != nil {
 		return f, bad(err.Error())
 	}
 	f.Can = can
-	if !denmaHasString(f.Can, denmaAPICanSubscribers) {
-		f.ListIDs = []int{} // only for subscribing
-	}
-	if len(f.ListIDs) > denmaAPIMaxLists {
-		return f, bad(fmt.Sprintf("Choose at most %d lists.", denmaAPIMaxLists))
-	}
-	if len(f.ListIDs) > 0 {
-		var n int
-		if err := a.db.Get(&n, `SELECT COUNT(*) FROM lists WHERE id = ANY($1)`, pq.Array(f.ListIDs)); err != nil {
-			return f, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-		}
-		if n != len(f.ListIDs) {
-			return f, bad("One of the lists doesn't exist (any more).")
-		}
-	}
 	from := []string{}
 	for _, s := range f.AllowedFrom {
 		if s = strings.ToLower(strings.TrimSpace(s)); s == "" {
@@ -535,9 +526,17 @@ func (a *App) checkAPIKeyForm(c echo.Context) (denmaAPIKeyForm, error) {
 		if u.User != nil {
 			return f, bad("Put no user name or password in the webhook's address; check its signature instead.")
 		}
-		if !denmaHasString(f.Can, denmaAPICanEvents) {
-			return f, bad("The webhook is sent the key's events: let the key read the events too.")
+		if !denmaHasString(f.Can, denmaAPICanEvents) && !denmaHasString(f.Can, denmaAPICanCampaigns) {
+			return f, bad("The webhook is sent how the key's campaigns go, and its events if it can read them: let the key send campaigns or read the events.")
 		}
+	}
+
+	// Where a sending key's links can go, besides the center's domains.
+	if f.LinkDomains, err = denmaLinkDomainsForm(f.LinkDomains); err != nil {
+		return f, bad(err.Error())
+	}
+	if !denmaAPISends(f.Can) {
+		f.LinkDomains = []string{}
 	}
 
 	// What a sending key sends from, and how much a day.
@@ -590,14 +589,6 @@ func denmaCheckAllowedFrom(s string) error {
 	return fmt.Errorf("%q isn't an IP address, a network (such as 203.0.113.0/24) or a host name.", s)
 }
 
-func saveAPIKeyLists(tx *sql.Tx, id int, listIDs []int) error {
-	if _, err := tx.Exec(`DELETE FROM denma_api_key_lists WHERE key_id = $1`, id); err != nil {
-		return err
-	}
-	_, err := tx.Exec(`INSERT INTO denma_api_key_lists (key_id, list_id) SELECT $1, UNNEST($2::INT[])`, id, pq.Array(listIDs))
-	return err
-}
-
 // denmaAPIWho is who's changing a key: their name and username.
 func denmaAPIWho(c echo.Context) string {
 	u, ok := c.Get(auth.UserHTTPCtxKey).(auth.User)
@@ -648,14 +639,11 @@ func (a *App) DenmaCreateAPIKey(c echo.Context) error {
 	defer tx.Rollback()
 	var id int
 	// The webhook starts after the events there are now.
-	if err := tx.QueryRow(`INSERT INTO denma_api_keys (name, key_hash, key_hint, can, allowed_from, webhook_url, webhook_secret, webhook_after,
+	if err := tx.QueryRow(`INSERT INTO denma_api_keys (name, key_hash, key_hint, can, allowed_from, link_domains, webhook_url, webhook_secret, webhook_after,
 		sender, daily_limit, expires_at, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT COALESCE(MAX(id), 0) FROM denma_api_events), $8, $9, $10, $11) RETURNING id`,
-		f.Name, hash, hint, pq.Array(f.Can), pq.Array(f.AllowedFrom), f.WebhookURL, "whsec_"+secret,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT COALESCE(MAX(id), 0) FROM denma_api_events), $9, $10, $11, $12) RETURNING id`,
+		f.Name, hash, hint, pq.Array(f.Can), pq.Array(f.AllowedFrom), pq.Array(f.LinkDomains), f.WebhookURL, "whsec_"+secret,
 		f.Sender, f.DailyLimit, f.expiresAt, denmaAPIWho(c)).Scan(&id); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
-	if err := saveAPIKeyLists(tx, id, f.ListIDs); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	if err := tx.Commit(); err != nil {
@@ -665,12 +653,13 @@ func (a *App) DenmaCreateAPIKey(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	k.Key = key
+	k.Key, k.NewWebhookSecret = key, "whsec_"+secret
 	return c.JSON(http.StatusOK, okResp{k})
 }
 
-// DenmaUpdateAPIKey changes a key's name, what it can do, its lists,
-// addresses, webhook, sender, daily limit or expiry date.
+// DenmaUpdateAPIKey changes a key's name, what it can do, its addresses,
+// link domains, webhook, sender, daily limit or expiry date. A webhook given
+// to a key that had none gets a new signing secret, shown this once.
 func (a *App) DenmaUpdateAPIKey(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -687,6 +676,14 @@ func (a *App) DenmaUpdateAPIKey(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	secret := ""
+	if old.WebhookURL == "" && f.WebhookURL != "" {
+		r, err := utils.GenerateRandomString(32)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		secret = "whsec_" + r
+	}
 	tx, err := a.db.Begin()
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -695,6 +692,7 @@ func (a *App) DenmaUpdateAPIKey(c echo.Context) error {
 	// A new webhook address starts after the current events; a new expiry
 	// date resets its reminders.
 	if _, err := tx.Exec(`UPDATE denma_api_keys SET name = $2, allowed_from = $3, webhook_url = $4, can = $6, updated_at = NOW(),
+		link_domains = $10, webhook_secret = CASE WHEN $11 <> '' THEN $11 ELSE webhook_secret END,
 		webhook_after = CASE WHEN $5 THEN (SELECT COALESCE(MAX(id), 0) FROM denma_api_events) ELSE webhook_after END,
 		webhook_failures = CASE WHEN $5 THEN 0 ELSE webhook_failures END,
 		webhook_next_at = CASE WHEN $5 THEN NULL ELSE webhook_next_at END,
@@ -702,10 +700,7 @@ func (a *App) DenmaUpdateAPIKey(c echo.Context) error {
 		sender = $7, daily_limit = $8,
 		expiry_notice = CASE WHEN expires_at IS DISTINCT FROM $9 THEN '' ELSE expiry_notice END, expires_at = $9
 		WHERE id = $1`, id, f.Name, pq.Array(f.AllowedFrom), f.WebhookURL, f.WebhookURL != old.WebhookURL, pq.Array(f.Can),
-		f.Sender, f.DailyLimit, f.expiresAt); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
-	if err := saveAPIKeyLists(tx, id, f.ListIDs); err != nil {
+		f.Sender, f.DailyLimit, f.expiresAt, pq.Array(f.LinkDomains), secret); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	if err := tx.Commit(); err != nil {
@@ -715,6 +710,7 @@ func (a *App) DenmaUpdateAPIKey(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	k.NewWebhookSecret = secret
 	return c.JSON(http.StatusOK, okResp{k})
 }
 
@@ -757,7 +753,8 @@ func (a *App) DenmaNewAPIKey(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{k})
 }
 
-// DenmaNewAPIWebhookSecret replaces a key's webhook signing secret.
+// DenmaNewAPIWebhookSecret replaces a key's webhook signing secret, shown
+// this once.
 func (a *App) DenmaNewAPIWebhookSecret(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -774,6 +771,7 @@ func (a *App) DenmaNewAPIWebhookSecret(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	k.NewWebhookSecret = "whsec_" + secret
 	return c.JSON(http.StatusOK, okResp{k})
 }
 
@@ -955,7 +953,7 @@ type denmaAPIAuthed struct {
 	Name        string         `db:"name"`
 	Can         pq.StringArray `db:"can"`
 	AllowedFrom pq.StringArray `db:"allowed_from"`
-	ListIDs     pq.Int64Array  `db:"list_ids"`
+	LinkDomains pq.StringArray `db:"link_domains"`
 	Sender      string         `db:"sender"` // "" for the center's
 	DailyLimit  int            `db:"daily_limit"`
 	ExpiresAt   *time.Time     `db:"expires_at"`
@@ -973,15 +971,14 @@ func (a *App) apiAuth(next echo.HandlerFunc) echo.HandlerFunc {
 		if wait := denmaAPIBadKeys.wait(ip); wait > 0 {
 			return denmaTooMany(wait)
 		}
-		key, ok := denmaBearer(c.Request().Header.Get(echo.HeaderAuthorization))
+		key, ok := denmaBearer(c.Request().Header.Get(echo.HeaderAuthorization), denmaAPIKeyPrefix)
 		if !ok {
 			denmaAPIBadKeys.add(ip)
 			c.Response().Header().Set("WWW-Authenticate", `Bearer realm="listmonk"`)
 			return echo.NewHTTPError(http.StatusUnauthorized, "Send the key as Authorization: Bearer <key>.")
 		}
 		var k denmaAPIAuthed
-		if err := a.db.Get(&k, `SELECT id, name, can, allowed_from, sender, daily_limit, expires_at,
-			ARRAY(SELECT list_id FROM denma_api_key_lists kl WHERE kl.key_id = k.id) AS list_ids
+		if err := a.db.Get(&k, `SELECT id, name, can, allowed_from, link_domains, sender, daily_limit, expires_at
 			FROM denma_api_keys k WHERE deleted_at IS NULL
 			AND (key_hash = $1 OR (old_key_hash = $1 AND old_key_until > NOW()))`, denmaAPIHash(key)); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -1010,11 +1007,12 @@ func (a *App) apiAuth(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 // denmaBearer is the key in an Authorization header: "Bearer <key>", the
-// scheme in any case (HTTP's are case-insensitive).
-func denmaBearer(hdr string) (string, bool) {
+// scheme in any case (HTTP's are case-insensitive), the key with its prefix
+// (an API key's, or a Server webhook's secret's).
+func denmaBearer(hdr, prefix string) (string, bool) {
 	scheme, key, ok := strings.Cut(strings.TrimSpace(hdr), " ")
 	key = strings.TrimSpace(key)
-	return key, ok && strings.EqualFold(scheme, "Bearer") && strings.HasPrefix(key, denmaAPIKeyPrefix)
+	return key, ok && strings.EqualFold(scheme, "Bearer") && strings.HasPrefix(key, prefix)
 }
 
 // apiKeyOf is the request's key (after apiAuth).
@@ -1061,10 +1059,7 @@ func (a *App) apiUnclaim(keyID int, kind string, n int) {
 	}
 }
 
-const (
-	denmaAPIUseSend  = "send"  // e-mails, against the key's daily limit
-	denmaAPIUseResub = "resub" // re-subscriptions, against denmaAPIResubPerDay
-)
+const denmaAPIUseSend = "send" // e-mails, against the key's daily limit
 
 // apiSendClaim claims n e-mails of the key's daily limit, or answers 429 and
 // alerts the admins.

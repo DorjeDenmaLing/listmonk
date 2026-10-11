@@ -34,10 +34,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/mail"
 	"net/textproto"
-	"sort"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,7 +59,7 @@ const (
 	denmaAPIMaxAttribs    = 10_000   // bytes of a recipient's attributes
 	denmaAPIIdemHeader    = "Idempotency-Key"
 	denmaAPIListKeepDays  = 7  // days a campaign's list is kept once it's done
-	denmaAPIMaxTags       = 20 // tags a subscriber request adds
+	denmaAPIMaxTags       = 20 // tags a Server webhook's request adds (cmd/denma_signup.go)
 
 	denmaAPINotSent      = "not sent" // a skip's reason, unless the request's at fault
 	denmaAPINoRecipients = "No one can be sent this campaign: it has no recipients, or every one was skipped (unsubscribed, bounced, or their domain can't receive mail). Nothing was made or sent."
@@ -69,6 +71,7 @@ func initDenmaAPIPublicHandlers(g *echo.Group, a *App) {
 		return
 	}
 	g.GET("/v1/openapi.json", a.DenmaAPIOpenAPI) // no key (cmd/denma_api_openapi.go)
+	g.POST("/v1/subscribers", a.DenmaAPISubscribersGone)
 	v := g.Group("/v1", denmaAPIBody, a.apiAuth)
 	v.GET("", a.DenmaAPIStatus) // GET /v1/ without the slash
 	for _, r := range denmaAPIRoutes {
@@ -95,8 +98,19 @@ var denmaAPIRoutes = []struct {
 	{http.MethodPost, "/campaigns/:id/recipients", denmaAPICanCampaigns, func(a *App) echo.HandlerFunc { return a.DenmaAPIAddRecipients }},
 	{http.MethodPost, "/campaigns/:id/start", denmaAPICanCampaigns, func(a *App) echo.HandlerFunc { return a.DenmaAPIStartCampaign }},
 	{http.MethodPost, "/campaigns/:id/cancel", denmaAPICanCampaigns, func(a *App) echo.HandlerFunc { return a.DenmaAPICancelCampaign }},
-	{http.MethodPost, "/subscribers", denmaAPICanSubscribers, func(a *App) echo.HandlerFunc { return a.DenmaAPISubscribe }},
 	{http.MethodGet, "/events", denmaAPICanEvents, func(a *App) echo.HandlerFunc { return a.DenmaAPIEvents }}, // cmd/denma_api_events.go
+}
+
+// DenmaAPISubscribersGone answers POST /v1/subscribers, which Server
+// webhooks replace (cmd/denma_signup.go), whatever the key.
+func (a *App) DenmaAPISubscribersGone(c echo.Context) error {
+	if err := a.inCenter(); err != nil {
+		return err
+	}
+	root := strings.TrimSuffix(a.urlCfg.RootURL, "/")
+	return echo.NewHTTPError(http.StatusGone, fmt.Sprintf(
+		"POST /v1/subscribers is gone: the API sends, and sign-up webhooks subscribe people. A superadmin makes a Server webhook on the center's Config -> Webhooks page, for %s/signup/server (described at %s/signup/openapi.json).",
+		root, root))
 }
 
 // denmaAPIBody limits a request's size.
@@ -350,6 +364,9 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 	if err := denmaAPIBind(c, &r); err != nil {
 		return err
 	}
+	if err := a.apiCheckLinks(c, r.Subject, r.Data); err != nil {
+		return err
+	}
 	if err := a.apiCanSend(); err != nil {
 		return err
 	}
@@ -408,7 +425,7 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 			continue
 		}
 		seen[email] = true
-		sub, why, err := a.apiTxRecipient(email, name, skip)
+		sub, why, err := a.apiTxRecipient(apiKeyOf(c).ID, email, name, skip)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -507,9 +524,10 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 }
 
 // apiTxRecipient readies a transactional e-mail's recipient: the subscriber
-// (added without lists if new, so that bounces and complaints are recorded),
-// or denmaAPINotSent if it's not sent to.
-func (a *App) apiTxRecipient(email, name string, skip map[string]bool) (models.Subscriber, string, error) {
+// (added without lists if new, so that bounces and complaints are recorded,
+// and with no consent, cmd/denma_noconsent.go), or denmaAPINotSent if it's
+// not sent to.
+func (a *App) apiTxRecipient(keyID int, email, name string, skip map[string]bool) (models.Subscriber, string, error) {
 	var sub models.Subscriber
 	if _, ok := denmaSharedBlock(a.db, email); ok { // cmd/denma_blocklist.go
 		return sub, denmaAPINotSent, nil
@@ -535,8 +553,12 @@ func (a *App) apiTxRecipient(email, name string, skip map[string]bool) (models.S
 		if name == "" {
 			name = strings.Split(email, "@")[0]
 		}
-		if _, err := a.db.Exec(`INSERT INTO subscribers (uuid, email, name, status) VALUES (gen_random_uuid(), $1, $2, 'enabled')
-			ON CONFLICT DO NOTHING`, email, name); err != nil {
+		var added []string
+		if err := a.db.Select(&added, `INSERT INTO subscribers (uuid, email, name, status) VALUES (gen_random_uuid(), $1, $2, 'enabled')
+			ON CONFLICT DO NOTHING RETURNING LOWER(email)`, email, name); err != nil {
+			return sub, "", err
+		}
+		if err := denmaNoConsentAdd(a.db, keyID, added); err != nil {
 			return sub, "", err
 		}
 		err = get()
@@ -638,6 +660,9 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 	if err := denmaAPIBind(c, &r); err != nil {
 		return err
 	}
+	if err := a.apiCheckLinks(c, r.Subject, r.Body, r.Data, denmaAPIRecipientAttribs(r.Recipients)); err != nil {
+		return err
+	}
 	start := r.Start == nil || *r.Start
 	if start {
 		if err := a.apiCanSend(); err != nil {
@@ -696,11 +721,9 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 	}
 
 	// Its list, and its recipients on it.
-	var listID int
-	if err := a.db.Get(&listID, `INSERT INTO lists (uuid, name, type, optin, tags, description)
-		VALUES (gen_random_uuid(), $1, 'private', 'single', $2, $3) RETURNING id`,
-		"API: "+name, pq.Array([]string{denmaAPIListTag}),
-		fmt.Sprintf("The recipients of a campaign sent through the API (key %q). Deleted %d days after the campaign is done.", k.Name, denmaAPIListKeepDays)); err != nil {
+	listID, err := a.apiNewCampaignList("API: "+name,
+		fmt.Sprintf("The recipients of a campaign sent through the API (key %q). Deleted %d days after the campaign is done.", k.Name, denmaAPIListKeepDays))
+	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	keep := false
@@ -810,8 +833,8 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 	var emails, names, attribs []string
 	seen := map[string]bool{}
 	for _, r := range in {
-		if _, ok := r.Attribs["tags"]; ok {
-			return nil, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Recipient %s: %s", r.Email, denmaAPIAttribTagsMsg))
+		if k := denmaReservedAttrib(r.Attribs, false); k != "" {
+			return nil, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Recipient %s: %s", r.Email, denmaReservedAttribMsg(k)))
 		}
 		email, err := a.importer.SanitizeEmail(strings.TrimSpace(r.Email))
 		if err != nil {
@@ -855,11 +878,18 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 		AND LOWER(TRIM(s.name)) IN ('', i.email, split_part(i.email, '@', 1))`, pq.Array(emails), pq.Array(names)); err != nil {
 		return fail(err)
 	}
-	// New ones (an address that opted out is added blocklisted).
-	if _, err := tx.Exec(`INSERT INTO subscribers (uuid, email, name, status)
-		SELECT gen_random_uuid(), i.email, COALESCE(NULLIF(i.name, ''), split_part(i.email, '@', 1)), 'enabled'
-		FROM unnest($1::TEXT[], $2::TEXT[]) AS i(email, name)
-		ON CONFLICT DO NOTHING`, pq.Array(emails), pq.Array(names)); err != nil {
+	// New ones, with their attributes, written once: existing subscribers
+	// keep theirs. An address that opted out is added blocklisted, without
+	// them. None has consent (cmd/denma_noconsent.go).
+	var added []string
+	if err := tx.Select(&added, `INSERT INTO subscribers (uuid, email, name, status, attribs)
+		SELECT gen_random_uuid(), i.email, COALESCE(NULLIF(i.name, ''), split_part(i.email, '@', 1)), 'enabled',
+			CASE WHEN EXISTS (SELECT 1 FROM denma_optouts o WHERE o.email_hash = denma_email_hash(i.email)) THEN '{}'::JSONB ELSE i.attribs END
+		FROM unnest($1::TEXT[], $2::TEXT[], $3::JSONB[]) AS i(email, name, attribs)
+		ON CONFLICT DO NOTHING RETURNING LOWER(email)`, pq.Array(emails), pq.Array(names), pq.Array(attribs)); err != nil {
+		return fail(err)
+	}
+	if err := denmaNoConsentAdd(tx, keyID, added); err != nil {
 		return fail(err)
 	}
 	var subs []struct {
@@ -895,6 +925,27 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 		return fail(err)
 	}
 	return skipped, nil
+}
+
+// apiNewCampaignList makes an API campaign's list, with its tag
+// (denmaAPIListTag), which only the API can give a list
+// (denma_keep_api_list_tag, cmd/denma_noconsent.go).
+func (a *App) apiNewCampaignList(name, desc string) (int, error) {
+	tx, err := a.db.Beginx()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`SELECT set_config('denma.api_list', 'on', true)`); err != nil {
+		return 0, err
+	}
+	var id int
+	if err := tx.Get(&id, `INSERT INTO lists (uuid, name, type, optin, tags, description)
+		VALUES (gen_random_uuid(), $1, 'private', 'single', $2, $3) RETURNING id`,
+		name, pq.Array([]string{denmaAPIListTag}), desc); err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
 }
 
 // denmaAPIRecipientData overlays an API campaign's per-recipient attributes
@@ -1059,6 +1110,9 @@ func (a *App) DenmaAPIAddRecipients(c echo.Context) error {
 	if err := denmaAPIBind(c, &r); err != nil {
 		return err
 	}
+	if err := a.apiCheckLinks(c, denmaAPIRecipientAttribs(r.Recipients)); err != nil {
+		return err
+	}
 	if len(r.Recipients) > denmaAPIMaxRecipients {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("At most %d recipients a request.", denmaAPIMaxRecipients))
 	}
@@ -1179,417 +1233,134 @@ func (a *App) apiCancelCampaign(id int, status string) error {
 	return nil
 }
 
-// ---- POST /v1/subscribers ----
+// ---- Where the links a key sends go ----
 
-type denmaAPISubscriberReq struct {
-	Email     string         `json:"email"`
-	Name      string         `json:"name"`
-	Lists     []int          `json:"lists"`
-	Attribs   map[string]any `json:"attribs"`
-	Tags      []string       `json:"tags"`
-	Confirmed bool           `json:"confirmed"`
+// reDenmaLink finds links in text: http(s) addresses, and protocol-relative
+// ones (//host) in HTML attributes.
+var reDenmaLink = regexp.MustCompile(`(?i)\bhttps?://([^/\s"'<>()\[\]{}\\^|?#]+)|(?:href|src|action)\s*=\s*["']?\s*//([^/\s"'<>]+)`)
+
+// denmaLinkDomainsForm checks a key's link domains: domains (an address's
+// host is taken), lowercase, each once.
+func denmaLinkDomainsForm(in []string) ([]string, error) {
+	out := []string{}
+	for _, s := range in {
+		if s = strings.ToLower(strings.TrimSpace(s)); s == "" {
+			continue
+		}
+		if u, err := url.Parse(s); err == nil && u.Host != "" {
+			s = u.Hostname()
+		}
+		s = strings.TrimSuffix(strings.TrimPrefix(s, "*."), ".")
+		if !reDenmaHostName.MatchString(s) {
+			return nil, fmt.Errorf("%q isn't a domain, such as example.org.", s)
+		}
+		if !denmaHasString(out, s) {
+			out = append(out, s)
+		}
+	}
+	if len(out) > denmaAPIMaxLinks {
+		return nil, fmt.Errorf("Give at most %d link domains.", denmaAPIMaxLinks)
+	}
+	return out, nil
 }
 
-const denmaAPIAttribTagsMsg = `"tags" can't be in "attribs". Give them in POST /v1/subscribers' own "tags", which adds to the subscriber's.`
-
-// DenmaAPISubscribe adds someone to some of the key's lists. With
-// "confirmed" (and a consent record, denmaAPIConsentAt) they're subscribed
-// at once; otherwise double opt-in lists send the confirmation e-mail.
-//
-// Someone who unsubscribed from the center is re-subscribed at once with
-// "confirmed" and a consent dated after the opt-out, up to
-// denmaAPIResubPerDay a day per key; otherwise they're sent the
-// re-subscription confirmation (cmd/denma_resubscribe.go). Complaints,
-// bounces and an older consent leave them alone.
-//
-// What's sent is added to the subscriber, never replacing anything
-// (apiAppendSubscriber). New tags are added to the center's.
-func (a *App) DenmaAPISubscribe(c echo.Context) error {
-	var r denmaAPISubscriberReq
-	if err := denmaAPIBind(c, &r); err != nil {
-		return err
+// apiOwnLinkDomains are the domains a key's links can always go to: the
+// center's sending domains (or its sender's, if it has none yet), and the
+// app's own (its uploads, archive and tracked links).
+func (a *App) apiOwnLinkDomains() []string {
+	out := []string{}
+	if u, err := url.Parse(a.urlCfg.RootURL); err == nil && u.Hostname() != "" {
+		out = append(out, strings.ToLower(u.Hostname()))
 	}
-	k := apiKeyOf(c)
-	if len(k.ListIDs) == 0 {
-		return echo.NewHTTPError(http.StatusForbidden, "This key has no lists to add subscribers to; choose them on the center's Config -> API page.")
-	}
-	email, err := a.importer.SanitizeEmail(strings.TrimSpace(r.Email))
+	doms, err := a.denmaCenterDomains()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, `"email" isn't a valid address.`)
+		a.log.Printf("denma: error reading the center's domains: %v", err)
 	}
-	email = strings.ToLower(email)
-	listIDs := dedupInts(r.Lists)
-	if len(listIDs) == 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, `Give "lists": the IDs of the lists to add them to.`)
+	for _, d := range doms {
+		out = append(out, strings.ToLower(d.Domain))
 	}
-	for _, id := range listIDs {
-		allowed := false
-		for _, l := range k.ListIDs {
-			allowed = allowed || int(l) == id
-		}
-		if !allowed {
-			return echo.NewHTTPError(http.StatusForbidden, fmt.Sprintf("This key can't add subscribers to list %d.", id))
+	if len(doms) == 0 {
+		if d := denmaSenderDomain(a.cfg.FromEmail); d != "" {
+			out = append(out, strings.ToLower(d))
 		}
 	}
-	name := denmaSignupField(map[string]string{"n": r.Name}, "n", 200)
-	if _, ok := r.Attribs["tags"]; ok {
-		return echo.NewHTTPError(http.StatusBadRequest, denmaAPIAttribTagsMsg)
-	}
-	if len(r.Attribs) > 0 {
-		if b, _ := json.Marshal(r.Attribs); len(b) > denmaAPIMaxAttribs {
-			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(`"attribs" is over %d bytes.`, denmaAPIMaxAttribs))
-		}
-	}
-	if len(r.Tags) > denmaAPIMaxTags {
-		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(`"tags" can have at most %d tags.`, denmaAPIMaxTags))
-	}
-	tags := denmaNormTags(r.Tags)
-	var consentAt time.Time
-	if r.Confirmed {
-		if consentAt, err = denmaAPIConsentAt(r.Attribs); err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-		}
-	}
-
-	type result struct {
-		Result       string   `json:"result"`
-		Added        []int    `json:"added"`        // lists they're on now (confirmed or waiting to confirm)
-		Resubscribed []int    `json:"resubscribed"` // of those, the ones they'd unsubscribed from
-		TagsCreated  []string `json:"tags_created"` // new to the center: added to its tags
-		AttribsKept  []string `json:"attribs_kept"` // attributes they already had another value for, kept
-	}
-	out := result{Added: []int{}, Resubscribed: []int{}, TagsCreated: []string{}, AttribsKept: []string{}}
-	done := func(why string) error {
-		if why != "" {
-			a.apiLog(c, "subscriber: %s (%s)", out.Result, why) // the reason for the log, not the answer
-		} else {
-			a.apiLog(c, "subscriber: %s", out.Result)
-		}
-		if err := denmaAPIContacts(a.db, k.ID, []string{email}); err != nil { // its events (cmd/denma_api_events.go)
-			a.log.Printf("denma: error recording API key %d's addresses: %v", k.ID, err)
-		}
-		return c.JSON(http.StatusOK, okResp{out})
-	}
-
-	// Them, added if they're new. An address that opted out before is added
-	// blocklisted (cmd/denma_optouts.go).
-	newName := name
-	if newName == "" {
-		newName = strings.Split(email, "@")[0]
-	}
-	var newID int
-	err = a.db.Get(&newID, `INSERT INTO subscribers (uuid, email, name, status) VALUES (gen_random_uuid(), $1, $2, 'enabled')
-		ON CONFLICT DO NOTHING RETURNING id`, email, newName)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
-	var sub models.Subscriber
-	if err := a.db.Get(&sub, `SELECT id, uuid, email, name, attribs, status, created_at, updated_at FROM subscribers WHERE LOWER(email) = $1`, email); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
-
-	// Blocklisted: a complaint, a bounce, or a consent from before they
-	// unsubscribed.
-	blocked := sub.Status == models.SubscriberStatusBlockListed
-	if blocked {
-		why, err := a.denmaResubRefused(sub)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-		}
-		if why != "" {
-			out.Result = denmaAPINotSubscribed
-			return done(why)
-		}
-		if r.Confirmed {
-			var optedOut sql.NullTime
-			if err := a.db.Get(&optedOut, `SELECT MAX(created_at) FROM denma_optouts WHERE email_hash = denma_email_hash($1)`, email); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-			}
-			if optedOut.Valid && !consentAt.After(optedOut.Time) {
-				out.Result = denmaAPINotSubscribed
-				return done("consent from before they unsubscribed")
-			}
-		}
-	}
-
-	if out.TagsCreated, out.AttribsKept, err = a.apiAppendSubscriber(sub.ID, email, name, r.Attribs, tags); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
-	if len(out.TagsCreated) > 0 {
-		a.apiLog(c, "tags added to the center: %s", strings.Join(out.TagsCreated, ", "))
-	}
-
-	// Unsubscribed from the center: re-subscribed now, or on confirming.
-	if blocked {
-		now := false
-		if r.Confirmed {
-			ok, _, err := a.apiClaim(k.ID, denmaAPIUseResub, 1, denmaAPIResubPerDay)
-			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-			}
-			if !ok {
-				a.apiAlert(k.ID, k.Name, denmaAPIUseResub, fmt.Sprintf("re-subscribed %d people in a day", denmaAPIResubPerDay),
-					fmt.Sprintf("It re-subscribes people who had unsubscribed, saying they've agreed again. It did that for %d people in the last 24 hours, "+
-						"the most it can; others since are sent the e-mail to confirm it themselves. If its system shouldn't re-subscribe that many, "+
-						"the key may have leaked: delete it as leaked.", denmaAPIResubPerDay))
-			}
-			now = ok
-		}
-		if !now {
-			status, err := a.denmaResubscribe(sub, listIDs, nil)
-			var he *echo.HTTPError
-			switch {
-			case errors.As(err, &he) && he.Code < 500:
-				out.Result = denmaAPINotSubscribed
-				return done(fmt.Sprint(he.Message))
-			case err != nil:
-				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-			}
-			out.Result = denmaAPIConfirmationSent
-			return done(status)
-		}
-		if err := a.db.Select(&out.Resubscribed, `SELECT list_id FROM subscriber_lists
-			WHERE subscriber_id = $1 AND list_id = ANY($2) AND status = 'unsubscribed' ORDER BY list_id`, sub.ID, pq.Array(listIDs)); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-		}
-		ids := make(pq.Int64Array, len(listIDs))
-		for i, id := range listIDs {
-			ids[i] = int64(id)
-		}
-		lists, err := a.denmaListsByID(ids)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-		}
-		if err := a.denmaResubConfirm(sub.ID, lists, nil, models.JSON{"resubscribed": true, "via": "API key: " + k.Name}); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-		}
-		out.Added = listIDs
-		out.Result = denmaAPIResubscribed
-		return done("")
-	}
-
-	// The lists: confirmed if single opt-in or "confirmed". Lists they'd
-	// unsubscribed from are as for anyone new.
-	var rows []struct {
-		ListID int            `db:"list_id"`
-		Status string         `db:"status"`
-		Was    sql.NullString `db:"was"`
-	}
-	if err := a.db.Select(&rows, `WITH was AS (
-			SELECT list_id, status::TEXT AS status FROM subscriber_lists WHERE subscriber_id = $1 AND list_id = ANY($2)
-		)
-		INSERT INTO subscriber_lists (subscriber_id, list_id, status)
-		SELECT $1, l.id, CASE WHEN l.optin = 'single' OR $3 THEN 'confirmed'::subscription_status ELSE 'unconfirmed'::subscription_status END
-		FROM lists l WHERE l.id = ANY($2)
-		ON CONFLICT (subscriber_id, list_id) DO UPDATE SET status = CASE
-			WHEN subscriber_lists.status = 'confirmed' THEN subscriber_lists.status
-			ELSE EXCLUDED.status END, updated_at = NOW()
-		RETURNING list_id, status::TEXT AS status, (SELECT status FROM was WHERE was.list_id = subscriber_lists.list_id) AS was`,
-		sub.ID, pq.Array(listIDs), r.Confirmed); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
-	var unconfirmed []int
-	for _, row := range rows {
-		if row.Status == models.SubscriptionStatusUnsubscribed {
-			continue // kept so by the database (cmd/denma_optouts.go)
-		}
-		out.Added = append(out.Added, row.ListID)
-		if row.Was.String == models.SubscriptionStatusUnsubscribed {
-			out.Resubscribed = append(out.Resubscribed, row.ListID)
-		}
-		if row.Status == models.SubscriptionStatusUnconfirmed {
-			unconfirmed = append(unconfirmed, row.ListID)
-		}
-	}
-	switch {
-	case len(out.Added) == 0:
-		out.Result = denmaAPINotSubscribed
-		return done("unsubscribed from the lists")
-	case len(unconfirmed) > 0:
-		// The confirmation e-mail, with the opt-in checks (cmd/denma_emailcheck.go).
-		if _, err := a.fnOptinNotify(sub, unconfirmed); err != nil {
-			var he *echo.HTTPError
-			if errors.As(err, &he) && he.Code < 500 {
-				out.Result = denmaAPIConfirmationNotSent
-				return done(fmt.Sprint(he.Message))
-			}
-			return err
-		}
-		out.Result = denmaAPIConfirmationSent
-	case len(out.Resubscribed) > 0:
-		out.Result = denmaAPIResubscribed
-	default:
-		out.Result = denmaAPISubscribed
-	}
-	return done("")
+	return out
 }
 
-// What became of someone given to POST /v1/subscribers.
-const (
-	denmaAPISubscribed          = "subscribed"
-	denmaAPIResubscribed        = "re-subscribed"
-	denmaAPIConfirmationSent    = "confirmation sent"
-	denmaAPIConfirmationNotSent = "added; confirmation not sent"
-	denmaAPINotSubscribed       = "not subscribed"
-)
-
-// denmaAPIConsentSkew is how far in the future a consent's time may be (the
-// other system's clock).
-const denmaAPIConsentSkew = 5 * time.Minute
-
-// denmaAPIConsentAt returns the latest "at" of attribs.consents, whose
-// entries each need "at" (RFC 3339) and "source".
-func denmaAPIConsentAt(attribs map[string]any) (time.Time, error) {
-	const need = `"confirmed" needs a consent record: "attribs": {"consents": [{"at": "<when they agreed, RFC 3339>", "source": "<how>"}]}.`
-	list, _ := attribs["consents"].([]any)
-	var at time.Time
-	for _, e := range list {
-		m, _ := e.(map[string]any)
-		s, _ := m["at"].(string)
-		src, _ := m["source"].(string)
-		t, err := time.Parse(time.RFC3339, s)
-		if err != nil || strings.TrimSpace(src) == "" {
-			return time.Time{}, errors.New(need + ` Each needs "at" and "source".`)
-		}
-		if t.After(time.Now().Add(denmaAPIConsentSkew)) {
-			return time.Time{}, fmt.Errorf(`A consent's "at" (%s) is in the future.`, s)
-		}
-		if t.After(at) {
-			at = t
-		}
+// denmaLinkAllowed is whether host is one of domains or below one.
+func denmaLinkAllowed(host string, domains []string) bool {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
 	}
-	if at.IsZero() {
-		return time.Time{}, errors.New(need)
-	}
-	return at, nil
-}
-
-// apiAppendSubscriber adds a request's name, attributes and tags to a
-// subscriber's, with their row locked, so that two requests at once both
-// count. The name replaces theirs only if it's a stand-in (denmaAPIName);
-// the attributes are added to theirs (denmaAppendJSON), and the tags too,
-// the center's tags getting those it doesn't have. It returns the tags new
-// to the center and the attributes kept (they already had another value).
-func (a *App) apiAppendSubscriber(id int, email, name string, attribs map[string]any, tags []string) (created, kept []string, err error) {
-	created, kept = []string{}, []string{}
-	tx, err := a.db.Beginx()
-	if err != nil {
-		return nil, nil, err
-	}
-	defer tx.Rollback()
-	var cur struct {
-		Name    string `db:"name"`
-		Attribs []byte `db:"attribs"`
-	}
-	if err := tx.Get(&cur, `SELECT name, attribs FROM subscribers WHERE id = $1 FOR UPDATE`, id); err != nil {
-		return nil, nil, err
-	}
-	m := map[string]any{}
-	if err := json.Unmarshal(cur.Attribs, &m); err != nil || m == nil {
-		m = map[string]any{} // not an object: listmonk's own handling starts afresh too
-	}
-	m = denmaAppendJSON(m, map[string]any(attribs), "", &kept).(map[string]any)
-	if len(tags) > 0 {
-		if err := tx.Select(&created, `INSERT INTO denma_tags (tag) SELECT UNNEST($1::TEXT[])
-			ON CONFLICT DO NOTHING RETURNING tag`, pq.Array(tags)); err != nil {
-			return nil, nil, err
-		}
-		add := make([]any, len(tags))
-		for i, t := range tags {
-			add[i] = t
-		}
-		have, _ := m["tags"].([]any) // an array, kept so by the database (denma_norm_tags)
-		m["tags"] = denmaAppendJSON(have, add, "tags", &kept)
-	}
-	b, err := json.Marshal(m)
-	if err != nil {
-		return nil, nil, err
-	}
-	if _, err := tx.Exec(`UPDATE subscribers SET name = $2, attribs = $3, updated_at = NOW() WHERE id = $1`,
-		id, denmaAPIName(cur.Name, name, email), string(b)); err != nil {
-		return nil, nil, err
-	}
-	sort.Strings(created)
-	return created, kept, tx.Commit()
-}
-
-// denmaAPIName is a subscriber's name after a request gives one: theirs,
-// unless it's a stand-in (empty, their address or the part before its @).
-func denmaAPIName(cur, given, email string) string {
-	local, _, _ := strings.Cut(email, "@")
-	switch c := strings.ToLower(strings.TrimSpace(cur)); {
-	case given == "":
-		return cur
-	case c == "", c == strings.ToLower(email), c == strings.ToLower(local):
-		return given
-	}
-	return cur
-}
-
-// denmaAppendJSON adds add to old (decoded JSON) without taking anything
-// away: what old doesn't have is added, objects are merged a key at a time,
-// arrays get the items they don't have yet, and a value old already has is
-// kept. Each place where add has another value, which is left out, is named
-// in kept ("a.b").
-func denmaAppendJSON(old, add any, path string, kept *[]string) any {
-	if add == nil {
-		return old
-	}
-	if old == nil {
-		return add
-	}
-	switch o := old.(type) {
-	case map[string]any:
-		if ad, ok := add.(map[string]any); ok {
-			out := make(map[string]any, len(o)+len(ad))
-			for k, v := range o {
-				out[k] = v
-			}
-			keys := make([]string, 0, len(ad))
-			for k, v := range ad {
-				if v != nil { // null adds nothing
-					keys = append(keys, k)
-				}
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				p := k
-				if path != "" {
-					p = path + "." + k
-				}
-				out[k] = denmaAppendJSON(o[k], ad[k], p, kept)
-			}
-			return out
-		}
-	case []any:
-		if ad, ok := add.([]any); ok {
-			out := append([]any{}, o...)
-			for _, v := range ad {
-				if !denmaJSONHas(out, v) {
-					out = append(out, v)
-				}
-			}
-			return out
-		}
-	}
-	if !denmaJSONEqual(old, add) {
-		*kept = append(*kept, path)
-	}
-	return old
-}
-
-func denmaJSONHas(list []any, v any) bool {
-	for _, e := range list {
-		if denmaJSONEqual(e, v) {
+	for _, d := range domains {
+		if host == d || strings.HasSuffix(host, "."+d) {
 			return true
 		}
 	}
 	return false
 }
 
-// denmaJSONEqual compares decoded JSON values (encoding sorts objects' keys).
-func denmaJSONEqual(x, y any) bool {
-	a, err1 := json.Marshal(x)
-	b, err2 := json.Marshal(y)
-	return err1 == nil && err2 == nil && string(a) == string(b)
+// denmaLinkHosts returns the hosts of the links in values' text: strings,
+// and the strings in maps and lists, at any depth.
+func denmaLinkHosts(values ...any) []string {
+	var out []string
+	var walk func(v any)
+	walk = func(v any) {
+		switch t := v.(type) {
+		case string:
+			for _, m := range reDenmaLink.FindAllStringSubmatch(t, -1) {
+				h := m[1] + m[2]
+				if i := strings.LastIndex(h, "@"); i >= 0 {
+					h = h[i+1:] // user@host
+				}
+				out = append(out, h)
+			}
+		case map[string]any:
+			for _, x := range t {
+				walk(x)
+			}
+		case []any:
+			for _, x := range t {
+				walk(x)
+			}
+		case []map[string]any:
+			for _, x := range t {
+				walk(x)
+			}
+		}
+	}
+	for _, v := range values {
+		walk(v)
+	}
+	return out
+}
+
+// denmaAPIRecipientAttribs is recipients' attributes, for denmaLinkHosts.
+func denmaAPIRecipientAttribs(rs []denmaAPIRecipient) []map[string]any {
+	out := make([]map[string]any, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, r.Attribs)
+	}
+	return out
+}
+
+// apiCheckLinks refuses a request whose text has a link (in its subject,
+// body, data or attributes) to anywhere but the key's link domains and the
+// center's own (apiOwnLinkDomains): a leaked key can't send the center's
+// e-mails with someone else's links.
+func (a *App) apiCheckLinks(c echo.Context, values ...any) error {
+	hosts := denmaLinkHosts(values...)
+	if len(hosts) == 0 {
+		return nil
+	}
+	allowed := append(a.apiOwnLinkDomains(), apiKeyOf(c).LinkDomains...)
+	for _, h := range hosts {
+		if !denmaLinkAllowed(h, allowed) {
+			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(
+				"A link goes to %s, which isn't one of this key's link domains or the center's (%s). The center's admins can add it to the key's link domains, on its Config -> API page.",
+				h, strings.Join(allowed, ", ")))
+		}
+	}
+	return nil
 }

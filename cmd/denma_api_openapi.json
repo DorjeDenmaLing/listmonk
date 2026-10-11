@@ -3,8 +3,8 @@
   "info": {
     "title": "Listmonk Shambhala sending API",
     "version": "1.0.0",
-    "summary": "Send a center's e-mail, and subscribe people to its lists, from another system.",
-    "description": "For other systems (a member database, a booking system, a website) that work with a center: they send transactional e-mails and campaigns from the center's templates, and subscribe people to its lists. Each center has its own API, at its own address, and its own keys, made on its Config -> API page.\n\nEach key can do only what it was allowed to: send transactional e-mails (`messages`), send campaigns (`campaigns`), subscribe people to the lists chosen for it (`subscribers`), and/or read the events about the addresses it has sent to or subscribed (`events`). Each operation that needs one says so in `x-denma-can`; anything else is refused with a 403. `GET /` says what a key can do, and when it expires, if it does.\n\nRequests and answers are JSON. A successful answer is `{\"data\": ...}`; an error is `{\"message\": \"...\"}` with its status. Unknown fields in a request are refused, so a typo isn't silently ignored. A request is at most 16 MB, and a key makes at most 600 requests a minute. An address that sends 20 keys that don't work in 15 minutes is refused for a while.\n\nE-mail is sent from the key's sender (set with the key: the center's, or another address at its sending domains), at most the key's daily limit of e-mails in 24 hours, under the center's daily cap, and never to anyone who complained, bounced, or whose domain can't receive mail; campaigns also skip whoever unsubscribed. Answers say who wasn't sent to, but not why: a key's events say it, for the addresses it sends to. The center's sending through the API pauses on its own if its hard bounces reach 5% or its complaints 0.1% (Amazon SES's review levels); a superadmin resumes it."
+    "summary": "Send a center's e-mail from another system.",
+    "description": "For other systems (a member database, a booking system, a website) that send e-mail through a center: transactional e-mails and campaigns, from the center's templates. Each center has its own API, at its own address, and its own keys, made on its Config -> API page. The API doesn't subscribe people to the center's lists: sign-up webhooks do (`<center>/signup/openapi.json`).\n\nEach key can do only what it was allowed to: send transactional e-mails (`messages`), send campaigns (`campaigns`), and/or read the events about the addresses it has sent to (`events`). Each operation that needs one says so in `x-denma-can`; anything else is refused with a 403. `GET /` says what a key can do, and when it expires, if it does.\n\nRequests and answers are JSON. A successful answer is `{\"data\": ...}`; an error is `{\"message\": \"...\"}` with its status. Unknown fields in a request are refused, so a typo isn't silently ignored. A request is at most 16 MB, and a key makes at most 600 requests a minute. An address that sends 20 keys that don't work in 15 minutes is refused for a while.\n\nE-mail is sent from the key's sender (set with the key: the center's, or another address at its sending domains), at most the key's daily limit of e-mails in 24 hours, under the center's daily cap, and never to anyone who complained, bounced, or whose domain can't receive mail; campaigns also skip whoever unsubscribed. Answers say who wasn't sent to, but not why: a key's events say it, for the addresses it sends to. The center's sending through the API pauses on its own if its hard bounces reach 5% or its complaints 0.1% (Amazon SES's review levels); a superadmin resumes it.\n\nLinks in what a request sends (its subject, a campaign's body, `data`, recipients' `attribs`, images included) can go only to the key's link domains, set with the key, and the center's own (its sending domains, and this API's host); a request with a link elsewhere is refused (400), so that a leaked key can't send the center's e-mails with someone else's links.\n\nConsent: a campaign through the API goes to the addresses the other system gives, and the center has no record of their consent to it, so the other system has to have it (under Canada's anti-spam law, CASL, and others). The people it sends to are added to the center without lists and with no consent to the center's own mail: they can join its lists only by signing up themselves. Someone who unsubscribes from an API campaign unsubscribes from the whole center, and campaigns skip them from then on: send what people need whether or not they get newsletters (a booking's details, a password reset) as transactional e-mails (`POST /messages`), which still reach them.\n\nChanges: since October 2026, `POST /subscribers` is gone (410): sign-up webhooks replace it. Keys have link domains, the notifications (the `events` webhook) tell a key that sends campaigns how they go (`campaign_*` events, with no `email`), and a campaign's new recipients keep its `attribs` (written once)."
   },
   "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
   "servers": [
@@ -26,8 +26,7 @@
     { "name": "Key", "description": "The key and the center's templates." },
     { "name": "Transactional e-mail", "description": "Password resets, receipts and notices." },
     { "name": "Campaigns", "description": "A campaign to the addresses given, without adding them to the center's lists." },
-    { "name": "Subscribers", "description": "Subscribe people to the lists chosen for the key." },
-    { "name": "Events", "description": "Unsubscribes, complaints, bounces and blocklistings of the addresses the key has sent to or subscribed, so that the other system can stop e-mailing them too." }
+    { "name": "Events", "description": "Unsubscribes, complaints, bounces and blocklistings of the addresses the key has sent to, so that the other system can stop e-mailing them too; and how its campaigns go." }
   ],
   "paths": {
     "/": {
@@ -105,7 +104,7 @@
         "tags": ["Transactional e-mail"],
         "operationId": "sendMessage",
         "summary": "Send a transactional e-mail",
-        "description": "A password reset, receipt or notice, to an address or up to 50, from a transactional template, from the key's sender. The template uses `{{ .Tx.Data.<name> }}` for `data`, and `{{ .Subscriber.Name }}`.\n\nIt goes to people who unsubscribed too, as it's not marketing; not to those who complained, bounced, or whose domain can't receive mail (`skipped`, \"not sent\"). Each new address is added to the center as a subscriber without lists, so that its bounces and complaints are recorded.\n\nAll of it fits under the key's daily limit and the center's daily cap, or none of it is sent (429).",
+        "description": "A password reset, receipt or notice, to an address or up to 50, from a transactional template, from the key's sender. The template uses `{{ .Tx.Data.<name> }}` for `data`, and `{{ .Subscriber.Name }}`.\n\nIt goes to people who unsubscribed too, as it's not marketing; not to those who complained, bounced, or whose domain can't receive mail (`skipped`, \"not sent\"). Each new address is added to the center as a subscriber without lists, so that its bounces and complaints are recorded, with no consent to the center's own mail.\n\nIts links (in `data` and `subject`, such as a password reset link) can go only to the key's link domains and the center's own.\n\nAll of it fits under the key's daily limit and the center's daily cap, or none of it is sent (429).",
         "x-denma-can": "messages",
         "parameters": [
           { "$ref": "#/components/parameters/IdempotencyKey" }
@@ -154,7 +153,7 @@
         "tags": ["Campaigns"],
         "operationId": "createCampaign",
         "summary": "Make (and start) a campaign",
-        "description": "A campaign to the `recipients` given (up to 10,000 a request), from a campaign or visual template, from the key's sender. The recipients go on a list of the campaign's own, not the center's lists, which is deleted a week after the campaign is done. Each recipient's `attribs` are the campaign's, kept on that list, for `{{ .Subscriber.Attribs.<name> }}` in its e-mails (over the subscriber's own); they don't change the subscriber. A new address is added to the center with its name; a subscriber the center has keeps theirs, unless it's a stand-in (their address). The campaign's `data` is `{{ .Campaign.Attribs.data.<name> }}`. With a campaign template, `body` (HTML) fills its `{{ template \"content\" . }}`.\n\nIt starts once its addresses are checked, within seconds (`\"status\": \"starting\"`), or at `send_at`, and appears on the center's Campaigns page tagged `api`. Its recipients count against the key's daily limit when it starts (429 if they don't fit). Those who unsubscribed, complained or bounced are skipped, and listed in `skipped` (\"not sent\").\n\nFor more than 10,000 recipients, make it with `\"start\": false`, add the rest with `POST /campaigns/{id}/recipients`, then `POST /campaigns/{id}/start`.",
+        "description": "A campaign to the `recipients` given (up to 10,000 a request), from a campaign or visual template, from the key's sender. The recipients go on a list of the campaign's own, not the center's lists, which is deleted a week after the campaign is done. Each recipient's `attribs` are used in the campaign's e-mails as `{{ .Subscriber.Attribs.<name> }}` (over the subscriber's own). A new address is added to the center with its name and `attribs`, written once, and with no consent to the center's own mail; a subscriber the center has keeps their record, and their name unless it's a stand-in (their address). Attributes the center keeps itself (`consent_at`, `consent_source`, `consent_confirmed_at`, `consents`, `resubscribed_at`, `imported_at`, `tags`, and any starting `auto_blocklist_` or `denma_`) are refused. The campaign's `data` is `{{ .Campaign.Attribs.data.<name> }}`. With a campaign template, `body` (HTML) fills its `{{ template \"content\" . }}`.\n\nIts links (subject, `body`, `data`, `attribs`) can go only to the key's link domains and the center's own.\n\nIt starts once its addresses are checked, within seconds (`\"status\": \"starting\"`), or at `send_at`, and appears on the center's Campaigns page tagged `api`. Its recipients count against the key's daily limit when it starts (429 if they don't fit). Those who unsubscribed, complained or bounced are skipped, and listed in `skipped` (\"not sent\"). How it goes (started, paused, resumed, finished, cancelled) is sent to the key's notifications address, if it has one.\n\nFor more than 10,000 recipients, make it with `\"start\": false`, add the rest with `POST /campaigns/{id}/recipients`, then `POST /campaigns/{id}/start`.",
         "x-denma-can": "campaigns",
         "parameters": [
           { "$ref": "#/components/parameters/IdempotencyKey" }
@@ -344,62 +343,12 @@
         }
       }
     },
-    "/subscribers": {
-      "post": {
-        "tags": ["Subscribers"],
-        "operationId": "subscribe",
-        "summary": "Subscribe someone",
-        "description": "Adds someone to some of the lists the key can subscribe people to (chosen on Config -> API). With `\"confirmed\": true` (they've agreed already), they're subscribed at once; it needs a record of when and how they agreed, in `attribs.consents` (`[{\"at\": \"<RFC 3339>\", \"source\": \"<how>\"}]`). Without it, double opt-in lists send them the confirmation e-mail.\n\nSomeone who unsubscribed is subscribed again: with `\"confirmed\": true` at once, if their consent (the latest `at`) is from after they unsubscribed (else they're left alone); otherwise when they confirm the e-mail they're sent. A key re-subscribes at most 10 people a day at once; past that, they're sent the e-mail to confirm it themselves, and the center's admins are told. Not someone who complained, or whose address bounced or can't receive mail.\n\nWhat's sent is added to what the center has, never replacing it: new attributes are added, objects merged, and arrays given the items they don't have, but a value the subscriber already has is kept (named in `attribs_kept`). The name replaces only a stand-in (their address). `tags` are added to the subscriber's, never taking any away; tags the center doesn't have yet are added to its tags and named in `tags_created`.\n\nThe answer doesn't say why someone wasn't subscribed, or whether the center had them already.",
-        "x-denma-can": "subscribers",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/SubscriberRequest" },
-              "example": {
-                "email": "ann@example.org",
-                "name": "Ann Lee",
-                "lists": [5],
-                "confirmed": true,
-                "attribs": {
-                  "consent_at": "2026-10-05T14:30:00Z",
-                  "consent_source": "registration form",
-                  "consents": [{ "at": "2026-10-05T14:30:00Z", "source": "registration form" }]
-                },
-                "tags": ["retreat-guru"]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "What became of it.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["data"],
-                  "properties": {
-                    "data": { "$ref": "#/components/schemas/SubscriberResult" }
-                  }
-                }
-              }
-            }
-          },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "413": { "$ref": "#/components/responses/TooLarge" },
-          "429": { "$ref": "#/components/responses/TooManyRequests" }
-        }
-      }
-    },
     "/events": {
       "get": {
         "tags": ["Events"],
         "operationId": "listEvents",
         "summary": "List unsubscribes, complaints and bounces",
-        "description": "The last 30 days' events about the addresses the key has sent to or subscribed, from when it first did, oldest first: who unsubscribed, complained (marked an e-mail as spam), bounced (the address doesn't exist), or was blocklisted for another reason (its domain takes no mail, or it bounced from another center). The same events are sent to the key's webhook (`events`, under webhooks); this is for a system that can't take webhooks, or missed some. Ask again with `after` set to the answer's `after` while `more` is true.",
+        "description": "The last 30 days' events about the addresses the key has sent to, from when it first did, oldest first: who unsubscribed, complained (marked an e-mail as spam), bounced (the address doesn't exist), or was blocklisted for another reason (its domain takes no mail, or it bounced from another center). The same events are sent to the key's webhook (`events`, under webhooks); this is for a system that can't take webhooks, or missed some. Ask again with `after` set to the answer's `after` while `more` is true.",
         "x-denma-can": "events",
         "parameters": [
           {
@@ -442,8 +391,8 @@
       "post": {
         "tags": ["Events"],
         "operationId": "eventsWebhook",
-        "summary": "Unsubscribes, complaints and bounces, as they happen",
-        "description": "The key's events (`GET /events`), sent within a minute to its webhook address (set on Config -> API, `https://` only), in order, at most 100 events a request. Answer with a 2xx; anything else is tried again later, waiting longer each time (up to 6 hours), and later events wait their turn. The Config -> API page can send a test event (`\"type\": \"test\"`).\n\nCheck the signature before trusting the request: `X-Listmonk-Signature` is `t=<unix time>,v1=<signature>`, the signature being the hex HMAC-SHA256, with the webhook's signing secret, of the time, a full stop and the request's body (`<t>.<body>`). Compare it in constant time, and refuse a request whose `t` is more than 5 minutes from your clock, so that a request someone captured can't be sent again later.",
+        "summary": "Unsubscribes, complaints, bounces, and how its campaigns go, as they happen",
+        "description": "The key's notifications, sent within a minute to its notifications address (set on Config -> API, `https://` only), in order, at most 100 events a request: with the `events` permission, its events (`GET /events`); if it sends campaigns, how each of its campaigns goes (`campaign_started`, `campaign_paused`, `campaign_resumed`, `campaign_finished`, `campaign_cancelled`, with `campaign_id` and no `email`; `GET /campaigns/{id}` has its figures). Answer with a 2xx; anything else is tried again later, waiting longer each time (up to 6 hours), and later events wait their turn. The Config -> API page can send a test event (`\"type\": \"test\"`).\n\nCheck the signature before trusting the request: `X-Listmonk-Signature` is `t=<unix time>,v1=<signature>`, the signature being the hex HMAC-SHA256, with the webhook's signing secret, of the time, a full stop and the request's body (`<t>.<body>`). Compare it in constant time, and refuse a request whose `t` is more than 5 minutes from your clock, so that a request someone captured can't be sent again later.",
         "security": [],
         "parameters": [
           {
@@ -548,8 +497,8 @@
       },
       "Can": {
         "type": "string",
-        "enum": ["messages", "campaigns", "subscribers", "events"],
-        "description": "Something a key can do: send transactional e-mails, send campaigns, subscribe people to its lists, read the events about the addresses it has sent to or subscribed."
+        "enum": ["messages", "campaigns", "events"],
+        "description": "Something a key can do: send transactional e-mails, send campaigns (and be told how they go), read the events about the addresses it has sent to."
       },
       "StatusAnswer": {
         "type": "object",
@@ -628,7 +577,7 @@
             ]
           },
           "name": { "type": "string", "description": "The recipient's name, for a new address (at most 200 characters are kept)." },
-          "data": { "type": "object", "description": "For the template: `{{ .Tx.Data.<name> }}`." },
+          "data": { "type": "object", "description": "For the template: `{{ .Tx.Data.<name> }}`. Its links can go only to the key's link domains and the center's own." },
           "subject": { "type": "string", "maxLength": 1000, "description": "The subject; else the template's." },
           "reply_to": { "type": "string", "description": "The Reply-To address, at one of the center's sending domains; else the center's, if it has one. (The sender is the key's.)" }
         }
@@ -650,7 +599,7 @@
           "name": { "type": "string", "description": "At most 200 characters are kept." },
           "attribs": {
             "type": "object",
-            "description": "For the template, in this campaign's e-mails: `{{ .Subscriber.Attribs.<name> }}`, over the subscriber's own. Not added to the subscriber. Up to 10,000 bytes; no `tags`."
+            "description": "For the template, in this campaign's e-mails: `{{ .Subscriber.Attribs.<name> }}`, over the subscriber's own. A new address keeps them (written once); an existing subscriber's aren't changed. Up to 10,000 bytes; none the center keeps itself (`tags`, `consent_at`...)."
           }
         }
       },
@@ -715,62 +664,17 @@
           "data": { "$ref": "#/components/schemas/Campaign" }
         }
       },
-      "SubscriberRequest": {
-        "type": "object",
-        "required": ["email", "lists"],
-        "additionalProperties": false,
-        "properties": {
-          "email": { "type": "string", "format": "email" },
-          "name": { "type": "string", "description": "Their name (at most 200 characters are kept); replaces only a stand-in (their address)." },
-          "lists": {
-            "type": "array",
-            "minItems": 1,
-            "items": { "type": "integer" },
-            "description": "The IDs of the lists to add them to: lists the key can subscribe people to."
-          },
-          "confirmed": {
-            "type": "boolean",
-            "default": false,
-            "description": "They've agreed to be subscribed already: subscribed at once, double opt-in lists too, and again if they had unsubscribed (with a consent from after it, up to 10 a day for the key). Needs `attribs.consents`."
-          },
-          "attribs": {
-            "type": "object",
-            "description": "Added to theirs, never replacing a value they have. Up to 10,000 bytes; no `tags`. With `\"confirmed\": true`, `consents` is needed: a list of `{\"at\": \"<when they agreed, RFC 3339>\", \"source\": \"<how>\"}` (and anything else to keep with it)."
-          },
-          "tags": {
-            "type": "array",
-            "maxItems": 20,
-            "items": { "type": "string" },
-            "description": "Added to theirs; new ones are added to the center's tags."
-          }
-        }
-      },
-      "SubscriberResult": {
-        "type": "object",
-        "required": ["result", "added", "resubscribed", "tags_created", "attribs_kept"],
-        "properties": {
-          "result": {
-            "type": "string",
-            "enum": ["subscribed", "re-subscribed", "confirmation sent", "added; confirmation not sent", "not subscribed"],
-            "description": "What became of it: `subscribed`; `re-subscribed` (they had unsubscribed); `confirmation sent` (they're subscribed once they confirm the e-mail they're sent); `added; confirmation not sent` (to a double opt-in list, but the e-mail couldn't be sent now); `not subscribed` (why isn't said)."
-          },
-          "added": { "type": "array", "items": { "type": "integer" }, "description": "The lists they're on now (confirmed, or waiting to confirm)." },
-          "resubscribed": { "type": "array", "items": { "type": "integer" }, "description": "Of those, the ones they'd unsubscribed from." },
-          "tags_created": { "type": "array", "items": { "type": "string" }, "description": "Tags new to the center, added to its tags." },
-          "attribs_kept": { "type": "array", "items": { "type": "string" }, "description": "Attributes they already had another value for, which was kept (`a.b` for nested ones)." }
-        }
-      },
       "Event": {
         "type": "object",
-        "required": ["id", "type", "email", "reason", "campaign_id", "created_at"],
+        "required": ["id", "type", "reason", "campaign_id", "created_at"],
         "properties": {
           "id": { "type": "integer", "format": "int64", "description": "Increasing; `GET /events?after=` takes it." },
           "type": {
             "type": "string",
-            "enum": ["unsubscribed", "complained", "bounced", "blocklisted", "test"],
-            "description": "`unsubscribed`; `complained` (marked an e-mail as spam); `bounced` (a hard bounce: the address doesn't exist); `blocklisted` for another reason (its domain takes no mail, or it bounced from another center); `test`, from the Config -> API page, to webhooks only."
+            "enum": ["unsubscribed", "complained", "bounced", "blocklisted", "campaign_started", "campaign_paused", "campaign_resumed", "campaign_finished", "campaign_cancelled", "test"],
+            "description": "`unsubscribed`; `complained` (marked an e-mail as spam); `bounced` (a hard bounce: the address doesn't exist); `blocklisted` for another reason (its domain takes no mail, or it bounced from another center); `campaign_*`: one of the key's campaigns started, paused, resumed, finished or was cancelled (to a key that sends campaigns); `test`, from the Config -> API page, to webhooks only."
           },
-          "email": { "type": "string" },
+          "email": { "type": "string", "description": "The address it's about; none for a campaign's." },
           "reason": { "type": "string" },
           "campaign_id": { "type": ["integer", "null"], "description": "The campaign it came from, if known." },
           "created_at": { "type": "string", "format": "date-time" }

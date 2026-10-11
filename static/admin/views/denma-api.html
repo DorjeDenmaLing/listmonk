@@ -6,7 +6,7 @@
 	(cmd/denma_api.go), saved as they're changed, and how to use it. */}}
 <script nonce="{{ .CSPNonce }}">
 	window._denmaAPIKeys = {{ ToJSON $d.Keys }};
-	window._denmaAPILists = {{ ToJSON $d.Lists }};
+	window._denmaAPIDomains = {{ ToJSON $d.Domains }};
 	window._denmaAPISpec = {{ ToJSON $d.Spec }};
 	window._denmaAPISender = {{ $d.Sender }};
 	window._denmaAPIKeepDays = {{ $d.KeepDays }};
@@ -33,7 +33,8 @@
 
 		<fieldset class="card vstack gap-4">
 			<legend>Keys</legend>
-			<p class="text-light text-8">For other systems (a member database, a booking system, a website) that work with this center. Each system gets a key of its own, which can do one or more of: send transactional e-mails (password resets, receipts, notices), send campaigns to the addresses it gives (without adding them to the center's lists), subscribe people to lists chosen for it, and read the unsubscribes, complaints and bounces of the people it sends to. Give each key only what its system needs. A sending key sends from its own sender, at most its daily limit of e-mails, under the center's daily cap, and skips whoever unsubscribed, complained or bounced. If a key may have leaked, delete it as leaked: that cancels its campaigns.</p>
+			<p class="text-light text-8">For other systems (a member database, a booking system, a website) that send e-mail through this center. Each system gets a key of its own, which can do one or more of: send transactional e-mails (password resets, receipts, notices), send campaigns to the addresses it gives (without adding them to the center's lists), and read the unsubscribes, complaints and bounces of the people it sends to. Give each key only what its system needs. A sending key sends from its own sender, at most its daily limit of e-mails, under the center's daily cap, with links only to its link domains and the center's, and skips whoever unsubscribed, complained or bounced. If a key may have leaked, delete it as leaked: that cancels its campaigns.</p>
+			<p class="text-light text-8">Keys don't subscribe people: sign-up webhooks do (<a href="{{ URI "/admin/center/webhooks" }}">Config &rarr; Webhooks</a>). The people a key sends to are added to the center without lists, and with no consent to its mail: they can join its lists only by signing up themselves.</p>
 
 			<template x-if="!keys.length">
 				<p class="text-light" data-testid="no-keys">No keys yet.</p>
@@ -42,7 +43,7 @@
 				<div class="table-wrapper">
 					<table>
 						<thead>
-							<tr><th>Name</th><th>Used from</th><th>Webhook</th><th>Requests</th><th></th></tr>
+							<tr><th>Name</th><th>Used from</th><th>Notifications</th><th>Requests</th><th></th></tr>
 						</thead>
 						<tbody>
 							<template x-for="k in keys" :key="k.id">
@@ -65,16 +66,13 @@
 									<td data-label="Used from">
 										<span x-text="k.allowed_from.length ? k.allowed_from.join(', ') : 'Anywhere'"></span>
 									</td>
-									<td data-label="Webhook">
+									<td data-label="Notifications">
 										<template x-if="!k.webhook_url"><span class="text-light">None</span></template>
 										<template x-if="k.webhook_url">
 											<div class="vstack gap-1">
 												<span class="denma-api-url" x-text="k.webhook_url"></span>
 												<span class="text-8" :class="k.webhook_error ? 'text-danger' : 'text-light'" x-text="webhookStatus(k)" data-testid="webhook-status"></span>
-												<div class="hstack gap-2">
-													<input type="text" readonly class="denma-signup-url" :value="k.webhook_secret" @focus="$event.target.select()" aria-label="The webhook's signing secret" />
-													<button type="button" class="outline small" @click="copy(k.webhook_secret)" aria-label="Copy the signing secret">{{ Icon "copy" }}</button>
-												</div>
+												<span class="text-light text-8">Signed with its secret, shown when it was set.</span>
 											</div>
 										</template>
 									</td>
@@ -92,7 +90,7 @@
 										<div class="hstack gap-1 justify-end denma-signup-actions">
 											<button type="button" class="outline small" @click="onEdit(k)" data-testid="btn-edit-key">{{ Icon "edit-2" }} Edit</button>
 											<template x-if="k.webhook_url">
-												<button type="button" class="outline small" @click="onTest(k)" :aria-busy="isLoading('test')" data-testid="btn-test-webhook">{{ Icon "send" }} Test webhook</button>
+												<button type="button" class="outline small" @click="onTest(k)" :aria-busy="isLoading('test')" data-testid="btn-test-webhook">{{ Icon "send" }} Test notifications</button>
 											</template>
 											<template x-if="k.webhook_url">
 												<button type="button" class="outline small" @click="onNewSecret(k)" data-testid="btn-webhook-secret">{{ Icon "refresh-cw" }} New secret</button>
@@ -151,79 +149,7 @@
 				<p>The address is <code>{{ $d.BaseURL }}</code>. Its <a href="https://spec.openapis.org/oas/v3.1.1.html" target="_blank" rel="noopener">OpenAPI 3.1</a> description, which this reference is made from, is at <a href="{{ $d.BaseURL }}/openapi.json" target="_blank" rel="noopener" data-testid="api-openapi-link"><code>{{ $d.BaseURL }}/openapi.json</code></a>, with no key needed: import it into Postman or Insomnia, view it in Swagger UI or Redoc, or generate a client from it.</p>
 				<div x-html="md(spec.info.description)"></div>
 
-				<template x-for="g in groups" :key="g.name">
-					<section class="vstack gap-2">
-						<h4 x-text="g.name"></h4>
-						<p class="text-light text-8" x-text="g.description"></p>
-						<template x-for="o in g.ops" :key="o.key">
-							<details data-testid="api-op" :data-op="o.op.operationId">
-								<summary><strong x-text="o.method"></strong> <code x-text="o.path"></code>: <span x-text="o.op.summary"></span></summary>
-								<div class="vstack gap-3">
-									<div x-html="md(o.op.description)"></div>
-									<p class="text-8"><strong>Key:</strong> <span x-text="needs(o)"></span></p>
-
-									<template x-if="params(o).length">
-										<div class="table-wrapper">
-											<table>
-												<thead><tr><th>Parameter</th><th>In</th><th>Type</th><th>Description</th></tr></thead>
-												<tbody>
-													<template x-for="r in params(o)" :key="r.name">
-														<tr><td data-label="Parameter"><code x-text="r.name"></code><span x-show="r.required"> (required)</span></td><td data-label="In" x-text="r.in"></td><td data-label="Type" x-text="r.type"></td><td data-label="Description" x-html="md(r.desc)"></td></tr>
-													</template>
-												</tbody>
-											</table>
-										</div>
-									</template>
-
-									<template x-if="body(o).length">
-										<div class="vstack gap-1">
-											<strong class="text-8">Request (JSON)</strong>
-											<div class="table-wrapper">
-												<table>
-													<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
-													<tbody>
-														<template x-for="r in body(o)" :key="r.name">
-															<tr><td data-label="Field"><code x-text="r.name"></code><span x-show="r.required"> (required)</span></td><td data-label="Type" x-text="r.type"></td><td data-label="Description" x-html="md(r.desc)"></td></tr>
-														</template>
-													</tbody>
-												</table>
-											</div>
-										</div>
-									</template>
-
-									<template x-if="curl(o)">
-										<pre class="denma-signup-code" x-text="curl(o)"></pre>
-									</template>
-
-									<template x-if="answer(o).length">
-										<div class="vstack gap-1">
-											<strong class="text-8">Answer: <code>data</code></strong>
-											<div class="table-wrapper">
-												<table>
-													<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
-													<tbody>
-														<template x-for="r in answer(o)" :key="r.name">
-															<tr><td data-label="Field"><code x-text="r.name"></code></td><td data-label="Type" x-text="r.type"></td><td data-label="Description" x-html="md(r.desc)"></td></tr>
-														</template>
-													</tbody>
-												</table>
-											</div>
-										</div>
-									</template>
-
-									<div class="vstack gap-1">
-										<strong class="text-8">Responses</strong>
-										<ul>
-											<template x-for="r in responses(o)" :key="r.code">
-												<li><code x-text="r.code"></code>: <span x-html="md(r.desc, true)"></span></li>
-											</template>
-										</ul>
-									</div>
-								</div>
-							</details>
-						</template>
-					</section>
-				</template>
+				{{ template "denma-openapi-ops" "Key" }}
 			</div>
 		</fieldset>
 	</div>
@@ -242,9 +168,8 @@
 						<legend>What it can do</legend>
 						<label class="hstack gap-2"><input type="checkbox" value="messages" x-model="edit.can" data-testid="key-can-messages" /> Send transactional e-mails <small class="text-light">(<code>POST /v1/messages</code>)</small></label>
 						<label class="hstack gap-2"><input type="checkbox" value="campaigns" x-model="edit.can" data-testid="key-can-campaigns" /> Send campaigns <small class="text-light">(<code>/v1/campaigns</code>)</small></label>
-						<label class="hstack gap-2"><input type="checkbox" value="subscribers" x-model="edit.can" data-testid="key-can-subscribers" /> Subscribe people to lists <small class="text-light">(<code>POST /v1/subscribers</code>)</small></label>
-						<label class="hstack gap-2"><input type="checkbox" value="events" x-model="edit.can" data-testid="key-can-events" /> Read events <small class="text-light">(<code>GET /v1/events</code>)</small></label>
-						<small data-hint>Only what its system needs. Sending needs no lists: a campaign goes to the addresses the system gives. Events are the unsubscribes, complaints and bounces of the people it sends to or subscribes, also sent to its webhook.</small>
+<label class="hstack gap-2"><input type="checkbox" value="events" x-model="edit.can" data-testid="key-can-events" /> Read events <small class="text-light">(<code>GET /v1/events</code>)</small></label>
+						<small data-hint>Only what its system needs. Sending needs no lists: a campaign goes to the addresses the system gives. Events are the unsubscribes, complaints and bounces of the people it sends to, also sent to its notifications address. To subscribe people, use a sign-up webhook.</small>
 					</fieldset>
 					<template x-if="sends(edit)">
 						<div class="vstack gap-3">
@@ -258,6 +183,11 @@
 								<input type="number" min="1" max="1000000" x-model.number="edit.daily_limit" required data-testid="key-daily-limit" />
 								<small data-hint>The most e-mails it sends in 24 hours (a campaign's recipients count when it starts). A little over what its system needs, so that a leaked key can't do much. The center's admins are told when it's reached.</small>
 							</label>
+							<label data-field>
+								Link domains
+								<textarea rows="2" x-model="edit.link_domains" placeholder="example.org" data-testid="key-links"></textarea>
+								<small data-hint>One per line: the domains (and their subdomains) the links and images in its e-mails can go to, such as its own website for a password reset link. Besides these, always <span x-text="ownDomains.join(', ')"></span>. A request with a link elsewhere is refused, so that a leaked key can't send the center's e-mails with someone else's links.</small>
+							</label>
 						</div>
 					</template>
 					<label data-field>
@@ -266,22 +196,16 @@
 						<small data-hint>One per line: IP addresses, networks (203.0.113.0/24) or host names, which the key can be used from. If its system runs on a server with a fixed address, give it: a leaked key is then no use anywhere else. Empty: anywhere, as a system without a fixed address (an AWS Lambda) needs.</small>
 					</label>
 					<label data-field>
-						Webhook (optional)
+						Notifications (optional)
 						<input type="url" x-model="edit.webhook_url" maxlength="2000" placeholder="https://example.org/listmonk-events" data-testid="key-webhook" />
-						<small data-hint>The other system's https:// address for the unsubscribes, complaints and bounces of the people it sends to (Using the API, below). The key needs to read them.</small>
+						<small data-hint>The other system's https:// address, to be told how its campaigns go (started, paused, finished, cancelled) if the key sends campaigns, and the unsubscribes, complaints and bounces of the people it sends to if it reads the events (Using the API, below). They're signed with a secret, shown once when the address is first set.</small>
 					</label>
 					<label data-field>
 						Expires (optional)
 						<input type="date" x-model="edit.expires_on" :min="tomorrow()" data-testid="key-expires" />
 						<small data-hint>It stops working at the end of this day (UTC). The center's admins are reminded 14 and 3 days before. Empty: it doesn't expire.</small>
 					</label>
-					<fieldset data-field x-show="edit.can.includes('subscribers')">
-						<legend>Lists it can subscribe people to</legend>
-						<template x-for="l in lists" :key="l.id">
-							<label class="hstack gap-2"><input type="checkbox" :value="l.id" x-model.number="edit.list_ids" /> <span x-text="`${l.name} (${l.optin} opt-in, ID ${l.id})`"></span></label>
-						</template>
-					</fieldset>
-				</section>
+</section>
 				<footer class="dialog-foot hstack gap-3 justify-end">
 					<button type="button" class="outline" @click="$refs.keyDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
 					<button type="submit" data-variant="primary" data-testid="btn-save-key" :disabled="!canSave() || isLoading('keys')" :aria-busy="isLoading('keys')">Save</button>
@@ -334,16 +258,27 @@
 		</form>
 	</dialog>
 
-	{{/* A new key, shown once. */}}
-	<dialog x-ref="newKeyDialog" @close="newKey = ''">
+	{{/* A new key, and its notifications' signing secret, shown once. */}}
+	<dialog x-ref="newKeyDialog" @close="newKey = ''; newSecret = ''">
 		<div class="dialog-card content">
-			<header class="dialog-head"><h4 class="dialog-title">The key</h4></header>
+			<header class="dialog-head"><h4 class="dialog-title" x-text="newKey ? 'The key' : 'The signing secret'"></h4></header>
 			<section class="dialog-body vstack gap-3">
 				<p>Copy it into the other system now: it isn't shown again. If it's lost, make a new one.</p>
-				<div class="hstack gap-2">
-					<input type="text" readonly class="denma-signup-url" :value="newKey" @focus="$event.target.select()" aria-label="The key" data-testid="new-key" />
-					<button type="button" class="outline small" @click="copy(newKey)" aria-label="Copy the key">{{ Icon "copy" }}</button>
-				</div>
+				<template x-if="newKey">
+					<div class="hstack gap-2">
+						<input type="text" readonly class="denma-signup-url" :value="newKey" @focus="$event.target.select()" aria-label="The key" data-testid="new-key" />
+						<button type="button" class="outline small" @click="copy(newKey)" aria-label="Copy the key">{{ Icon "copy" }}</button>
+					</div>
+				</template>
+				<template x-if="newSecret">
+					<div class="vstack gap-1">
+						<span class="text-8">Its notifications' signing secret, to check their <code>X-Listmonk-Signature</code>:</span>
+						<div class="hstack gap-2">
+							<input type="text" readonly class="denma-signup-url" :value="newSecret" @focus="$event.target.select()" aria-label="The signing secret" data-testid="new-secret" />
+							<button type="button" class="outline small" @click="copy(newSecret)" aria-label="Copy the signing secret">{{ Icon "copy" }}</button>
+						</div>
+					</div>
+				</template>
 			</section>
 			<footer class="dialog-foot hstack gap-3 justify-end">
 				<button type="button" data-variant="primary" @click="$refs.newKeyDialog.close()">Done</button>

@@ -37,6 +37,14 @@
 		</div>
 	</header>
 
+	{{- with $d.DenmaNoConsent }}{{/* denma: cmd/denma_noconsent.go */}}
+	<div class="page-content content" data-testid="no-consent">
+		<p class="denma-note" role="note">{{ Icon "info" }}
+			<span><strong>Added by the API</strong> on {{ .CreatedAt.Format "2 January 2006" }}, for an e-mail another system sent, with <strong>no consent</strong> to the center's mail.
+			They can join lists only by signing up themselves{{ if .SignupAt }} (they signed up on {{ .SignupAt.Format "2 January 2006" }}, and are subscribed once they confirm){{ end }}: adding them to a list does nothing.</span>
+		</p>
+	</div>
+	{{- end }}
 	{{- with $d.DenmaOptOut }}{{/* denma: cmd/denma_optouts.go */}}
 	<div class="page-content content denma-optout" x-data="denmaOptOut" data-testid="optout">
 		<p class="denma-note" role="note">{{ Icon "info" }}

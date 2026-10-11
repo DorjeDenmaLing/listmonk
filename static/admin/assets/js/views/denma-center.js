@@ -81,28 +81,67 @@ function ago(iso) {
 }
 
 // Config -> Webhooks: the sign-up webhooks (cmd/denma_signup.go), saved as
-// they're changed.
+// they're changed: Form webhooks (the center's admins') and Server webhooks
+// (the superadmins'). A new address or secret is shown once.
+const denmaNewHookForm = (kind) => ({
+  id: 0, kind, name: '', list_ids: [], tags: [], request_tags: [],
+  per_hour: window._denmaSignupPerHour || 50, create_tags: false, allowed_from: '',
+});
+
 function denmaSignupHooks() {
   return {
     hooks: window._denmaSignupHooks || [],
     lists: window._denmaSignupLists || [],
-    edit: { id: 0, name: '', list_ids: [], tags: [] },
+    isSuper: !!window._denmaSignupSuper,
+    edit: denmaNewHookForm('form'),
+    rotate: { id: 0, name: '', overlap_hours: 0 },
+    token: '',
+    tokenKind: 'form',
     ago,
     denmaTagAutocomplete,
+
+    // A Form webhook's lists are double opt-in; a Server webhook's any.
+    listsFor(h) {
+      return h.kind === 'server' ? this.lists : this.lists.filter((l) => l.optin === 'double');
+    },
 
     listNames(h) {
       const names = Object.fromEntries(this.lists.map((l) => [l.id, l.name]));
       return h.list_ids.map((id) => names[id] || `#${id}`).join(', ');
     },
 
-    copy(h) {
-      u.copyToClipboard(h.url);
+    kindText(h) {
+      return h.kind === 'server' ? 'Server webhook: vouches for consent' : 'Form webhook: double opt-in';
     },
 
-    // A plain HTML form for the first webhook (or a placeholder address).
+    requestTagsText(h) {
+      if (h.create_tags) {
+        return 'A request may give any tag';
+      }
+      return `A request may give ${h.request_tags.join(', ')}${h.kind === 'form' ? ' (to someone new)' : ''}`;
+    },
+
+    canChange(h) {
+      return h.kind !== 'server' || this.isSuper;
+    },
+
+    dialogTitle() {
+      const what = this.edit.kind === 'server' ? 'Server webhook' : 'Form webhook';
+      return this.edit.id ? `Edit ${what}` : `Add ${what}`;
+    },
+
+    canSave() {
+      const e = this.edit;
+      return e.name.trim() && e.list_ids.length && (e.kind !== 'form' || e.per_hour > 0);
+    },
+
+    copy(text) {
+      u.copyToClipboard(text);
+    },
+
+    // A plain HTML form, with a placeholder address.
     htmlForm() {
-      const url = this.hooks.length ? this.hooks[0].url : 'https://…/signup/…';
-      return `<form method="post" action="${url}">
+      return `<form method="post" action="https://…/signup/…">
   <input type="email" name="email" required placeholder="E-mail">
   <input type="text" name="name" placeholder="Name">
   <label><input type="checkbox" name="consent" value="yes" required> I'd like to receive your e-mails</label>
@@ -110,14 +149,24 @@ function denmaSignupHooks() {
 </form>`;
     },
 
-    onAdd() {
-      this.edit = { id: 0, name: '', list_ids: [], tags: [] };
+    onAdd(kind) {
+      this.edit = denmaNewHookForm(kind);
       this.$refs.hookDialog.showModal();
       this.$nextTick(() => this.$refs.hookName.focus());
     },
 
     onEdit(h) {
-      this.edit = { id: h.id, name: h.name, list_ids: [...h.list_ids], tags: [...h.tags] };
+      this.edit = {
+        id: h.id,
+        kind: h.kind,
+        name: h.name,
+        list_ids: [...h.list_ids],
+        tags: [...h.tags],
+        request_tags: [...h.request_tags],
+        per_hour: h.per_hour,
+        create_tags: h.create_tags,
+        allowed_from: h.allowed_from.join('\n'),
+      };
       this.$refs.hookDialog.showModal();
     },
 
@@ -130,26 +179,65 @@ function denmaSignupHooks() {
       }
     },
 
+    // A new address or secret, shown once.
+    showToken(h) {
+      this.token = h.url || h.secret || '';
+      this.tokenKind = h.kind;
+      delete h.url;
+      delete h.secret;
+      if (this.token) {
+        this.$refs.tokenDialog.showModal();
+      }
+    },
+
     async onSubmit() {
-      const body = { name: this.edit.name, list_ids: this.edit.list_ids, tags: this.edit.tags };
-      const h = this.edit.id
-        ? await api('hooks', `/denma/center/signup-hooks/${this.edit.id}`, 'PUT', body)
-        : await api('hooks', '/denma/center/signup-hooks', 'POST', body);
+      const e = this.edit;
+      const body = {
+        name: e.name,
+        list_ids: e.list_ids,
+        tags: e.tags.map(String),
+        request_tags: e.request_tags.map(String),
+        per_hour: e.per_hour,
+        create_tags: e.create_tags,
+        allowed_from: e.allowed_from.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean),
+      };
+      const h = e.id
+        ? await api('hooks', `/denma/center/signup-hooks/${e.id}`, 'PUT', body)
+        : await api('hooks', `/denma/center/signup-hooks?kind=${e.kind}`, 'POST', body);
       this.$refs.hookDialog.close();
+      if (e.id) {
+        u.toast(`Saved ${h.name}.`, 'success');
+      } else {
+        this.showToken(h);
+      }
       this.put(h);
-      u.toast(this.edit.id ? `Saved ${h.name}.` : `Added ${h.name}. Give its address to the form.`, 'success');
     },
 
     async onNewKey(h) {
+      if (h.kind === 'server') {
+        this.rotate = { id: h.id, name: h.name, overlap_hours: 0 };
+        this.$refs.rotateDialog.showModal();
+        return;
+      }
       if (!(await u.confirm(`Give ${h.name} a new address? The old one stops working at once, so the form has to be given the new one.`))) {
         return;
       }
-      this.put(await api('hooks', `/denma/center/signup-hooks/${h.id}/key`, 'POST'));
-      u.toast(`${h.name} has a new address.`, 'success');
+      const nh = await api('hooks', `/denma/center/signup-hooks/${h.id}/key`, 'POST');
+      this.showToken(nh);
+      this.put(nh);
+    },
+
+    async onRotate() {
+      const nh = await api('hooks', `/denma/center/signup-hooks/${this.rotate.id}/key`, 'POST', { overlap_hours: this.rotate.overlap_hours });
+      this.$refs.rotateDialog.close();
+      this.showToken(nh);
+      this.put(nh);
     },
 
     async onDelete(h) {
-      if (!(await u.confirm(`Delete ${h.name}? Its address stops working, so the form can't sign anyone up through it.`))) {
+      const what = h.kind === 'server' ? 'Its secret stops working, so the system using it can\'t sign anyone up through it.'
+        : 'Its address stops working, so the form can\'t sign anyone up through it.';
+      if (!(await u.confirm(`Delete ${h.name}? ${what}`))) {
         return;
       }
       await api('hooks', `/denma/center/signup-hooks/${h.id}`, 'DELETE');
@@ -161,7 +249,7 @@ function denmaSignupHooks() {
 
 // A new key's settings, on Config -> API.
 const denmaNewKeyForm = () => ({
-  id: 0, name: '', can: [], allowed_from: '', webhook_url: '', list_ids: [], sender: '', daily_limit: 1000, expires_on: '',
+		id: 0, name: '', can: [], allowed_from: '', link_domains: '', webhook_url: '', sender: '', daily_limit: 1000, expires_on: '',
 });
 
 // A date as YYYY-MM-DD (UTC).
@@ -172,15 +260,16 @@ const denmaYMD = (d) => d.toISOString().slice(0, 10);
 // to be restored, for a few days.
 function denmaAPIKeys() {
   return {
-    keys: window._denmaAPIKeys || [],
-    lists: window._denmaAPILists || [],
+				keys: window._denmaAPIKeys || [],
+				ownDomains: window._denmaAPIDomains || [],
     centerSender: window._denmaAPISender || '',
     keepDays: window._denmaAPIKeepDays || 7,
     edit: denmaNewKeyForm(),
     rotate: { id: 0, name: '', overlap_hours: 0 },
     del: { id: 0, name: '', leaked: false },
-    newKey: '',
-    ago,
+				newKey: '',
+				newSecret: '',
+				ago,
 
     when(iso) {
       return new Date(iso).toLocaleString();
@@ -215,12 +304,7 @@ function denmaAPIKeys() {
         + `It can be restored for ${this.keepDays} days from then.`;
     },
 
-    listNames(k) {
-      const names = Object.fromEntries(this.lists.map((l) => [l.id, l.name]));
-      return k.list_ids.map((id) => names[id] || `#${id}`).join(', ');
-    },
-
-    // What a key can do, in words.
+// What a key can do, in words.
     canText(k) {
       const can = [];
       if (k.can.includes('messages')) {
@@ -229,10 +313,7 @@ function denmaAPIKeys() {
       if (k.can.includes('campaigns')) {
         can.push('send campaigns');
       }
-      if (k.can.includes('subscribers')) {
-        can.push(`subscribe people to ${this.listNames(k)}`);
-      }
-      if (k.can.includes('events')) {
+if (k.can.includes('events')) {
         can.push('read the events');
       }
       const s = can.join(', ');
@@ -241,8 +322,7 @@ function denmaAPIKeys() {
 
     canSave() {
       const e = this.edit;
-      return e.name.trim() && e.can.length && (!e.can.includes('subscribers') || e.list_ids.length)
-        && (!this.sends(e) || e.daily_limit > 0);
+						return e.name.trim() && e.can.length && (!this.sends(e) || e.daily_limit > 0);
     },
 
     webhookStatus(k) {
@@ -266,11 +346,16 @@ function denmaAPIKeys() {
       }
     },
 
-    showKey(k) {
-      this.newKey = k.key;
-      delete k.key;
-      this.$refs.newKeyDialog.showModal();
-    },
+				// A new key, or its notifications' signing secret: shown once.
+				showKey(k) {
+						this.newKey = k.key || '';
+						this.newSecret = k.webhook_url ? (k.webhook_secret || '') : '';
+						delete k.key;
+						delete k.webhook_secret;
+						if (this.newKey || this.newSecret) {
+								this.$refs.newKeyDialog.showModal();
+						}
+				},
 
     onAdd() {
       this.edit = denmaNewKeyForm();
@@ -284,9 +369,9 @@ function denmaAPIKeys() {
         name: k.name,
         can: [...k.can],
         allowed_from: k.allowed_from.join('\n'),
-        webhook_url: k.webhook_url,
-        list_ids: [...k.list_ids],
-        sender: k.sender,
+								webhook_url: k.webhook_url,
+								link_domains: (k.link_domains || []).join('\n'),
+								sender: k.sender,
         daily_limit: k.daily_limit,
         expires_on: k.expires_at ? denmaYMD(new Date(k.expires_at)) : '',
       };
@@ -298,22 +383,22 @@ function denmaAPIKeys() {
         name: this.edit.name,
         allowed_from: this.edit.allowed_from.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean),
         webhook_url: this.edit.webhook_url.trim(),
-        can: this.edit.can,
-        list_ids: this.edit.can.includes('subscribers') ? this.edit.list_ids : [],
-        sender: this.edit.sender.trim(),
+								can: this.edit.can,
+								link_domains: this.edit.link_domains.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean),
+								sender: this.edit.sender.trim(),
         daily_limit: this.edit.daily_limit || 0,
         expires_on: this.edit.expires_on,
       };
       const k = this.edit.id
         ? await api('keys', `/denma/center/api-keys/${this.edit.id}`, 'PUT', body)
         : await api('keys', '/denma/center/api-keys', 'POST', body);
-      this.$refs.keyDialog.close();
-      if (k.key) {
-        this.showKey(k);
-      } else {
-        u.toast(`Saved ${k.name}.`, 'success');
-      }
-      this.put(k);
+						this.$refs.keyDialog.close();
+						if (k.key || k.webhook_secret) {
+								this.showKey(k);
+						} else {
+								u.toast(`Saved ${k.name}.`, 'success');
+						}
+						this.put(k);
     },
 
     onNewKey(k) {
@@ -329,16 +414,17 @@ function denmaAPIKeys() {
     },
 
     async onNewSecret(k) {
-      if (!(await u.confirm(`Give ${k.name}'s webhook a new signing secret? The other system has to check signatures with the new one from now on.`))) {
-        return;
-      }
-      this.put(await api('keys', `/denma/center/api-keys/${k.id}/webhook-secret`, 'POST'));
-      u.toast('The webhook has a new secret.', 'success');
+						if (!(await u.confirm(`Give ${k.name}'s notifications a new signing secret? The other system has to check signatures with the new one from now on.`))) {
+								return;
+						}
+						const nk = await api('keys', `/denma/center/api-keys/${k.id}/webhook-secret`, 'POST');
+						this.showKey(nk);
+						this.put(nk);
     },
 
     async onTest(k) {
       await api('test', `/denma/center/api-keys/${k.id}/webhook-test`, 'POST');
-      u.toast(`${k.name}'s webhook took a test event.`, 'success');
+						u.toast(`${k.name}'s notifications address took a test event.`, 'success');
     },
 
     onDelete(k) {
@@ -384,15 +470,16 @@ function denmaAPIKeys() {
 // The sending API's reference on Config -> API, made from its OpenAPI 3.1
 // description (cmd/denma_api_openapi.json): each operation by tag, with what
 // a key needs (x-denma-can), its parameters, request fields, a curl example,
-// the answer's fields and its responses; and the webhook.
-function denmaAPIDocs() {
-  const spec = window._denmaAPISpec || { info: {}, paths: {} };
-  const can = {
-    messages: 'send transactional e-mails',
-    campaigns: 'send campaigns',
-    subscribers: 'subscribe people to lists',
-    events: 'read the events',
-  };
+// the answer's fields and its responses; and the webhook. The sign-up
+// webhooks' (cmd/denma_signup_openapi.json) on Config -> Webhooks, with
+// specVar '_denmaSignupSpec' and their secret in its curl examples.
+function denmaAPIDocs(specVar = '_denmaAPISpec', secretVar = 'KEY') {
+		const spec = window[specVar] || { info: {}, paths: {} };
+		const can = {
+				messages: 'send transactional e-mails',
+				campaigns: 'send campaigns',
+				events: 'read the events',
+		};
   const methods = ['get', 'post', 'put', 'patch', 'delete'];
 
   const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({
@@ -523,11 +610,11 @@ function denmaAPIDocs() {
       if (this.isWebhook(o)) {
         return '';
       }
-      const path = o.path === '/' ? '' : o.path.replace('{id}', '42');
-      const lines = [`curl ${o.method === 'GET' ? '' : `-X ${o.method} `}${this.base}${path}`];
-      if (!(o.op.security && !o.op.security.length)) {
-        lines.push('-H "Authorization: Bearer $KEY"');
-      }
+						const path = o.path === '/' ? '' : o.path.replace('{id}', '42').replace(/\{(\w+)\}/g, '<$1>');
+						const lines = [`curl ${o.method === 'GET' ? '' : `-X ${o.method} `}${this.base}${path}`];
+						if (!(o.op.security && !o.op.security.length)) {
+								lines.push(`-H "Authorization: Bearer $${secretVar}"`);
+						}
       const ex = o.op.requestBody ? json(o.op.requestBody).example : null;
       if (ex) {
         lines.push('-H "Content-Type: application/json"');

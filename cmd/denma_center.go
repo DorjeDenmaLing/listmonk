@@ -134,9 +134,13 @@ type denmaCenterView struct {
 // (cmd/denma_signup.go), and the lists they can have.
 type denmaWebhooksView struct {
 	adminView
-	SignupHooks   []denmaSignupHook
-	SignupLists   []denmaOption
-	SignupPerHour int
+	SignupHooks []denmaSignupHook
+	SignupLists []denmaOption // the center's lists, but API campaigns'
+	PerHour     int           // a new Form webhook's sign-ups an hour
+	MaxPerHour  int
+	Super       bool            // a superadmin, who can make Server webhooks
+	ServerURL   string          // Server webhooks' address
+	Spec        json.RawMessage // the OpenAPI description (cmd/denma_signup_openapi.go)
 }
 
 // denmaOption is a list or template to choose.
@@ -235,11 +239,17 @@ func (a *App) ViewDenmaWebhooks(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	view := denmaWebhooksView{adminView: v, SignupLists: []denmaOption{}, SignupPerHour: denmaSignupPerHour}
+	view := denmaWebhooksView{adminView: v, SignupLists: []denmaOption{}, PerHour: denmaSignupDefaultPerHour,
+		MaxPerHour: denmaSignupMaxPerHour, Super: denmaIsSuperadmin(c),
+		ServerURL: strings.TrimSuffix(a.urlCfg.RootURL, "/") + "/signup/server"}
 	if view.SignupHooks, err = a.signupHooks(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	if err := a.db.Select(&view.SignupLists, `SELECT id, name, optin::TEXT AS optin FROM lists WHERE optin = 'double' ORDER BY name`); err != nil {
+	if err := a.db.Select(&view.SignupLists, `SELECT id, name, optin::TEXT AS optin FROM lists
+		WHERE NOT ($1 = ANY(COALESCE(tags, '{}'))) ORDER BY name`, denmaAPIListTag); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if view.Spec, err = a.signupOpenAPI(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return c.Render(http.StatusOK, "admin-denma-webhooks", view)

@@ -224,7 +224,7 @@ counts AS (
     SELECT camps.id, s.id FROM camps JOIN subscribers s ON camps.type != 'optin'
         AND s.attribs->'tags' ?| camps.denma_tags AND s.status != 'blocklisted' AND EXISTS (
             SELECT 1 FROM subscriber_lists dsl JOIN lists dl ON dl.id = dsl.list_id WHERE dsl.subscriber_id = s.id
-            AND (CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status != 'unsubscribed' END))
+            AND NOT ('api-send' = ANY(COALESCE(dl.tags, '{}'))) AND (CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status != 'unsubscribed' END))
     ) x
     GROUP BY campaign_id
 ),
@@ -392,7 +392,7 @@ subs AS (
             AND s.id > $3 AND s.id <= $4
             AND s.status != 'blocklisted' AND EXISTS (
             SELECT 1 FROM subscriber_lists dsl JOIN lists dl ON dl.id = dsl.list_id WHERE dsl.subscriber_id = s.id
-            AND (CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status != 'unsubscribed' END))
+            AND NOT ('api-send' = ANY(COALESCE(dl.tags, '{}'))) AND (CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status != 'unsubscribed' END))
         ORDER BY s.id LIMIT $6)
         ORDER BY id LIMIT $6
     ) subIDs JOIN subscribers s ON (s.id = subIDs.id) ORDER BY s.id

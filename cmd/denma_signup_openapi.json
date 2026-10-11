@@ -1,0 +1,113 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Sign-up webhooks",
+    "version": "1.0.0",
+    "description": "How other systems and the center's website forms sign people up to the center's lists. They don't send e-mail: the sending API does (`<center>/v1/openapi.json`). Each webhook is made on the center's Config -> Webhooks page, with its lists and tags.\n\nThere are two kinds. Form webhooks are for a form on the center's website (Gravity Forms' Webhooks add-on, or any form that can POST), at a secret address of their own (`/signup/<token>`, shown once, when it's made). Their lists are double opt-in: whoever signs up is sent the confirmation e-mail, and is subscribed once they click it. Anyone can read a form's address in its page, so a Form webhook can't say someone has agreed already.\n\nServer webhooks are for a system that vouches for the person's consent (a booking system's registration with the newsletter box ticked), at `/signup/server` with the webhook's secret. Only superadmins make them. They can subscribe people at once, with a record of when and how they agreed.\n\nWhat a request gives (a name, attributes, tags) is written only when it adds the person: an existing subscriber gets the lists and the webhook's own tags, and the rest of their record is kept. A Server webhook adds attributes to theirs instead, never replacing a value they have.\n\nAttributes the center keeps itself can't be given: `consent_at`, `consent_source`, `consent_confirmed_at`, `consents` (but a Server webhook's consent record), `resubscribed_at`, `imported_at`, `tags`, and any starting `auto_blocklist_` or `denma_`. A Form webhook leaves them out; a Server webhook refuses them.\n\nAnswers never say whether the center had the person already, or why someone can't be signed up again.",
+    "x-changes": [
+      "2026-10: Server webhooks replace the sending API's POST /v1/subscribers."
+    ]
+  },
+  "servers": [{"url": "/signup", "description": "The center's sign-up webhooks."}],
+  "tags": [
+    {"name": "Form", "description": "A form on the center's website."},
+    {"name": "Server", "description": "A system that vouches for people's consent."}
+  ],
+  "paths": {
+    "/{token}": {
+      "post": {
+        "tags": ["Form"],
+        "operationId": "formSignup",
+        "summary": "Sign someone up from a form",
+        "description": "Signs someone up to the webhook's lists (double opt-in): a new address is added and sent the confirmation e-mail, an existing subscriber gets the lists and the confirmation if they haven't confirmed them yet, and someone who unsubscribed is sent the e-mail to subscribe again (not someone who complained, or whose address bounced). A browser posting a plain form gets the \"check your e-mail\" page, or the `next` address if it's one of the center's trusted ones; other callers get JSON.\n\nAt most the webhook's sign-ups an hour (50 to start with; the admins are told when it's reached), and 5 confirmation e-mails an address a day. Turn on the form's own spam protection (Gravity Forms' Turnstile or reCAPTCHA field): these limits see the form's server, not the visitor.\n\nFields it can't use are left out, and the sign-up goes on.",
+        "security": [],
+        "parameters": [
+          {"name": "token", "in": "path", "required": true, "description": "The webhook's secret token, from the address shown when it was made.", "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {"schema": {"$ref": "#/components/schemas/FormSignup"}},
+            "application/x-www-form-urlencoded": {"schema": {"$ref": "#/components/schemas/FormSignup"}}
+          }
+        },
+        "responses": {
+          "200": {"description": "Taken: they're sent the confirmation e-mail if they need one.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Done"}}}},
+          "400": {"description": "No valid address, or the consent box isn't ticked.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "404": {"description": "No webhook has this token (any more).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "410": {"description": "The webhook has no lists left.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "429": {"description": "Too many sign-ups this hour, or confirmation e-mails to this address today.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    },
+    "/server": {
+      "post": {
+        "tags": ["Server"],
+        "operationId": "serverSignup",
+        "summary": "Sign someone up from another system",
+        "description": "Signs someone up to the webhook's lists (or those of them given in `lists`). With `\"confirmed\": true` (they've agreed already) they're subscribed at once, to double opt-in lists too; it needs a record of when and how they agreed, in `attribs.consents`. Without it, double opt-in lists send them the confirmation e-mail.\n\nSomeone who unsubscribed is subscribed again: with `\"confirmed\": true` at once, if their consent (the latest `at`) is from after they unsubscribed (else they're left alone); otherwise when they confirm the e-mail they're sent. The center's Server webhooks re-subscribe at most 10 people a day at once; past that, they're sent the e-mail to confirm it themselves, and the admins are told. Not someone who complained, or whose address bounced or can't receive mail.\n\nWhat's sent is added to what the subscriber has, never replacing it: new attributes are added, objects merged, and arrays given the items they don't have (each registration's consent is kept), but a value they already have is kept (named in `attribs_kept`). Their first consent is their `consent_at` and `consent_source`. The name replaces only a stand-in (their address). `tags` are added to theirs: those the webhook may give, and any if it may create tags (named in `tags_created`). The webhook's own tags are given too.\n\nAt most 600 requests a minute. Unknown fields are refused, so a typo isn't silently ignored.",
+        "security": [{"secret": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ServerSignup"}}}},
+        "responses": {
+          "200": {"description": "What became of them.", "content": {"application/json": {"schema": {"type": "object", "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/ServerResult"}}}}}},
+          "400": {"description": "The request isn't valid, or gives an attribute the center keeps itself.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "401": {"description": "No secret, or one that isn't in use.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "403": {"description": "Not from one of the webhook's addresses, or a list that isn't the webhook's.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "410": {"description": "The webhook has no lists left.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "429": {"description": "Too many requests.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "secret": {"type": "http", "scheme": "bearer", "description": "The Server webhook's secret (`lms_...`), shown once when it's made or given a new one."}
+    },
+    "schemas": {
+      "Error": {"type": "object", "required": ["message"], "properties": {"message": {"type": "string", "description": "What's wrong, for a person to read."}}},
+      "Done": {"type": "object", "required": ["data"], "properties": {"data": {"const": true}}},
+      "FormSignup": {
+        "type": "object",
+        "required": ["email"],
+        "properties": {
+          "email": {"type": "string", "format": "email"},
+          "name": {"type": "string", "description": "Their name (at most 200 characters are kept); else `first_name` and `last_name`."},
+          "first_name": {"type": "string"},
+          "last_name": {"type": "string"},
+          "consent": {"type": "string", "description": "The form's consent box: if it's sent, it has to be ticked (anything but empty, 0, false, no, off or unchecked)."},
+          "form_id": {"type": "string", "description": "Kept with the consent record."},
+          "entry_id": {"type": "string", "description": "Kept with the consent record."},
+          "page_url": {"type": "string", "description": "Kept with the consent record."},
+          "attribs": {"type": "object", "description": "Attributes for someone new, up to 10,000 bytes. Each can also be its own field, `attribs.<name>` or `attribs[<name>]`, as form builders send them."},
+          "tags": {"description": "Tags for someone new, of those the webhook may give: a list, or separated by commas.", "oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}]},
+          "next": {"type": "string", "description": "For a plain form in a browser: the page to go to, if it's one of the center's trusted addresses."},
+          "nonce": {"type": "string", "description": "listmonk's form's hidden field: a bot fills it, and the sign-up is dropped."}
+        }
+      },
+      "ServerSignup": {
+        "type": "object",
+        "required": ["email"],
+        "additionalProperties": false,
+        "properties": {
+          "email": {"type": "string", "format": "email"},
+          "name": {"type": "string", "description": "Their name (at most 200 characters are kept); replaces only a stand-in (their address)."},
+          "lists": {"type": "array", "items": {"type": "integer"}, "description": "The IDs of the lists to add them to, of the webhook's; else all of them."},
+          "confirmed": {"type": "boolean", "description": "They've agreed to be subscribed already: subscribed at once, double opt-in lists too, and again if they had unsubscribed (with a consent from after it). Needs `attribs.consents`."},
+          "attribs": {"type": "object", "description": "Added to theirs, never replacing a value they have. Up to 10,000 bytes. With `\"confirmed\": true`, `consents` is needed: a list of `{\"at\": \"<when they agreed, RFC 3339>\", \"source\": \"<how>\"}` (and anything else to keep with it)."},
+          "tags": {"type": "array", "items": {"type": "string"}, "maxItems": 20, "description": "Added to theirs: those the webhook may give, and any if it may create tags."}
+        }
+      },
+      "ServerResult": {
+        "type": "object",
+        "required": ["result", "added", "resubscribed", "tags_created", "attribs_kept"],
+        "properties": {
+          "result": {"type": "string", "enum": ["subscribed", "re-subscribed", "confirmation sent", "added; confirmation not sent", "not subscribed"], "description": "What became of it: `subscribed`; `re-subscribed` (they had unsubscribed); `confirmation sent` (they're subscribed once they confirm the e-mail they're sent); `added; confirmation not sent` (to a double opt-in list, but the e-mail couldn't be sent now); `not subscribed` (it doesn't say why)."},
+          "added": {"type": "array", "items": {"type": "integer"}, "description": "The lists they're on now (confirmed, or waiting to confirm)."},
+          "resubscribed": {"type": "array", "items": {"type": "integer"}, "description": "Of those, the ones they'd unsubscribed from."},
+          "tags_created": {"type": "array", "items": {"type": "string"}, "description": "Tags new to the center, added to its tags."},
+          "attribs_kept": {"type": "array", "items": {"type": "string"}, "description": "Attributes they already had another value for, which was kept (`a.b` for nested ones)."}
+        }
+      }
+    }
+  }
+}

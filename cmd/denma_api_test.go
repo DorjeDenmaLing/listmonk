@@ -85,7 +85,9 @@ func TestDenmaWebhook(t *testing.T) {
 		}
 	}
 	for ip, public := range map[string]bool{"8.8.8.8": true, "127.0.0.1": false, "10.1.2.3": false, "169.254.169.254": false,
-		"192.168.1.1": false, "::1": false, "fd00::1": false, "2606:4700::1": true} {
+		"192.168.1.1": false, "::1": false, "fd00::1": false, "2606:4700::1": true,
+		"100.64.0.1": false, "100.127.255.254": false, "100.128.0.1": true, "192.0.0.8": false, "198.18.0.1": false,
+		"198.19.255.1": false, "0.1.2.3": false, "64:ff9b::a00:1": false, "64:ff9b:1::1": false, "::ffff:10.0.0.1": false} {
 		if got := denmaPublicIP(net.ParseIP(ip)); got != public {
 			t.Errorf("%s: public %v, want %v", ip, got, public)
 		}
@@ -106,16 +108,23 @@ func TestDenmaAPITo(t *testing.T) {
 	}
 }
 
-// The key is sent as "Bearer <key>", the scheme in any case.
+// The key is sent as "Bearer <key>", the scheme in any case, with its
+// prefix: an API key's, or a Server webhook's secret's.
 func TestDenmaBearer(t *testing.T) {
 	for hdr, want := range map[string]string{
 		"Bearer lmk_abc": "lmk_abc", "bearer lmk_abc": "lmk_abc", "BEARER  lmk_abc ": "lmk_abc", " Bearer lmk_abc": "lmk_abc",
-		"Bearer abc": "", "Basic lmk_abc": "", "lmk_abc": "", "Bearer": "", "": "",
+		"Bearer abc": "", "Basic lmk_abc": "", "lmk_abc": "", "Bearer": "", "": "", "Bearer lms_abc": "",
 	} {
-		key, ok := denmaBearer(hdr)
+		key, ok := denmaBearer(hdr, denmaAPIKeyPrefix)
 		if ok != (want != "") || (ok && key != want) {
 			t.Errorf("%q: %q %v, want %q", hdr, key, ok, want)
 		}
+	}
+	if key, ok := denmaBearer("Bearer lms_abc", denmaSignupSecretPrefix); !ok || key != "lms_abc" {
+		t.Errorf("a webhook's secret: %q %v", key, ok)
+	}
+	if _, ok := denmaBearer("Bearer lmk_abc", denmaSignupSecretPrefix); ok {
+		t.Error("an API key taken as a webhook's secret")
 	}
 }
 
@@ -169,7 +178,7 @@ func TestDenmaAppendJSON(t *testing.T) {
 }
 
 // A name given replaces only a stand-in.
-func TestDenmaAPIName(t *testing.T) {
+func TestDenmaGivenName(t *testing.T) {
 	for _, c := range []struct{ cur, given, want string }{
 		{"ann", "Ann Lee", "Ann Lee"},         // the part before the @
 		{"Ann@X.org", "Ann Lee", "Ann Lee"},   // the address
@@ -177,37 +186,33 @@ func TestDenmaAPIName(t *testing.T) {
 		{"Annie Lee", "Ann Lee", "Annie Lee"}, // their own
 		{"ann", "", "ann"},                    // none given
 	} {
-		if got := denmaAPIName(c.cur, c.given, "ann@x.org"); got != c.want {
+		if got := denmaGivenName(c.cur, c.given, "ann@x.org"); got != c.want {
 			t.Errorf("%q, %q: %q, want %q", c.cur, c.given, got, c.want)
 		}
 	}
 }
 
-// A key does one or more of the API's things, and subscribing needs lists.
+// A key does one or more of the API's things; subscribing isn't one any more.
 func TestDenmaAPICanForm(t *testing.T) {
-	if got, err := denmaAPICanForm([]string{"subscribers", "messages", "messages"}, 1); err != nil || strings.Join(got, ",") != "messages,subscribers" {
+	if got, err := denmaAPICanForm([]string{"events", "messages", "messages"}); err != nil || strings.Join(got, ",") != "messages,events" {
 		t.Errorf("tidied: %v %v", got, err)
 	}
-	if got, err := denmaAPICanForm([]string{"campaigns"}, 0); err != nil || strings.Join(got, ",") != "campaigns" {
-		t.Errorf("sending needs no lists: %v %v", got, err)
+	if got, err := denmaAPICanForm([]string{"campaigns"}); err != nil || strings.Join(got, ",") != "campaigns" {
+		t.Errorf("campaigns: %v %v", got, err)
 	}
-	if got, err := denmaAPICanForm([]string{"events", "subscribers"}, 1); err != nil || strings.Join(got, ",") != "subscribers,events" {
-		t.Errorf("events: %v %v", got, err)
-	}
-	if !denmaAPISends([]string{"messages"}) || !denmaAPISends([]string{"events", "campaigns"}) || denmaAPISends([]string{"subscribers", "events"}) {
+	if !denmaAPISends([]string{"messages"}) || !denmaAPISends([]string{"events", "campaigns"}) || denmaAPISends([]string{"events"}) {
 		t.Error("which keys send")
 	}
 	for _, c := range []struct {
-		can   []string
-		lists int
-		want  string
+		can  []string
+		want string
 	}{
-		{nil, 1, "Choose what"},
-		{[]string{"subscribers"}, 0, "Choose the lists"},
-		{[]string{"campaigns", "admin"}, 0, `"admin" isn't`},
+		{nil, "Choose what"},
+		{[]string{"subscribers"}, "sign-up webhooks"},
+		{[]string{"campaigns", "admin"}, `"admin" isn't`},
 	} {
-		if _, err := denmaAPICanForm(c.can, c.lists); err == nil || !strings.Contains(err.Error(), c.want) {
-			t.Errorf("%v, %d lists: %v, want %q", c.can, c.lists, err, c.want)
+		if _, err := denmaAPICanForm(c.can); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%v: %v, want %q", c.can, err, c.want)
 		}
 	}
 }
@@ -265,8 +270,9 @@ func TestDenmaJSONSet(t *testing.T) {
 	}
 }
 
-// "confirmed" needs a consent record: when (the latest) and how.
-func TestDenmaAPIConsentAt(t *testing.T) {
+// "confirmed" needs a consent record: when (the latest) and how; its source
+// is the subscriber's consent_source if they have none.
+func TestDenmaConsentAt(t *testing.T) {
 	dec := func(s string) map[string]any {
 		var m map[string]any
 		if err := json.Unmarshal([]byte(s), &m); err != nil {
@@ -274,9 +280,16 @@ func TestDenmaAPIConsentAt(t *testing.T) {
 		}
 		return m
 	}
-	at, err := denmaAPIConsentAt(dec(`{"consents": [{"at": "2026-01-01T00:00:00Z", "source": "form"}, {"at": "2026-05-05T10:00:00+02:00", "source": "form", "registration_id": 7}]}`))
+	rec := dec(`{"consents": [{"at": "2026-01-01T00:00:00Z", "source": "form"}, {"at": "2026-05-05T10:00:00+02:00", "source": "registration form", "registration_id": 7}]}`)
+	at, err := denmaConsentAt(rec)
 	if err != nil || !at.Equal(time.Date(2026, 5, 5, 8, 0, 0, 0, time.UTC)) {
 		t.Errorf("the latest: %v %v", at, err)
+	}
+	if src := denmaConsentSource(rec, at); src != "registration form" {
+		t.Errorf("its source: %q", src)
+	}
+	if src := denmaConsentSource(rec, time.Time{}); src != "" {
+		t.Errorf("no consent's source: %q", src)
 	}
 	future := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
 	for name, attribs := range map[string]string{
@@ -288,7 +301,7 @@ func TestDenmaAPIConsentAt(t *testing.T) {
 		"future":     `{"consents": [{"at": "` + future + `", "source": "form"}]}`,
 		"not a list": `{"consents": {"at": "2026-01-01T00:00:00Z", "source": "form"}}`,
 	} {
-		if _, err := denmaAPIConsentAt(dec(attribs)); err == nil {
+		if _, err := denmaConsentAt(dec(attribs)); err == nil {
 			t.Errorf("%s: no error", name)
 		}
 	}
@@ -337,6 +350,7 @@ func TestDenmaAuditUnauthed(t *testing.T) {
 		}
 		if key {
 			c.Set(denmaAPIKeyCtx, denmaAPIAuthed{ID: 2})
+			c.Set(denmaSignupHookCtx, denmaSignupHook{ID: 4})
 		}
 		return c
 	}
@@ -352,6 +366,8 @@ func TestDenmaAuditUnauthed(t *testing.T) {
 		{"/api/subscribers", 403, false, false, true},
 		{"/api/subscribers", 401, false, false, true},
 		{"/api/subscribers", 403, true, false, false},
+		{"/signup/server", 401, false, false, true},
+		{"/signup/server", 200, false, true, false},
 		{"/login", 200, false, false, false},
 		{"/admin/login", 401, false, false, false},
 	} {

@@ -61,8 +61,14 @@ func denmaProviderSQL(col string) string {
 // Active subscribers now, by provider (the "active" figure).
 const denmaActiveSQL = `SELECT P(s.email) AS provider, COUNT(*) AS n FROM S.subscribers s
 	WHERE s.status = 'enabled' AND EXISTS (SELECT 1 FROM S.subscriber_lists sl JOIN S.lists l ON l.id = sl.list_id
-		WHERE sl.subscriber_id = s.id AND sl.status <> 'unsubscribed' AND NOT (l.optin = 'double' AND sl.status = 'unconfirmed'))
+		WHERE sl.subscriber_id = s.id AND sl.status <> 'unsubscribed' AND NOT (l.optin = 'double' AND sl.status = 'unconfirmed')
+		AND ` + denmaHubListActive + `)
 	GROUP BY 1`
+
+// denmaHubListActive leaves out API campaigns' lists (alias l), which are no
+// consent to the center's mail (cmd/denma_noconsent.go): those the API adds
+// count as subscribers once they've signed up themselves.
+const denmaHubListActive = `NOT ('` + denmaAPIListTag + `' = ANY(COALESCE(l.tags, '{}')))`
 
 // Subscribers gained and lost from $1 to $2 (the "new", "unsub" and "removed"
 // figures), by day in time zone $3 and provider. Each counts once: an
@@ -74,7 +80,7 @@ const denmaGrowthSQL = `WITH bounced AS (
 ), ev AS (
 	SELECT 'new' AS kind, s.id, s.created_at AS at FROM S.subscribers s
 	WHERE s.created_at >= $1 AND s.created_at < $2 AND EXISTS (SELECT 1 FROM S.subscriber_lists sl JOIN S.lists l ON l.id = sl.list_id
-		WHERE sl.subscriber_id = s.id AND NOT (l.optin = 'double' AND sl.status = 'unconfirmed'))
+		WHERE sl.subscriber_id = s.id AND NOT (l.optin = 'double' AND sl.status = 'unconfirmed') AND ` + denmaHubListActive + `)
 	UNION ALL
 	SELECT 'unsub', sl.subscriber_id, MAX(sl.updated_at) FROM S.subscriber_lists sl
 	WHERE sl.status = 'unsubscribed' AND sl.updated_at >= $1 AND sl.updated_at < $2

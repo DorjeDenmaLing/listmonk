@@ -864,6 +864,8 @@ func (a *App) processSubForm(c echo.Context) (bool, error) {
 		}
 	}
 
+	a.denmaNoConsentSignup(req.Email) // denma: their own sign-up (cmd/denma_noconsent.go)
+
 	// Insert the subscriber into the DB.
 	newSub, hasOptin, err := a.core.InsertSubscriber(models.Subscriber{ // denma: was _
 		Name:   req.Name,

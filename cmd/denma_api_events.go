@@ -13,9 +13,14 @@ package main
 //     it's on the shared blocklist (a hard bounce in another center), with
 //     the reason.
 //
+// And how each API campaign goes, by a trigger on its status: started,
+// paused, resumed, finished, cancelled (campaign_*, with the campaign's key
+// and no address).
+//
 // They're kept denmaAPIEventDays days. A key with the events permission gets
-// those about addresses it has sent to or subscribed (denma_api_contacts),
-// since it did. GET /v1/events lists them, after an
+// those about addresses it has sent to (denma_api_contacts), since it did;
+// a key that sends campaigns gets its campaigns'. GET /v1/events lists them
+// (with the events permission), after an
 // event ID; and each key with a webhook is sent them, in order, at most
 // denmaAPIWebhookBatch at a time, by the minute's job: a POST of
 // {"events": [...]}, signed with the key's webhook secret (the
@@ -135,14 +140,44 @@ DROP TRIGGER IF EXISTS denma_api_blocklist_event ON subscribers;
 CREATE TRIGGER denma_api_blocklist_event AFTER UPDATE OF status ON subscribers
     FOR EACH ROW WHEN (NEW.status = 'blocklisted' AND OLD.status <> 'blocklisted')
     EXECUTE FUNCTION denma_api_blocklist_event();
+
+-- Since features version 22: how API campaigns go, an event about their key
+-- with no address. Only when the status changes: sending updates campaigns
+-- all the time.
+ALTER TABLE denma_api_events ADD COLUMN IF NOT EXISTS key_id INTEGER NULL;
+ALTER TABLE denma_api_events ALTER COLUMN email DROP NOT NULL;
+CREATE INDEX IF NOT EXISTS denma_api_events_key ON denma_api_events (key_id, id) WHERE key_id IS NOT NULL;
+CREATE OR REPLACE FUNCTION denma_api_campaign_event() RETURNS TRIGGER
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+BEGIN
+    INSERT INTO denma_api_events (type, key_id, campaign_id)
+        SELECT CASE
+            WHEN NEW.status = 'running' AND OLD.status = 'paused' THEN 'campaign_resumed'
+            WHEN NEW.status = 'running' THEN 'campaign_started'
+            ELSE 'campaign_' || NEW.status::TEXT END, x.key_id, NEW.id
+        FROM denma_api_campaigns x WHERE x.campaign_id = NEW.id AND x.key_id IS NOT NULL;
+    RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS denma_api_campaign_event ON campaigns;
+CREATE TRIGGER denma_api_campaign_event AFTER UPDATE OF status ON campaigns
+    FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status AND NEW.status IN ('running', 'paused', 'finished', 'cancelled'))
+    EXECUTE FUNCTION denma_api_campaign_event();
 `
 
-// denmaAPIKeyEventsSQL is a key's events after an ID ($1), at most $2: those
-// about the addresses the key ($3) has sent to or subscribed, since it did.
-const denmaAPIKeyEventsSQL = `SELECT e.id, e.type, e.email, e.reason, e.campaign_id, e.created_at FROM denma_api_events e
-	WHERE e.id > $1 AND EXISTS (SELECT 1 FROM denma_api_contacts k
-		WHERE k.key_id = $3 AND k.email_hash = denma_email_hash(e.email) AND k.created_at <= e.created_at)
+// denmaAPIKeyEventsSQL is a key's events after an ID ($1), at most $2: with
+// the events permission ($4), those about the addresses the key ($3) has
+// sent to, since it did; if it sends campaigns ($5), its campaigns'.
+const denmaAPIKeyEventsSQL = `SELECT e.id, e.type, COALESCE(e.email, '') AS email, e.reason, e.campaign_id, e.created_at
+	FROM denma_api_events e
+	WHERE e.id > $1 AND ((e.key_id = $3 AND $5) OR (e.key_id IS NULL AND $4 AND EXISTS (SELECT 1 FROM denma_api_contacts k
+		WHERE k.key_id = $3 AND k.email_hash = denma_email_hash(e.email) AND k.created_at <= e.created_at)))
 	ORDER BY e.id LIMIT $2`
+
+// denmaAPIKeyEventsArgs are denmaAPIKeyEventsSQL's arguments for a key that
+// can do can.
+func denmaAPIKeyEventsArgs(after int64, limit, keyID int, can []string) []any {
+	return []any{after, limit, keyID, denmaHasString(can, denmaAPICanEvents), denmaHasString(can, denmaAPICanCampaigns)}
+}
 
 // denmaAPIContacts records that a key has sent to or subscribed addresses
 // (lowercase), for its events.
@@ -161,7 +196,7 @@ func denmaAPIContacts(db interface {
 type denmaAPIEvent struct {
 	ID         int64     `db:"id" json:"id"`
 	Type       string    `db:"type" json:"type"`
-	Email      string    `db:"email" json:"email"`
+	Email      string    `db:"email" json:"email,omitempty"` // none for a campaign's
 	Reason     string    `db:"reason" json:"reason"`
 	CampaignID *int      `db:"campaign_id" json:"campaign_id"`
 	CreatedAt  time.Time `db:"created_at" json:"created_at"`
@@ -177,7 +212,8 @@ func (a *App) DenmaAPIEvents(c echo.Context) error {
 	}
 	limit = min(limit, 1000)
 	out := []denmaAPIEvent{}
-	if err := a.db.Select(&out, denmaAPIKeyEventsSQL, after, limit, apiKeyOf(c).ID); err != nil {
+	k := apiKeyOf(c)
+	if err := a.db.Select(&out, denmaAPIKeyEventsSQL, denmaAPIKeyEventsArgs(after, limit, k.ID, k.Can)...); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	next := after
@@ -194,6 +230,7 @@ func denmaStartAPIJobs(a *App) {
 		return
 	}
 	if _, err := denmaEveryMinute(a, 40, "api", func() {
+		a.signupLostLists() // cmd/denma_signup.go
 		var n int
 		if err := a.db.Get(&n, `SELECT COUNT(*) FROM denma_api_keys`); err != nil || n == 0 {
 			return // no keys (or not installed yet)
@@ -315,6 +352,15 @@ func denmaAddAPITpls(n *notifs.Notifs) error {
 {{ template "footer" }}`); err != nil {
 		return err
 	}
+	// A sign-up webhook's (cmd/denma_signup.go).
+	if _, err := n.Tpls.New("denma-signup-alert").Parse(`{{ template "header" . }}
+<h2>Sign-up webhook "{{ index . "Hook" }}"</h2>
+<p>{{ index . "Center" }}'s sign-up webhook "{{ index . "Hook" }}" {{ index . "What" }}.</p>
+<p>{{ index . "Detail" }}</p>
+<p><a href="{{ index . "URL" }}" class="button">Open the Webhooks page</a></p>
+{{ template "footer" }}`); err != nil {
+		return err
+	}
 	_, err := n.Tpls.New("denma-api-paused").Parse(`{{ template "header" . }}
 <h2>Sending through the API is paused</h2>
 <p>{{ index . "Center" }}'s e-mails sent by other systems, through its API, are paused: {{ index . "Reason" }}</p>
@@ -354,6 +400,9 @@ func (a *App) apiCleanUp() {
 	}
 	if _, err := a.db.Exec(`DELETE FROM denma_api_messages WHERE created_at < NOW() - INTERVAL '90 days'`); err != nil {
 		a.log.Printf("denma: error deleting old API e-mail records: %v", err)
+	}
+	if _, err := a.db.Exec(`DELETE FROM denma_resub_usage WHERE created_at < NOW() - INTERVAL '2 days'`); err != nil { // cmd/denma_signup.go
+		a.log.Printf("denma: error deleting old re-subscription counts: %v", err)
 	}
 	if _, err := a.db.Exec(`DELETE FROM denma_api_usage WHERE created_at < NOW() - INTERVAL '2 days'`); err != nil {
 		a.log.Printf("denma: error deleting old API key use: %v", err)
@@ -415,11 +464,35 @@ func denmaWebhookPrivate(a *App) bool {
 }
 
 // denmaPublicIP reports whether an address is on the internet: not
-// loopback, private, link-local (cloud metadata), or unspecified.
+// loopback, private, link-local (cloud metadata), unspecified, or another
+// range that isn't (denmaNotPublic).
 func denmaPublicIP(ip net.IP) bool {
-	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified() || ip.IsMulticast() || ip.IsInterfaceLocalMulticast())
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() || ip.IsMulticast() || ip.IsInterfaceLocalMulticast() {
+		return false
+	}
+	for _, n := range denmaNotPublic {
+		if n.Contains(ip) {
+			return false
+		}
+	}
+	return true
 }
+
+// denmaNotPublic are ranges Go's checks don't cover that aren't the
+// internet's: shared address space (carrier-grade NAT), IETF protocol
+// assignments, benchmarking, and NAT64 (an IPv4 address in an IPv6 one).
+var denmaNotPublic = func() []*net.IPNet {
+	var out []*net.IPNet
+	for _, s := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "198.18.0.0/15", "64:ff9b::/96", "64:ff9b:1::/48"} {
+		_, n, err := net.ParseCIDR(s)
+		if err != nil {
+			panic(err)
+		}
+		out = append(out, n)
+	}
+	return out
+}()
 
 // denmaWebhookClient sends webhooks, to public addresses only unless
 // private.
@@ -501,14 +574,16 @@ func denmaWebhookWait(n int) time.Duration {
 // apiSendWebhooks sends each key's webhook its new events.
 func (a *App) apiSendWebhooks() {
 	var keys []struct {
-		ID       int    `db:"id"`
-		URL      string `db:"webhook_url"`
-		Secret   string `db:"webhook_secret"`
-		After    int64  `db:"webhook_after"`
-		Failures int    `db:"webhook_failures"`
+		ID       int            `db:"id"`
+		URL      string         `db:"webhook_url"`
+		Secret   string         `db:"webhook_secret"`
+		After    int64          `db:"webhook_after"`
+		Failures int            `db:"webhook_failures"`
+		Can      pq.StringArray `db:"can"`
 	}
-	if err := a.db.Select(&keys, `SELECT id, webhook_url, webhook_secret, webhook_after, webhook_failures FROM denma_api_keys
-		WHERE webhook_url <> '' AND deleted_at IS NULL AND 'events' = ANY(can) AND (expires_at IS NULL OR expires_at > NOW())
+	if err := a.db.Select(&keys, `SELECT id, webhook_url, webhook_secret, webhook_after, webhook_failures, can FROM denma_api_keys
+		WHERE webhook_url <> '' AND deleted_at IS NULL AND ('events' = ANY(can) OR 'campaigns' = ANY(can))
+		AND (expires_at IS NULL OR expires_at > NOW())
 		AND (webhook_next_at IS NULL OR webhook_next_at <= NOW())
 		AND EXISTS (SELECT 1 FROM denma_api_events e WHERE e.id > webhook_after)`); err != nil {
 		a.log.Printf("denma: error reading the API's webhooks: %v", err)
@@ -523,7 +598,7 @@ func (a *App) apiSendWebhooks() {
 		}
 		for range denmaAPIWebhookPosts {
 			var events []denmaAPIEvent
-			if err := a.db.Select(&events, denmaAPIKeyEventsSQL, k.After, denmaAPIWebhookBatch, k.ID); err != nil {
+			if err := a.db.Select(&events, denmaAPIKeyEventsSQL, denmaAPIKeyEventsArgs(k.After, denmaAPIWebhookBatch, k.ID, k.Can)...); err != nil {
 				a.log.Printf("denma: error reading the API's events: %v", err)
 				return
 			}

@@ -22,9 +22,10 @@ package main
 // someone who doesn't meet them is skipped (for that time).
 //
 // Its actions keep to the subscriber's consent: it never acts on someone
-// blocklisted, never re-adds someone who unsubscribed from a list, adds
-// people as confirmed only if they've confirmed a subscription in the
-// center, and removing from a list deletes the subscription (it isn't an
+// blocklisted or added by the API without consent (cmd/denma_noconsent.go),
+// never re-adds someone who unsubscribed from a list, adds people as
+// confirmed only if they've confirmed a subscription in the center (not an
+// API campaign's list), and removing from a list deletes the subscription (it isn't an
 // unsubscribe, so unsubscribe everywhere doesn't apply). Imported
 // subscribers (attribs.imported_at, cmd/denma_features.go) aren't sent its
 // e-mail, but its other actions apply. Automations that would set each other
@@ -303,6 +304,8 @@ FROM ev
 JOIN subscribers s ON s.id = ev.subscriber_id
 LEFT JOIN denma_automation_sends d ON d.automation_id = ev.automation_id AND d.subscriber_id = ev.subscriber_id
 WHERE s.status <> 'blocklisted' AND (d.subscriber_id IS NULL OR (ev.each_time AND ev.at > d.trigger_at))
+    -- Not those the API added, who haven't consented (cmd/denma_noconsent.go).
+    AND NOT EXISTS (SELECT 1 FROM denma_no_consent nc WHERE nc.email_hash = denma_email_hash(s.email))
 GROUP BY ev.automation_id, ev.subscriber_id, ev.delay_minutes`
 }
 
@@ -722,10 +725,12 @@ func (a *App) autoActions(auto denmaAutomation, ids []int) (string, map[int]stri
 			notes[u.ID] = "not added to " + orList(u.Lists, "or") + ": they'd unsubscribed"
 		}
 		// Confirmed if they've confirmed a subscription here (so they can be
-		// sent a double opt-in list's campaigns); never back on a list they
-		// unsubscribed from.
+		// sent a double opt-in list's campaigns), not an API campaign's
+		// (cmd/denma_noconsent.go); never back on a list they unsubscribed
+		// from.
 		if _, err := tx.Exec(`INSERT INTO subscriber_lists (subscriber_id, list_id, status)
-			SELECT s.id, l.id, (CASE WHEN EXISTS (SELECT 1 FROM subscriber_lists x WHERE x.subscriber_id = s.id AND x.status = 'confirmed')
+			SELECT s.id, l.id, (CASE WHEN EXISTS (SELECT 1 FROM subscriber_lists x JOIN lists dl ON dl.id = x.list_id
+				WHERE x.subscriber_id = s.id AND x.status = 'confirmed' AND `+denmaAPIListActive+`)
 				THEN 'confirmed' ELSE 'unconfirmed' END)::subscription_status
 			FROM unnest($1::INT[]) s(id) CROSS JOIN unnest($2::INT[]) l(id)
 			ON CONFLICT (subscriber_id, list_id) DO UPDATE SET status = 'confirmed', updated_at = NOW()

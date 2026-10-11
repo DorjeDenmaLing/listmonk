@@ -12,9 +12,9 @@ package main
 //     e-mail that signing up again sends them (cmd/denma_resubscribe.go), or
 //     that an admin sends them, when they've asked, with "Send a confirmation
 //     to subscribe again" on their page; or by signing up again on another
-//     system that vouches for it, through the sending API's
-//     POST /v1/subscribers with "confirmed" (a Retreat Guru registration
-//     with the newsletter box ticked, through rg-sync).
+//     system that vouches for it, through a Server sign-up webhook with
+//     "confirmed" (cmd/denma_signup.go: a Retreat Guru registration with the
+//     newsletter box ticked, through rg-sync).
 //   - Someone who complained never can, in that center.
 //
 // Each center keeps them in denma_optouts, by a SHA-256 of the address, so

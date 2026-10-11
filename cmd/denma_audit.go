@@ -82,7 +82,7 @@ var denmaAuditGets = map[string]bool{
 
 // Changes on these routes aren't by a signed-in user (subscribers, mail
 // servers): listmonk records them where they belong.
-var denmaAuditPublic = regexp.MustCompile(`^/(subscription|webhooks|link|campaign|archive|api/public|auth/oidc|signup)`)
+var denmaAuditPublic = regexp.MustCompile(`^/(subscription|webhooks|link|campaign|archive|api/public|auth/oidc|signup/:token)`)
 
 var denmaAuditInit sync.Once
 
@@ -172,15 +172,20 @@ func denmaBodyLimit(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// denmaAuditAPIRoute is whether a route is the sending API's (cmd/denma_api.go).
+// denmaAuditAPIRoute is whether a route is the sending API's (cmd/denma_api.go)
+// or a Server webhook's (cmd/denma_signup.go), recorded by key or webhook and
+// what it did, not the request, which is about people.
 func denmaAuditAPIRoute(route string) bool {
-	return route == "/v1" || strings.HasPrefix(route, "/v1/")
+	return route == "/v1" || strings.HasPrefix(route, "/v1/") || route == "/signup/server"
 }
 
 // denmaAuditUnauthed is whether a request has no user or key: an API request
 // without a working key, or a refused admin API request without a session.
 // Sign-in pages aren't /api routes, so failed sign-ins are still recorded.
 func denmaAuditUnauthed(c echo.Context, route string, status int) bool {
+	if route == "/signup/server" {
+		return signupHookOf(c).ID == 0
+	}
 	if denmaAuditAPIRoute(route) {
 		return apiKeyOf(c).ID == 0
 	}
@@ -263,6 +268,13 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 		// The API: the key and what it did (apiLog), not the body.
 		name = fmt.Sprintf("API key %q", k.Name)
 		details["key_id"] = k.ID
+		if res, _ := c.Get(denmaAPIResultCtx).([]string); len(res) > 0 {
+			details["result"] = res
+		}
+	} else if h := signupHookOf(c); h.ID > 0 {
+		// A Server webhook: the webhook and what it did (signupLog).
+		name = fmt.Sprintf("Sign-up webhook %q", h.Name)
+		details["hook_id"] = h.ID
 		if res, _ := c.Get(denmaAPIResultCtx).([]string); len(res) > 0 {
 			details["result"] = res
 		}
@@ -661,7 +673,7 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 	case "PUT /api/denma/center/signup-hooks/:id":
 		return fmt.Sprintf("Changed sign-up webhook %s (%q)", target, str("name"))
 	case "POST /api/denma/center/signup-hooks/:id/key":
-		return fmt.Sprintf("Gave sign-up webhook %s a new address", target)
+		return fmt.Sprintf("Gave sign-up webhook %s a new address or secret", target)
 	case "DELETE /api/denma/center/signup-hooks/:id":
 		return "Deleted sign-up webhook " + target
 	case "POST /api/denma/center/api-keys": // cmd/denma_api.go
@@ -690,8 +702,8 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return "Started " + label("campaign")
 	case "POST /v1/campaigns/:id/cancel":
 		return "Cancelled " + label("campaign")
-	case "POST /v1/subscribers":
-		return "Subscribed someone"
+	case "POST /signup/server": // a Server webhook (denmaAuditWrite)
+		return "Signed someone up"
 	case "POST /api/denma/campaigns/:id/resend":
 		return "Resent " + label("campaign") + " to those it couldn't send to"
 	case "POST /api/denma/tags":

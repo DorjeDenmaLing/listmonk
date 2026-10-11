@@ -105,9 +105,11 @@ func denmaHubColumns(db *sqlx.DB) {
 
 // denmaTagActiveSQL is true for an active subscriber (alias subscribers): not
 // blocklisted, with a subscription that isn't unsubscribed (or, on a double
-// opt-in list, is confirmed). The campaign queries use the same condition.
+// opt-in list, is confirmed), and isn't to an API campaign's list, which is
+// no consent (cmd/denma_noconsent.go). The campaign queries use the same
+// condition.
 const denmaTagActiveSQL = `(subscribers.status <> 'blocklisted' AND EXISTS (SELECT 1 FROM subscriber_lists dsl
-	JOIN lists dl ON dl.id = dsl.list_id WHERE dsl.subscriber_id = subscribers.id
+	JOIN lists dl ON dl.id = dsl.list_id WHERE dsl.subscriber_id = subscribers.id AND ` + denmaAPIListActive + `
 	AND (CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status <> 'unsubscribed' END)))`
 
 // denmaTagCount is a tag, how many subscribers have it, and how many of them a
@@ -315,9 +317,11 @@ func (a *App) DenmaChangeTag(c echo.Context) error {
 			}
 		}
 	}
-	if err == nil {
-		_, err = tx.Exec(`UPDATE denma_signup_hooks SET tags = ARRAY(SELECT DISTINCT x FROM unnest(array_remove(tags, $1::TEXT) || $2::TEXT[]) x ORDER BY x)
-			WHERE $1::TEXT = ANY(tags)`, from[0], pq.Array(to))
+	for _, col := range []string{"tags", "request_tags"} {
+		if err == nil {
+			_, err = tx.Exec(`UPDATE denma_signup_hooks SET `+col+` = ARRAY(SELECT DISTINCT x FROM unnest(array_remove(`+col+`, $1::TEXT) || $2::TEXT[]) x ORDER BY x)
+				WHERE $1::TEXT = ANY(`+col+`)`, from[0], pq.Array(to))
+		}
 	}
 	// Campaigns not yet sent follow the rename (or lose the tag).
 	if err == nil {

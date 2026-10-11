@@ -13,10 +13,10 @@ package main
 // (cmd/denma_emailcheck.go) aren't sent one. Someone who complained never
 // comes back (cmd/denma_optouts.go); an admin can enable those who bounced.
 //
-// The sending API's POST /v1/subscribers (cmd/denma_api_send.go) does the
-// same, and with "confirmed" (the caller vouches that they ticked the box
-// themselves, as rg-sync's Retreat Guru registrations do) re-subscribes them
-// at once, without the e-mail.
+// Sign-up webhooks (cmd/denma_signup.go) do the same; a Server webhook with
+// "confirmed" (the caller vouches that they ticked the box themselves, as
+// rg-sync's Retreat Guru registrations do) re-subscribes them at once,
+// without the e-mail.
 //
 // Everything else that adds someone (imports, admins' list changes, other API
 // calls) leaves a blocklisted subscriber out, as listmonk does: under CASL,
@@ -278,9 +278,14 @@ func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta mo
 	}
 	defer tx.Rollback()
 	// Their opt-out goes (cmd/denma_optouts.go): confirming is their consent.
-	// A complaint's stays, and enabling them is refused.
+	// A complaint's stays, and enabling them is refused. So does the fence on
+	// those the API added (cmd/denma_noconsent.go).
 	if _, err := tx.Exec(`DELETE FROM denma_optouts WHERE kind = 'unsubscribed'
 		AND email_hash = (SELECT denma_email_hash(email) FROM subscribers WHERE id = $1)`, subID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM denma_no_consent
+		WHERE email_hash = (SELECT denma_email_hash(email) FROM subscribers WHERE id = $1)`, subID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`UPDATE subscribers SET status = 'enabled', updated_at = NOW(),

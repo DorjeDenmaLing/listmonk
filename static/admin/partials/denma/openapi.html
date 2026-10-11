@@ -1,0 +1,79 @@
+{{- /* denma: an OpenAPI 3.1 description's operations, by tag, rendered by
+	denmaAPIDocs (assets/js/views/denma-center.js): the sending API's on
+	Config -> API, the sign-up webhooks' on Config -> Webhooks. Its argument
+	labels what each needs to authenticate ("Key", "Secret"). */ -}}
+{{ define "denma-openapi-ops" -}}
+	<template x-for="g in groups" :key="g.name">
+		<section class="vstack gap-2">
+			<h4 x-text="g.name"></h4>
+			<p class="text-light text-8" x-text="g.description"></p>
+			<template x-for="o in g.ops" :key="o.key">
+				<details data-testid="api-op" :data-op="o.op.operationId">
+					<summary><strong x-text="o.method"></strong> <code x-text="o.path"></code>: <span x-text="o.op.summary"></span></summary>
+					<div class="vstack gap-3">
+						<div x-html="md(o.op.description)"></div>
+						<p class="text-8"><strong>{{ . }}:</strong> <span x-text="needs(o)"></span></p>
+
+						<template x-if="params(o).length">
+							<div class="table-wrapper">
+								<table>
+									<thead><tr><th>Parameter</th><th>In</th><th>Type</th><th>Description</th></tr></thead>
+									<tbody>
+										<template x-for="r in params(o)" :key="r.name">
+											<tr><td data-label="Parameter"><code x-text="r.name"></code><span x-show="r.required"> (required)</span></td><td data-label="In" x-text="r.in"></td><td data-label="Type" x-text="r.type"></td><td data-label="Description" x-html="md(r.desc)"></td></tr>
+										</template>
+									</tbody>
+								</table>
+							</div>
+						</template>
+
+						<template x-if="body(o).length">
+							<div class="vstack gap-1">
+								<strong class="text-8">Request (JSON)</strong>
+								<div class="table-wrapper">
+									<table>
+										<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+										<tbody>
+											<template x-for="r in body(o)" :key="r.name">
+												<tr><td data-label="Field"><code x-text="r.name"></code><span x-show="r.required"> (required)</span></td><td data-label="Type" x-text="r.type"></td><td data-label="Description" x-html="md(r.desc)"></td></tr>
+											</template>
+										</tbody>
+									</table>
+								</div>
+							</div>
+						</template>
+
+						<template x-if="curl(o)">
+							<pre class="denma-signup-code" x-text="curl(o)"></pre>
+						</template>
+
+						<template x-if="answer(o).length">
+							<div class="vstack gap-1">
+								<strong class="text-8">Answer: <code>data</code></strong>
+								<div class="table-wrapper">
+									<table>
+										<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+										<tbody>
+											<template x-for="r in answer(o)" :key="r.name">
+												<tr><td data-label="Field"><code x-text="r.name"></code></td><td data-label="Type" x-text="r.type"></td><td data-label="Description" x-html="md(r.desc)"></td></tr>
+											</template>
+										</tbody>
+									</table>
+								</div>
+							</div>
+						</template>
+
+						<div class="vstack gap-1">
+							<strong class="text-8">Responses</strong>
+							<ul>
+								<template x-for="r in responses(o)" :key="r.code">
+									<li><code x-text="r.code"></code>: <span x-html="md(r.desc, true)"></span></li>
+								</template>
+							</ul>
+						</div>
+					</div>
+				</details>
+			</template>
+		</section>
+	</template>
+{{ end }}
