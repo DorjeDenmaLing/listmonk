@@ -262,7 +262,7 @@ func (a *App) CreateUser(c echo.Context) error {
 	}
 
 	// denma: only roles with no more than the creator has (cmd/denma_hierarchy.go).
-	if err := a.denmaCheckAssign(c, u.UserRoleID, u.ListRoleID); err != nil {
+	if err := a.denmaCheckAssign(c, u.Type, u.UserRoleID, u.ListRoleID); err != nil {
 		return err
 	}
 	if done, err := a.denmaCreateMember(c, u); done { // denma: in a center, a person, by e-mail address (cmd/denma_people.go)
@@ -358,7 +358,7 @@ func (a *App) UpdateUser(c echo.Context) error {
 	}
 
 	// denma: only roles with no more than the editor has (cmd/denma_hierarchy.go).
-	if err := a.denmaCheckAssign(c, u.UserRoleID, u.ListRoleID); err != nil {
+	if err := a.denmaCheckAssign(c, u.Type, u.UserRoleID, u.ListRoleID); err != nil {
 		return err
 	}
 

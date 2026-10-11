@@ -29,7 +29,9 @@
 						<label for="user-type">{{ .L.T "users.type" }}</label>
 						<select name="type" id="user-type" autofocus x-model="form.type" :disabled="!isNew">
 							<option value="user">{{ .L.T "users.type.user" }}</option>
+							{{- if or (not DenmaInCenter) (eq .Profile.UserRole.ID 1) (eq $d.User.Type "api") }}{{/* denma: superadmins' in a center (cmd/denma_hierarchy.go) */}}
 							<option value="api">{{ .L.T "users.type.api" }}</option>
+							{{- end }}
 						</select>
 					</div>
 
