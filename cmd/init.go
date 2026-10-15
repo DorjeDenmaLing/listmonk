@@ -1415,6 +1415,7 @@ func initAuth(co *core.Core, db *sql.DB, ko *koanf.Koanf) (bool, *auth.Auth) {
 			cookie.SameSite = http.SameSiteLaxMode
 			cookie.Path = initUrlConfig(ko).AdminPath // denma: each center's own name, at the admin's path (cmd/denma_place.go)
 			cookie.Name = denmaCookieName(ko, cookie.Name)
+			cookie.Secure = c.Scheme() == "https" // denma: behind HTTPS too (X-Forwarded-Proto), as the place cookie
 			c.SetCookie(cookie)
 			return nil
 		},
