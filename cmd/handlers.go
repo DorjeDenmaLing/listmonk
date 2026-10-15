@@ -418,7 +418,7 @@ func (a *App) hasUUID(next echo.HandlerFunc, params ...string) echo.HandlerFunc 
 func hasID(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		id, _ := strconv.Atoi(c.Param("id"))
-		if id < 1 {
+		if id < 1 || id > 1<<31-1 { // denma: none past the database's integers
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid ID")
 		}
 

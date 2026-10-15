@@ -14,6 +14,8 @@ package main
 // (cmd/denma_hierarchy.go).
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -514,6 +516,9 @@ func (a *App) DenmaSetCenterStatus(c echo.Context) error {
 		err = d.disable(slug)
 	default:
 		return echo.NewHTTPError(http.StatusBadRequest, "status must be enabled or disabled")
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusNotFound, "center not found")
 	}
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
