@@ -658,6 +658,9 @@ func (a *App) PatchSubscriber(c echo.Context) error {
 	if err := a.denmaCheckSubscriberTags(req.Attribs); err != nil { // denma: only the center's tags (cmd/denma_tags.go)
 		return err
 	}
+	if err := a.denmaCheckOptOut(id, req.Email, req.Status); err != nil { // denma: cmd/denma_optouts.go
+		return err
+	}
 
 	// If lists were explicitly sent, replace the existing subscriptions.
 	overwriteSubs := false
