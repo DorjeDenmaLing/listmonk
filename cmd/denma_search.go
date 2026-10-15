@@ -40,6 +40,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/models"
@@ -133,6 +134,9 @@ func (a *App) denmaCampaignDeletes(user auth.User, ids *[]int, query *string) er
 // denmaSearchSQL is a search's SQL condition ("" for an empty search), or a
 // 400 error saying what's wrong with it.
 func (a *App) denmaSearchSQL(kind denmaKind, user auth.User, search string) (string, error) {
+	if strings.ContainsRune(search, 0) || !utf8.ValidString(search) {
+		return "", echo.NewHTTPError(http.StatusBadRequest, "Search: it has characters that aren't text")
+	}
 	toks := denmaLex(search)
 	if len(toks) == 0 {
 		return "", nil
@@ -256,11 +260,12 @@ func denmaLex(s string) []denmaTok {
 // ---- Parser: or := and (OR and)*; and := not ([AND] not)*; not := (NOT|-) not | ( or ) | term ----
 
 type denmaParser struct {
-	a    *App
-	kind denmaKind
-	user auth.User
-	toks []denmaTok
-	i    int
+	a     *App
+	kind  denmaKind
+	user  auth.User
+	toks  []denmaTok
+	i     int
+	depth int // NOTs and brackets open, at most denmaSearchDepth
 
 	lists, camps, tpls []denmaNamed // loaded when first needed
 }
@@ -322,8 +327,17 @@ func (p *denmaParser) and() (string, error) {
 	return "(" + strings.Join(parts, " AND ") + ")", nil
 }
 
+// denmaSearchDepth is the most NOTs and brackets a search nests.
+const denmaSearchDepth = 50
+
 func (p *denmaParser) not() (string, error) {
 	t, _ := p.peek()
+	if t.kind == denmaTokNot || t.kind == denmaTokOpen {
+		if p.depth++; p.depth > denmaSearchDepth {
+			return "", fmt.Errorf("it nests more than %d NOTs and brackets", denmaSearchDepth)
+		}
+		defer func() { p.depth-- }()
+	}
 	switch t.kind {
 	case denmaTokNot:
 		p.i++
@@ -714,6 +728,10 @@ func denmaDateCond(col, op, v string) (string, error) {
 	case denmaAgoRe.MatchString(lv):
 		m := denmaAgoRe.FindStringSubmatch(lv)
 		unit := map[string]string{"h": "hours", "d": "days", "w": "weeks", "m": "months", "y": "years"}[m[2]]
+		hours := map[string]int{"h": 1, "d": 24, "w": 168, "m": 744, "y": 8784}[m[2]]
+		if n, err := strconv.Atoi(m[1]); err != nil || n > 1000*8784/hours {
+			return "", fmt.Errorf("%q is too long ago; go back at most 1000 years", v)
+		}
 		point = "(NOW() - INTERVAL '" + m[1] + " " + unit + "')"
 	default:
 		if t, err := time.Parse("2006-01-02", lv); err == nil {
