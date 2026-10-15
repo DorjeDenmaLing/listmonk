@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 23
+const denmaFeaturesVersion = 24
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -590,7 +590,26 @@ LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$
     SELECT jsonb_typeof(attribs) = 'object' AND attribs ? 'imported_at';
 $$;
 
--- New subscribers from an import; an import's "overwrite" keeps an earlier mark.
+-- The attributes the center keeps itself (denmaReservedAttribs but tags,
+-- cmd/denma_signup.go).
+CREATE OR REPLACE FUNCTION denma_is_center_attrib(k TEXT) RETURNS BOOLEAN
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT k IN ('consent_at', 'consent_source', 'consent_confirmed_at', 'consents', 'resubscribed_at', 'imported_at')
+        OR k LIKE 'auto\_blocklist\_%' OR k LIKE 'denma\_%';
+$$;
+
+-- new's attributes, but the center's, which are old's.
+CREATE OR REPLACE FUNCTION denma_keep_center_attribs(new JSONB, old JSONB) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$
+    SELECT COALESCE((SELECT jsonb_object_agg(key, value) FROM jsonb_each(CASE WHEN jsonb_typeof(new) = 'object' THEN new ELSE '{}' END)
+            WHERE NOT denma_is_center_attrib(key)), '{}'::JSONB)
+        || COALESCE((SELECT jsonb_object_agg(key, value) FROM jsonb_each(CASE WHEN jsonb_typeof(old) = 'object' THEN old ELSE '{}' END)
+            WHERE denma_is_center_attrib(key)), '{}'::JSONB);
+$$;
+
+-- New subscribers from an import are marked. An import can't give the
+-- center's attributes, and its "overwrite" keeps a subscriber's (an earlier
+-- mark too).
 CREATE OR REPLACE FUNCTION denma_mark_imported_subscriber() RETURNS trigger
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
@@ -598,11 +617,9 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        IF NOT COALESCE(denma_is_imported(NEW.attribs), false) THEN
-            NEW.attribs := denma_with_import_mark(NEW.attribs, NULL);
-        END IF;
-    ELSIF COALESCE(denma_is_imported(OLD.attribs), false) AND NOT COALESCE(denma_is_imported(NEW.attribs), false) THEN
-        NEW.attribs := denma_with_import_mark(NEW.attribs, OLD.attribs->'imported_at');
+        NEW.attribs := denma_with_import_mark(denma_keep_center_attribs(NEW.attribs, NULL), NULL);
+    ELSE
+        NEW.attribs := denma_keep_center_attribs(NEW.attribs, OLD.attribs);
     END IF;
     RETURN NEW;
 END;

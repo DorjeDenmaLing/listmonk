@@ -3,8 +3,7 @@ package main
 // denma: signing up again after unsubscribing. Unsubscribing blocklists
 // someone in the center (cmd/denma_unsubscribe.go), and listmonk then leaves
 // them out of every sign-up. Here, someone blocklisted who signs up again
-// themselves, on the public form or API, or the website's form (the
-// web-signup Lambda, through /api/denma/subscribers/resubscribe), is sent a
+// themselves, on the public form or a sign-up webhook, is sent a
 // confirmation e-mail, and stays blocklisted until they confirm. Confirming
 // (listmonk's opt-in link and page) takes them off the blocklist and
 // subscribes them to the lists they signed up for, not those they left.
@@ -22,7 +21,8 @@ package main
 // calls) leaves a blocklisted subscriber out, as listmonk does: under CASL,
 // an e-mail asking for consent again has to be one they asked for. An admin
 // can send the confirmation from the subscriber's page when they've asked
-// for it (the same API as the web-signup Lambda's).
+// for it (/api/denma/subscribers/resubscribe), without a consent record:
+// confirming is theirs.
 //
 // An address is sent at most one such e-mail a day (and counts towards the
 // opt-in limit, cmd/denma_optins.go); a sign-up in between adds its lists to
@@ -334,15 +334,14 @@ func initDenmaResubscribeHandlers(g *echo.Group, a *App) {
 	g.POST("/api/denma/subscribers/resubscribe", a.auth.Perm(a.DenmaResubscribe, "subscribers:manage"))
 }
 
-// DenmaResubscribe is a sign-up the person made on another site (the
-// website's form, through the web-signup Lambda) for someone who's
-// blocklisted: {email, list_ids, attribs}. It says what became of it
-// (status: sent, already_sent, complained, bounced or not_blocklisted).
+// DenmaResubscribe sends someone who's blocklisted, and asked an admin for
+// it, the re-subscription confirmation: {email, list_ids}. It says what
+// became of it (status: sent, already_sent, complained, bounced or
+// not_blocklisted).
 func (a *App) DenmaResubscribe(c echo.Context) error {
 	var req struct {
-		Email   string         `json:"email"`
-		ListIDs []int          `json:"list_ids"`
-		Attribs map[string]any `json:"attribs"`
+		Email   string `json:"email"`
+		ListIDs []int  `json:"list_ids"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -358,7 +357,7 @@ func (a *App) DenmaResubscribe(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	status, err := a.denmaResubscribe(sub, req.ListIDs, req.Attribs)
+	status, err := a.denmaResubscribe(sub, req.ListIDs, nil)
 	if err != nil {
 		var he *echo.HTTPError
 		if errors.As(err, &he) {

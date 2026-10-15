@@ -530,6 +530,9 @@ func (a *App) CreateSubscriber(c echo.Context) error {
 	if err := a.denmaCheckSubscriberTags(req.Attribs); err != nil { // denma: only the center's tags (cmd/denma_tags.go)
 		return err
 	}
+	if err := a.denmaKeepCenterAttribs(0, &req.Attribs); err != nil { // denma: cmd/denma_signup.go
+		return err
+	}
 
 	// Filter lists against the current user's permitted lists.
 	listIDs := user.FilterListsByPerm(auth.PermTypeManage, req.Lists)
@@ -574,6 +577,9 @@ func (a *App) UpdateSubscriber(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("subscribers.invalidName"))
 	}
 	if err := a.denmaCheckSubscriberTags(req.Attribs); err != nil { // denma: only the center's tags (cmd/denma_tags.go)
+		return err
+	}
+	if err := a.denmaKeepCenterAttribs(getID(c), &req.Attribs); err != nil { // denma: cmd/denma_signup.go
 		return err
 	}
 
@@ -656,6 +662,9 @@ func (a *App) PatchSubscriber(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("subscribers.invalidName"))
 	}
 	if err := a.denmaCheckSubscriberTags(req.Attribs); err != nil { // denma: only the center's tags (cmd/denma_tags.go)
+		return err
+	}
+	if err := a.denmaKeepCenterAttribs(id, &req.Attribs); err != nil { // denma: cmd/denma_signup.go
 		return err
 	}
 	if err := a.denmaCheckOptOut(id, req.Email, req.Status); err != nil { // denma: cmd/denma_optouts.go

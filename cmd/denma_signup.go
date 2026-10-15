@@ -83,7 +83,9 @@ const (
 // record and re-subscribing (cmd/denma_resubscribe.go), imports (automations
 // don't e-mail them), and tags (given on their own); and any starting
 // auto_blocklist_ (the domain check, cmd/denma_emailcheck.go) or denma_. No
-// request can give them, but a Server webhook's consents.
+// request can give them, but a Server webhook's consents. Admins' changes
+// keep a subscriber's (denmaKeepCenterAttribs), as imports do
+// (denma_keep_center_attribs, cmd/denma_features.go).
 var denmaReservedAttribs = []string{"consent_at", "consent_source", "consent_confirmed_at", "consents",
 	"resubscribed_at", "imported_at", "tags"}
 
@@ -113,6 +115,36 @@ func denmaReservedAttribMsg(k string) string {
 		return `"tags" can't be in "attribs": give them as "tags".`
 	}
 	return fmt.Sprintf(`"attribs" can't give %q: it's an attribute the center keeps itself.`, k)
+}
+
+// denmaKeepCenterAttribs keeps the center's attributes (the reserved ones but
+// tags) out of an admin's change: those given are dropped, and subscriber
+// id's (0 for a new one) are kept.
+func (a *App) denmaKeepCenterAttribs(id int, attribs *models.JSON) error {
+	for k := range *attribs {
+		if k != "tags" && denmaIsReservedAttrib(k) {
+			delete(*attribs, k)
+		}
+	}
+	if id == 0 {
+		return nil
+	}
+	var cur models.JSON
+	if err := a.db.Get(&cur, `SELECT CASE WHEN jsonb_typeof(attribs) = 'object' THEN attribs ELSE '{}' END FROM subscribers WHERE id = $1`, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil // listmonk says it's not found
+		}
+		return err
+	}
+	for k, v := range cur {
+		if k != "tags" && denmaIsReservedAttrib(k) {
+			if *attribs == nil {
+				*attribs = models.JSON{}
+			}
+			(*attribs)[k] = v
+		}
+	}
+	return nil
 }
 
 // denmaSignupBadSecrets limits requests to /signup/server with secrets that
