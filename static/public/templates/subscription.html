@@ -37,7 +37,7 @@
 </section>
 
 {{ if or .Data.AllowExport .Data.AllowWipe }}
-<form id="data-form" class="data-form" method="post" action="" onsubmit="return handleData()">
+<form id="data-form" class="data-form" method="post" action="">{{/* denma: handleData is added below, as the CSP runs no inline handlers */}}
     <section>
         <h2>{{ L.T "public.privacyTitle" }}</h2>
         {{ if .Data.AllowExport }}
@@ -62,7 +62,10 @@
         </p>
     </section>
 </form>
-<script>
+<script nonce="{{ .CSPNonce }}">
+    document.querySelector("#data-form").addEventListener("submit", function (e) {
+        if (!handleData()) e.preventDefault();
+    });
     function handleData() {
         var a = document.querySelector('input[name="data-action"]:checked').value,
             f = document.querySelector("#data-form");

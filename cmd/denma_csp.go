@@ -14,10 +14,14 @@ package main
 //     text and visual editors). Alpine still evaluates its own attributes (it
 //     needs 'unsafe-eval'), so the rich text editor's content is x-ignore
 //     (partials/richtext-editor.html).
+//   - Public pages (sign-in, opt-in, unsubscribe...) show the center's
+//     design, so they run only the app's scripts too, with a nonce of their
+//     own (denmaPublicCSP), and the captchas'.
 //   - Pages that show center content (previews, view in browser for
 //     campaigns and automations, the archive, uploads) are sandboxed: no
 //     scripts, and an origin of their own, so nothing in them acts as the
-//     viewer.
+//     viewer. A script upload is served as text, so that no page on the
+//     origin runs it ('self').
 
 import (
 	"crypto/rand"
@@ -33,12 +37,25 @@ import (
 // denmaAdminCSP sets an admin page's policy and returns its nonce, for its
 // inline <script>s.
 func denmaAdminCSP(c echo.Context) string {
-	b := make([]byte, 18)
-	_, _ = rand.Read(b) // never fails (crypto/rand)
-	nonce := base64.StdEncoding.EncodeToString(b)
+	nonce := denmaNonce()
 	c.Response().Header().Set("Content-Security-Policy", "script-src 'self' 'nonce-"+nonce+"' 'unsafe-eval'; "+
 		"object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
 	return nonce
+}
+
+// denmaPublicCSP adds a public page's policy and returns its nonce, for its
+// inline <script>s. It's added, so that a sandboxed page keeps its sandbox.
+func denmaPublicCSP(c echo.Context) string {
+	nonce := denmaNonce()
+	c.Response().Header().Add("Content-Security-Policy", "script-src 'self' 'nonce-"+nonce+"' https://hcaptcha.com https://*.hcaptcha.com; "+
+		"worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
+	return nonce
+}
+
+func denmaNonce() string {
+	b := make([]byte, 18)
+	_, _ = rand.Read(b) // never fails (crypto/rand)
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 // denmaSandboxPolicy keeps a page to itself: no scripts or plugins, an origin
@@ -56,10 +73,17 @@ var reDenmaContentPath = regexp.MustCompile(`^/(api/campaigns/\d+/(preview|previ
 // any file (HTML or SVG with scripts included). PDFs aren't: browsers won't
 // show them sandboxed, and their scripts don't run as the page.
 func denmaSandbox(app *App, h http.Header, p string) {
-	if !reDenmaContentPath.MatchString(p) && !denmaUploadPath(app, p) {
+	upload := denmaUploadPath(app, p)
+	if !reDenmaContentPath.MatchString(p) && !upload {
 		return
 	}
 	h.Set("X-Content-Type-Options", "nosniff")
+	if upload {
+		switch strings.ToLower(path.Ext(p)) {
+		case ".js", ".mjs", ".cjs":
+			h.Set("Content-Type", "text/plain; charset=utf-8")
+		}
+	}
 	if !strings.EqualFold(path.Ext(p), ".pdf") {
 		h.Set("Content-Security-Policy", denmaSandboxPolicy)
 	}

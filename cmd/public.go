@@ -73,6 +73,7 @@ type tplData struct {
 	IndividualTracking  bool
 	Data                any
 	L                   *i18n.I18n
+	CSPNonce            string // denma: for inline <script>s (cmd/denma_csp.go)
 }
 
 // adminTplData is the data container injected into admin templates.
@@ -157,6 +158,7 @@ func (t *pubTplRenderer) Render(w io.Writer, name string, data any, c echo.Conte
 		IndividualTracking:  t.IndividualTracking,
 		Data:                data,
 		L:                   c.Get("app").(*App).i18n,
+		CSPNonce:            denmaPublicCSP(c), // denma: cmd/denma_csp.go
 	})
 }
 
