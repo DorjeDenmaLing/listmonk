@@ -961,23 +961,25 @@ func (a *App) autoTrackLink(u, autoUUID, subUUID string) string {
 }
 
 // DenmaAutomationLink records a click on an automation e-mail's link and
-// redirects to it.
+// redirects to it: a link of an automation that sends e-mail, and that ran for
+// the subscriber (anyone, with individual tracking off). Anything else is 404.
 func (a *App) DenmaAutomationLink(c echo.Context) error {
 	var l struct {
 		ID     int    `db:"id"`
 		URL    string `db:"url"`
 		AutoID int    `db:"auto_id"`
 	}
-	if err := a.db.Get(&l, `SELECT l.id, l.url, COALESCE((SELECT id FROM denma_automations WHERE uuid = $2), 0) AS auto_id
-		FROM links l WHERE l.uuid = $1`, c.Param("linkUUID"), c.Param("autoUUID")); err != nil {
+	if err := a.db.Get(&l, `SELECT l.id, l.url, au.id AS auto_id FROM links l, denma_automations au
+		WHERE l.uuid = $1 AND au.uuid = $2 AND au.send_email
+			AND ($3::TEXT = $4::TEXT OR EXISTS (SELECT 1 FROM denma_automation_sends d JOIN subscribers s ON s.id = d.subscriber_id
+				WHERE d.automation_id = au.id AND s.uuid = $3::UUID))`,
+		c.Param("linkUUID"), c.Param("autoUUID"), c.Param("subUUID"), dummyUUID); err != nil {
 		return c.Render(http.StatusNotFound, tplMessage,
 			makeMsgTpl(a.i18n.T("public.notFoundTitle"), "", a.i18n.T("public.invalidLink")))
 	}
-	if l.AutoID > 0 {
-		if _, err := a.db.Exec(`INSERT INTO denma_automation_clicks (automation_id, link_id, subscriber_id)
-			VALUES ($1, $2, (SELECT id FROM subscribers WHERE uuid = $3))`, l.AutoID, l.ID, c.Param("subUUID")); err != nil {
-			a.log.Printf("denma: error recording an automation's click: %v", err)
-		}
+	if _, err := a.db.Exec(`INSERT INTO denma_automation_clicks (automation_id, link_id, subscriber_id)
+		VALUES ($1, $2, (SELECT id FROM subscribers WHERE uuid = $3))`, l.AutoID, l.ID, c.Param("subUUID")); err != nil {
+		a.log.Printf("denma: error recording an automation's click: %v", err)
 	}
 	return c.Redirect(http.StatusTemporaryRedirect, l.URL)
 }
