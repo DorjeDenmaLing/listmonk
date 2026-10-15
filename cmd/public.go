@@ -254,7 +254,7 @@ func (a *App) ViewCampaignMessage(c echo.Context) error {
 	subUUID := c.Param("subUUID")
 	sub, err := a.core.GetSubscriber(0, subUUID, "")
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if he, ok := err.(*echo.HTTPError); err == sql.ErrNoRows || (ok && he.Code == http.StatusBadRequest) { // denma: core's "not found" is a 400
 			return c.Render(http.StatusNotFound, tplMessage,
 				makeMsgTpl(a.i18n.T("public.notFoundTitle"), "", a.i18n.T("public.errorFetchingEmail")))
 		}
@@ -450,6 +450,7 @@ func (a *App) OptinPage(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
+	confirm = confirm && c.Request().Method == http.MethodPost     // denma: only a POST confirms, not a link scanner's GET
 	if done, err := a.denmaResubOptin(c, subUUID, confirm); done { // denma: re-subscribing (cmd/denma_resubscribe.go)
 		return err
 	}
