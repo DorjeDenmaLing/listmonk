@@ -9,8 +9,9 @@ package main
 //   - Opt-ins: listmonk's opt-in sender (makeOptinNotifyHook) is wrapped
 //     (denmaCheckOptin, in buildApp), so the check runs before every opt-in
 //     and every sign-up that could send one: the public form and API, adding
-//     or editing a subscriber unconfirmed, and "Send opt-in e-mail". A failed
-//     public sign-up is told why, so a typo can be fixed.
+//     or editing a subscriber unconfirmed, and "Send opt-in e-mail", when
+//     there's one to send. A failed public sign-up is told why, so a typo can
+//     be fixed.
 //   - Imports: the imported addresses are checked before the import is
 //     marked finished (denmaImportCheck, the importer's AfterImport), many
 //     domains at once, so no campaign can go to them unchecked.
@@ -42,6 +43,7 @@ import (
 	"github.com/knadh/koanf/v2"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
+	"github.com/lib/pq"
 )
 
 const (
@@ -212,34 +214,54 @@ func denmaReasonAttr(reason string) string {
 	return string(b)
 }
 
-// denmaCheckOptin wraps listmonk's opt-in sender: a subscriber whose domain
-// can't receive mail is blocklisted and sent nothing, and the sign-up is
-// told why; so is one whose address has had its opt-ins for the day
-// (cmd/denma_optins.go). Called by buildApp.
+// denmaOptinDue calls check, listmonk's opt-in sender wrapped by
+// denmaCheckOptin, only when there's an opt-in to send: unconfirmed double
+// opt-in lists, as the sender finds them. Called by buildApp.
+func denmaOptinDue(q *models.Queries, check func(models.Subscriber, []int) (int, error)) func(models.Subscriber, []int) (int, error) {
+	return func(sub models.Subscriber, listIDs []int) (int, error) {
+		var lists []models.List
+		if err := q.GetSubscriberLists.Select(&lists, sub.ID, nil, pq.Array(listIDs), nil, models.SubscriptionStatusUnconfirmed, models.ListOptinDouble); err != nil {
+			return 0, err
+		}
+		if len(lists) == 0 {
+			return 0, nil
+		}
+		return check(sub, listIDs)
+	}
+}
+
+// denmaCheckOptin wraps an opt-in sender: a subscriber whose domain can't
+// receive mail is blocklisted and sent nothing, and the sign-up is told why;
+// so is one whose address has had its opt-ins for the day
+// (cmd/denma_optins.go). One on the shared blocklist is blocklisted and sent
+// nothing, but the sign-up isn't told (it would say the address bounced at
+// some center); one an admin enabled here on purpose stays enabled.
 func denmaCheckOptin(send func(models.Subscriber, []int) (int, error), db *sqlx.DB, ko *koanf.Koanf) func(models.Subscriber, []int) (int, error) {
 	skip := denmaEmailSkip(ko)
 	return func(sub models.Subscriber, listIDs []int) (int, error) {
 		reason, shared := denmaSharedBlock(db, sub.Email)
 		if shared {
-			lo.Printf("denma: blocklisting %s: on the shared blocklist (%s)", sub.Email, reason)
-			denmaBlocklist(db, sub.Email, reason)
-		} else {
-			var bad bool
-			if bad, reason = denmaEmailBad(sub.Email, skip); !bad {
-				// At most denmaOptinLimit a day (cmd/denma_optins.go).
-				if ok, err := denmaOptinAllowed(db, sub.Email, ko.String("denma.center")); err != nil {
-					lo.Printf("denma: error checking %s's opt-ins: %v", sub.Email, err)
-				} else if !ok {
-					lo.Printf("denma: not sending %s an opt-in: %d sent in the last %.0f hours", sub.Email, denmaOptinLimit, denmaOptinWindow.Hours())
-					return 0, echo.NewHTTPError(http.StatusTooManyRequests,
-						"A confirmation e-mail was already sent to "+sub.Email+". Check its inbox and spam folder, or try again tomorrow.")
-				}
-				return send(sub, listIDs)
+			if r, _ := sub.Attribs["auto_blocklist_reason"].(string); r == "" {
+				lo.Printf("denma: blocklisting %s: on the shared blocklist (%s)", sub.Email, reason)
+				denmaBlocklist(db, sub.Email, reason)
 			}
-			lo.Printf("denma: blocklisting %s: %s", sub.Email, reason)
-			denmaBlocklist(db, sub.Email, reason)
-			denmaBlockEverywhere(sub.Email, reason, ko.String("denma.center"))
+			return 0, nil
 		}
+		var bad bool
+		if bad, reason = denmaEmailBad(sub.Email, skip); !bad {
+			// At most denmaOptinLimit a day (cmd/denma_optins.go).
+			if ok, err := denmaOptinAllowed(db, sub.Email, ko.String("denma.center")); err != nil {
+				lo.Printf("denma: error checking %s's opt-ins: %v", sub.Email, err)
+			} else if !ok {
+				lo.Printf("denma: not sending %s an opt-in: %d sent in the last %.0f hours", sub.Email, denmaOptinLimit, denmaOptinWindow.Hours())
+				return 0, echo.NewHTTPError(http.StatusTooManyRequests,
+					"A confirmation e-mail was already sent to "+sub.Email+". Check its inbox and spam folder, or try again tomorrow.")
+			}
+			return send(sub, listIDs)
+		}
+		lo.Printf("denma: blocklisting %s: %s", sub.Email, reason)
+		denmaBlocklist(db, sub.Email, reason)
+		denmaBlockEverywhere(sub.Email, reason, ko.String("denma.center"))
 		return 0, echo.NewHTTPError(http.StatusBadRequest,
 			fmt.Sprintf("%s can't receive e-mail: %s. Check the address.", sub.Email, reason))
 	}

@@ -113,13 +113,15 @@ func (a *App) denmaResubscribe(sub models.Subscriber, listIDs []int, attribs map
 	if err != nil {
 		return "", err
 	}
-	// Through the opt-in checks: the shared blocklist, the domain check and
-	// the opt-in limit.
+	// Through the opt-in checks: the shared blocklist (nothing sent), the
+	// domain check and the opt-in limit.
 	send := denmaCheckOptin(func(sub models.Subscriber, _ []int) (int, error) {
 		return 1, a.denmaSendResub(sub, lists)
 	}, a.db, a.ko)
-	if _, err := send(sub, nil); err != nil {
+	if n, err := send(sub, nil); err != nil {
 		return "", err
+	} else if n == 0 {
+		return denmaResubBounced, nil
 	}
 	if _, err := a.db.Exec(`UPDATE denma_resubscribes SET sent_at = NOW() WHERE subscriber_id = $1`, sub.ID); err != nil {
 		return "", err
