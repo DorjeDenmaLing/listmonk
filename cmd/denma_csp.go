@@ -22,11 +22,15 @@ package main
 //     scripts, and an origin of their own, so nothing in them acts as the
 //     viewer. A script upload is served as text, so that no page on the
 //     origin runs it ('self').
+//
+// And the admin API takes no changes sent from another site
+// (denmaSameSite), which the session cookie would make the admin's.
 
 import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -56,6 +60,32 @@ func denmaNonce() string {
 	b := make([]byte, 18)
 	_, _ = rand.Read(b) // never fails (crypto/rand)
 	return base64.StdEncoding.EncodeToString(b)
+}
+
+// denmaSameSite refuses a change to the admin API (/api, but its public
+// routes) sent from another site: an Origin, or with none a Referer, that
+// isn't this site (a sandboxed page's is "null"). Requests with neither, from
+// programs, go through.
+func denmaSameSite(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		r := c.Request()
+		p := r.URL.Path
+		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions ||
+			!strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/api/public/") {
+			return next(c)
+		}
+		from := r.Header.Get("Origin")
+		if from == "" {
+			from = r.Header.Get("Referer")
+		}
+		if from == "" {
+			return next(c)
+		}
+		if u, err := url.Parse(from); err != nil || u.Host == "" || !strings.EqualFold(u.Host, r.Host) {
+			return echo.NewHTTPError(http.StatusForbidden, "This request came from another site.")
+		}
+		return next(c)
+	}
 }
 
 // denmaSandboxPolicy keeps a page to itself: no scripts or plugins, an origin
