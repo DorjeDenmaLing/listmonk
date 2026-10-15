@@ -128,6 +128,10 @@ func (a *App) SendTxMessage(c echo.Context) error {
 			}
 		}
 
+		if a.denmaTxSkipped(sub.Email, &notFound) { // denma: not to complaints and bounces (cmd/denma_api_send.go)
+			continue
+		}
+
 		// Render the message.
 		if err := m.Render(sub, tpl, a.manager.GenericTemplateFuncs()); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest,

@@ -529,20 +529,8 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 // not sent to.
 func (a *App) apiTxRecipient(keyID int, email, name string, skip map[string]bool) (models.Subscriber, string, error) {
 	var sub models.Subscriber
-	if _, ok := denmaSharedBlock(a.db, email); ok { // cmd/denma_blocklist.go
-		return sub, denmaAPINotSent, nil
-	}
-	var kind string
-	if err := a.db.Get(&kind, `SELECT COALESCE((SELECT kind FROM denma_optouts WHERE email_hash = denma_email_hash($1)), '')`, email); err != nil {
-		return sub, "", err
-	}
-	if kind == denmaOptOutComplained {
-		return sub, denmaAPINotSent, nil
-	}
-	if bad, reason := denmaEmailBad(email, skip); bad {
-		denmaBlocklist(a.db, email, reason)
-		denmaBlockEverywhere(email, reason, a.ko.String("denma.center"))
-		return sub, denmaAPINotSent, nil
+	if no, err := a.denmaTxRefused(email, skip); err != nil || no {
+		return sub, denmaAPINotSent, err
 	}
 
 	get := func() error {
@@ -563,26 +551,48 @@ func (a *App) apiTxRecipient(keyID int, email, name string, skip map[string]bool
 		}
 		err = get()
 	}
+	return sub, "", err
+}
+
+// denmaTxRefused reports whether a transactional e-mail isn't sent to email:
+// it complained here, hard-bounced (here, which the shared blocklist only
+// has after the minute's job, cmd/denma_blocklist.go, or anywhere), or its
+// domain can't receive mail. Someone who unsubscribed, or whom an admin
+// blocklisted, is still sent it.
+func (a *App) denmaTxRefused(email string, skip map[string]bool) (bool, error) {
+	if _, ok := denmaSharedBlock(a.db, email); ok {
+		return true, nil
+	}
+	var kind string
+	if err := a.db.Get(&kind, `SELECT COALESCE((SELECT kind FROM denma_optouts WHERE email_hash = denma_email_hash($1)), '')`, email); err != nil {
+		return false, err
+	}
+	if kind == denmaOptOutComplained {
+		return true, nil
+	}
+	if bad, reason := denmaEmailBad(email, skip); bad {
+		denmaBlocklist(a.db, email, reason)
+		denmaBlockEverywhere(email, reason, a.ko.String("denma.center"))
+		return true, nil
+	}
+	var no bool
+	err := a.db.Get(&no, `SELECT EXISTS (SELECT 1 FROM subscribers s WHERE LOWER(s.email) = LOWER($1) AND s.status = 'blocklisted'
+		AND (COALESCE(s.attribs->>'auto_blocklist_reason', '') <> ''
+			OR EXISTS (SELECT 1 FROM bounces b WHERE b.subscriber_id = s.id AND b.type = 'hard')))`, email)
+	return no, err
+}
+
+// denmaTxSkipped reports whether listmonk's transactional API (/api/tx)
+// leaves email out (denmaTxRefused), adding why to notFound.
+func (a *App) denmaTxSkipped(email string, notFound *[]string) bool {
+	no, err := a.denmaTxRefused(email, denmaEmailSkip(a.ko))
 	if err != nil {
-		return sub, "", err
+		a.log.Printf("denma: error checking a transactional e-mail's recipient: %v", err)
 	}
-	if sub.Status == models.SubscriberStatusBlockListed {
-		if reason, _ := sub.Attribs["auto_blocklist_reason"].(string); reason != "" {
-			return sub, denmaAPINotSent, nil
-		}
-		// A hard bounce here, which the shared blocklist only has after the
-		// minute's job (cmd/denma_blocklist.go).
-		var bounced bool
-		if err := a.db.Get(&bounced, `SELECT EXISTS (SELECT 1 FROM bounces WHERE subscriber_id = $1 AND type = 'hard')`, sub.ID); err != nil {
-			return sub, "", err
-		}
-		if bounced {
-			return sub, denmaAPINotSent, nil
-		}
-		// Unsubscribed (or blocklisted by an admin): transactional e-mail
-		// still goes.
+	if no || err != nil {
+		*notFound = append(*notFound, email+" isn't sent e-mail: they marked one as spam, it bounced, or its domain can't receive mail")
 	}
-	return sub, "", nil
+	return no || err != nil
 }
 
 // ---- POST /v1/campaigns ----
