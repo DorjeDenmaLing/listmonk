@@ -110,18 +110,28 @@ func (m *Manager) DenmaStop(wait time.Duration) bool {
 // stopped campaign's are, and sent when it resumes.
 var DenmaDailyWait func(stopped func() bool) bool
 
+// DenmaPaceWait, if set, blocks a campaign message until its turn at the
+// process's send rate (cmd/denma_sending.go), after the daily waits, and
+// returns false if stopped() first, as DenmaDailyWait: a shutdown then
+// skips the message instead of waiting for its turn.
+var DenmaPaceWait func(stopped func() bool) bool
+
 // DenmaDailyCounted and DenmaCenterCounted mark a campaign message that
 // DenmaDailyWait and the center's wait counted as they let it go, so that
-// its send doesn't count it again (cmd/denma_sending.go, denma_daily.go).
+// its send doesn't count it again (cmd/denma_sending.go, denma_daily.go);
+// DenmaPaced, one that had its turn (DenmaPaceWait), so that it doesn't
+// wait for another.
 const (
 	DenmaDailyCounted  = "X-Denma-Daily-Counted"
 	DenmaCenterCounted = "X-Denma-Center-Counted"
+	DenmaPaced         = "X-Denma-Paced"
 )
 
 // denmaMarkCounted marks a campaign message's headers with what its waits
 // counted (waited: whether they ran), and clears the marks otherwise.
 func (m *Manager) denmaMarkCounted(h textproto.MIMEHeader, waited bool) {
-	for name, on := range map[string]bool{DenmaDailyCounted: waited && DenmaDailyWait != nil, DenmaCenterCounted: waited && m.denmaCenterWait != nil} {
+	for name, on := range map[string]bool{DenmaDailyCounted: waited && DenmaDailyWait != nil,
+		DenmaCenterCounted: waited && m.denmaCenterWait != nil, DenmaPaced: waited && DenmaPaceWait != nil} {
 		if on {
 			h.Set(name, "1")
 		} else {

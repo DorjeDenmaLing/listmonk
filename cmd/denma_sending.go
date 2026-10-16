@@ -20,6 +20,12 @@ package main
 // (postbacks) wait in a wrapper given to the managers. A center sending alone
 // still gets the full rate; several share it, in the order they asked.
 //
+// Campaign messages wait for their turn in the campaign manager instead
+// (manager.DenmaPaceWait), where a shutdown can stop the wait: the message
+// is skipped, as a paused campaign's are, and sent when the campaign resumes.
+// Waiting in the messenger, they couldn't be stopped, and with many centers
+// sending their turns could be further off than a shutdown waits.
+//
 // Every e-mail is also counted for the hub's daily limit (cmd/denma_daily.go),
 // which campaign messages wait for.
 //
@@ -61,6 +67,12 @@ var (
 
 // wait blocks until it's this message's turn.
 func (p *denmaPacer) wait() {
+	p.waitUnless(func() bool { return false })
+}
+
+// waitUnless is wait, giving up (false) once stopped(); the turn it took is
+// left unused.
+func (p *denmaPacer) waitUnless(stopped func() bool) bool {
 	p.mu.Lock()
 	now := time.Now()
 	slot := now
@@ -80,8 +92,15 @@ func (p *denmaPacer) wait() {
 	p.slots = append(p.slots, slot)
 	p.mu.Unlock()
 
-	if d := slot.Sub(now); d > 0 {
-		time.Sleep(d)
+	for {
+		d := time.Until(slot)
+		if d <= 0 {
+			return true
+		}
+		if stopped() {
+			return false
+		}
+		time.Sleep(min(d, 50*time.Millisecond))
 	}
 }
 
@@ -150,8 +169,11 @@ type denmaPacedMessenger struct {
 }
 
 func (m denmaPacedMessenger) Push(msg models.Message) error {
-	denmaSendPacer.wait()
+	if msg.Headers == nil || msg.Headers.Get(manager.DenmaPaced) == "" {
+		denmaSendPacer.wait()
+	}
 	if msg.Headers != nil {
+		msg.Headers.Del(manager.DenmaPaced)
 		msg.Headers.Del(manager.DenmaDailyCounted) // counted by its wait
 	}
 	return m.Messenger.Push(msg)
@@ -172,7 +194,12 @@ func denmaLimitSending(msgrs []manager.Messenger, ko *koanf.Koanf) []manager.Mes
 	denmaHookEmail.Do(func() {
 		email.DenmaDropSenderHeaders = true // cmd/denma_domains.go, denmaCheckHeaders
 		email.BeforePush = func(m models.Message) {
-			denmaSendPacer.wait()
+			// A campaign's e-mail waited in the manager (manager.DenmaPaceWait).
+			if m.Headers != nil && m.Headers.Get(manager.DenmaPaced) != "" {
+				m.Headers.Del(manager.DenmaPaced)
+			} else {
+				denmaSendPacer.wait()
+			}
 			// A campaign's e-mail, counted by its wait (denmaDaily.Wait).
 			if m.Headers != nil && m.Headers.Get(manager.DenmaDailyCounted) != "" {
 				m.Headers.Del(manager.DenmaDailyCounted)
@@ -187,6 +214,7 @@ func denmaLimitSending(msgrs []manager.Messenger, ko *koanf.Koanf) []manager.Mes
 			denmaDaily.Add()
 		}
 		manager.DenmaDailyWait = denmaDaily.Wait
+		manager.DenmaPaceWait = denmaSendPacer.waitUnless
 	})
 
 	out := make([]manager.Messenger, len(msgrs))

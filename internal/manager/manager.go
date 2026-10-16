@@ -529,6 +529,11 @@ func (m *Manager) worker() {
 				msg.pipe.wg.Done()
 				continue
 			}
+			// denma: and its turn at the process's send rate (denma.go).
+			if msg.pipe != nil && DenmaPaceWait != nil && !DenmaPaceWait(msg.pipe.stopped.Load) {
+				msg.pipe.wg.Done()
+				continue
+			}
 
 			// Pause on hitting the message rate.
 			if numMsg >= m.cfg.MessageRate {

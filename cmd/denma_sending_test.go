@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 // Transactional e-mails claim the hub's daily limit short of its reserve,
@@ -23,5 +24,25 @@ func TestDenmaClaimDaily(t *testing.T) {
 	denmaDaily.SetLimit(0, 0)
 	if claimed, err := denmaClaimDaily(1000); err != nil || claimed {
 		t.Errorf("without a limit: claimed %v, %v", claimed, err)
+	}
+}
+
+// A message waiting for its turn at the send rate gives up as soon as it's
+// stopped (a shutdown), however far off its turn is; one not stopped waits.
+func TestDenmaPacerStops(t *testing.T) {
+	p := &denmaPacer{rate: 1}
+	for range 20 { // turns taken for the next 20 seconds
+		p.waitUnless(func() bool { return true })
+	}
+	start, stop := time.Now(), time.Now().Add(100*time.Millisecond)
+	if p.waitUnless(func() bool { return time.Now().After(stop) }) {
+		t.Fatal("a message 20 s from its turn went")
+	}
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Fatalf("gave up after %v, want about 100ms", d)
+	}
+	q := &denmaPacer{rate: 10}
+	if !q.waitUnless(func() bool { return false }) {
+		t.Fatal("a message with its turn now didn't go")
 	}
 }
