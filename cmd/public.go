@@ -820,7 +820,7 @@ func drawTransparentImage(h, w int) []byte {
 // processSubForm processes an incoming form/public API subscription request.
 // The bool indicates whether there was subscription to an optin list so that
 // an appropriate message can be shown.
-func (a *App) processSubForm(c echo.Context) (bool, error) {
+func (a *App) processSubForm(c echo.Context) (hasOptin bool, err error) { // denma: named, for denmaSubFormAnswer
 	// Get and validate fields.
 	var req struct {
 		Name          string   `form:"name" json:"name"`
@@ -868,6 +868,10 @@ func (a *App) processSubForm(c echo.Context) (bool, error) {
 		}
 	}
 
+	defer a.denmaSubFormAnswer(listUUIDs, &hasOptin, &err) // denma: the same answer for everyone (cmd/denma_signupanswers.go)
+	if err := a.denmaSignupDomain(req.Email); err != nil { // denma: cmd/denma_signupanswers.go
+		return false, err
+	}
 	a.denmaNoConsentSignup(req.Email) // denma: their own sign-up (cmd/denma_noconsent.go)
 
 	// Insert the subscriber into the DB.
@@ -907,7 +911,7 @@ func (a *App) processSubForm(c echo.Context) (bool, error) {
 
 	// Something else went wrong.
 	if e, ok := lastErr.(*echo.HTTPError); ok {
-		return false, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("%s", e.Message))
+		return false, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("%s", e.Message)).SetInternal(e) // denma: kept, for denmaSubFormAnswer
 	}
 	return false, echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("public.errorProcessingRequest"))
 }

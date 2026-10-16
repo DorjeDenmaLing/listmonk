@@ -233,7 +233,8 @@ func denmaOptinDue(q *models.Queries, check func(models.Subscriber, []int) (int,
 // denmaCheckOptin wraps an opt-in sender: a subscriber whose domain can't
 // receive mail is blocklisted and sent nothing, and the sign-up is told why;
 // so is one whose address has had its opt-ins for the day
-// (cmd/denma_optins.go). One on the shared blocklist is blocklisted and sent
+// (cmd/denma_optins.go), though sign-ups answer that as sent
+// (cmd/denma_signupanswers.go). One on the shared blocklist is blocklisted and sent
 // nothing, but the sign-up isn't told (it would say the address bounced at
 // some center); one an admin enabled here on purpose stays enabled.
 func denmaCheckOptin(send func(models.Subscriber, []int) (int, error), db *sqlx.DB, ko *koanf.Koanf) func(models.Subscriber, []int) (int, error) {
@@ -255,7 +256,7 @@ func denmaCheckOptin(send func(models.Subscriber, []int) (int, error), db *sqlx.
 			} else if !ok {
 				lo.Printf("denma: not sending %s an opt-in: %d sent in the last %.0f hours", sub.Email, denmaOptinLimit, denmaOptinWindow.Hours())
 				return 0, echo.NewHTTPError(http.StatusTooManyRequests,
-					"A confirmation e-mail was already sent to "+sub.Email+". Check its inbox and spam folder, or try again tomorrow.")
+					"A confirmation e-mail was already sent to "+sub.Email+". Check its inbox and spam folder, or try again tomorrow.").SetInternal(errDenmaOptinLimited)
 			}
 			// Its link's token (cmd/denma_optintoken.go).
 			return denmaWithOptinToken(db, sub, func() (int, error) { return send(sub, listIDs) })

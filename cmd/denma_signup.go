@@ -894,13 +894,20 @@ func (a *App) DenmaSignup(c echo.Context) error {
 		attribs["website"] = website
 	}
 
+	if err := a.denmaSignupDomain(email); err != nil { // member or not (cmd/denma_signupanswers.go)
+		logf("refused: the address's domain can't receive e-mail")
+		return reply(http.StatusBadRequest, fmt.Sprint(err.(*echo.HTTPError).Message))
+	}
 	a.denmaNoConsentSignup(email) // their own sign-up (cmd/denma_noconsent.go)
 	result, isNew, err := a.signupSubscribe(email, name, listIDs, attribs)
+	if errors.Is(err, errDenmaOptinLimited) { // answered as sent: the limit would say they're new (cmd/denma_signupanswers.go)
+		result, err = "opt-in limit reached: no e-mail sent", nil
+	}
 	if err != nil {
 		var he *echo.HTTPError
 		if errors.As(err, &he) && he.Code < 500 {
 			logf("refused: " + fmt.Sprint(he.Message))
-			return reply(he.Code, fmt.Sprint(he.Message)) // the opt-in limit, an address that can't receive mail
+			return reply(he.Code, fmt.Sprint(he.Message)) // an address that can't receive mail
 		}
 		a.log.Printf("denma: error in sign-up webhook %d: %v", h.ID, err)
 		return reply(http.StatusInternalServerError, a.i18n.T("public.errorProcessingRequest"))

@@ -19,7 +19,7 @@
         "tags": ["Form"],
         "operationId": "formSignup",
         "summary": "Sign someone up from a form",
-        "description": "Signs someone up to the webhook's lists (double opt-in): a new address is added and sent the confirmation e-mail, an existing subscriber gets the lists and the confirmation if they haven't confirmed them yet, and someone who unsubscribed is sent the e-mail to subscribe again (not someone who complained, or whose address bounced). A browser posting a plain form gets the \"check your e-mail\" page, or the `next` address if it's one of the center's trusted ones; other callers get JSON.\n\nAt most the webhook's sign-ups an hour (50 to start with; the admins are told when it's reached), and 5 confirmation e-mails an address a day. Turn on the form's own spam protection (Gravity Forms' Turnstile or reCAPTCHA field): these limits see the form's server, not the visitor.\n\nFields it can't use are left out, and the sign-up goes on.",
+        "description": "Signs someone up to the webhook's lists (double opt-in): a new address is added and sent the confirmation e-mail, an existing subscriber gets the lists and the confirmation if they haven't confirmed them yet, and someone who unsubscribed is sent the e-mail to subscribe again (not someone who complained, or whose address bounced). A browser posting a plain form gets the \"check your e-mail\" page, or the `next` address if it's one of the center's trusted ones; other callers get JSON.\n\nAt most the webhook's sign-ups an hour (50 to start with; the admins are told when it's reached), and 5 confirmation e-mails an address a day (past that, the answer is the same, and no e-mail is sent). The answer never says whether the address was there already. Turn on the form's own spam protection (Gravity Forms' Turnstile or reCAPTCHA field): these limits see the form's server, not the visitor.\n\nFields it can't use are left out, and the sign-up goes on.",
         "security": [],
         "parameters": [
           {"name": "token", "in": "path", "required": true, "description": "The webhook's secret token, from the address shown when it was made.", "schema": {"type": "string"}}
@@ -32,11 +32,11 @@
           }
         },
         "responses": {
-          "200": {"description": "Taken: they're sent the confirmation e-mail if they need one.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Done"}}}},
-          "400": {"description": "No valid address, or the consent box isn't ticked.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "200": {"description": "Taken: they're sent the confirmation e-mail if they need one, and haven't had 5 today.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Done"}}}},
+          "400": {"description": "No valid address, its domain can't receive e-mail, or the consent box isn't ticked.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "404": {"description": "No webhook has this token (any more).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "410": {"description": "The webhook has no lists left.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-          "429": {"description": "Too many sign-ups this hour, or confirmation e-mails to this address today.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+          "429": {"description": "Too many sign-ups this hour.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
         }
       }
     },
