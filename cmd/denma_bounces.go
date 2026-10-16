@@ -28,6 +28,7 @@ package main
 // lost would leave someone who reported spam able to be mailed again.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,6 +39,7 @@ import (
 	"github.com/gofrs/uuid/v5"
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/koanf/v2"
+	"github.com/knadh/listmonk/internal/bounce/webhooks"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
 	"github.com/lib/pq"
@@ -46,6 +48,7 @@ import (
 // denmaBounceCB is the hub's bounce recorder: its own (own) on a single
 // install, else the router.
 func denmaBounceCB(own func(models.Bounce) error, ko *koanf.Koanf) func(models.Bounce) error {
+	webhooks.DenmaSESTopicAllowed = func(arn string) bool { return denmaSESTopicAllowed(ko, arn) }
 	if !ko.Bool("denma.multi_center") {
 		return own
 	}
@@ -56,6 +59,55 @@ func denmaBounceCB(own func(models.Bounce) error, ko *koanf.Koanf) func(models.B
 		}
 		return denmaHub.routeBounce(b)
 	}
+}
+
+// denmaSESTopics are the SNS topics SES notifications are taken from
+// (internal/bounce/webhooks/denma_ses.go): denma.ses_topics in config.toml,
+// and those SES sends the hub's sender's domain's and the sending domains'
+// bounces and complaints to. An unknown topic looks again, at most every 10 s.
+var denmaSESTopics struct {
+	sync.Mutex
+	set map[string]bool
+	at  time.Time
+}
+
+func denmaSESTopicAllowed(ko *koanf.Koanf, arn string) bool {
+	c := &denmaSESTopics
+	c.Lock()
+	defer c.Unlock()
+	if arn == "" || (c.set[arn] && time.Since(c.at) < 10*time.Minute) || time.Since(c.at) < 10*time.Second {
+		return arn != "" && c.set[arn]
+	}
+
+	set := map[string]bool{}
+	for _, t := range ko.Strings("denma.ses_topics") {
+		set[strings.TrimSpace(t)] = true
+	}
+	if denmaHub != nil {
+		var stored []string
+		if err := denmaHub.db().Select(&stored, `SELECT DISTINCT t FROM denma.sending_domains,
+			LATERAL (VALUES (state->'ses'->>'bounce_topic'), (state->'ses'->>'complaint_topic')) v(t) WHERE t <> ''`); err != nil {
+			denmaHub.current().log.Printf("SES topics: the sending domains: %v", err)
+		}
+		for _, t := range stored {
+			set[t] = true
+		}
+		if s, _ := denmaHub.ses(); s != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if ref := denmaHub.domainRef(ctx, s); ref.Topic != "" {
+				set[ref.Topic] = true
+			} else {
+				// SES couldn't say: keep what it said before.
+				for t := range c.set {
+					set[t] = true
+				}
+			}
+			cancel()
+		}
+	}
+	delete(set, "")
+	c.set, c.at = set, time.Now()
+	return set[arn]
 }
 
 // denmaBounceCampaigns caches which center each bounced campaign is in.

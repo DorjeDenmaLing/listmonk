@@ -94,10 +94,11 @@ func (s *SES) ProcessSubscription(b []byte) error {
 		u = n.UnsubscribeURL
 	}
 
-	resp, err := http.Get(u)
+	resp, err := denmaSNSClient.Get(u) // denma: with a timeout
 	if err != nil {
 		return fmt.Errorf("error requesting subscription URL: %v", err)
 	}
+	defer resp.Body.Close() // denma:
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("non 200 response on subscription URL: %v", resp.StatusCode)
@@ -203,6 +204,14 @@ func (s *SES) buildSignature(n sesNotif) []byte {
 
 // verifyNotif verifies the signature on a notification payload.
 func (s *SES) verifyNotif(n sesNotif) error {
+	if err := denmaCheckNotif(n); err != nil { // denma: only the hub's topics
+		return err
+	}
+	alg, err := denmaSigAlg(n.SignatureVersion) // denma: SHA1 or SHA256
+	if err != nil {
+		return err
+	}
+
 	// Get the message signing certificate.
 	cert, err := s.getCert(n.SigningCertURL)
 	if err != nil {
@@ -214,7 +223,7 @@ func (s *SES) verifyNotif(n sesNotif) error {
 		return err
 	}
 
-	return cert.CheckSignature(x509.SHA1WithRSA, s.buildSignature(n), sign)
+	return cert.CheckSignature(alg, s.buildSignature(n), sign) // denma: alg
 }
 
 // getCert takes the SNS certificate URL and fetches it and caches it for the first time,
@@ -238,7 +247,7 @@ func (s *SES) getCert(certURL string) (*x509.Certificate, error) {
 	}
 
 	// Fetch the certificate.
-	resp, err := http.Get(certURL)
+	resp, err := denmaSNSClient.Get(certURL) // denma: with a timeout
 	if err != nil {
 		return nil, err
 	}
