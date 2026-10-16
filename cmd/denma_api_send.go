@@ -919,7 +919,11 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 		}
 		skipped = append(skipped, denmaAPISkip{s.Email, denmaAPINotSent})
 	}
-	// On the list, with their attributes; the latest if given again.
+	// On the list, with their attributes; the latest if given again. Only
+	// here can the fenced join it (cmd/denma_noconsent.go).
+	if _, err := tx.Exec(`SELECT set_config('denma.api_recipients', $1, true)`, strconv.Itoa(listID)); err != nil {
+		return fail(err)
+	}
 	if _, err := tx.Exec(`INSERT INTO subscriber_lists (subscriber_id, list_id, status, meta)
 		SELECT s.id, $2, 'confirmed', CASE WHEN i.attribs = '{}'::JSONB THEN '{}'::JSONB ELSE jsonb_build_object('attribs', i.attribs) END
 		FROM unnest($3::TEXT[], $4::JSONB[]) AS i(email, attribs) JOIN subscribers s ON LOWER(s.email) = i.email
