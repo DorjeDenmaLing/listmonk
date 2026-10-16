@@ -158,6 +158,23 @@ BEGIN
         FROM denma_api_campaigns x WHERE x.campaign_id = NEW.id AND x.key_id IS NOT NULL;
     RETURN NULL;
 END $$;
+-- A key's contacts (denma_api_contacts, for its events): those its campaign
+-- goes to, as it starts.
+CREATE OR REPLACE FUNCTION denma_api_campaign_contacts() RETURNS TRIGGER
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+BEGIN
+    INSERT INTO denma_api_contacts (key_id, email_hash)
+        SELECT x.key_id, denma_email_hash(s.email) FROM denma_api_campaigns x
+        JOIN subscriber_lists sl ON sl.list_id = x.list_id AND sl.status <> 'unsubscribed'
+        JOIN subscribers s ON s.id = sl.subscriber_id AND s.status <> 'blocklisted'
+        WHERE x.campaign_id = NEW.id AND x.key_id IS NOT NULL
+        ON CONFLICT DO NOTHING;
+    RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS denma_api_campaign_contacts ON campaigns;
+CREATE TRIGGER denma_api_campaign_contacts AFTER UPDATE OF status ON campaigns
+    FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status AND NEW.status = 'running')
+    EXECUTE FUNCTION denma_api_campaign_contacts();
 DROP TRIGGER IF EXISTS denma_api_campaign_event ON campaigns;
 CREATE TRIGGER denma_api_campaign_event AFTER UPDATE OF status ON campaigns
     FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status AND NEW.status IN ('running', 'paused', 'finished', 'cancelled'))
@@ -387,7 +404,8 @@ func (a *App) apiResumeStarting() {
 	}
 }
 
-// apiCleanUp deletes old events, finished API campaigns' lists, old key use,
+// apiCleanUp deletes old events, finished API campaigns' lists (and cancels
+// drafts never started), old key use,
 // replaced keys past their overlap, and deleted keys past restoring.
 func (a *App) apiCleanUp() {
 	if _, err := a.db.Exec(`DELETE FROM denma_api_events WHERE created_at < NOW() - make_interval(days => $1)`, denmaAPIEventDays); err != nil {
@@ -397,6 +415,12 @@ func (a *App) apiCleanUp() {
 		JOIN campaigns c ON c.id = x.campaign_id
 		WHERE c.status IN ('finished', 'cancelled') AND c.updated_at < NOW() - make_interval(days => $1))`, denmaAPIListKeepDays); err != nil {
 		a.log.Printf("denma: error deleting old API campaigns' lists: %v", err)
+	}
+	// Drafts never started are cancelled (their lists then go, as above).
+	if _, err := a.db.Exec(`UPDATE campaigns c SET status = 'cancelled', updated_at = NOW() FROM denma_api_campaigns x
+		WHERE x.campaign_id = c.id AND c.status = 'draft' AND x.state = 'draft' AND x.created_at < NOW() - make_interval(days => $1)`,
+		denmaAPIDraftDays); err != nil {
+		a.log.Printf("denma: error cancelling old API campaign drafts: %v", err)
 	}
 	if _, err := a.db.Exec(`DELETE FROM denma_api_messages WHERE created_at < NOW() - INTERVAL '90 days'`); err != nil {
 		a.log.Printf("denma: error deleting old API e-mail records: %v", err)

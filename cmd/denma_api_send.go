@@ -59,6 +59,7 @@ const (
 	denmaAPIMaxAttribs    = 10_000   // bytes of a recipient's attributes
 	denmaAPIIdemHeader    = "Idempotency-Key"
 	denmaAPIListKeepDays  = 7  // days a campaign's list is kept once it's done
+	denmaAPIDraftDays     = 7  // days a campaign made with "start": false waits to be started
 	denmaAPIMaxTags       = 20 // tags a Server webhook's request adds (cmd/denma_signup.go)
 
 	denmaAPINotSent      = "not sent" // a skip's reason, unless the request's at fault
@@ -636,7 +637,7 @@ type denmaAPICampaign struct {
 	CreatedAt  time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt  time.Time  `db:"updated_at" json:"updated_at"`
 
-	Skipped []denmaAPISkip `db:"-" json:"skipped,omitempty"` // when recipients are added
+	Skipped []denmaAPISkip `db:"-" json:"skipped,omitempty"` // when recipients are added, and who won't be sent it when it starts
 }
 
 const denmaAPICampaignSQL = `SELECT c.id, c.uuid, c.name, c.subject, x.error,
@@ -748,6 +749,11 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 	}
 	claimed := 0
 	if start {
+		// Who it won't go to, said only once it's sent: a draft's answer
+		// mustn't tell a key who the center has blocklisted for free.
+		if skipped, err = a.apiNotSent(listID, skipped); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
 		n, err := a.apiListRecipients(listID)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -834,7 +840,9 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 }
 
 // apiAddRecipients adds recipients to an API campaign's list, creating new
-// subscribers, and returns those skipped (blocklisted). Their attributes are
+// subscribers, and returns those skipped for the request's faults (not a
+// valid address, attributes too big): the blocklisted go on the list, not
+// to be sent it, and are said when it starts (apiNotSent). Their attributes are
 // stored in the list's subscriber_lists.meta, for this campaign only
 // (denmaAPIRecipientData); existing subscribers keep theirs, and their name
 // unless it's a stand-in.
@@ -913,11 +921,7 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 	}
 	var ids []int
 	for _, s := range subs {
-		if s.Status != models.SubscriberStatusBlockListed {
-			ids = append(ids, s.ID)
-			continue
-		}
-		skipped = append(skipped, denmaAPISkip{s.Email, denmaAPINotSent})
+		ids = append(ids, s.ID)
 	}
 	// On the list, with their attributes; the latest if given again. Only
 	// here can the fenced join it (cmd/denma_noconsent.go).
@@ -932,11 +936,23 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 		pq.Array(ids), listID, pq.Array(emails), pq.Array(attribs)); err != nil {
 		return fail(err)
 	}
-	if err := denmaAPIContacts(tx, keyID, emails); err != nil {
-		return fail(err)
-	}
+	// The key's contacts are recorded as it starts (denma_api_campaign_contacts).
 	if err := tx.Commit(); err != nil {
 		return fail(err)
+	}
+	return skipped, nil
+}
+
+// apiNotSent adds to skipped those on an API campaign's list who won't be
+// sent it: blocklisted, or unsubscribed from it.
+func (a *App) apiNotSent(listID int, skipped []denmaAPISkip) ([]denmaAPISkip, error) {
+	var emails []string
+	if err := a.db.Select(&emails, `SELECT LOWER(s.email) FROM subscriber_lists sl JOIN subscribers s ON s.id = sl.subscriber_id
+		WHERE sl.list_id = $1 AND (sl.status = 'unsubscribed' OR s.status = 'blocklisted') ORDER BY 1`, listID); err != nil {
+		return nil, err
+	}
+	for _, e := range emails {
+		skipped = append(skipped, denmaAPISkip{e, denmaAPINotSent})
 	}
 	return skipped, nil
 }
@@ -1199,6 +1215,13 @@ func (a *App) DenmaAPIStartCampaign(c echo.Context) error {
 	out, err := a.apiCampaign(c, id)
 	if err != nil {
 		return err
+	}
+	var listID int
+	if err := a.db.Get(&listID, `SELECT COALESCE(list_id, 0) FROM denma_api_campaigns WHERE campaign_id = $1`, id); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if out.Skipped, err = a.apiNotSent(listID, []denmaAPISkip{}); err != nil { // who it won't go to
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	a.apiLog(c, "campaign %d starting", id)
 	return c.JSON(http.StatusOK, okResp{out})
