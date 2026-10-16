@@ -58,6 +58,7 @@ type App struct {
 	notifs     *notifs.Notifs // denma: the app's own e-mail notifier (one App per center)
 	crons      *cron.Cron     // denma: stopped when a center is reloaded
 	design     *denmaDesign   // denma: the center's design for e-mails and pages (cmd/denma_design.go)
+	retired    sync.Once      // denma: retired once (denmaRetire)
 
 	about         about
 	fnOptinNotify func(models.Subscriber, []int) (int, error)

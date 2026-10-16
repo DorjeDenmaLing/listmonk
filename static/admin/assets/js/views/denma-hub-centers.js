@@ -18,6 +18,7 @@ function component() {
     ...s.loadRange(),
     ...table,
     ranges: s.RANGES,
+    changing: '', // the center being enabled or disabled
     centers: [],
     rows: [],
     busy: true,
@@ -99,11 +100,19 @@ function component() {
     },
 
     async setStatus(c, status) {
+      if (this.changing) {
+        return; // one at a time (cmd/denma_centers.go)
+      }
       if (status === 'disabled' && !(await u.confirm(`Disable ${c.name}? Its admin pages and its subscribers' links stop working until it's enabled again. Its data is kept.`))) {
         return;
       }
-      await api('centers', `/denma/centers/${encodeURIComponent(c.slug)}/status`, 'PUT', { status });
-      u.toast(`${c.name}: ${status === 'disabled' ? 'disabled' : 'enabled'}`, 'success');
+      this.changing = c.slug;
+      try {
+        await api('centers', `/denma/centers/${encodeURIComponent(c.slug)}/status`, 'PUT', { status });
+        u.toast(`${c.name}: ${status === 'disabled' ? 'disabled' : 'enabled'}`, 'success');
+      } finally {
+        this.changing = '';
+      }
       this.load();
     },
   };

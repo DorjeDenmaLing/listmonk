@@ -126,6 +126,11 @@ type denmaCenters struct {
 	// (its app and router) runs several at once.
 	setupMu sync.Mutex
 	timings denmaTimings
+
+	// One enable, disable or reload's swap at a time: two enables would both
+	// load (and the first App keep sending), and a reload finishing after a
+	// disable would put the center back.
+	lifeMu sync.Mutex
 }
 
 // denmaNoExit, once centers are on, turns errors that would stop the server
@@ -1024,6 +1029,8 @@ func (d *denmaCenters) disable(slug string) error {
 	if d.isStarting(slug) {
 		return errDenmaStarting
 	}
+	d.lifeMu.Lock()
+	defer d.lifeMu.Unlock()
 	if _, err := d.base.db.Exec(`UPDATE denma.centers SET status = 'disabled' WHERE slug = $1`, slug); err != nil {
 		return err
 	}
@@ -1044,6 +1051,8 @@ func (d *denmaCenters) enable(slug string) error {
 	if d.isStarting(slug) {
 		return errDenmaStarting
 	}
+	d.lifeMu.Lock()
+	defer d.lifeMu.Unlock()
 	var c denmaCenter
 	if err := d.base.db.Get(&c, `SELECT id, slug, name, schema_name FROM denma.centers WHERE slug = $1`, slug); err != nil {
 		return err
@@ -1074,6 +1083,14 @@ func (d *denmaCenters) watchReload(c *denmaCenter) {
 	if err := d.load(next); err != nil {
 		lo.Printf("denma: error reloading center %s: %v", c.Slug, err)
 		go d.watchReload(c) // keep serving the old one
+		return
+	}
+	d.lifeMu.Lock()
+	defer d.lifeMu.Unlock()
+	if d.get(c.Slug) != c {
+		// Disabled or replaced meanwhile: the new one is never served.
+		lo.Printf("denma: center %s changed while it reloaded: the reload is dropped", c.Slug)
+		denmaRetire(next.app, false)
 		return
 	}
 	d.set(next)
@@ -1120,6 +1137,11 @@ func (d *denmaCenters) watchBaseReload(old *App) {
 // scanning and cron jobs (the replacement has its own); after a grace period
 // for in-flight requests, and any import running in it, the rest.
 func denmaRetire(old *App, original bool) {
+	first := false
+	old.retired.Do(func() { first = true })
+	if !first {
+		return // closing its manager and messengers twice would panic
+	}
 	old.manager.StopScanning()
 	if old.bounce != nil {
 		old.bounce.StopScanning() // the hub's bounce mailbox
