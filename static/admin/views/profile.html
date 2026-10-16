@@ -39,6 +39,11 @@
 						<input type="password" name="password2" minlength="8" maxlength="200" autocomplete="new-password" x-model="form.password2" />
 					</label>
 				</div>
+				{{/* denma: changing the e-mail address or password needs it (cmd/denma_people.go) */}}
+				<label data-field>
+					Current password, to change your e-mail address or password
+					<input type="password" name="current_password" maxlength="200" autocomplete="current-password" x-model="form.current_password" />
+				</label>
 				{{- end }}
 			</section>
 

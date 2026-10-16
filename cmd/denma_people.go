@@ -38,9 +38,11 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -50,6 +52,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/listmonk/internal/auth"
+	"github.com/knadh/listmonk/internal/i18n"
 	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/internal/utils"
 	"github.com/knadh/listmonk/models"
@@ -62,6 +65,8 @@ import (
 const (
 	// How long a new person's set-password link works.
 	denmaInviteTTL = 7 * 24 * time.Hour
+	// How long a link to confirm a new e-mail address works.
+	denmaEmailChangeTTL = 24 * time.Hour
 
 	// A person's columns, as denmaPerson.
 	denmaPersonCols = `p.id, p.username, p.email, p.name, p.password IS NOT NULL AS has_password, p.twofa_key, p.loggedin_at`
@@ -100,6 +105,14 @@ func denmaInitPeople(db *sqlx.DB) error {
 		-- password's): its SHA-256, so the database can't sign anyone in.
 		CREATE TABLE IF NOT EXISTS denma.person_tokens (
 			person_id  INTEGER PRIMARY KEY REFERENCES denma.people(id) ON DELETE CASCADE,
+			token_hash TEXT NOT NULL,
+			expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+		);
+		-- A person's new e-mail address, until they open the link sent to it
+		-- (DenmaLoginEmail): its token's SHA-256.
+		CREATE TABLE IF NOT EXISTS denma.person_email_changes (
+			person_id  INTEGER PRIMARY KEY REFERENCES denma.people(id) ON DELETE CASCADE,
+			email      TEXT NOT NULL,
 			token_hash TEXT NOT NULL,
 			expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 		);
@@ -680,17 +693,36 @@ func (a *App) denmaUsersDeleted(ids []int) {
 	}
 }
 
+// denmaProfileReq is a Profile save: listmonk's, with the current password,
+// which changing the e-mail address or the password needs.
+type denmaProfileReq struct {
+	auth.User
+	CurrentPassword string `json:"current_password"`
+}
+
+// errDenmaCurrentPassword is a Profile save without the right current password.
+var errDenmaCurrentPassword = echo.NewHTTPError(http.StatusForbidden,
+	"Your current password is needed to change your e-mail address or password.")
+
 // denmaUpdateOwnAccount saves a person's Profile (listmonk's
-// UpdateUserProfile): their name, e-mail address and password, for every one
-// of their centers.
+// UpdateUserProfile): their name and password, for every one of their
+// centers, and a new e-mail address once they open the link sent to it
+// (DenmaLoginEmail): an address someone typed in isn't theirs until then,
+// and a center adding that address would give them its account (addMember).
+// Changing either needs the current password, so that a session someone
+// else has can't take the account. Others' Profiles (the hub's users,
+// superadmins) need it too, and are listmonk's to save.
 func (a *App) denmaUpdateOwnAccount(c echo.Context) (bool, error) {
 	user := auth.GetUser(c)
 	p, err := a.denmaMemberOf(user.ID)
-	if err != nil || p == nil {
-		return err != nil, err
+	if err != nil {
+		return true, err
+	}
+	if p == nil {
+		return a.denmaCheckHubProfile(c, user)
 	}
 
-	var u auth.User
+	var u denmaProfileReq
 	if err := c.Bind(&u); err != nil {
 		return true, err
 	}
@@ -708,6 +740,14 @@ func (a *App) denmaUpdateOwnAccount(c echo.Context) (bool, error) {
 	if password != "" && !strHasLen(password, 8, stdInputMaxLen) {
 		return true, echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "password"))
 	}
+	newEmail := email != strings.ToLower(p.Email)
+	if newEmail || password != "" {
+		if ok, err := denmaHub.passwordOK(p.ID, u.CurrentPassword); err != nil {
+			return true, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		} else if !ok {
+			return true, errDenmaCurrentPassword
+		}
+	}
 
 	err = func() error {
 		tx, err := a.db.Beginx()
@@ -715,22 +755,25 @@ func (a *App) denmaUpdateOwnAccount(c echo.Context) (bool, error) {
 			return err
 		}
 		defer tx.Rollback()
-		if _, err := tx.Exec(`UPDATE denma.people SET name = $2, email = $3, updated_at = NOW() WHERE id = $1`, p.ID, name, email); err != nil {
+		if _, err := tx.Exec(`UPDATE denma.people SET name = $2, updated_at = NOW() WHERE id = $1`, p.ID, name); err != nil {
 			return err
 		}
-		if err := denmaHub.eachAccount(tx, p.ID, `UPDATE S.users SET name = $2, email = $3, updated_at = NOW() WHERE id = $1`, name, email); err != nil {
+		if err := denmaHub.eachAccount(tx, p.ID, `UPDATE S.users SET name = $2, updated_at = NOW() WHERE id = $1`, name); err != nil {
 			return err
 		}
 		return tx.Commit()
 	}()
-	if denmaUniqueViolation(err) {
-		return true, errDenmaEmailTaken
-	}
 	if err != nil {
 		return true, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	if password != "" {
 		if err := denmaHub.setPassword(p.ID, password, auth.GetSessionID(c)); err != nil {
+			return true, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+	}
+	// Taken or not, the link is sent: the answer doesn't say whose an address is.
+	if newEmail {
+		if err := a.denmaSendEmailChange(p, email); err != nil {
 			return true, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 	}
@@ -740,7 +783,67 @@ func (a *App) denmaUpdateOwnAccount(c echo.Context) (bool, error) {
 		return true, err
 	}
 	out.Password = null.String{}
-	return true, c.JSON(http.StatusOK, okResp{out})
+	res := struct {
+		auth.User
+		EmailPending string `json:"denma_email_pending,omitempty"` // static/admin/assets/js/views/profile.js
+	}{User: out}
+	if newEmail {
+		res.EmailPending = email
+	}
+	return true, c.JSON(http.StatusOK, okResp{res})
+}
+
+// denmaCheckHubProfile refuses a hub user's Profile save that changes their
+// e-mail address or password without their current password; listmonk
+// saves the rest. It leaves the request's body for listmonk to read.
+func (a *App) denmaCheckHubProfile(c echo.Context, user auth.User) (bool, error) {
+	b, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		return true, echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	c.Request().Body = io.NopCloser(bytes.NewReader(b))
+	var u denmaProfileReq
+	if json.Unmarshal(b, &u) != nil {
+		return false, nil // listmonk says so
+	}
+	if !strings.EqualFold(strings.TrimSpace(u.Email.String), user.Email.String) || u.Password.String != "" {
+		if _, err := a.core.LoginUser(user.Username, u.CurrentPassword); err != nil {
+			return true, errDenmaCurrentPassword
+		}
+	}
+	return false, nil
+}
+
+// denmaSendEmailChange e-mails a person's new address a link to make it
+// theirs (DenmaLoginEmail), from their first center as denmaSendReset does.
+func (a *App) denmaSendEmailChange(p *denmaPerson, email string) error {
+	token, err := generateRandomString(tmpAuthTokenLen)
+	if err != nil {
+		return err
+	}
+	if _, err := a.db.Exec(`INSERT INTO denma.person_email_changes (person_id, email, token_hash, expires_at) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (person_id) DO UPDATE SET email = EXCLUDED.email, token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at`,
+		p.ID, email, denmaTokenHash(token), time.Now().Add(denmaEmailChangeTTL)); err != nil {
+		return err
+	}
+	link := strings.TrimSuffix(denmaHub.current().urlCfg.RootURL, "/") + denmaEmailPath + "?token=" + url.QueryEscape(token)
+	if ms, err := denmaHub.centersOf(p.ID); err == nil && len(ms) > 0 {
+		if ctr := denmaHub.get(ms[0].Slug); ctr != nil {
+			a = ctr.app
+		}
+	}
+	var msg bytes.Buffer
+	if err := a.notifs.Tpls.ExecuteTemplate(&msg, "denma-email-change", struct {
+		URL   string
+		Email string
+		L     *i18n.I18n
+	}{link, email, a.i18n}); err != nil {
+		return err
+	}
+	subject, body := notifs.GetTplSubject("Confirm your new e-mail address", msg.Bytes())
+	m := models.Message{To: []string{email}, Subject: subject, Body: body}
+	a.denmaSetSystemSender(&m) // the hub's address until SES has verified the center's (cmd/denma_domains.go)
+	return a.emailMsgr.Push(m)
 }
 
 // denmaEnableTOTP turns on a person's two-factor sign-in, for every one of

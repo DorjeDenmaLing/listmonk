@@ -46,6 +46,7 @@ const (
 	denmaTwofaPath   = "/login/twofa"
 	denmaCentersPath = "/login/centers"
 	denmaResetPath   = "/login/reset"
+	denmaEmailPath   = "/login/email"
 
 	// The signing-in-so-far cookie: after the password, for the two-factor
 	// code; after that, for choosing a center.
@@ -121,6 +122,8 @@ func initDenmaLoginHandlers(g *echo.Group, a *App) {
 	g.POST(denmaCentersPath, a.DenmaLoginCenters)
 	g.GET(denmaResetPath, a.DenmaLoginReset)
 	g.POST(denmaResetPath, a.DenmaLoginReset)
+	g.GET(denmaEmailPath, a.DenmaLoginEmail)
+	g.POST(denmaEmailPath, a.DenmaLoginEmail)
 }
 
 // denmaLoginState is someone signing in, between pages: who, and the page
@@ -464,4 +467,52 @@ func (a *App) DenmaLoginReset(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
 	}
 	return a.denmaPasswordOK(c, p, "")
+}
+
+// DenmaLoginEmail makes a person's new e-mail address theirs, from the link
+// sent to it (denmaSendEmailChange): its page asks, and a POST does it, so
+// that a link scanner doesn't.
+func (a *App) DenmaLoginEmail(c echo.Context) error {
+	const title = "Your new e-mail address"
+	token := strings.TrimSpace(c.QueryParam("token"))
+	msg := func(code int, text string) error {
+		return c.Render(code, tplMessage, makeMsgTpl(title, "", text))
+	}
+	var ch struct {
+		PersonID int    `db:"person_id"`
+		Email    string `db:"email"`
+	}
+	if err := a.db.Get(&ch, `SELECT person_id, email FROM denma.person_email_changes WHERE token_hash = $1 AND expires_at > NOW()`,
+		denmaTokenHash(token)); err != nil || len(token) < tmpAuthTokenLen {
+		return msg(http.StatusBadRequest, "This link has expired or has been used. Change your address on your Profile page again.")
+	}
+	if c.Request().Method != http.MethodPost {
+		return c.Render(http.StatusOK, "denma-login-email", denmaLoginPage{Title: title, Token: token, Email: ch.Email})
+	}
+
+	err := func() error {
+		tx, err := a.db.Beginx()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`UPDATE denma.people SET email = $2, updated_at = NOW() WHERE id = $1`, ch.PersonID, ch.Email); err != nil {
+			return err
+		}
+		if err := denmaHub.eachAccount(tx, ch.PersonID, `UPDATE S.users SET email = $2, updated_at = NOW() WHERE id = $1`, ch.Email); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM denma.person_email_changes WHERE person_id = $1`, ch.PersonID); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}()
+	if denmaUniqueViolation(err) {
+		return msg(http.StatusBadRequest, "This address is already someone else's, so it can't be yours too.")
+	}
+	if err != nil {
+		a.log.Printf("denma: error changing person %d's e-mail address: %v", ch.PersonID, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
+	}
+	return msg(http.StatusOK, "Done: you now sign in and get your e-mails at "+ch.Email+".")
 }

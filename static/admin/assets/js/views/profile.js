@@ -15,6 +15,7 @@ function profileView() {
       email: user.email || '',
       password: '',
       password2: '',
+      current_password: '', // denma: cmd/denma_people.go
     },
 
     // TOTP enable flow.
@@ -28,7 +29,7 @@ function profileView() {
     disablePassword: '',
 
     async onSubmit() {
-      const payload = { name: this.form.name, email: this.form.email };
+      const payload = { name: this.form.name, email: this.form.email, current_password: this.form.current_password }; // denma
 
       if (this.form.password) {
         if (this.form.password !== this.form.password2) {
@@ -42,6 +43,12 @@ function profileView() {
       const data = await api('profile.save', '/profile', 'PUT', payload);
       this.form.password = '';
       this.form.password2 = '';
+      this.form.current_password = ''; // denma
+      if (data.denma_email_pending) { // denma: a new address is theirs once they open the link sent to it
+        this.form.email = data.email;
+        u.toast(`A link was sent to ${data.denma_email_pending}. Your address changes when you open it.`);
+        return;
+      }
       u.toast(i18n.ts('globals.messages.updated', { name: data.username }));
     },
 

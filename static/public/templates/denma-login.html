@@ -74,3 +74,21 @@
 
 {{ template "footer" .}}
 {{ end }}
+
+{{/* Making a new e-mail address a person's, from the link sent to it. */}}
+{{ define "denma-login-email" }}
+{{ template "header" .}}
+
+<section class="login">
+	<h2>{{ .Data.Title }}</h2>
+	<p>Use <strong>{{ .Data.Email }}</strong> to sign in, and for your e-mails, from now on?</p>
+
+	<form method="post" action="/login/email?token={{ .Data.Token }}" class="form">
+		<div>
+			<p class="submit"><button class="button" type="submit">{{ .L.T "globals.buttons.continue" }}</button></p>
+		</div>
+	</form>
+</section>
+
+{{ template "footer" .}}
+{{ end }}

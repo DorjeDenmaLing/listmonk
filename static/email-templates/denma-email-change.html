@@ -1,0 +1,13 @@
+{{/* denma: the link that makes a person's new e-mail address theirs (cmd/denma_people.go). */}}
+{{ define "denma-email-change" }}
+{{ template "header" . }}
+
+<h2>Confirm your new e-mail address</h2>
+<p>You asked to sign in and get your e-mails at {{ .Email }} from now on.</p>
+<p>
+    <a href="{{ .URL }}" class="button">Use this address</a>
+</p>
+<p style="color: #666; font-size: 12px;">The link works for a day. If you didn't ask for this, ignore this e-mail: nothing changes.</p>
+
+{{ template "footer" }}
+{{ end }}
