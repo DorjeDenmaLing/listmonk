@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/knadh/koanf/v2"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/denmadaily"
 	"github.com/knadh/listmonk/models"
@@ -594,4 +595,36 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 		}
 		return denmaHub.current().ko.String("denma.admin_icon_url")
 	}
+}
+
+// errDenmaAccountOff is a session whose account was disabled, or whose
+// superadmin no longer is one.
+var errDenmaAccountOff = echo.NewHTTPError(http.StatusForbidden, "This account is disabled.")
+
+// denmaSessionUser checks a session's user (ko: its app's) on each request:
+// a disabled account is signed out at once, not when its session ends; and a
+// superadmin's account in a center goes with the hub user it's for, who may
+// have been disabled, removed or made something else in the hub since.
+func denmaSessionUser(ko *koanf.Koanf, u auth.User, err error) (auth.User, error) {
+	if err != nil {
+		return u, err
+	}
+	if u.Status != auth.UserStatusEnabled {
+		return auth.User{}, errDenmaAccountOff
+	}
+	slug := ko.String("denma.center")
+	if slug == "" || denmaHub == nil || u.UserRole.ID != auth.SuperAdminRoleID {
+		return u, nil
+	}
+	var ok bool
+	if err := denmaHub.base.db.Get(&ok, `SELECT COALESCE((SELECT s.hub_user_id = 0 OR (hu.status = 'enabled' AND hu.user_role_id = $3)
+		FROM denma.center_superadmins s JOIN denma.centers c ON c.id = s.center_id
+		LEFT JOIN `+pq.QuoteIdentifier(denmaHub.baseSchema)+`.users hu ON hu.id = s.hub_user_id
+		WHERE c.slug = $1 AND s.center_user_id = $2), false)`, slug, u.ID, auth.SuperAdminRoleID); err != nil {
+		return auth.User{}, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if !ok {
+		return auth.User{}, errDenmaAccountOff
+	}
+	return u, nil
 }

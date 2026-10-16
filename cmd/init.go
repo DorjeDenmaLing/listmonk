@@ -1420,7 +1420,8 @@ func initAuth(co *core.Core, db *sql.DB, ko *koanf.Koanf) (bool, *auth.Auth) {
 			return nil
 		},
 		GetUser: func(id int) (auth.User, error) {
-			return co.GetUser(id, "", "")
+			u, err := co.GetUser(id, "", "")
+			return denmaSessionUser(ko, u, err) // denma: disabled accounts, and superadmins no longer (cmd/denma_hub.go)
 		},
 	}
 
