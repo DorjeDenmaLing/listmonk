@@ -152,7 +152,7 @@ func (a *App) apiLog(c echo.Context, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	a.log.Printf("denma: API key %d (%s): %s", k.ID, k.Name, msg)
 	res, _ := c.Get(denmaAPIResultCtx).([]string)
-	c.Set(denmaAPIResultCtx, append(res, msg))
+	c.Set(denmaAPIResultCtx, append(res, reDenmaAddress.ReplaceAllString(msg, "(an address)"))) // the activity log's
 }
 
 // apiTemplate finds a template by name, of one of the types.

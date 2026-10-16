@@ -15,12 +15,41 @@ package main
 // (denmaSetupLog): 300 centers made a start fill the buffer with them.
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/knadh/koanf/v2"
 )
+
+// denmaRedactLog writes the process's log (cmd/main.go) without e-mail
+// addresses, wherever a line has one (ours, listmonk's, a database error's):
+// each becomes its reference (denmaAddrRef). The log is shown in the hub and
+// kept by the server, and the GitHub workflows' logs are public.
+type denmaRedactLog struct{ w io.Writer }
+
+func (r denmaRedactLog) Write(p []byte) (int, error) {
+	if bytes.IndexByte(p, '@') < 0 {
+		return r.w.Write(p)
+	}
+	out := reDenmaAddress.ReplaceAllFunc(p, func(m []byte) []byte { return []byte(denmaAddrRef(string(m))) })
+	if _, err := r.w.Write(out); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+// denmaAddrRef stands for an address in a log: the start of its hash, as
+// denma_email_hash has it (denma_optouts, denma_no_consent...), so that an
+// address someone knows can be found, and none can be read.
+func denmaAddrRef(email string) string {
+	h := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(email))))
+	return "(address " + hex.EncodeToString(h[:])[:10] + ")"
+}
 
 var (
 	denmaCenterLogs sync.Map // slug -> *log.Logger

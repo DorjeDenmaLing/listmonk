@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"regexp"
 	"strconv"
@@ -279,13 +280,19 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 			details["result"] = res
 		}
 	} else {
-		// Signing in, or a password reset: who it was for.
-		username = strings.TrimSpace(c.FormValue("username"))
-		if username == "" {
-			username = strings.TrimSpace(c.FormValue("email"))
+		// Signing in, or a password reset: who it was for, if it's someone,
+		// by their username; never what was typed (an address, or a
+		// password in the wrong field).
+		typed := strings.TrimSpace(c.FormValue("username"))
+		if typed == "" {
+			typed = strings.TrimSpace(c.FormValue("email"))
 		}
+		username = a.denmaAuditWho(typed)
 	}
 
+	if strings.HasPrefix(route, denmaLoginPath) || strings.HasPrefix(route, "/admin/login") {
+		redact = func(v any) any { return denmaRedact(denmaRedactPersonal(v)) } // addresses typed in
+	}
 	if q := req.URL.Query(); len(q) > 0 {
 		details["query"] = redact(map[string][]string(q))
 	}
@@ -314,7 +321,7 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 		details["form"] = redact(map[string][]string(req.PostForm))
 	}
 	if loc := c.Response().Header().Get(echo.HeaderLocation); loc != "" {
-		details["redirect"] = loc
+		details["redirect"] = denmaRedactURL(loc) // a two-factor page's token
 	}
 	dj, err := json.Marshal(details)
 	if err != nil || len(dj) > 64*1024 {
@@ -351,6 +358,40 @@ func denmaAuditPersonal(route string) bool {
 // Keys whose values are about a person, left out of denmaAuditPersonal's
 // requests.
 var denmaPersonalKey = regexp.MustCompile(`(?i)^(e-?mails?|names?|first_?name|last_?name|attribs|attributes)$`)
+
+// denmaAuditWho is the username of the person (or hub user) typed in to sign
+// in or reset a password, by username or address, or "(unknown)".
+func (a *App) denmaAuditWho(typed string) string {
+	if typed == "" {
+		return ""
+	}
+	var u string
+	q := `SELECT username FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1) LIMIT 1`
+	if denmaHub != nil {
+		q = `SELECT username FROM (SELECT username, email FROM denma.people UNION ALL SELECT username, email FROM users) x
+			WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1) LIMIT 1`
+	}
+	if err := a.db.Get(&u, q, typed); err != nil {
+		return "(unknown)"
+	}
+	return u
+}
+
+// denmaRedactURL is an address with its secret query values (tokens) left out.
+func denmaRedactURL(s string) string {
+	u, err := url.Parse(s)
+	if err != nil || u.RawQuery == "" {
+		return s
+	}
+	q := u.Query()
+	for k := range q {
+		if denmaSecretKey.MatchString(k) {
+			q.Set(k, "(not recorded)")
+		}
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
 
 // reDenmaAddress is an e-mail address in text.
 var reDenmaAddress = regexp.MustCompile(`[^\s@"'<>(),;:]+@[^\s@"'<>(),;:]+\.[a-zA-Z]{2,}`)

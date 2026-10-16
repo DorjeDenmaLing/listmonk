@@ -1048,7 +1048,7 @@ func (a *App) signupLog(c echo.Context, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	a.log.Printf("denma: sign-up webhook %d (%s): %s", h.ID, h.Name, msg) // no addresses
 	res, _ := c.Get(denmaAPIResultCtx).([]string)
-	c.Set(denmaAPIResultCtx, append(res, msg))
+	c.Set(denmaAPIResultCtx, append(res, reDenmaAddress.ReplaceAllString(msg, "(an address)"))) // the activity log's
 }
 
 type denmaSignupServerReq struct {

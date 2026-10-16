@@ -84,7 +84,7 @@ var (
 	// Buffered log writer for storing N lines of log entries for the UI.
 	evStream = events.New()
 	bufLog   = buflog.New(5000)
-	lo       = log.New(io.MultiWriter(os.Stdout, bufLog, evStream.ErrWriter()), "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
+	lo       = log.New(denmaRedactLog{io.MultiWriter(os.Stdout, bufLog, evStream.ErrWriter())}, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile) // denma: without addresses (cmd/denma_logs.go)
 
 	ko      = koanf.New(".")
 	fs      stuffbin.FileSystem
