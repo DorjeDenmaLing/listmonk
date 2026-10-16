@@ -414,7 +414,8 @@ func readQueries(dir string, fs stuffbin.FileSystem) goyesql.Queries {
 
 // prepareQueries queries prepares a query map and returns a *Queries
 func prepareQueries(qMap goyesql.Queries, db *sqlx.DB, ko *koanf.Koanf) *models.Queries {
-	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
+	lo := denmaLog(ko)        // denma: the app's own log lines (cmd/denma_logs.go)
+	denmaReplaceQueries(qMap) // denma: cmd/denma_queries.go
 	var (
 		countQuery = "get-campaign-analytics-counts"
 		linkSel    = "*"
