@@ -306,6 +306,10 @@ LEFT JOIN denma_automation_sends d ON d.automation_id = ev.automation_id AND d.s
 WHERE s.status <> 'blocklisted' AND (d.subscriber_id IS NULL OR (ev.each_time AND ev.at > d.trigger_at))
     -- Not those the API added, who haven't consented (cmd/denma_noconsent.go).
     AND NOT EXISTS (SELECT 1 FROM denma_no_consent nc WHERE nc.email_hash = denma_email_hash(s.email))
+    -- Only those subscribed to something: not a sign-up who hasn't confirmed
+    -- (a Form webhook tags them at once), until they do.
+    AND EXISTS (SELECT 1 FROM subscriber_lists asl JOIN lists al ON al.id = asl.list_id WHERE asl.subscriber_id = s.id
+        AND (asl.status = 'confirmed' OR (asl.status = 'unconfirmed' AND al.optin = 'single')))
 GROUP BY ev.automation_id, ev.subscriber_id, ev.delay_minutes`
 }
 
