@@ -1231,6 +1231,14 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
+	// Vouched for: no confirmation e-mail runs the address's checks.
+	if r.Confirmed {
+		if why := a.signupVouchedCheck(sub); why != "" {
+			out.Result = denmaSignupNotSubscribed
+			return done(why)
+		}
+	}
+
 	// Blocklisted: a complaint, a bounce, or a consent from before they
 	// unsubscribed.
 	blocked := sub.Status == models.SubscriberStatusBlockListed
@@ -1374,6 +1382,26 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		out.Result = denmaSignupSubscribed
 	}
 	return done("")
+}
+
+// signupVouchedCheck runs the opt-in e-mail's checks (denmaCheckOptin) for a
+// sign-up vouched for, which isn't sent one: an address on the shared
+// blocklist, unless an admin enabled it here on purpose, or whose domain
+// can't receive mail, is blocklisted. It returns why, or "".
+func (a *App) signupVouchedCheck(sub models.Subscriber) string {
+	if reason, shared := denmaSharedBlock(a.db, sub.Email); shared {
+		if r, _ := sub.Attribs["auto_blocklist_reason"].(string); r != "" && sub.Status != models.SubscriberStatusBlockListed {
+			return "" // enabled here on purpose
+		}
+		denmaBlocklist(a.db, sub.Email, reason)
+		return "on the shared blocklist: " + reason
+	}
+	if bad, reason := denmaEmailBad(sub.Email, denmaEmailSkip(a.ko)); bad {
+		denmaBlocklist(a.db, sub.Email, reason)
+		denmaBlockEverywhere(sub.Email, reason, a.ko.String("denma.center"))
+		return "can't receive e-mail: " + reason
+	}
+	return ""
 }
 
 // signupResubClaim takes one of the center's denmaSignupResubPerDay
