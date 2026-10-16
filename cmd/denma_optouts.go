@@ -167,19 +167,6 @@ func (a *App) denmaOptOutOf(email string) *denmaOptOut {
 	return &o
 }
 
-// denmaRecordUnsubscribe records that a subscriber unsubscribed themselves
-// (denmaUnsubscribe). A complaint already recorded stays one.
-func (a *App) denmaRecordUnsubscribe(subUUID string) {
-	if !a.denmaHasOptOuts() {
-		return
-	}
-	if _, err := a.db.Exec(`INSERT INTO denma_optouts (email_hash, kind, source)
-		SELECT denma_email_hash(email), 'unsubscribed', 'unsubscribe' FROM subscribers WHERE uuid = $1
-		ON CONFLICT (email_hash) DO NOTHING`, subUUID); err != nil {
-		a.log.Printf("denma: error recording an unsubscribe: %v", err)
-	}
-}
-
 // denmaCheckOptOut refuses to enable a subscriber who opted out (the admin's
 // and the API's update), with words for people; the database refuses it
 // anyway (denma_keep_optouts).

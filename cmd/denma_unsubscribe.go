@@ -12,13 +12,45 @@ package main
 // name and the privacy choices, without lists
 // (static/public/templates/subscription.html).
 
+import (
+	"net/http"
+
+	"github.com/labstack/echo/v4"
+)
+
 // denmaUnsubscribe is listmonk's unsubscribe (public.go), for any e-mail:
-// campUUID may be a campaign's, an automation's or none (an opt-in's). It's
-// recorded as their opt-out (cmd/denma_optouts.go).
+// campUUID may be a campaign's, an automation's or none (an opt-in's). In a
+// center, their opt-out (cmd/denma_optouts.go) is recorded first and they're
+// blocklisted in the same transaction: both, or neither (and they can try
+// again), so nobody is left blocklisted with no opt-out to keep them so.
 func (a *App) denmaUnsubscribe(subUUID, campUUID string, _ bool) error {
-	if err := a.core.UnsubscribeByCampaign(subUUID, campUUID, true); err != nil {
-		return err
+	if !a.denmaHasOptOuts() {
+		return a.core.UnsubscribeByCampaign(subUUID, campUUID, true)
 	}
-	a.denmaRecordUnsubscribe(subUUID)
+	fail := func(err error) error {
+		a.log.Printf("denma: error unsubscribing: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("public.errorProcessingRequest"))
+	}
+	tx, err := a.db.Beginx()
+	if err != nil {
+		return fail(err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO denma_optouts (email_hash, kind, source)
+		SELECT denma_email_hash(email), 'unsubscribed', 'unsubscribe' FROM subscribers WHERE uuid = $1
+		ON CONFLICT (email_hash) DO NOTHING`, subUUID); err != nil {
+		return fail(err)
+	}
+	// listmonk's unsubscribe-by-campaign, blocklisting: every list.
+	if _, err := tx.Exec(`WITH sub AS (
+			UPDATE subscribers SET status = 'blocklisted' WHERE uuid = $1 RETURNING id
+		)
+		UPDATE subscriber_lists SET status = 'unsubscribed', updated_at = NOW()
+		WHERE subscriber_id = (SELECT id FROM sub) AND status != 'unsubscribed'`, subUUID); err != nil {
+		return fail(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fail(err)
+	}
 	return nil
 }
