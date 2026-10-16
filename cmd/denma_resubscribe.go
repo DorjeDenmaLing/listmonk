@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS denma_resubscribes (
     sent_at       TIMESTAMP WITH TIME ZONE NULL,
     created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
+-- When an address was last sent the e-mail: by address, as deleting and
+-- adding them again starts a new denma_resubscribes row.
+CREATE TABLE IF NOT EXISTS denma_resub_sent (
+    email_hash TEXT PRIMARY KEY,
+    sent_at    TIMESTAMP WITH TIME ZONE NOT NULL
+);
 `
 
 // denmaResubscribe starts a blocklisted subscriber's re-subscription to
@@ -109,6 +115,21 @@ func (a *App) denmaResubscribe(sub models.Subscriber, listIDs []int, attribs map
 	if row.SentAt.Valid && time.Since(row.SentAt.Time) < denmaResubEvery {
 		return denmaResubAlready, nil
 	}
+	// Claim the address's e-mail for the day at once, so two requests can't
+	// both send; given back if it isn't sent.
+	claimed, prev, err := a.denmaResubClaim(sub.Email)
+	if err != nil {
+		return "", err
+	}
+	if !claimed {
+		return denmaResubAlready, nil
+	}
+	sent := false
+	defer func() {
+		if !sent {
+			a.denmaResubUnclaim(sub.Email, prev)
+		}
+	}()
 
 	lists, err := a.denmaListsByID(row.ListIDs)
 	if err != nil {
@@ -124,11 +145,44 @@ func (a *App) denmaResubscribe(sub models.Subscriber, listIDs []int, attribs map
 	} else if n == 0 {
 		return denmaResubBounced, nil
 	}
+	sent = true
 	if _, err := a.db.Exec(`UPDATE denma_resubscribes SET sent_at = NOW() WHERE subscriber_id = $1`, sub.ID); err != nil {
 		return "", err
 	}
 	a.log.Printf("denma: sent subscriber %d a confirmation to re-subscribe", sub.ID)
 	return denmaResubSent, nil
+}
+
+// denmaResubClaim takes an address's re-subscription e-mail for the day, if
+// it hasn't had one in denmaResubEvery: whether it did, and the time it was
+// last sent before (to give the claim back). Rows older than that are
+// dropped.
+func (a *App) denmaResubClaim(email string) (bool, sql.NullTime, error) {
+	var out []struct {
+		Prev sql.NullTime `db:"prev"`
+	}
+	err := a.db.Select(&out, `WITH gone AS (DELETE FROM denma_resub_sent WHERE sent_at < NOW() - $2 * INTERVAL '1 second' AND email_hash <> denma_email_hash($1)),
+			prev AS (SELECT sent_at FROM denma_resub_sent WHERE email_hash = denma_email_hash($1))
+		INSERT INTO denma_resub_sent AS r (email_hash, sent_at) VALUES (denma_email_hash($1), NOW())
+		ON CONFLICT (email_hash) DO UPDATE SET sent_at = NOW() WHERE r.sent_at < NOW() - $2 * INTERVAL '1 second'
+		RETURNING (SELECT sent_at FROM prev) AS prev`, email, int(denmaResubEvery.Seconds()))
+	if err != nil || len(out) == 0 {
+		return false, sql.NullTime{}, err
+	}
+	return true, out[0].Prev, nil
+}
+
+// denmaResubUnclaim gives back a claim whose e-mail wasn't sent.
+func (a *App) denmaResubUnclaim(email string, prev sql.NullTime) {
+	var err error
+	if prev.Valid {
+		_, err = a.db.Exec(`UPDATE denma_resub_sent SET sent_at = $2 WHERE email_hash = denma_email_hash($1)`, email, prev.Time)
+	} else {
+		_, err = a.db.Exec(`DELETE FROM denma_resub_sent WHERE email_hash = denma_email_hash($1)`, email)
+	}
+	if err != nil {
+		a.log.Printf("denma: error giving back a re-subscription e-mail's claim: %v", err)
+	}
 }
 
 // denmaResubRefused says why a blocklisted subscriber can't subscribe again,

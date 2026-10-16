@@ -40,16 +40,29 @@ func denmaInitOptinSends(db *sqlx.DB) error {
 
 // denmaOptinAllowed records an opt-in to email from a center and reports
 // whether it may be sent: false once the address has had its limit. Old
-// records are dropped. Without centers (no denma schema) it always may.
+// records are dropped. Without centers (no denma schema) it always may. One
+// count at a time per address (a lock for the transaction), or two at once
+// could both find room.
 func denmaOptinAllowed(db *sqlx.DB, email, center string) (bool, error) {
 	if denmaHub == nil {
 		return true, nil
 	}
 	h := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(email))))
+	tx, err := db.Beginx()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext('denma_optin/' || $1))`, hex.EncodeToString(h[:])); err != nil {
+		return false, err
+	}
 	var ok []bool
-	err := db.Select(&ok, `WITH gone AS (DELETE FROM denma.optin_sends WHERE sent_at < NOW() - $4 * INTERVAL '1 second'),
+	err = tx.Select(&ok, `WITH gone AS (DELETE FROM denma.optin_sends WHERE sent_at < NOW() - $4 * INTERVAL '1 second'),
 		n AS (SELECT COUNT(*) AS c FROM denma.optin_sends WHERE email_hash = $1 AND sent_at >= NOW() - $4 * INTERVAL '1 second')
 		INSERT INTO denma.optin_sends (email_hash, center) SELECT $1, $2 FROM n WHERE c < $3 RETURNING TRUE`,
 		hex.EncodeToString(h[:]), center, denmaOptinLimit, int(denmaOptinWindow.Seconds()))
-	return len(ok) > 0, err
+	if err != nil {
+		return false, err
+	}
+	return len(ok) > 0, tx.Commit()
 }

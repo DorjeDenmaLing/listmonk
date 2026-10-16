@@ -32,6 +32,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"html"
 	"io"
 	"log"
@@ -1173,6 +1174,9 @@ func (a *App) DenmaAPIAddRecipients(c echo.Context) error {
 	if _, err := a.apiCampaign(c, id); err != nil {
 		return err
 	}
+	l := a.apiCampaignLock(id)
+	l.Lock()
+	defer l.Unlock()
 	var x struct {
 		State  string        `db:"state"`
 		ListID sql.NullInt64 `db:"list_id"`
@@ -1200,12 +1204,26 @@ func (a *App) DenmaAPIAddRecipients(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
+// denmaAPICampaignLocks keep adding recipients to a draft and starting it
+// apart (the process is the only one), so a start claims from the key's limit
+// exactly the recipients it sends: none are added after it counts them.
+var denmaAPICampaignLocks [64]sync.Mutex
+
+func (a *App) apiCampaignLock(id int) *sync.Mutex {
+	h := fnv.New32a()
+	fmt.Fprintf(h, "%s/%d", a.ko.String("denma.center"), id)
+	return &denmaAPICampaignLocks[h.Sum32()%uint32(len(denmaAPICampaignLocks))]
+}
+
 // DenmaAPIStartCampaign starts a campaign made with "start": false.
 func (a *App) DenmaAPIStartCampaign(c echo.Context) error {
 	id, _ := strconv.Atoi(c.Param("id"))
 	if err := a.apiCanSend(); err != nil {
 		return err
 	}
+	l := a.apiCampaignLock(id)
+	l.Lock()
+	defer l.Unlock()
 	cur, err := a.apiCampaign(c, id)
 	if err != nil {
 		return err
