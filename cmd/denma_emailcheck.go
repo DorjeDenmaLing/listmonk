@@ -257,7 +257,8 @@ func denmaCheckOptin(send func(models.Subscriber, []int) (int, error), db *sqlx.
 				return 0, echo.NewHTTPError(http.StatusTooManyRequests,
 					"A confirmation e-mail was already sent to "+sub.Email+". Check its inbox and spam folder, or try again tomorrow.")
 			}
-			return send(sub, listIDs)
+			// Its link's token (cmd/denma_optintoken.go).
+			return denmaWithOptinToken(db, sub, func() (int, error) { return send(sub, listIDs) })
 		}
 		lo.Printf("denma: blocklisting %s: %s", sub.Email, reason)
 		denmaBlocklist(db, sub.Email, reason)

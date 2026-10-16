@@ -231,14 +231,19 @@ func (a *App) denmaNoConsentSignup(email string) {
 }
 
 // denmaNoConsentOptin lifts the fence of someone confirming their own
-// sign-up on the opt-in page, before it's confirmed.
-func (a *App) denmaNoConsentOptin(subUUID string) {
+// sign-up on the opt-in page, with their e-mail's token
+// (cmd/denma_optintoken.go), before it's confirmed.
+func (a *App) denmaNoConsentOptin(subUUID, token string) {
 	if !a.denmaHasOptOuts() {
 		return
 	}
+	var subID int
+	if err := a.db.Get(&subID, `SELECT id FROM subscribers WHERE uuid = $1`, subUUID); err != nil || !denmaOptinTokenOK(a.db, subID, token) {
+		return
+	}
 	if _, err := a.db.Exec(`DELETE FROM denma_no_consent n USING subscribers s
-		WHERE s.uuid = $1 AND n.email_hash = denma_email_hash(s.email)
-		AND n.signup_at > NOW() - INTERVAL '`+denmaNoConsentSignupOptin+`'`, subUUID); err != nil {
+		WHERE s.id = $1 AND n.email_hash = denma_email_hash(s.email)
+		AND n.signup_at > NOW() - INTERVAL '`+denmaNoConsentSignupOptin+`'`, subID); err != nil {
 		a.log.Printf("denma: error recording a confirmation's consent: %v", err)
 	}
 }

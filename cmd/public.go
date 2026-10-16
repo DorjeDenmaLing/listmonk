@@ -478,7 +478,7 @@ func (a *App) OptinPage(c echo.Context) error {
 			makeMsgTpl(a.i18n.T("public.noSubTitle"), "", a.i18n.Ts("public.noSubInfo")))
 	}
 
-	if confirm || !a.cfg.ShowOptinPage {
+	if confirm { // denma: only a POST, whatever ShowOptinPage says
 		return a.confirmOptinSubscription(c, subUUID, req.ListUUIDs, lists)
 	}
 
@@ -503,7 +503,7 @@ func (a *App) confirmOptinSubscription(c echo.Context, subUUID string, listUUIDs
 		meta["optin_ip"] = c.RealIP() // denma: not any client's X-Forwarded-For (srv.IPExtractor, cmd/init.go)
 	}
 
-	a.denmaNoConsentOptin(subUUID) // denma: their own confirmation (cmd/denma_noconsent.go)
+	a.denmaNoConsentOptin(subUUID, c.FormValue("t")) // denma: their own confirmation (cmd/denma_noconsent.go)
 	if err := a.core.ConfirmOptionSubscription(subUUID, listUUIDs, meta); err != nil {
 		a.log.Printf("error confirming opt-in subscription: %v", err)
 		return c.Render(http.StatusInternalServerError, tplMessage,

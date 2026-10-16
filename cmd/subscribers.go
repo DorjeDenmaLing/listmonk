@@ -1211,6 +1211,7 @@ func makeOptinNotifyHook(unsubHeader bool, u *UrlConfig, q *models.Queries, i *i
 			qListIDs.Add("l", l.UUID)
 		}
 		out.OptinURL = fmt.Sprintf(u.OptinURL, sub.UUID, qListIDs.Encode())
+		out.OptinURL = denmaOptinTokenURL(out.OptinURL, sub.UUID) // denma: cmd/denma_optintoken.go
 		out.UnsubURL = fmt.Sprintf(u.UnsubURL, dummyUUID, sub.UUID)
 
 		// Unsub headers.

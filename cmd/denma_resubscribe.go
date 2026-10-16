@@ -5,8 +5,9 @@ package main
 // them out of every sign-up. Here, someone blocklisted who signs up again
 // themselves, on the public form or a sign-up webhook, is sent a
 // confirmation e-mail, and stays blocklisted until they confirm. Confirming
-// (listmonk's opt-in link and page) takes them off the blocklist and
-// subscribes them to the lists they signed up for, not those they left.
+// (listmonk's opt-in link and page, with the link's token,
+// cmd/denma_optintoken.go) takes them off the blocklist and subscribes them
+// to the lists they signed up for, not those they left.
 //
 // Those who complained, hard-bounced or failed the domain check
 // (cmd/denma_emailcheck.go) aren't sent one. Someone who complained never
@@ -174,7 +175,7 @@ func (a *App) denmaSendResub(sub models.Subscriber, lists []models.List) error {
 		q.Add("l", l.UUID)
 	}
 	out := subOptin{Subscriber: sub, Lists: lists,
-		OptinURL: fmt.Sprintf(a.urlCfg.OptinURL, sub.UUID, q.Encode()),
+		OptinURL: denmaOptinTokenURL(fmt.Sprintf(a.urlCfg.OptinURL, sub.UUID, q.Encode()), sub.UUID),
 		UnsubURL: fmt.Sprintf(a.urlCfg.UnsubURL, dummyUUID, sub.UUID)}
 	hdr := textproto.MIMEHeader{}
 	hdr.Set(models.EmailHeaderSubscriberUUID, sub.UUID)
@@ -217,11 +218,12 @@ func (a *App) denmaResubOptin(c echo.Context, subUUID string, confirm bool) (boo
 		a.log.Printf("denma: error reading subscriber %d's re-subscription: %v", sub.ID, err)
 		return false, nil
 	}
-	if len(lists) == 0 {
+	// Only with the e-mail's own link: admins see the UUID.
+	if len(lists) == 0 || !denmaOptinTokenOK(a.db, sub.ID, c.FormValue("t")) {
 		return false, nil
 	}
 
-	if !confirm && a.cfg.ShowOptinPage {
+	if !confirm {
 		var out optinTpl
 		out.Lists = lists
 		out.SubUUID = subUUID
@@ -307,6 +309,9 @@ func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta mo
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM denma_resubscribes WHERE subscriber_id = $1`, subID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM denma_optin_tokens WHERE subscriber_id = $1`, subID); err != nil {
 		return err
 	}
 	return tx.Commit()
