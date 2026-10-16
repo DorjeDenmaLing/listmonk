@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/pquerna/otp/totp"
 )
 
 func TestDenmaThrottle(t *testing.T) {
@@ -45,5 +47,26 @@ func TestDenmaThrottleDropsExpiredKeys(t *testing.T) {
 	th.add("new")
 	if n := len(th.hits); n != 1 {
 		t.Fatalf("%d keys kept, want 1", n)
+	}
+}
+
+// A two-factor code works once, per account; a wrong one never.
+func TestDenmaTOTPOnce(t *testing.T) {
+	key, err := totp.Generate(totp.GenerateOpts{Issuer: "test", AccountName: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _ := totp.GenerateCode(key.Secret(), time.Now())
+	if !denmaTOTPOnce("person:1", code, key.Secret()) {
+		t.Error("the code was refused")
+	}
+	if denmaTOTPOnce("person:1", code, key.Secret()) {
+		t.Error("the code worked twice")
+	}
+	if !denmaTOTPOnce("hub:1", code, key.Secret()) {
+		t.Error("another account's use counted")
+	}
+	if denmaTOTPOnce("person:2", "000000", key.Secret()) && code != "000000" {
+		t.Error("a wrong code worked")
 	}
 }

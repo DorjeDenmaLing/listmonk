@@ -37,7 +37,6 @@ import (
 	"github.com/knadh/listmonk/internal/utils"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
-	"github.com/pquerna/otp/totp"
 )
 
 const (
@@ -330,7 +329,7 @@ func (a *App) DenmaLoginTwofa(c echo.Context) error {
 		a.clearLoginState(c)
 		return a.renderLoginPage(c, denmaTooMany(wait))
 	}
-	if !strHasLen(code, 6, 6) || !totp.Validate(code, p.TwofaKey.String) {
+	if !strHasLen(code, 6, 6) || !denmaTOTPOnce("person:"+key, code, p.TwofaKey.String) {
 		denmaTwofaByPerson.add(key)
 		if wait := denmaTwofaByPerson.wait(key); wait > 0 {
 			a.clearLoginState(c)

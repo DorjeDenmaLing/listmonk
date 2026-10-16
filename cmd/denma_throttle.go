@@ -22,6 +22,7 @@ package main
 // clears its account's count, not its address's.
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -30,7 +31,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/knadh/listmonk/internal/auth"
+	"github.com/knadh/listmonk/internal/tmptokens"
 	"github.com/labstack/echo/v4"
+	"github.com/pquerna/otp/totp"
 )
 
 // denmaThrottle counts events by key within a sliding window.
@@ -172,4 +176,60 @@ func denmaForgotAllowed(c echo.Context, email string) bool {
 	}
 	denmaForgotByEmail.add(key)
 	return true
+}
+
+// denmaTOTPUsed is the two-factor codes used, by account, for as long as a
+// code is good (with the one step either side totp.Validate allows).
+var denmaTOTPUsed = struct {
+	sync.Mutex
+	m map[string]time.Time // account + code -> until
+}{m: map[string]time.Time{}}
+
+// denmaTOTPOnce reports whether code is account's (secret) and hasn't been
+// used yet, and marks it used: one seen over someone's shoulder, or
+// replayed, doesn't sign anyone in again.
+func denmaTOTPOnce(account, code, secret string) bool {
+	if !totp.Validate(code, secret) {
+		return false
+	}
+	now := time.Now()
+	u := &denmaTOTPUsed
+	u.Lock()
+	defer u.Unlock()
+	for k, until := range u.m {
+		if now.After(until) {
+			delete(u.m, k)
+		}
+	}
+	k := account + "/" + code
+	if _, used := u.m[k]; used {
+		return false
+	}
+	u.m[k] = now.Add(3 * time.Minute)
+	return true
+}
+
+// denmaHubTwofa checks a hub user's (a superadmin's) two-factor code, as
+// people's are (DenmaLoginTwofa): 5 wrong ones in 15 minutes end the sign-in
+// (its token), and each code works once. It returns the page's error if not.
+func (a *App) denmaHubTwofa(token string, user auth.User, code string) (bool, string) {
+	key := "hub:" + strconv.Itoa(user.ID)
+	tooMany := func(wait time.Duration) (bool, string) {
+		tmptokens.Delete(a.tmpKey(token))
+		var he *echo.HTTPError
+		errors.As(denmaTooMany(wait), &he)
+		return false, fmt.Sprint(he.Message) + " Sign in again."
+	}
+	if wait := denmaTwofaByPerson.wait(key); wait > 0 {
+		return tooMany(wait)
+	}
+	if !denmaTOTPOnce(key, code, user.TwofaKey.String) {
+		denmaTwofaByPerson.add(key)
+		if wait := denmaTwofaByPerson.wait(key); wait > 0 {
+			return tooMany(wait)
+		}
+		return false, a.i18n.T("globals.messages.invalidValue")
+	}
+	denmaTwofaByPerson.clear(key)
+	return true, ""
 }

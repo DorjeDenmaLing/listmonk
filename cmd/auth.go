@@ -701,6 +701,9 @@ func (a *App) doResetPassword(c echo.Context, token, email string) error {
 	}
 
 	// Log the user in directly without forcing a manual login right after password change.
+	if user.TwofaType == models.TwofaTypeTOTP { // denma: not past their two-factor code
+		return c.Redirect(http.StatusFound, denmaLoginPath)
+	}
 	if err := a.auth.SaveSession(user, "", c); err != nil {
 		return err
 	}
@@ -742,9 +745,9 @@ func (a *App) doTwofaVerify(c echo.Context, token string, userID int, next strin
 	}
 
 	// Verify the TOTP code.
-	valid := totp.Validate(totpCode, user.TwofaKey.String)
+	valid, msg := a.denmaHubTwofa(token, user, totpCode) // denma: 5 wrong codes, each code once (cmd/denma_throttle.go)
 	if !valid {
-		return a.renderTwofaPage(c, token, next, a.i18n.T("globals.messages.invalidValue"))
+		return a.renderTwofaPage(c, token, next, msg)
 	}
 
 	// Invalidate the token.
