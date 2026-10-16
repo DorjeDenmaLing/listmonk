@@ -144,6 +144,7 @@ func (m *Manager) runMailboxScanner() {
 		if m.scanStopped() { // denma: replaced (internal/bounce/denma.go)
 			return
 		}
+		m.denmaWaitQueue() // denma: a full queue drops what's read (internal/bounce/denma.go)
 		m.log.Printf("scanning bounce mailbox %s", m.opt.Mailbox.Host)
 		if err := m.mailbox.Scan(1000, m.queue); err != nil {
 			m.log.Printf("error scanning bounce mailbox: %v", err)

@@ -1,6 +1,9 @@
 package bounce
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 // denma: an app is rebuilt in place when its settings are saved (upstream
 // restarts the process), so a replaced app's mailbox scanner must stop, or
@@ -19,4 +22,18 @@ func (m *Manager) StopScanning() {
 func (m *Manager) scanStopped() bool {
 	_, ok := stoppedScanners.Load(m)
 	return ok
+}
+
+// DenmaQueued is how many bounces are queued, not yet given to RecordBounceCB.
+func (m *Manager) DenmaQueued() int {
+	return len(m.queue)
+}
+
+// denmaWaitQueue waits for the queue to empty before a scan: the scanner
+// drops the bounces that don't fit, and then deletes them from the mailbox.
+// A scan reads at most the queue's size.
+func (m *Manager) denmaWaitQueue() {
+	for len(m.queue) > 0 && !m.scanStopped() {
+		time.Sleep(100 * time.Millisecond)
+	}
 }

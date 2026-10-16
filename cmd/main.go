@@ -297,7 +297,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 	// Initialize the bounce manager that processes bounces from webhooks and
 	// POP3 mailbox scanning.
 	if ko.Bool("bounce.enabled") && ko.String("denma.center") == "" { // denma: the hub takes every center's bounces (cmd/denma_bounces.go)
-		bounce = initBounceManager(denmaBounceCB(core.RecordBounce, ko), queries.RecordBounce, lo, ko)
+		bounce = initBounceManager(denmaBounceCB(core.RecordBounce, ko, db), queries.RecordBounce, lo, ko)
 	}
 
 	// Initialize the global admin/sub e-mail notifier.

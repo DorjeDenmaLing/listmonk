@@ -320,6 +320,10 @@ func (a *App) BounceWebhook(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("bounces.unknownService"))
 	}
 
+	if err := a.denmaKeepBounces(&bounces); err != nil { // denma: kept before answering (cmd/denma_bounces.go)
+		return err
+	}
+
 	// Insert bounces into the DB.
 	for _, b := range bounces {
 		if err := a.bounce.Record(b); err != nil {

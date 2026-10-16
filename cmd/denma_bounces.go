@@ -20,20 +20,24 @@ package main
 // any center, cmd/denma_blocklist.go); a soft bounce or a complaint is only
 // logged, as it may concern one center's mail only.
 //
-// The provider gives each bounce once (the webhook has answered before it's
-// recorded), so one that can't be recorded now, because its center isn't
-// running (still starting after a restart, disabled, or failed to load) or
-// the database failed, is kept in denma.pending_bounces and recorded later
-// (retryBounces): when its center has loaded, and every minute. A complaint
-// lost would leave someone who reported spam able to be mailed again.
+// A complaint lost would leave someone who reported spam able to be mailed
+// again, so every bounce is kept in denma.pending_bounces before it's
+// recorded: a webhook's before the provider is answered (a 500 if it can't
+// be, so the provider sends it again), and the mailbox's as it's read. Each
+// is recorded at once (retryBounces); one that can't be, because its center
+// isn't running (still starting after a restart, disabled, or failed to
+// load) or the database failed, stays kept and is recorded when its center
+// has loaded, or every minute.
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -46,19 +50,95 @@ import (
 )
 
 // denmaBounceCB is the hub's bounce recorder: its own (own) on a single
-// install, else the router.
-func denmaBounceCB(own func(models.Bounce) error, ko *koanf.Koanf) func(models.Bounce) error {
+// install, else one that keeps each bounce (the mailbox's; webhooks' are kept
+// by denmaKeepBounces), trying until it can.
+func denmaBounceCB(own func(models.Bounce) error, ko *koanf.Koanf, db *sqlx.DB) func(models.Bounce) error {
 	webhooks.DenmaSESTopicAllowed = func(arn string) bool { return denmaSESTopicAllowed(ko, arn) }
 	if !ko.Bool("denma.multi_center") {
 		return own
 	}
 	return func(b models.Bounce) error {
+		denmaBouncesKeeping.Add(1)
+		defer denmaBouncesKeeping.Add(-1)
 		denmaBounceSeen() // for System (cmd/denma_system.go)
-		if denmaHub == nil {
-			return fmt.Errorf("bounce for %s before the centers started", b.Email)
+		for wait := time.Second; ; wait = min(2*wait, time.Minute) {
+			err := denmaKeep(db, []models.Bounce{b})
+			if err == nil {
+				return nil
+			}
+			lo.Printf("denma: error keeping a %s bounce to record, trying again in %v: %v", b.Type, wait, err)
+			time.Sleep(wait)
 		}
-		return denmaHub.routeBounce(b)
 	}
+}
+
+// denmaBouncesKeeping counts the mailbox's bounces being kept, for shutdown.
+var denmaBouncesKeeping atomic.Int64
+
+// denmaKeepBounces keeps a webhook's bounces before the provider is answered,
+// with centers: a 500 if they can't be, so the provider sends them again.
+// Kept, they're taken from bounces, so listmonk doesn't queue them too.
+func (a *App) denmaKeepBounces(bounces *[]models.Bounce) error {
+	if !a.ko.Bool("denma.multi_center") || len(*bounces) == 0 {
+		return nil
+	}
+	for range *bounces {
+		denmaBounceSeen() // for System (cmd/denma_system.go)
+	}
+	if err := denmaKeep(a.db, *bounces); err != nil {
+		a.log.Printf("denma: error keeping %d bounces to record: %v", len(*bounces), err)
+		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
+	}
+	*bounces = nil
+	return nil
+}
+
+// denmaKeep keeps bounces in denma.pending_bounces and has them recorded.
+func denmaKeep(db *sqlx.DB, bs []models.Bounce) error {
+	for i := range bs {
+		bs[i].Email = strings.ToLower(strings.TrimSpace(bs[i].Email))
+	}
+	body, err := json.Marshal(bs)
+	if err != nil {
+		return err
+	}
+	if _, err := db.Exec(`INSERT INTO denma.pending_bounces (bounce) SELECT b FROM jsonb_array_elements($1) b`, body); err != nil {
+		return err
+	}
+	denmaBounceKick()
+	return nil
+}
+
+// denmaBounceKicks wakes watchPendingBounces when bounces are kept.
+var denmaBounceKicks = make(chan struct{}, 1)
+
+func denmaBounceKick() {
+	select {
+	case denmaBounceKicks <- struct{}{}:
+	default:
+	}
+}
+
+// denmaDrainBounces waits for the mailbox's bounces read to be kept, within
+// a time limit, so none is lost at shutdown (they've been deleted from the
+// mailbox). Idle is seen twice, as a bounce is briefly neither queued nor
+// being kept.
+func denmaDrainBounces(app *App, within time.Duration) bool {
+	if denmaHub != nil {
+		app = denmaHub.current()
+	}
+	if app == nil || app.bounce == nil {
+		return true
+	}
+	idle := 0
+	for end := time.Now().Add(within); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		if app.bounce.DenmaQueued() > 0 || denmaBouncesKeeping.Load() > 0 {
+			idle = 0
+		} else if idle++; idle == 2 {
+			return true
+		}
+	}
+	return false
 }
 
 // denmaSESTopics are the SNS topics SES notifications are taken from
@@ -115,16 +195,6 @@ var denmaBounceCampaigns sync.Map // campaign UUID -> slug
 
 // errDenmaNotRunning is a bounce's center not running.
 var errDenmaNotRunning = errors.New("its center isn't running")
-
-// routeBounce records a bounce in its center, or keeps it to record later.
-func (d *denmaCenters) routeBounce(b models.Bounce) error {
-	b.Email = strings.ToLower(strings.TrimSpace(b.Email))
-	slug, err := d.recordBounce(b)
-	if err != nil {
-		d.keepBounce(b, slug, err)
-	}
-	return nil
-}
 
 // recordBounce records a bounce in its center. If it can't be now, it returns
 // why, and the center if it's known.
@@ -197,45 +267,43 @@ func denmaInitPendingBounces(db *sqlx.DB) error {
 	return err
 }
 
-// keepBounce keeps a bounce that couldn't be recorded (why), for slug's
-// center if it's known, to record later.
-func (d *denmaCenters) keepBounce(b models.Bounce, slug string, why error) {
-	body, err := json.Marshal(b)
-	if err == nil {
-		_, err = d.current().db.Exec(`INSERT INTO denma.pending_bounces (center, bounce, last_error) VALUES ($1, $2, $3)`, slug, body, why.Error())
-	}
-	if err != nil {
-		lo.Printf("denma: %s bounce for %s couldn't be recorded (%v) or kept: %v", b.Type, b.Email, why, err)
-		return
-	}
-	lo.Printf("denma: %s bounce for %s not recorded yet (%v): kept, to be recorded later", b.Type, b.Email, why)
-}
-
 // denmaBounceRetries runs one retryBounces at a time.
 var denmaBounceRetries sync.Mutex
 
+// denmaBounceBatch is how many kept bounces are read at a time.
+const denmaBounceBatch = 500
+
 // retryBounces records the kept bounces that can be now: those due (tried
 // again with a growing wait if the database fails), and all of a center that
-// has started. Those for a center that isn't running wait for it.
+// has started. Those for a center that isn't running wait for it. Only a
+// bounce that waited is logged as recorded.
 func (d *denmaCenters) retryBounces() {
 	denmaBounceRetries.Lock()
 	defer denmaBounceRetries.Unlock()
+	// A burst is read in batches; at most 20 at a time, the rest next time.
+	for i := 0; i < 20 && d.retryBatch() == denmaBounceBatch; i++ {
+	}
+}
 
+// retryBatch records a batch of kept bounces, and returns how many it read,
+// or -1 if a recorded one couldn't be deleted (it would be recorded again).
+func (d *denmaCenters) retryBatch() int {
 	running := []string{}
 	for _, c := range d.loaded() {
 		running = append(running, c.Slug)
 	}
 	var rows []struct {
-		ID     int64           `db:"id"`
-		Center string          `db:"center"`
-		Bounce json.RawMessage `db:"bounce"`
-		Tries  int             `db:"tries"`
+		ID        int64           `db:"id"`
+		Center    string          `db:"center"`
+		Bounce    json.RawMessage `db:"bounce"`
+		Tries     int             `db:"tries"`
+		LastError string          `db:"last_error"`
 	}
 	db := d.current().db
-	if err := db.Select(&rows, `SELECT id, center, bounce, tries FROM denma.pending_bounces
-		WHERE next_at <= NOW() AND (center = '' OR center = ANY($1)) ORDER BY id LIMIT 500`, pq.Array(running)); err != nil {
+	if err := db.Select(&rows, `SELECT id, center, bounce, tries, last_error FROM denma.pending_bounces
+		WHERE next_at <= NOW() AND (center = '' OR center = ANY($1)) ORDER BY id LIMIT $2`, pq.Array(running), denmaBounceBatch); err != nil {
 		lo.Printf("denma: error reading the bounces kept to record: %v", err)
-		return
+		return 0
 	}
 	for _, r := range rows {
 		var b models.Bounce
@@ -251,16 +319,24 @@ func (d *denmaCenters) retryBounces() {
 			slug, err = d.recordBounce(b)
 		}
 		if err == nil {
-			_, err = db.Exec(`DELETE FROM denma.pending_bounces WHERE id = $1`, r.ID)
-			if err == nil {
+			if _, err := db.Exec(`DELETE FROM denma.pending_bounces WHERE id = $1`, r.ID); err != nil {
+				lo.Printf("denma: error deleting kept bounce %d, recorded: %v", r.ID, err)
+				return -1
+			}
+			if r.LastError != "" {
 				lo.Printf("denma: kept %s bounce for %s recorded", b.Type, b.Email)
 			}
 			continue
 		}
+		if r.LastError == "" {
+			lo.Printf("denma: %s bounce for %s not recorded yet (%v): kept, to be recorded later", b.Type, b.Email, err)
+		}
 		if errors.Is(err, errDenmaNotRunning) {
-			_, err = db.Exec(`UPDATE denma.pending_bounces SET center = $2 WHERE id = $1`, r.ID, slug)
+			_, err = db.Exec(`UPDATE denma.pending_bounces SET center = $2, last_error = $3 WHERE id = $1`, r.ID, slug, err.Error())
 		} else {
-			lo.Printf("denma: kept %s bounce for %s still not recorded (try %d): %v", b.Type, b.Email, r.Tries+1, err)
+			if r.LastError != "" {
+				lo.Printf("denma: kept %s bounce for %s still not recorded (try %d): %v", b.Type, b.Email, r.Tries+1, err)
+			}
 			_, err = db.Exec(`UPDATE denma.pending_bounces SET tries = tries + 1, last_error = $2,
 				next_at = NOW() + LEAST(POWER(2, tries), 60) * INTERVAL '1 minute' WHERE id = $1`, r.ID, err.Error())
 		}
@@ -268,11 +344,17 @@ func (d *denmaCenters) retryBounces() {
 			lo.Printf("denma: error updating kept bounce %d: %v", r.ID, err)
 		}
 	}
+	return len(rows)
 }
 
-// watchPendingBounces records kept bounces every minute.
+// watchPendingBounces records kept bounces as they're kept, and every minute.
 func (d *denmaCenters) watchPendingBounces() {
-	for range time.Tick(time.Minute) {
+	tick := time.NewTicker(time.Minute)
+	for {
+		select {
+		case <-tick.C:
+		case <-denmaBounceKicks:
+		}
 		d.retryBounces()
 	}
 }

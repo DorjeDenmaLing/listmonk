@@ -47,6 +47,13 @@ func denmaAwaitShutdown(app *App) {
 				}
 			}(a)
 		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if !denmaDrainBounces(app, denmaStopWait) { // cmd/denma_bounces.go
+				lo.Printf("denma: bounces read from the mailbox weren't all kept in %v", denmaStopWait)
+			}
+		}()
 		wg.Wait()
 		denmaDaily.Save()       // cmd/denma_daily.go
 		denmaCenterSends.Save() // and each center's
