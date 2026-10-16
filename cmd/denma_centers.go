@@ -254,6 +254,9 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 				// The admin at /admin (and /api) is the center the place
 				// cookie says, or the hub's (cmd/denma_place.go).
 				if denmaAdminRequest(p) {
+					if err := denmaCheckTab(c, p); err != nil {
+						return err
+					}
 					if ctr := d.placeCenter(c, p); ctr != nil {
 						denmaSandbox(ctr.app, c.Response().Header(), p)
 						ctr.router.ServeHTTP(c.Response(), c.Request())

@@ -104,6 +104,25 @@ func (d *denmaCenters) placeCenter(c echo.Context, p string) *denmaCenter {
 	return d.get(slug)
 }
 
+// denmaTabHeader is the center (slug, "" for the hub) the admin page making
+// an API request was loaded for (static/admin/assets/js/denma-place.js).
+const denmaTabHeader = "X-Denma-Center"
+
+// denmaCheckTab refuses an admin API request from a page loaded for another
+// center, or the hub, than the one opened since in another tab or window:
+// the place cookie is the browser's, so the one opened since would serve it.
+// Requests without the header (the preview forms) pass.
+func denmaCheckTab(c echo.Context, p string) error {
+	if (p != "/api" && !strings.HasPrefix(p, "/api/")) || denmaHubOnlyPath(p) {
+		return nil
+	}
+	h, ok := c.Request().Header[denmaTabHeader]
+	if !ok || len(h) == 0 || h[0] == denmaPlace(c) {
+		return nil
+	}
+	return echo.NewHTTPError(http.StatusConflict, "Another center was opened in another tab or window since this page was loaded. Reload the page to work there.")
+}
+
 // DenmaToHub is the top bar's way back to the hub, for superadmins in a
 // center: the hub's dashboard (its being hub-only clears the place).
 func (a *App) DenmaToHub(c echo.Context) error {

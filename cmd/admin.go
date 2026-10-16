@@ -15,7 +15,8 @@ import (
 
 type serverConfig struct {
 	RootURL            string `json:"root_url"`
-	AdminRoot          string `json:"admin_root"` // denma: the admin's root path (cmd/denma_place.go)
+	AdminRoot          string `json:"admin_root"`   // denma: the admin's root path (cmd/denma_place.go)
+	DenmaCenter        string `json:"denma_center"` // denma: the page's center (cmd/denma_place.go)
 	FromEmail          string `json:"from_email"`
 	PublicSubscription struct {
 		Enabled          bool        `json:"enabled"`
@@ -44,6 +45,7 @@ func (a *App) makeServerConfig() (serverConfig, error) {
 	out := serverConfig{
 		RootURL:       a.urlCfg.RootURL,
 		AdminRoot:     strings.TrimSuffix(a.urlCfg.AdminPath, "/"), // denma
+		DenmaCenter:   a.ko.String("denma.center"),                 // denma
 		FromEmail:     a.cfg.FromEmail,
 		Lang:          a.cfg.Lang,
 		Permissions:   a.cfg.PermissionsRaw,

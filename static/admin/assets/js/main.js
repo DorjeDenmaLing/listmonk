@@ -3,6 +3,7 @@ import '@knadh/oat';
 import { I18n } from './i18n.js';
 import { register as registerTable } from './table.js';
 import * as u from './utils.js';
+import './denma-place.js'; // denma: API requests say the page's center
 
 // ==============================
 // Private constants.
