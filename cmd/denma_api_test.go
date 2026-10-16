@@ -376,3 +376,39 @@ func TestDenmaAuditUnauthed(t *testing.T) {
 		}
 	}
 }
+
+// Links are found however they're written: entities, backslashes, no
+// slashes, any attribute, CSS url() and its escapes; and checked again once
+// a template's logic has made them.
+func TestDenmaLinkHosts(t *testing.T) {
+	for in, want := range map[string]string{
+		`<a href="https://evil.example/x">`:                      "evil.example",
+		`<a href="https:&#x2F;&#x2F;evil.example">`:              "evil.example",
+		`<a href="https:&amp;#x2F;&amp;#x2F;evil.example">`:      "evil.example",
+		`<a href="https:evil.example">`:                          "evil.example",
+		`<a href="https:\\evil.example">`:                        "evil.example",
+		`<td background="//evil.example/bg.png">`:                "evil.example",
+		`<div style="background:url(//evil.example/a)">`:         "evil.example",
+		`<div style="background:url('\68ttps://evil.example')">`: "evil.example",
+		`<img src = " //evil.example/i.png">`:                    "evil.example",
+		`see https://user@Evil.Example:8080/x`:                   "evil.example:8080",
+		`<p>Use https if you can.</p>`:                           "",
+		`<a href="/relative">x</a>`:                              "",
+	} {
+		if got := strings.Join(denmaTextLinkHosts(in), ","); got != want {
+			t.Errorf("%s: %q, want %q", in, got, want)
+		}
+	}
+	for name, bad := range map[string]bool{"Ana Silva": false, "Dr. J.R. Smith": false, "Visit www.evil.example": true, "https://evil.example": true} {
+		if denmaNameHasLink(name) != bad {
+			t.Errorf("name %q: link %v, want %v", name, !bad, bad)
+		}
+	}
+	allowed := []string{"center.org"}
+	if err := denmaCheckRendered(allowed, `<img src="https://cdn.example/logo.png">`, `<img src="https://cdn.example/logo.png"><a href="https://www.center.org">`); err != nil {
+		t.Errorf("the template's own link and the center's: %v", err)
+	}
+	if err := denmaCheckRendered(allowed, "", `<a href="https:/`+`/evil.example">`); err == nil {
+		t.Error("a link a template made was allowed")
+	}
+}

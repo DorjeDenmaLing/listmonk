@@ -93,13 +93,18 @@ func denmaCenterCap(mgr *manager.Manager, ko *koanf.Koanf) {
 // e-mail is sent.
 const denmaCenterClaimHeader = "X-Denma-Center-Claim"
 
-// denmaCountedMessenger counts what a center's manager sends against its cap.
+// denmaCountedMessenger counts what a center's manager sends against its cap,
+// once an API campaign's e-mail has passed its link check.
 type denmaCountedMessenger struct {
 	manager.Messenger
 	count *denmadaily.Counter
+	slug  string
 }
 
 func (m denmaCountedMessenger) Push(msg models.Message) error {
+	if err := denmaCheckCampaignLinks(m.slug, msg); err != nil { // cmd/denma_api_send.go
+		return err
+	}
 	if msg.Headers != nil && msg.Headers.Get(denmaCenterClaimHeader) != "" {
 		msg.Headers.Del(denmaCenterClaimHeader)
 		m.count.AddClaimed()
@@ -117,7 +122,7 @@ func denmaCountSending(msgrs []manager.Messenger, ko *koanf.Koanf) []manager.Mes
 	}
 	out := make([]manager.Messenger, len(msgrs))
 	for i, m := range msgrs {
-		out[i] = denmaCountedMessenger{Messenger: m, count: c}
+		out[i] = denmaCountedMessenger{Messenger: m, count: c, slug: ko.String("denma.center")}
 	}
 	return out
 }

@@ -32,6 +32,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net"
@@ -393,6 +394,9 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, `"subject" is over 1,000 characters.`)
 	}
 	name := denmaSignupField(map[string]string{"n": r.Name}, "n", 200)
+	if denmaNameHasLink(name) {
+		return echo.NewHTTPError(http.StatusBadRequest, `"name" can't have a link in it.`)
+	}
 
 	idemID, done, err := a.apiIdem(c, "messages")
 	if err != nil {
@@ -446,6 +450,11 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 		}
 		if err := m.Render(sub, tpl, a.manager.GenericTemplateFuncs()); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "The template couldn't be filled in: "+err.Error())
+		}
+		// Its links as filled in, from the template's logic too.
+		if err := denmaCheckRendered(append(a.apiOwnLinkDomains(), apiKeyOf(c).LinkDomains...), tpl.Subject+tpl.Body,
+			m.Subject, string(m.Body), m.AltBody); err != nil {
+			return err
 		}
 		h := textproto.MIMEHeader{}
 		h.Set(models.EmailHeaderSubscriberUUID, sub.UUID) // so its bounces and complaints find it (cmd/denma_bounces.go)
@@ -845,7 +854,8 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 // to be sent it, and are said when it starts (apiNotSent). Their attributes are
 // stored in the list's subscriber_lists.meta, for this campaign only
 // (denmaAPIRecipientData); existing subscribers keep theirs, and their name
-// unless it's a stand-in.
+// unless it's a stand-in, which the name given replaces as the campaign
+// starts (denma_api_campaign_contacts), not for a draft never sent.
 func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]denmaAPISkip, error) {
 	skipped := []denmaAPISkip{}
 	var emails, names, attribs []string
@@ -872,8 +882,12 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 				continue
 			}
 		}
+		name := denmaSignupField(map[string]string{"n": r.Name}, "n", 200)
+		if denmaNameHasLink(name) {
+			return nil, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Recipient %s: a name can't have a link in it.", email))
+		}
 		emails = append(emails, email)
-		names = append(names, denmaSignupField(map[string]string{"n": r.Name}, "n", 200))
+		names = append(names, name)
 		attribs = append(attribs, string(attr))
 	}
 	if len(emails) == 0 {
@@ -889,13 +903,6 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 		return fail(err)
 	}
 	defer tx.Rollback()
-	// Existing subscribers: only a stand-in name is replaced (denmaAPIName).
-	if _, err := tx.Exec(`UPDATE subscribers s SET name = i.name, updated_at = NOW()
-		FROM unnest($1::TEXT[], $2::TEXT[]) AS i(email, name)
-		WHERE LOWER(s.email) = i.email AND i.name <> ''
-		AND LOWER(TRIM(s.name)) IN ('', i.email, split_part(i.email, '@', 1))`, pq.Array(emails), pq.Array(names)); err != nil {
-		return fail(err)
-	}
 	// New ones, with their attributes, written once: existing subscribers
 	// keep theirs. An address that opted out is added blocklisted, without
 	// them. None has consent (cmd/denma_noconsent.go).
@@ -923,17 +930,18 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 	for _, s := range subs {
 		ids = append(ids, s.ID)
 	}
-	// On the list, with their attributes; the latest if given again. Only
+	// On the list, with their attributes and name; the latest if given again. Only
 	// here can the fenced join it (cmd/denma_noconsent.go).
 	if _, err := tx.Exec(`SELECT set_config('denma.api_recipients', $1, true)`, strconv.Itoa(listID)); err != nil {
 		return fail(err)
 	}
 	if _, err := tx.Exec(`INSERT INTO subscriber_lists (subscriber_id, list_id, status, meta)
-		SELECT s.id, $2, 'confirmed', CASE WHEN i.attribs = '{}'::JSONB THEN '{}'::JSONB ELSE jsonb_build_object('attribs', i.attribs) END
-		FROM unnest($3::TEXT[], $4::JSONB[]) AS i(email, attribs) JOIN subscribers s ON LOWER(s.email) = i.email
+		SELECT s.id, $2, 'confirmed', (CASE WHEN i.attribs = '{}'::JSONB THEN '{}'::JSONB ELSE jsonb_build_object('attribs', i.attribs) END)
+			|| (CASE WHEN i.name = '' THEN '{}'::JSONB ELSE jsonb_build_object('name', i.name) END)
+		FROM unnest($3::TEXT[], $4::JSONB[], $5::TEXT[]) AS i(email, attribs, name) JOIN subscribers s ON LOWER(s.email) = i.email
 		WHERE s.id = ANY($1::INT[])
 		ON CONFLICT (subscriber_id, list_id) DO UPDATE SET meta = EXCLUDED.meta, updated_at = NOW()`,
-		pq.Array(ids), listID, pq.Array(emails), pq.Array(attribs)); err != nil {
+		pq.Array(ids), listID, pq.Array(emails), pq.Array(attribs), pq.Array(names)); err != nil {
 		return fail(err)
 	}
 	// The key's contacts are recorded as it starts (denma_api_campaign_contacts).
@@ -1272,9 +1280,55 @@ func (a *App) apiCancelCampaign(id int, status string) error {
 
 // ---- Where the links a key sends go ----
 
-// reDenmaLink finds links in text: http(s) addresses, and protocol-relative
-// ones (//host) in HTML attributes.
-var reDenmaLink = regexp.MustCompile(`(?i)\bhttps?://([^/\s"'<>()\[\]{}\\^|?#]+)|(?:href|src|action)\s*=\s*["']?\s*//([^/\s"'<>]+)`)
+// reDenmaLink finds links in text, once its HTML entities and CSS escapes
+// are decoded (denmaLinkText): http(s) addresses, with any slashes and
+// backslashes or none (browsers read https:\\host and https:host as
+// https://host), and protocol-relative ones (//host) in any attribute or CSS
+// url().
+var reDenmaLink = regexp.MustCompile(`(?i)\bhttps?:[/\\]*([^/\\\s"'<>()\[\]{}^|?#]+)|(?:=|url\()\s*["']?\s*[/\\]{2}([^/\\\s"'<>()]+)`)
+
+// reDenmaCSSEscape is a CSS escape: a backslash and up to 6 hex digits.
+var reDenmaCSSEscape = regexp.MustCompile(`\\([0-9a-fA-F]{1,6})\s?`)
+
+// denmaLinkText decodes what could hide a link from reDenmaLink: HTML
+// entities (twice encoded too) and CSS escapes.
+func denmaLinkText(s string) string {
+	for i := 0; i < 3 && strings.ContainsAny(s, "&\\"); i++ {
+		d := html.UnescapeString(s)
+		d = reDenmaCSSEscape.ReplaceAllStringFunc(d, func(m string) string {
+			n, err := strconv.ParseInt(strings.TrimSpace(m[1:]), 16, 32)
+			if err != nil || n < 0x20 || n > 0x10ffff { // not a control character: \\e in https:\\evil isn't one
+				return m
+			}
+			return string(rune(n))
+		})
+		if d == s {
+			break
+		}
+		s = d
+	}
+	return s
+}
+
+// denmaTextLinkHosts returns the hosts of the links in a text.
+func denmaTextLinkHosts(t string) []string {
+	var out []string
+	for _, m := range reDenmaLink.FindAllStringSubmatch(denmaLinkText(t), -1) {
+		h := m[1] + m[2]
+		if i := strings.LastIndex(h, "@"); i >= 0 {
+			h = h[i+1:] // user@host
+		}
+		if h != "" {
+			out = append(out, strings.ToLower(h))
+		}
+	}
+	return out
+}
+
+// denmaNameHasLink reports whether a recipient's name has a link in it.
+func denmaNameHasLink(name string) bool {
+	return len(denmaTextLinkHosts(name)) > 0 || strings.Contains(strings.ToLower(denmaLinkText(name)), "www.")
+}
 
 // denmaLinkDomainsForm checks a key's link domains: domains (an address's
 // host is taken), lowercase, each once.
@@ -1346,13 +1400,7 @@ func denmaLinkHosts(values ...any) []string {
 	walk = func(v any) {
 		switch t := v.(type) {
 		case string:
-			for _, m := range reDenmaLink.FindAllStringSubmatch(t, -1) {
-				h := m[1] + m[2]
-				if i := strings.LastIndex(h, "@"); i >= 0 {
-					h = h[i+1:] // user@host
-				}
-				out = append(out, h)
-			}
+			out = append(out, denmaTextLinkHosts(t)...)
 		case map[string]any:
 			for _, x := range t {
 				walk(x)
@@ -1391,13 +1439,76 @@ func (a *App) apiCheckLinks(c echo.Context, values ...any) error {
 	if len(hosts) == 0 {
 		return nil
 	}
-	allowed := append(a.apiOwnLinkDomains(), apiKeyOf(c).LinkDomains...)
+	return denmaLinksAllowed(hosts, append(a.apiOwnLinkDomains(), apiKeyOf(c).LinkDomains...))
+}
+
+// denmaLinksAllowed refuses the first of hosts that isn't one of allowed.
+func denmaLinksAllowed(hosts, allowed []string) error {
 	for _, h := range hosts {
 		if !denmaLinkAllowed(h, allowed) {
 			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(
 				"A link goes to %s, which isn't one of this key's link domains or the center's (%s). The center's admins can add it to the key's link domains, on its Config -> API page.",
 				h, strings.Join(allowed, ", ")))
 		}
+	}
+	return nil
+}
+
+// denmaCheckRendered checks the links of an e-mail as it's filled in, which
+// its template's logic (print, sprig's functions, a recipient's data) can
+// make, as apiCheckLinks: the center's template's own (tpl) are allowed too.
+func denmaCheckRendered(allowed []string, tpl string, texts ...string) error {
+	allowed = append(append([]string{}, allowed...), denmaTextLinkHosts(tpl)...)
+	for _, t := range texts {
+		if err := denmaLinksAllowed(denmaTextLinkHosts(t), allowed); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// denmaAPICampLinks caches each API campaign's allowed link domains, by
+// center and campaign ID; nil for a campaign that isn't one.
+var denmaAPICampLinks sync.Map
+
+// denmaCheckCampaignLinks checks an API campaign's e-mail, as it's sent, as
+// denmaCheckRendered: one with a link elsewhere isn't sent, and is a failed
+// send (cmd/denma_retries.go), so that a template's logic can't send the
+// center's e-mails with someone else's links.
+func denmaCheckCampaignLinks(slug string, m models.Message) error {
+	if m.Campaign == nil || denmaHub == nil {
+		return nil
+	}
+	key := slug + "/" + strconv.Itoa(m.Campaign.ID)
+	v, ok := denmaAPICampLinks.Load(key)
+	if !ok {
+		ctr := denmaHub.get(slug)
+		if ctr == nil {
+			return nil
+		}
+		var doms pq.StringArray
+		err := ctr.app.db.Get(&doms, `SELECT k.link_domains FROM denma_api_campaigns x JOIN denma_api_keys k ON k.id = x.key_id
+			WHERE x.campaign_id = $1`, m.Campaign.ID)
+		var allowed []string
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+		case err != nil:
+			return err
+		default:
+			allowed = append(ctr.app.apiOwnLinkDomains(), doms...)
+		}
+		v, _ = denmaAPICampLinks.LoadOrStore(key, allowed)
+	}
+	allowed := v.([]string)
+	if allowed == nil {
+		return nil
+	}
+	if err := denmaCheckRendered(allowed, m.Campaign.TemplateBody, m.Subject, string(m.Body), string(m.AltBody)); err != nil {
+		var he *echo.HTTPError
+		if errors.As(err, &he) {
+			return fmt.Errorf("not sent: %v", he.Message)
+		}
+		return err
 	}
 	return nil
 }

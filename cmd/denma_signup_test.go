@@ -148,7 +148,7 @@ func TestDenmaLinks(t *testing.T) {
 		[]map[string]any{{"url": "https://user@other.test/"}},
 		`{{ TrackLink "https://news.example.org/a" }} <img src='https://img.example.org/p.png'>`,
 	)
-	want := []string{"Shop.Example.org", "evil.test:8080", "cdn.evil.test", "other.test", "news.example.org", "img.example.org"}
+	want := []string{"shop.example.org", "evil.test:8080", "cdn.evil.test", "other.test", "news.example.org", "img.example.org"}
 	sort.Strings(hosts)
 	sort.Strings(want)
 	if !slices.Equal(hosts, want) {

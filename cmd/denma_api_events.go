@@ -158,11 +158,17 @@ BEGIN
         FROM denma_api_campaigns x WHERE x.campaign_id = NEW.id AND x.key_id IS NOT NULL;
     RETURN NULL;
 END $$;
--- A key's contacts (denma_api_contacts, for its events): those its campaign
--- goes to, as it starts.
+-- As an API campaign starts: the key's contacts (denma_api_contacts, for its
+-- events) are those it goes to, and the name given replaces a stand-in one
+-- (blank, or their address).
 CREATE OR REPLACE FUNCTION denma_api_campaign_contacts() RETURNS TRIGGER
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
+    UPDATE subscribers s SET name = sl.meta->>'name', updated_at = NOW()
+        FROM denma_api_campaigns x JOIN subscriber_lists sl ON sl.list_id = x.list_id
+        WHERE x.campaign_id = NEW.id AND sl.subscriber_id = s.id AND COALESCE(sl.meta->>'name', '') <> ''
+        AND sl.status <> 'unsubscribed' AND s.status <> 'blocklisted'
+        AND LOWER(TRIM(s.name)) IN ('', LOWER(s.email), split_part(LOWER(s.email), '@', 1));
     INSERT INTO denma_api_contacts (key_id, email_hash)
         SELECT x.key_id, denma_email_hash(s.email) FROM denma_api_campaigns x
         JOIN subscriber_lists sl ON sl.list_id = x.list_id AND sl.status <> 'unsubscribed'
