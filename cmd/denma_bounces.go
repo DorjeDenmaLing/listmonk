@@ -154,12 +154,32 @@ func (d *denmaCenters) recordIn(slug string, b models.Bounce) error {
 	if ctr == nil {
 		return errDenmaNotRunning
 	}
+	if b.Type == models.BounceTypeComplaint {
+		if err := denmaComplaintOptOut(ctr.app.db, b); err != nil {
+			return err
+		}
+	}
 	err := ctr.app.core.RecordBounce(b)
 	var httpErr *echo.HTTPError
 	if errors.As(err, &httpErr) {
 		lo.Printf("denma: %s bounce for %s in center %s not recorded: %v", b.Type, b.Email, slug, err)
 		return nil
 	}
+	return err
+}
+
+// denmaComplaintOptOut makes a complaint final in a center, by the address
+// (its subscriber's, and the one complaining), before listmonk records it:
+// its "delete" action would leave no subscriber for denma_record_complaint
+// (cmd/denma_optouts.go) to find, as would one deleted before, and an
+// unsubscribe's opt-out becomes a complaint's.
+func denmaComplaintOptOut(db *sqlx.DB, b models.Bounce) error {
+	_, err := db.Exec(`INSERT INTO denma_optouts (email_hash, kind, source)
+		SELECT DISTINCT denma_email_hash(e), 'complained', 'complaint' FROM (
+			SELECT email FROM subscribers WHERE $1 <> '' AND uuid::TEXT = $1
+			UNION ALL SELECT $2 WHERE $2 <> '') x(e)
+		ON CONFLICT (email_hash) DO UPDATE SET kind = 'complained', source = 'complaint', created_at = NOW()`,
+		b.SubscriberUUID, b.Email)
 	return err
 }
 
