@@ -26,6 +26,8 @@ package main
 // Multi-center mode only.
 
 import (
+	"net/http"
+	"net/textproto"
 	"sync"
 	"time"
 
@@ -33,6 +35,7 @@ import (
 	"github.com/knadh/listmonk/internal/manager"
 	"github.com/knadh/listmonk/internal/messenger/email"
 	"github.com/knadh/listmonk/models"
+	"github.com/labstack/echo/v4"
 )
 
 // denmaPacer gives each message a time to go: no earlier than the one before
@@ -98,9 +101,47 @@ func (p *denmaPacer) configure(ko *koanf.Koanf) {
 	}
 }
 
-// denmaClaimHeader marks an automation's e-mail as claimed against the daily
-// limit (denmaDaily.Claim); it's taken off before the e-mail is sent.
+// denmaClaimHeader marks an e-mail (an automation's, a transactional one) as
+// claimed against the daily limit (denmaDaily.Claim); it's taken off before
+// the e-mail is sent.
 const denmaClaimHeader = "X-Denma-Daily-Claim"
+
+// errDenmaDaily is the hub's daily limit reached for what can be claimed: the
+// reserve is kept for opt-ins, password resets and invites.
+var errDenmaDaily = echo.NewHTTPError(http.StatusTooManyRequests,
+	"Sending has reached its daily limit (what's kept for confirmations and password resets aside). Try again later.")
+
+// denmaClaimDaily claims n transactional e-mails of the hub's daily limit,
+// short of the reserve, all or none, as automations' are claimed. claimed is
+// whether they are (nothing is without a limit): mark each with
+// denmaClaimHeader, and release those not sent.
+func denmaClaimDaily(n int) (claimed bool, err error) {
+	if n <= 0 {
+		return false, nil
+	}
+	got, ok := denmaDaily.Claim(n)
+	if got < n {
+		if ok {
+			denmaDaily.Release(got)
+		}
+		return false, errDenmaDaily
+	}
+	return ok, nil
+}
+
+// denmaClaimTx claims the admin's transactional e-mail (/api/tx), as
+// denmaClaimDaily, marking it.
+func denmaClaimTx(m *models.Message) error {
+	claimed, err := denmaClaimDaily(1)
+	if err != nil || !claimed {
+		return err
+	}
+	if m.Headers == nil {
+		m.Headers = textproto.MIMEHeader{}
+	}
+	m.Headers.Set(denmaClaimHeader, "1")
+	return nil
+}
 
 // denmaPacedMessenger is a (non e-mail) messenger whose messages wait for the
 // shared limit.

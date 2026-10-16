@@ -45,7 +45,7 @@ type Counter struct {
 	total   int           // their sum
 	pending map[int64]int // counted since the last save
 	waiting bool          // the limit was reached (logged once)
-	claimed int           // claimed by automations, not sent yet
+	claimed int           // claimed by automations and transactional e-mails, not sent yet
 	claimAt time.Time     // when claims last changed
 	db      *sqlx.DB
 	log     *log.Logger
@@ -128,7 +128,7 @@ const claimTimeout = time.Hour
 // for claimTimeout. Call with mu held.
 func (d *Counter) expire(now time.Time) {
 	if d.claimed > 0 && now.Sub(d.claimAt) > claimTimeout {
-		d.log.Printf("denma: dropping %d e-mails claimed by automations an hour ago and not sent", d.claimed)
+		d.log.Printf("denma: dropping %d e-mails claimed an hour ago and not sent", d.claimed)
 		d.claimed = 0
 	}
 	cutoff := now.Unix()/60 - dayMinutes
@@ -216,7 +216,7 @@ type Status struct {
 	CampaignLimit int       // the limit less the reserve: campaigns' and automations'
 	Reserve       int       // the reserve, in percent
 	Left          int       // for campaigns, with a limit
-	Claimed       int       // claimed by automations, not sent yet
+	Claimed       int       // claimed by automations and transactional e-mails, not sent yet
 	FreesAt       time.Time // when one more campaign message can go, if it's reached
 }
 
@@ -262,7 +262,7 @@ func (d *Counter) Left() int {
 			d.log.Printf("denma: center %s: %d e-mails sent in 24 hours and %d claimed, its daily cap of %d; its campaigns, automations and API sends wait until about %s",
 				d.center, s.Sent, s.Claimed, s.Limit, s.FreesAt.Format("15:04"))
 		} else if s.Claimed > 0 {
-			d.log.Printf("denma: %d e-mails sent in 24 hours and %d claimed by automations, the daily limit of %d less its %d%% reserve; campaigns and other automations wait",
+			d.log.Printf("denma: %d e-mails sent in 24 hours and %d claimed, the daily limit of %d less its %d%% reserve; campaigns, automations and transactional e-mails wait",
 				s.Sent, s.Claimed, s.Limit, s.Reserve)
 		} else {
 			d.log.Printf("denma: %d e-mails sent in 24 hours, the daily limit of %d less its %d%% reserve; campaigns and automations wait until about %s",

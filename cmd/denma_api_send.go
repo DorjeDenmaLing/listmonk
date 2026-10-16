@@ -499,13 +499,29 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 		}
 		claimed = ok
 	}
+	// And the hub's daily limit, short of the reserve kept for opt-ins and
+	// password resets (cmd/denma_sending.go).
+	daily, err := denmaClaimDaily(len(msgs))
+	if err != nil {
+		if claimed {
+			cc.Release(len(msgs))
+		}
+		a.apiUnclaim(k.ID, denmaAPIUseSend, len(msgs))
+		return err
+	}
 	for i, msg := range msgs {
 		if claimed {
 			msg.Headers.Set(denmaCenterClaimHeader, "1") // cmd/denma_daily.go
 		}
+		if daily {
+			msg.Headers.Set(denmaClaimHeader, "1")
+		}
 		if err := a.manager.PushMessage(msg); err != nil {
 			if claimed {
 				cc.Release(1)
+			}
+			if daily {
+				denmaDaily.Release(1)
 			}
 			res.Skipped = append(res.Skipped, denmaAPISkip{subs[i].Email, "couldn't be sent: " + err.Error()})
 			continue
