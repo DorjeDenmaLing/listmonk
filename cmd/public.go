@@ -721,6 +721,9 @@ func (a *App) SelfExportSubscriberData(c echo.Context) error {
 	// list subscriptions, campaign views, and link clicks. Names of
 	// private lists are replaced with "Private list".
 	subUUID := c.Param("subUUID")
+	if err := a.denmaSubscriberFound(0, subUUID); err != nil { // denma: cmd/denma_subexport.go
+		return c.Render(err.(*echo.HTTPError).Code, tplMessage, makeMsgTpl(a.i18n.T("public.errorTitle"), "", fmt.Sprint(err.(*echo.HTTPError).Message)))
+	}
 	data, b, err := a.exportSubscriberData(0, subUUID, a.cfg.Privacy.Exportable)
 	if err != nil {
 		a.log.Printf("error exporting subscriber data: %s", err)

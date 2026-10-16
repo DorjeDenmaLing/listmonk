@@ -1049,6 +1049,9 @@ func (a *App) ExportSubscriberData(c echo.Context) error {
 	if err := a.hasSubPerm(auth.GetUser(c), []int{id}); err != nil {
 		return err
 	}
+	if err := a.denmaSubscriberFound(id, ""); err != nil { // denma: a 404, not the database's error (cmd/denma_subexport.go)
+		return err
+	}
 
 	_, b, err := a.exportSubscriberData(id, "", a.cfg.Privacy.Exportable)
 	if err != nil {
