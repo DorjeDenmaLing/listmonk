@@ -7,6 +7,7 @@ package webhooks
 
 import (
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -35,4 +36,30 @@ func denmaSigAlg(version string) (x509.SignatureAlgorithm, error) {
 		return x509.SHA256WithRSA, nil
 	}
 	return 0, fmt.Errorf("unknown SNS signature version %q", version)
+}
+
+// denmaSESRecipient is who bounced or complained (bouncedRecipients,
+// complainedRecipients), else the e-mail's first recipient: an e-mail with
+// several (a Bcc) mustn't have one's bounce recorded against another.
+func denmaSESRecipient(msg, first string) string {
+	var m struct {
+		Bounce struct {
+			To []struct {
+				Email string `json:"emailAddress"`
+			} `json:"bouncedRecipients"`
+		} `json:"bounce"`
+		Complaint struct {
+			To []struct {
+				Email string `json:"emailAddress"`
+			} `json:"complainedRecipients"`
+		} `json:"complaint"`
+	}
+	if json.Unmarshal([]byte(msg), &m) == nil {
+		for _, to := range append(m.Bounce.To, m.Complaint.To...) {
+			if to.Email != "" {
+				return to.Email
+			}
+		}
+	}
+	return first
 }

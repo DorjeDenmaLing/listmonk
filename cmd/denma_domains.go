@@ -1594,18 +1594,29 @@ func (a *App) denmaSetSystemSender(m *models.Message) {
 	}
 }
 
-// denmaCheckHeaders refuses a center's message headers (a campaign's, or a
-// transactional message's) that would change who it's from, past the sender
-// checks: From, Sender, Return-Path, Resent-From, Resent-Sender and X-SES-*
-// (email.DenmaSenderHeader). The e-mail messenger leaves them out anyway.
+// denmaCheckHeaders refuses a message's own headers (a campaign's, or a
+// transactional message's) that the e-mail messenger would leave out
+// (email.DenmaHeaderProblem): a center's that would change who it's from,
+// past the sender checks (From, Sender, Return-Path, Resent-From,
+// Resent-Sender and X-SES-*), and anyone's with a line break, Bcc, Cc or To,
+// or an internal X-Denma-* header.
 func (a *App) denmaCheckHeaders(hdrs models.Headers) error {
-	if a.denmaCenterOf() == nil {
-		return nil
-	}
+	center := a.denmaCenterOf() != nil
 	for _, set := range hdrs {
-		for k := range set {
-			if email.DenmaSenderHeader(k) {
-				return fmt.Errorf("The header %s can't be set: it would change who the e-mail is from, or how Amazon SES sends it. The sender is set by From, and Reply-To can be set.", strings.TrimSpace(k))
+		for k, v := range set {
+			switch email.DenmaHeaderProblem(k, v) {
+			case "name":
+				return fmt.Errorf("%q isn't a header name.", k)
+			case "control":
+				return fmt.Errorf("The header %s can't have line breaks or other control characters.", k)
+			case "sender":
+				if center {
+					return fmt.Errorf("The header %s can't be set: it would change who the e-mail is from, or how Amazon SES sends it. The sender is set by From, and Reply-To can be set.", k)
+				}
+			case "recipients":
+				return fmt.Errorf("The header %s can't be set: each e-mail goes only to its subscriber.", k)
+			case "internal":
+				return fmt.Errorf("The header %s can't be set: it's the system's own.", k)
 			}
 		}
 	}

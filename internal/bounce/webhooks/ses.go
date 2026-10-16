@@ -169,7 +169,7 @@ func (s *SES) ProcessBounce(b []byte) (models.Bounce, error) {
 	}
 
 	return models.Bounce{
-		Email:          strings.ToLower(m.Mail.Destination[0]),
+		Email:          strings.ToLower(denmaSESRecipient(n.Message, m.Mail.Destination[0])), // denma: who bounced
 		CampaignUUID:   campUUID,
 		SubscriberUUID: subUUID,
 		Type:           typ,

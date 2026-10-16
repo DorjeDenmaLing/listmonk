@@ -114,3 +114,18 @@ func TestDenmaSESTopics(t *testing.T) {
 		t.Error("taken with no topics set")
 	}
 }
+
+// A bounce or complaint is recorded against who SES says bounced or
+// complained, not the e-mail's first recipient.
+func TestDenmaSESRecipient(t *testing.T) {
+	for msg, want := range map[string]string{
+		`{"bounce":{"bouncedRecipients":[{"emailAddress":"bcc@example.org"}]},"mail":{"destination":["sub@example.org","bcc@example.org"]}}`: "bcc@example.org",
+		`{"complaint":{"complainedRecipients":[{"emailAddress":"b@example.org"}]}}`:                                                          "b@example.org",
+		`{"bounce":{"bouncedRecipients":[]}}`: "first@example.org",
+		`not json`:                            "first@example.org",
+	} {
+		if got := denmaSESRecipient(msg, "first@example.org"); got != want {
+			t.Errorf("%s: %q, want %q", msg, got, want)
+		}
+	}
+}

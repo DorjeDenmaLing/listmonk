@@ -177,7 +177,7 @@ func (e *Emailer) Push(m models.Message) error {
 
 	// Attach e-mail level headers.
 	for k, v := range m.Headers {
-		if DenmaDropSenderHeaders && DenmaSenderHeader(k) { // denma: denma.go
+		if DenmaDropSenderHeaders && denmaDropHeader(k, v) { // denma: denma.go
 			continue
 		}
 		em.Headers.Set(k, v[0])
