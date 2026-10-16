@@ -110,6 +110,26 @@ func (m *Manager) DenmaStop(wait time.Duration) bool {
 // stopped campaign's are, and sent when it resumes.
 var DenmaDailyWait func(stopped func() bool) bool
 
+// DenmaDailyCounted and DenmaCenterCounted mark a campaign message that
+// DenmaDailyWait and the center's wait counted as they let it go, so that
+// its send doesn't count it again (cmd/denma_sending.go, denma_daily.go).
+const (
+	DenmaDailyCounted  = "X-Denma-Daily-Counted"
+	DenmaCenterCounted = "X-Denma-Center-Counted"
+)
+
+// denmaMarkCounted marks a campaign message's headers with what its waits
+// counted (waited: whether they ran), and clears the marks otherwise.
+func (m *Manager) denmaMarkCounted(h textproto.MIMEHeader, waited bool) {
+	for name, on := range map[string]bool{DenmaDailyCounted: waited && DenmaDailyWait != nil, DenmaCenterCounted: waited && m.denmaCenterWait != nil} {
+		if on {
+			h.Set(name, "1")
+		} else {
+			h.Del(name)
+		}
+	}
+}
+
 // DenmaSetCenterWait sets the wait for the manager's center's own daily cap
 // (cmd/denma_daily.go), as DenmaDailyWait. Call it before Run.
 func (m *Manager) DenmaSetCenterWait(wait func(stopped func() bool) bool) {

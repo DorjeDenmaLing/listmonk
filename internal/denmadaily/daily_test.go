@@ -90,6 +90,36 @@ func TestDailyWaitStops(t *testing.T) {
 	}
 }
 
+// Messages waiting together for the last of the limit: one goes, counted as
+// it's let go, and the others wait (tofix 25: each used to see room and go).
+func TestDailyWaitTakesOne(t *testing.T) {
+	d := counter(10, [2]int{1, 9})
+	stop := make(chan struct{})
+	stopped := func() bool {
+		select {
+		case <-stop:
+			return true
+		default:
+			return false
+		}
+	}
+	went := make(chan bool, 50)
+	for range 50 {
+		go func() { went <- d.Wait(stopped) }()
+	}
+	time.Sleep(300 * time.Millisecond)
+	close(stop)
+	n := 0
+	for range 50 {
+		if <-went {
+			n++
+		}
+	}
+	if s := d.Status(); n != 1 || s.Sent != 10 {
+		t.Fatalf("%d of 50 went, %d sent; want 1 and 10", n, s.Sent)
+	}
+}
+
 // Campaigns stop short of the limit by the reserve, which other e-mails may
 // still use.
 func TestDailyReserve(t *testing.T) {

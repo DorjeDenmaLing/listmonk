@@ -151,6 +151,9 @@ type denmaPacedMessenger struct {
 
 func (m denmaPacedMessenger) Push(msg models.Message) error {
 	denmaSendPacer.wait()
+	if msg.Headers != nil {
+		msg.Headers.Del(manager.DenmaDailyCounted) // counted by its wait
+	}
 	return m.Messenger.Push(msg)
 }
 
@@ -170,6 +173,11 @@ func denmaLimitSending(msgrs []manager.Messenger, ko *koanf.Koanf) []manager.Mes
 		email.DenmaDropSenderHeaders = true // cmd/denma_domains.go, denmaCheckHeaders
 		email.BeforePush = func(m models.Message) {
 			denmaSendPacer.wait()
+			// A campaign's e-mail, counted by its wait (denmaDaily.Wait).
+			if m.Headers != nil && m.Headers.Get(manager.DenmaDailyCounted) != "" {
+				m.Headers.Del(manager.DenmaDailyCounted)
+				return
+			}
 			// An automation's e-mail, claimed already (cmd/denma_automations.go).
 			if m.Headers != nil && m.Headers.Get(denmaClaimHeader) != "" {
 				m.Headers.Del(denmaClaimHeader)

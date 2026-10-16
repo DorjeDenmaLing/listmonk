@@ -105,7 +105,9 @@ func (m denmaCountedMessenger) Push(msg models.Message) error {
 	if err := denmaCheckCampaignLinks(m.slug, msg); err != nil { // cmd/denma_api_send.go
 		return err
 	}
-	if msg.Headers != nil && msg.Headers.Get(denmaCenterClaimHeader) != "" {
+	if msg.Headers != nil && msg.Headers.Get(manager.DenmaCenterCounted) != "" {
+		msg.Headers.Del(manager.DenmaCenterCounted) // counted by its wait
+	} else if msg.Headers != nil && msg.Headers.Get(denmaCenterClaimHeader) != "" {
 		msg.Headers.Del(denmaCenterClaimHeader)
 		m.count.AddClaimed()
 	} else {

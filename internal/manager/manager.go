@@ -566,7 +566,8 @@ func (m *Manager) worker() {
 					h.Add(hdr, val)
 				}
 			}
-			m.denmaSetReplyTo(msg.Campaign, h) // denma: denma_reply_to.go
+			m.denmaSetReplyTo(msg.Campaign, h)     // denma: denma_reply_to.go
+			m.denmaMarkCounted(h, msg.pipe != nil) // denma: counted by the daily waits (denma.go)
 
 			// Set the headers.
 			out.Headers = h

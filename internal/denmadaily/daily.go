@@ -4,7 +4,9 @@
 // percentage of it), which is left for opt-in confirmations, password resets,
 // invites and notifications.
 //
-// Campaign messages each wait for their turn (Wait). Automations send a
+// Campaign messages each wait for their turn (Wait), which counts them as it
+// lets them go, so that messages waiting together can't all take the last
+// of the limit. Automations send a
 // batch at once, so they claim their share of what's left first (Claim): it
 // counts against the limit straight away, so that automations in several
 // centers running in the same minute can't each take the same room. Each
@@ -145,10 +147,15 @@ func (d *Counter) expire(now time.Time) {
 // Add counts an e-mail sent.
 func (d *Counter) Add() {
 	now := time.Now()
-	m := now.Unix() / 60
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.expire(now)
+	d.add(now)
+}
+
+// add counts an e-mail sent. Call with mu held.
+func (d *Counter) add(now time.Time) {
+	m := now.Unix() / 60
 	if n := len(d.minutes); n > 0 && d.minutes[n-1].Minute == m {
 		d.minutes[n-1].N++
 	} else {
@@ -282,13 +289,15 @@ func (d *Counter) Left() int {
 // pollEvery is how often a waiting campaign message checks again.
 const pollEvery = 2 * time.Second
 
-// Wait blocks a campaign message until the limit lets it go, and returns
-// true; or false once stopped() (its campaign was paused or stopped).
+// Wait blocks a campaign message until the limit lets it go, counts it as
+// sent, and returns true; or false once stopped() (its campaign was paused
+// or stopped). Its send mustn't count it again (manager.DenmaDailyCounted).
 func (d *Counter) Wait(stopped func() bool) bool {
 	for {
-		if d.Left() != 0 {
+		if d.take() {
 			return true
 		}
+		d.Left() // logs that the limit's reached
 		if stopped() {
 			return false
 		}
@@ -298,6 +307,25 @@ func (d *Counter) Wait(stopped func() bool) bool {
 		}
 		time.Sleep(wait)
 	}
+}
+
+// take counts one campaign or automation e-mail if there's room for it
+// (always without a limit), in one step, and reports whether it did.
+func (d *Counter) take() bool {
+	now := time.Now()
+	d.mu.Lock()
+	d.expire(now)
+	if d.limit > 0 && d.limit-d.limit*d.reserve/100-d.total-d.claimed <= 0 {
+		d.mu.Unlock()
+		return false
+	}
+	d.add(now)
+	waiting := d.waiting
+	d.mu.Unlock()
+	if waiting {
+		d.Left() // logs that sending goes on
+	}
+	return true
 }
 
 // Counters is each center's Counter, against its own daily cap: one table
