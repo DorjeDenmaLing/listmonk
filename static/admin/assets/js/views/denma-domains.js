@@ -131,7 +131,6 @@ function denmaDomain() {
     ref: window._denmaDomainRef || {},
     centers: [],
     center: '',
-    removeSES: false,
     mailFrom: '',
 
     init() {
@@ -244,12 +243,11 @@ function denmaDomain() {
     },
 
     onRemove() {
-      this.removeSES = false;
       this.$refs.removeDialog.showModal();
     },
 
     async onSubmitRemove() {
-      await api('domain', `/denma/domains/${encodeURIComponent(this.d.domain)}${this.removeSES ? '?ses=true' : ''}`, 'DELETE');
+      await api('domain', `/denma/domains/${encodeURIComponent(this.d.domain)}`, 'DELETE');
       this.$refs.removeDialog.close();
       u.redirect(`${urls.admin}/domains`, { message: `Removed ${this.d.domain}.`, variant: 'success' });
     },

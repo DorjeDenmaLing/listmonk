@@ -113,7 +113,8 @@ type denmaSES interface {
 	// SetNotifications sends its bounces and complaints, with their
 	// headers, to an SNS topic.
 	SetNotifications(ctx context.Context, domain, topic string) error
-	Delete(ctx context.Context, domain string) error
+	// No Delete: the server may not delete identities; a superadmin does, in
+	// the SES console.
 }
 
 var denmaSESClients struct {
@@ -288,15 +289,6 @@ func (s *denmaRealSES) SetNotifications(ctx context.Context, domain, topic strin
 	return nil
 }
 
-func (s *denmaRealSES) Delete(ctx context.Context, domain string) error {
-	_, err := s.v2.DeleteEmailIdentity(ctx, &sesv2.DeleteEmailIdentityInput{EmailIdentity: aws.String(domain)})
-	var nf *sesv2types.NotFoundException
-	if errors.As(err, &nf) {
-		return nil
-	}
-	return err
-}
-
 // denmaFakeSES is an SES of our own, for dev (denma.ses = fake), kept in the
 // database. A domain is verified 30 seconds after it's added, or its DKIM
 // fails if its name has "fail" in it, or it stays pending with "pending".
@@ -411,11 +403,6 @@ func (s *denmaFakeSES) SetConfigSet(_ context.Context, domain, set string) error
 
 func (s *denmaFakeSES) SetNotifications(_ context.Context, domain, topic string) error {
 	return s.edit(domain, func(id *denmaFakeIdentity) { id.BounceTopic, id.ComplaintTopic, id.Headers = topic, topic, true })
-}
-
-func (s *denmaFakeSES) Delete(_ context.Context, domain string) error {
-	_, err := s.db.Exec(`DELETE FROM denma.dev_ses_identities WHERE domain = $1`, domain)
-	return err
 }
 
 // denmaDomainRef is what new domains copy: the configuration set and the
@@ -1400,8 +1387,10 @@ func (a *App) DenmaRemoveDomainCenter(c echo.Context) error {
 	return d.domainResp(c, dom, nil)
 }
 
-// DenmaDeleteDomain removes a sending domain from the hub, and with ses=true
-// from SES too, unless a sender (the hub's or a center's) is on it.
+// DenmaDeleteDomain removes a sending domain from the hub, unless a sender
+// (the hub's or a center's) is on it. It stays in SES: the server's role
+// can't delete identities (a compromised server could stop any domain's
+// mail), so a superadmin deletes it in the SES console.
 func (a *App) DenmaDeleteDomain(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -1431,15 +1420,7 @@ func (a *App) DenmaDeleteDomain(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("The senders of %s are on %s. Change them on their Config pages first.", strings.Join(using, ", "), dom))
 	}
 	if c.QueryParam("ses") == "true" {
-		s, why := d.ses()
-		if s == nil {
-			return echo.NewHTTPError(http.StatusBadRequest, why)
-		}
-		ctx, cancel := context.WithTimeout(c.Request().Context(), 30*time.Second)
-		defer cancel()
-		if err := s.Delete(ctx, dom); err != nil {
-			return echo.NewHTTPError(http.StatusBadGateway, "Amazon SES: "+err.Error())
-		}
+		return echo.NewHTTPError(http.StatusBadRequest, "The hub can't delete domains from Amazon SES: delete it in the SES console (Identities).")
 	}
 	if _, err := d.db().Exec(`DELETE FROM denma.sending_domains WHERE domain = $1`, dom); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())

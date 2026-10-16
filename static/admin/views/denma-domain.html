@@ -134,8 +134,7 @@
 				<header class="dialog-head"><h4 class="dialog-title">Remove <span x-text="d.domain"></span></h4></header>
 				<section class="dialog-body vstack gap-3">
 					<p>Its centers can't use it in their senders any more. Centers whose sender is at it, and the hub's, have to change it first.</p>
-					<label><input type="checkbox" x-model="removeSES" data-testid="remove-ses" /> Also delete it from Amazon SES</label>
-					<p class="text-8 text-light" x-show="removeSES">Nothing can be sent from it then, by anything that uses this AWS account. Have its DKIM records (the CNAMEs) removed from its DNS too: left pointing at Amazon SES, they could be taken over.</p>
+					<p class="text-8 text-light" data-testid="remove-ses-note">It stays in Amazon SES, where anything using this AWS account can still send from it. To stop that, delete it in the SES console (Identities), and have its DKIM records (the CNAMEs) removed from its DNS: left pointing at Amazon SES, they could be taken over. The hub can't delete it there itself, so that a compromised server couldn't stop a domain's mail.</p>
 				</section>
 				<footer class="dialog-foot hstack gap-3 justify-end">
 					<button type="button" class="outline" @click="$refs.removeDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
