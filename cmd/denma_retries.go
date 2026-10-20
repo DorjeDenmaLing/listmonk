@@ -196,6 +196,9 @@ func (a *App) DenmaResendFailures(c echo.Context) error {
 	if err := a.checkCampaignPerm(auth.PermTypeManage, id, c); err != nil {
 		return err
 	}
+	if err := a.denmaCheckCampaignStart(id, models.CampaignStatusRunning); err != nil { // its sender, as starting it (cmd/denma_domains.go)
+		return err
+	}
 	tx, err := a.db.Beginx()
 	if err != nil {
 		return a.denmaResendErr(id, err)

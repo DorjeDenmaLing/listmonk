@@ -888,6 +888,64 @@ func (d *denmaCenters) centerSenders() ([]denmaCenterSender, error) {
 	return out, nil
 }
 
+// denmaDomainCampaign is a center's campaign that's scheduled or sending.
+type denmaDomainCampaign struct {
+	Center string `db:"center"`
+	Name   string `db:"name"`
+	From   string `db:"from_email"`
+}
+
+// domainCampaigns are the scheduled and running campaigns sending from a
+// domain, of one center (slug) or all (""): they were checked when they
+// were scheduled or started, not again as they send.
+func (d *denmaCenters) domainCampaigns(dom, slug string) ([]denmaDomainCampaign, error) {
+	var ctrs []struct {
+		Name   string `db:"name"`
+		Schema string `db:"schema_name"`
+	}
+	if err := d.db().Select(&ctrs, `SELECT name, schema_name FROM denma.centers
+		WHERE ($1 = '' OR slug = $1) AND TO_REGCLASS(QUOTE_IDENT(schema_name) || '.campaigns') IS NOT NULL`, slug); err != nil {
+		return nil, err
+	}
+	if len(ctrs) == 0 {
+		return nil, nil
+	}
+	parts := make([]string, len(ctrs))
+	for i, c := range ctrs {
+		parts[i] = fmt.Sprintf(`SELECT %s AS center, name, from_email FROM %s.campaigns
+			WHERE status IN ('scheduled', 'running') AND from_email ILIKE '%%' || $1 || '%%'`,
+			pq.QuoteLiteral(c.Name), pq.QuoteIdentifier(c.Schema))
+	}
+	var rows []denmaDomainCampaign
+	if err := d.db().Select(&rows, strings.Join(parts, " UNION ALL "), dom); err != nil {
+		return nil, err
+	}
+	var out []denmaDomainCampaign
+	for _, r := range rows {
+		if denmaSenderDomain(r.From) == dom {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+// denmaCampaignsOnDomain refuses to take a domain from centers while their
+// campaigns are scheduled or sending from it.
+func denmaCampaignsOnDomain(camps []denmaDomainCampaign, dom string) error {
+	if len(camps) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(camps))
+	for i, c := range camps {
+		if i == 5 {
+			names = append(names, fmt.Sprintf("and %d more", len(camps)-5))
+			break
+		}
+		names = append(names, fmt.Sprintf("%q (%s)", c.Name, c.Center))
+	}
+	return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Campaigns scheduled or sending from %s: %s. Change their sender, unschedule or pause them, or wait until they've finished, first.", dom, strings.Join(names, ", ")))
+}
+
 // adoptSenders adds the domains of senders set before (every center's and
 // the hub's), for their centers.
 func (d *denmaCenters) adoptSenders() error {
@@ -1360,7 +1418,7 @@ func (a *App) DenmaAddDomainCenter(c echo.Context) error {
 }
 
 // DenmaRemoveDomainCenter stops a center sending from a domain, unless its
-// sender is on it.
+// sender, or a campaign scheduled or sending, is on it.
 func (a *App) DenmaRemoveDomainCenter(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -1380,6 +1438,13 @@ func (a *App) DenmaRemoveDomainCenter(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("%s's sender, %s, is on %s. Change it on its Config page first.", s.Name, s.From, dom))
 		}
 	}
+	camps, err := d.domainCampaigns(dom, slug)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if err := denmaCampaignsOnDomain(camps, dom); err != nil {
+		return err
+	}
 	if _, err := d.db().Exec(`DELETE FROM denma.sending_domain_centers WHERE domain = $1
 		AND center_id = (SELECT id FROM denma.centers WHERE slug = $2)`, dom, slug); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -1388,7 +1453,7 @@ func (a *App) DenmaRemoveDomainCenter(c echo.Context) error {
 }
 
 // DenmaDeleteDomain removes a sending domain from the hub, unless a sender
-// (the hub's or a center's) is on it. It stays in SES: the server's role
+// (the hub's or a center's), or a campaign scheduled or sending, is on it. It stays in SES: the server's role
 // can't delete identities (a compromised server could stop any domain's
 // mail), so a superadmin deletes it in the SES console.
 func (a *App) DenmaDeleteDomain(c echo.Context) error {
@@ -1418,6 +1483,13 @@ func (a *App) DenmaDeleteDomain(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("%s's sender is on %s. Change it on its Config page first.", using[0], dom))
 		}
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("The senders of %s are on %s. Change them on their Config pages first.", strings.Join(using, ", "), dom))
+	}
+	camps, err := d.domainCampaigns(dom, "")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if err := denmaCampaignsOnDomain(camps, dom); err != nil {
+		return err
 	}
 	if c.QueryParam("ses") == "true" {
 		return echo.NewHTTPError(http.StatusBadRequest, "The hub can't delete domains from Amazon SES: delete it in the SES console (Identities).")
