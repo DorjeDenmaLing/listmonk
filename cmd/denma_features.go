@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 29
+const denmaFeaturesVersion = 30
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -572,10 +572,12 @@ CREATE TRIGGER denma_protect_visual_template
     BEFORE DELETE ON templates FOR EACH ROW EXECUTE FUNCTION denma_protect_visual_template();
 
 -- Imports are marked (attribs.imported_at), so automations skip them. The
--- importer is recognised by its query (listmonk's upsert-subscriber).
+-- importer is recognised by its queries (listmonk's upsert-subscriber, and
+-- upsert-blocklist-subscriber for a blocklist import).
 CREATE OR REPLACE FUNCTION denma_is_import() RETURNS BOOLEAN
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
-    SELECT strpos(current_query(), 'INSERT INTO subscribers as s (uuid, email, name, attribs, status)') > 0;
+    SELECT strpos(current_query(), 'INSERT INTO subscribers as s (uuid, email, name, attribs, status)') > 0
+        OR strpos(current_query(), 'INSERT INTO subscribers (uuid, email, name, attribs, status)') > 0;
 $$;
 
 -- Attributes with imported_at added (an import may leave them JSON null).
