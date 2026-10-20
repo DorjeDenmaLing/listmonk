@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   deploy:
+    if: github.repository == 'knadh/listmonk' # denma: upstream's own, not the fork's
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v2

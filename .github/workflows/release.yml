@@ -9,6 +9,7 @@ permissions: write-all
 
 jobs:
   goreleaser:
+    if: github.repository == 'knadh/listmonk' # denma: upstream's own, not the fork's
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

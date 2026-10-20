@@ -7,6 +7,7 @@ on:
   
 jobs:
   build:
+    if: github.repository == 'knadh/listmonk' # denma: upstream's own, not the fork's
     runs-on: ubuntu-latest
 
     steps:

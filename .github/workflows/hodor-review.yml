@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run Hodor review
+        if: github.repository == 'knadh/listmonk' # denma: upstream's own, not the fork's
         run: |
           docker run --rm \
             -e GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \

@@ -95,4 +95,4 @@ jobs:
           go-version-file: .go-version
       # Fails on vulnerabilities the code reaches, in Go or a module.
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./... # a release, not whatever's newest
