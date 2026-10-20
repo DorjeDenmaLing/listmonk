@@ -642,7 +642,7 @@ func (a *App) DenmaCreateAPIKey(c echo.Context) error {
 	// The webhook starts after the events there are now.
 	if err := tx.QueryRow(`INSERT INTO denma_api_keys (name, key_hash, key_hint, can, allowed_from, link_domains, webhook_url, webhook_secret, webhook_after,
 		sender, daily_limit, expires_at, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT COALESCE(MAX(id), 0) FROM denma_api_events), $9, $10, $11, $12) RETURNING id`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT COALESCE(event_seq, 0) FROM denma_api_state), $9, $10, $11, $12) RETURNING id`,
 		f.Name, hash, hint, pq.Array(f.Can), pq.Array(f.AllowedFrom), pq.Array(f.LinkDomains), f.WebhookURL, "whsec_"+secret,
 		f.Sender, f.DailyLimit, f.expiresAt, denmaAPIWho(c)).Scan(&id); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -694,7 +694,7 @@ func (a *App) DenmaUpdateAPIKey(c echo.Context) error {
 	// date resets its reminders.
 	if _, err := tx.Exec(`UPDATE denma_api_keys SET name = $2, allowed_from = $3, webhook_url = $4, can = $6, updated_at = NOW(),
 		link_domains = $10, webhook_secret = CASE WHEN $11 <> '' THEN $11 ELSE webhook_secret END,
-		webhook_after = CASE WHEN $5 THEN (SELECT COALESCE(MAX(id), 0) FROM denma_api_events) ELSE webhook_after END,
+		webhook_after = CASE WHEN $5 THEN (SELECT COALESCE(event_seq, 0) FROM denma_api_state) ELSE webhook_after END,
 		webhook_failures = CASE WHEN $5 THEN 0 ELSE webhook_failures END,
 		webhook_next_at = CASE WHEN $5 THEN NULL ELSE webhook_next_at END,
 		webhook_error = CASE WHEN $5 THEN '' ELSE webhook_error END,

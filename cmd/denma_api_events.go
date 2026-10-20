@@ -17,6 +17,12 @@ package main
 // paused, resumed, finished, cancelled (campaign_*, with the campaign's key
 // and no address).
 //
+// Each event's place in the feed (seq, given as its ID) is given once it's
+// committed (apiPublishEvents), in batches one after another, so that the
+// feed only grows at its end: an event whose transaction commits after
+// events with higher IDs (a long import's) comes after them, not before
+// where a reader has already read.
+//
 // They're kept denmaAPIEventDays days. A key with the events permission gets
 // those about addresses it has sent to (denma_api_contacts), since it did;
 // a key that sends campaigns gets its campaigns'. GET /v1/events lists them
@@ -185,16 +191,60 @@ DROP TRIGGER IF EXISTS denma_api_campaign_event ON campaigns;
 CREATE TRIGGER denma_api_campaign_event AFTER UPDATE OF status ON campaigns
     FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status AND NEW.status IN ('running', 'paused', 'finished', 'cancelled'))
     EXECUTE FUNCTION denma_api_campaign_event();
+
+-- Since features version 31: each event's place in the feed (seq), given
+-- once it's committed (apiPublishEvents); event_seq is the last one given.
+-- Events from before keep their ID as their place, and new ones come after
+-- every ID given so far, so readers' and webhooks' positions stay right.
+ALTER TABLE denma_api_events ADD COLUMN IF NOT EXISTS seq BIGINT NULL;
+ALTER TABLE denma_api_state ADD COLUMN IF NOT EXISTS event_seq BIGINT NULL;
+UPDATE denma_api_events SET seq = id WHERE seq IS NULL AND (SELECT event_seq FROM denma_api_state) IS NULL;
+UPDATE denma_api_state SET event_seq = (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM denma_api_events_id_seq)
+    WHERE event_seq IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS denma_api_events_seq ON denma_api_events (seq);
+CREATE INDEX IF NOT EXISTS denma_api_events_unplaced ON denma_api_events (id) WHERE seq IS NULL;
+CREATE INDEX IF NOT EXISTS denma_api_events_key_seq ON denma_api_events (key_id, seq) WHERE key_id IS NOT NULL;
+DROP INDEX IF EXISTS denma_api_events_key;
 `
 
-// denmaAPIKeyEventsSQL is a key's events after an ID ($1), at most $2: with
-// the events permission ($4), those about the addresses the key ($3) has
-// sent to, since it did; if it sends campaigns ($5), its campaigns'.
-const denmaAPIKeyEventsSQL = `SELECT e.id, e.type, COALESCE(e.email, '') AS email, e.reason, e.campaign_id, e.created_at
+// denmaAPIKeyEventsSQL is a key's events after a place in the feed ($1), at
+// most $2: with the events permission ($4), those about the addresses the
+// key ($3) has sent to, since it did; if it sends campaigns ($5), its
+// campaigns'. Their place is their ID.
+const denmaAPIKeyEventsSQL = `SELECT e.seq AS id, e.type, COALESCE(e.email, '') AS email, e.reason, e.campaign_id, e.created_at
 	FROM denma_api_events e
-	WHERE e.id > $1 AND ((e.key_id = $3 AND $5) OR (e.key_id IS NULL AND $4 AND EXISTS (SELECT 1 FROM denma_api_contacts k
+	WHERE e.seq > $1 AND ((e.key_id = $3 AND $5) OR (e.key_id IS NULL AND $4 AND EXISTS (SELECT 1 FROM denma_api_contacts k
 		WHERE k.key_id = $3 AND k.email_hash = denma_email_hash(e.email) AND k.created_at <= e.created_at)))
-	ORDER BY e.id LIMIT $2`
+	ORDER BY e.seq LIMIT $2`
+
+// apiPublishEvents gives the events committed since it last ran their
+// places in the feed, in ID order, after the last place given. One runs at a
+// time (the state row's lock), and each commits before the next starts, so
+// places are seen in order.
+func (a *App) apiPublishEvents() error {
+	tx, err := a.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var last int64
+	if err := tx.Get(&last, `SELECT COALESCE(event_seq, 0) FROM denma_api_state FOR UPDATE`); err != nil {
+		return err
+	}
+	var n int64
+	if err := tx.Get(&n, `WITH p AS (SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS n FROM denma_api_events WHERE seq IS NULL),
+		u AS (UPDATE denma_api_events e SET seq = $1 + p.n FROM p WHERE e.id = p.id RETURNING 1)
+		SELECT COUNT(*) FROM u`, last); err != nil {
+		return err
+	}
+	if n == 0 {
+		return nil
+	}
+	if _, err := tx.Exec(`UPDATE denma_api_state SET event_seq = $1`, last+n); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
 // denmaAPIKeyEventsArgs are denmaAPIKeyEventsSQL's arguments for a key that
 // can do can.
@@ -236,6 +286,9 @@ func (a *App) DenmaAPIEvents(c echo.Context) error {
 	limit = min(limit, 1000)
 	out := []denmaAPIEvent{}
 	k := apiKeyOf(c)
+	if err := a.apiPublishEvents(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
 	if err := a.db.Select(&out, denmaAPIKeyEventsSQL, denmaAPIKeyEventsArgs(after, limit, k.ID, k.Can)...); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -262,6 +315,9 @@ func denmaStartAPIJobs(a *App) {
 		a.apiResumeStarting()
 		a.apiCleanUp()
 		a.apiExpiryReminders()
+		if err := a.apiPublishEvents(); err != nil {
+			a.log.Printf("denma: error placing the API's events: %v", err)
+		}
 		a.apiSendWebhooks()
 	}); err != nil {
 		a.log.Printf("denma: error adding the API's job: %v", err)
@@ -615,14 +671,14 @@ func (a *App) apiSendWebhooks() {
 		WHERE webhook_url <> '' AND deleted_at IS NULL AND ('events' = ANY(can) OR 'campaigns' = ANY(can))
 		AND (expires_at IS NULL OR expires_at > NOW())
 		AND (webhook_next_at IS NULL OR webhook_next_at <= NOW())
-		AND EXISTS (SELECT 1 FROM denma_api_events e WHERE e.id > webhook_after)`); err != nil {
+		AND EXISTS (SELECT 1 FROM denma_api_events e WHERE e.seq > webhook_after)`); err != nil {
 		a.log.Printf("denma: error reading the API's webhooks: %v", err)
 		return
 	}
 	for _, k := range keys {
 		// The newest event before reading, to skip to if none are the key's.
 		var top int64
-		if err := a.db.Get(&top, `SELECT COALESCE(MAX(id), 0) FROM denma_api_events`); err != nil {
+		if err := a.db.Get(&top, `SELECT COALESCE(MAX(seq), 0) FROM denma_api_events`); err != nil {
 			a.log.Printf("denma: error reading the API's events: %v", err)
 			return
 		}

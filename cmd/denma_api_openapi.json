@@ -668,7 +668,7 @@
         "type": "object",
         "required": ["id", "type", "reason", "campaign_id", "created_at"],
         "properties": {
-          "id": { "type": "integer", "format": "int64", "description": "Increasing; `GET /events?after=` takes it." },
+          "id": { "type": "integer", "format": "int64", "description": "Its place in the feed, increasing: events come in this order, each after those already given, so `after` never skips one. `GET /events?after=` takes it." },
           "type": {
             "type": "string",
             "enum": ["unsubscribed", "complained", "bounced", "blocklisted", "campaign_started", "campaign_paused", "campaign_resumed", "campaign_finished", "campaign_cancelled", "test"],
