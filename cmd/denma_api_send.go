@@ -131,7 +131,11 @@ func denmaAPIBind(c echo.Context, v any) error {
 	if err := dec.Decode(v); err != nil {
 		var mbe *http.MaxBytesError
 		if errors.As(err, &mbe) {
-			return echo.NewHTTPError(http.StatusRequestEntityTooLarge, fmt.Sprintf("The request is over %d MB.", denmaAPIMaxBody>>20))
+			size := fmt.Sprintf("%d KB", mbe.Limit>>10)
+			if mbe.Limit >= 1<<20 {
+				size = fmt.Sprintf("%d MB", mbe.Limit>>20)
+			}
+			return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "The request is over "+size+".")
 		}
 		if errors.Is(err, io.EOF) {
 			return echo.NewHTTPError(http.StatusBadRequest, "The request has no JSON body.")

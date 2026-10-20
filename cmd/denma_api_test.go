@@ -270,8 +270,9 @@ func TestDenmaJSONSet(t *testing.T) {
 	}
 }
 
-// "confirmed" needs a consent record: when (the latest) and how; its source
-// is the subscriber's consent_source if they have none.
+// "confirmed" needs a consent record: when (the latest, to compare with an
+// opt-out) and how; the first is the subscriber's consent_at and
+// consent_source if they have none.
 func TestDenmaConsentAt(t *testing.T) {
 	dec := func(s string) map[string]any {
 		var m map[string]any
@@ -285,10 +286,10 @@ func TestDenmaConsentAt(t *testing.T) {
 	if err != nil || !at.Equal(time.Date(2026, 5, 5, 8, 0, 0, 0, time.UTC)) {
 		t.Errorf("the latest: %v %v", at, err)
 	}
-	if src := denmaConsentSource(rec, at); src != "registration form" {
-		t.Errorf("its source: %q", src)
+	if first, src := denmaFirstConsent(rec); src != "form" || !first.Equal(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("the first: %v %q", first, src)
 	}
-	if src := denmaConsentSource(rec, time.Time{}); src != "" {
+	if _, src := denmaFirstConsent(dec(`{}`)); src != "" {
 		t.Errorf("no consent's source: %q", src)
 	}
 	future := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)

@@ -1183,8 +1183,9 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	}
 	tags = append(tags, h.Tags...)
 
-	// Their consent: when (the latest of the record's), and their first
-	// consent_at and consent_source if they have none.
+	// Their consent: when (the latest of the record's, to compare with an
+	// opt-out), and the record's first as their consent_at and
+	// consent_source if they have none.
 	var consentAt time.Time
 	if r.Confirmed {
 		if consentAt, err = denmaConsentAt(r.Attribs); err != nil {
@@ -1194,8 +1195,8 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	if r.Attribs == nil {
 		r.Attribs = map[string]any{}
 	}
-	if src := denmaConsentSource(r.Attribs, consentAt); src != "" {
-		r.Attribs["consent_at"] = consentAt.UTC().Format(time.RFC3339)
+	if first, src := denmaFirstConsent(r.Attribs); r.Confirmed && src != "" {
+		r.Attribs["consent_at"] = first.UTC().Format(time.RFC3339)
 		r.Attribs["consent_source"] = src
 	}
 
@@ -1460,21 +1461,24 @@ func denmaConsentAt(attribs map[string]any) (time.Time, error) {
 	return at, nil
 }
 
-// denmaConsentSource is the source of attribs.consents' entry at at, or "".
-func denmaConsentSource(attribs map[string]any, at time.Time) string {
-	if at.IsZero() {
-		return ""
-	}
+// denmaFirstConsent is attribs.consents' earliest entry: when and its
+// source ("" if there's none, checked by denmaConsentAt).
+func denmaFirstConsent(attribs map[string]any) (time.Time, string) {
+	var at time.Time
+	src := ""
 	list, _ := attribs["consents"].([]any)
 	for _, e := range list {
 		m, _ := e.(map[string]any)
 		s, _ := m["at"].(string)
-		if t, err := time.Parse(time.RFC3339, s); err == nil && t.Equal(at) {
-			src, _ := m["source"].(string)
-			return strings.TrimSpace(src)
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil || (src != "" && !t.Before(at)) {
+			continue
+		}
+		if v, _ := m["source"].(string); strings.TrimSpace(v) != "" {
+			at, src = t, strings.TrimSpace(v)
 		}
 	}
-	return ""
+	return at, src
 }
 
 // appendSubscriber adds a Server webhook's name, attributes and tags to a
