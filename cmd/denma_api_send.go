@@ -834,8 +834,22 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 	if idem != "" {
 		idemArg = idem
 	}
-	if _, err := a.db.Exec(`INSERT INTO denma_api_campaigns (campaign_id, key_id, list_id, idempotency_key, state) VALUES ($1, $2, $3, $4, $5)`,
-		camp.ID, k.ID, listID, idemArg, state); err != nil {
+	// Recorded only while the key's in use: one deleted as leaked since this
+	// request came in has had its campaigns cancelled (cmd/denma_api.go).
+	kl := a.apiKeyLock(k.ID)
+	kl.Lock()
+	live, err := a.apiKeyLive(k.ID, false)
+	if err == nil && !live {
+		kl.Unlock()
+		_ = a.core.DeleteCampaign(camp.ID)
+		return echo.NewHTTPError(http.StatusUnauthorized, "This key isn't in use (any more).")
+	}
+	if err == nil {
+		_, err = a.db.Exec(`INSERT INTO denma_api_campaigns (campaign_id, key_id, list_id, idempotency_key, state) VALUES ($1, $2, $3, $4, $5)`,
+			camp.ID, k.ID, listID, idemArg, state)
+	}
+	kl.Unlock()
+	if err != nil {
 		_ = a.core.DeleteCampaign(camp.ID)
 		var pe *pq.Error
 		if errors.As(err, &pe) && pe.Code == "23505" { // the same Idempotency-Key, at the same time
@@ -1087,8 +1101,9 @@ func (a *App) apiStart(id int) {
 	var x struct {
 		Since  time.Time `db:"since"`
 		ListID int       `db:"list_id"`
+		KeyID  int       `db:"key_id"`
 	}
-	if err := a.db.Get(&x, `SELECT COALESCE(l.created_at, x.created_at) AS since, COALESCE(x.list_id, 0) AS list_id
+	if err := a.db.Get(&x, `SELECT COALESCE(l.created_at, x.created_at) AS since, COALESCE(x.list_id, 0) AS list_id, x.key_id
 		FROM denma_api_campaigns x LEFT JOIN lists l ON l.id = x.list_id
 		WHERE x.campaign_id = $1 AND x.state = 'starting'`, id); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -1120,7 +1135,21 @@ func (a *App) apiStart(id int) {
 		failed(err)
 		return
 	}
-	// Started only if it wasn't cancelled meanwhile.
+	// Started only if it wasn't cancelled meanwhile, nor its key deleted as
+	// leaked (under its lock, cmd/denma_api.go).
+	kl := a.apiKeyLock(x.KeyID)
+	kl.Lock()
+	defer kl.Unlock()
+	if live, err := a.apiKeyLive(x.KeyID, true); err != nil || !live {
+		if err == nil {
+			err = errors.New("Its key was deleted as leaked.")
+			if _, e := a.db.Exec(`UPDATE campaigns SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND status = 'draft'`, id); e != nil {
+				a.log.Printf("denma: error cancelling API campaign %d: %v", id, e)
+			}
+		}
+		failed(err)
+		return
+	}
 	res, err := a.db.Exec(`UPDATE denma_api_campaigns SET state = 'started', error = '' WHERE campaign_id = $1 AND state = 'starting'`, id)
 	if err != nil {
 		failed(err)
