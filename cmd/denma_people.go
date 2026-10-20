@@ -233,6 +233,22 @@ func (d *denmaCenters) usernameTaken(q sqlx.Queryer, username string, personID i
 	return taken, err
 }
 
+// freeUsername is username if no one has it, else one made from it and the
+// center's slug that no one has.
+func (d *denmaCenters) freeUsername(q sqlx.Queryer, username, slug string) (string, error) {
+	uname := username
+	for i := 1; ; i++ {
+		taken, err := d.usernameTaken(q, uname, 0)
+		if err != nil || !taken {
+			return uname, err
+		}
+		uname = fmt.Sprintf("%s-%s", username, slug)
+		if i > 1 {
+			uname = fmt.Sprintf("%s-%s-%d", username, slug, i)
+		}
+	}
+}
+
 // eachAccount runs a statement on every one of a person's accounts, in their
 // centers' schemas: q's S. is the schema, $1 the account's ID, and args the
 // rest.
@@ -383,19 +399,9 @@ func (d *denmaCenters) adoptPeople(c *denmaCenter, db *sqlx.DB) error {
 				pid = p.ID
 				lo.Printf("denma: center %s: user %s is %s, who signs in with their own password", c.Slug, u.Username, p.Email)
 			} else {
-				uname := u.Username
-				for i := 1; ; i++ {
-					taken, err := d.usernameTaken(tx, uname, 0)
-					if err != nil {
-						return err
-					}
-					if !taken {
-						break
-					}
-					uname = fmt.Sprintf("%s-%s", u.Username, c.Slug)
-					if i > 1 {
-						uname = fmt.Sprintf("%s-%s-%d", u.Username, c.Slug, i)
-					}
+				uname, err := d.freeUsername(tx, u.Username, c.Slug)
+				if err != nil {
+					return err
 				}
 				if uname != u.Username {
 					lo.Printf("denma: center %s: user %s now signs in as %s (or with their e-mail address): the username is someone else's", c.Slug, u.Username, uname)
@@ -443,16 +449,15 @@ func (d *denmaCenters) addMember(ctr *denmaCenter, u auth.User) (auth.User, denm
 	}
 	isNew := p == nil
 	if isNew {
-		taken, err := d.usernameTaken(db, u.Username, 0)
+		// Their username, or one made from it if someone has it (anywhere:
+		// the center isn't told, nor whose it is); the invite says it.
+		uname, err := d.freeUsername(db, u.Username, ctr.Slug)
 		if err != nil {
 			return auth.User{}, denmaInvite{}, err
 		}
-		if taken {
-			return auth.User{}, denmaInvite{}, errDenmaUsernameTaken
-		}
 		p = &denmaPerson{}
 		if err := db.Get(p, `INSERT INTO denma.people AS p (username, email, name) VALUES ($1, $2, $3) RETURNING `+denmaPersonCols,
-			u.Username, email, u.Name); err != nil {
+			uname, email, u.Name); err != nil {
 			if denmaUniqueViolation(err) {
 				return auth.User{}, denmaInvite{}, echo.NewHTTPError(http.StatusConflict, "Someone else just added this person. Try again.")
 			}
@@ -624,6 +629,7 @@ func (a *App) denmaCreateMember(c echo.Context, u auth.User) (bool, error) {
 	if err != nil {
 		return true, err
 	}
+	a.denmaHideTwofa(c, &user) // cmd/denma_hierarchy.go
 	return true, c.JSON(http.StatusOK, okResp{user})
 }
 
@@ -665,6 +671,7 @@ func (a *App) denmaUpdateMember(c echo.Context, id int, u auth.User) (bool, erro
 		return true, err
 	}
 	user.Password = null.String{}
+	a.denmaHideTwofa(c, &user) // cmd/denma_hierarchy.go
 	if _, err := cacheUsers(a.core, a.auth); err != nil {
 		return true, err
 	}

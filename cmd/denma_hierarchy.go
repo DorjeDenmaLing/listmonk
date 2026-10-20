@@ -154,14 +154,16 @@ func (a *App) denmaVisibleUsers(c echo.Context, users []auth.User) ([]auth.User,
 	out := users[:0]
 	for _, x := range users {
 		if !hub[x.ID] && !(hide && x.UserRole.ID == auth.SuperAdminRoleID) {
+			a.denmaHideTwofa(c, &x)
 			out = append(out, x)
 		}
 	}
 	return out, nil
 }
 
-// denmaSeeUser is "not found" for a user c's user doesn't see.
-func (a *App) denmaSeeUser(c echo.Context, target auth.User) error {
+// denmaSeeUser is "not found" for a user c's user doesn't see; one they see
+// is shown as denmaHideTwofa says.
+func (a *App) denmaSeeUser(c echo.Context, target *auth.User) error {
 	hub, err := a.denmaHubAccounts()
 	if err != nil {
 		return err
@@ -169,7 +171,18 @@ func (a *App) denmaSeeUser(c echo.Context, target auth.User) error {
 	if hub[target.ID] || (a.denmaHidesSuper(c) && target.UserRole.ID == auth.SuperAdminRoleID) {
 		return errDenmaNoUser
 	}
+	a.denmaHideTwofa(c, target)
 	return nil
+}
+
+// denmaHideTwofa leaves out whether a center's user has two-factor sign-in,
+// but for c's own: it's their person's, which they manage themselves, and a
+// new person never has it, so it would tell that someone added was a user
+// somewhere else already.
+func (a *App) denmaHideTwofa(c echo.Context, u *auth.User) {
+	if a.denmaInCenter() && u.ID != auth.GetUser(c).ID {
+		u.TwofaType = models.TwofaTypeNone
+	}
 }
 
 // denmaCheckUser checks that c's user may edit or delete the user with this
@@ -179,7 +192,7 @@ func (a *App) denmaCheckUser(c echo.Context, id int) error {
 	if err != nil {
 		return err
 	}
-	if err := a.denmaSeeUser(c, target); err != nil {
+	if err := a.denmaSeeUser(c, &target); err != nil {
 		return err
 	}
 	if !denmaWithin(auth.GetUser(c), target) {

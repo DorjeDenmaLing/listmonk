@@ -121,7 +121,7 @@ func (a *App) ViewUser(c echo.Context) error {
 		if err != nil {
 			return err
 		}
-		if err := a.denmaSeeUser(c, out); err != nil { // denma: cmd/denma_hierarchy.go
+		if err := a.denmaSeeUser(c, &out); err != nil { // denma: cmd/denma_hierarchy.go
 			return err
 		}
 
@@ -197,7 +197,7 @@ func (a *App) GetUser(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := a.denmaSeeUser(c, out); err != nil { // denma: cmd/denma_hierarchy.go
+	if err := a.denmaSeeUser(c, &out); err != nil { // denma: cmd/denma_hierarchy.go
 		return err
 	}
 
