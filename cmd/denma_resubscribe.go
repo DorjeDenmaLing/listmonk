@@ -195,7 +195,7 @@ func (a *App) denmaResubRefused(sub models.Subscriber) (string, error) {
 	}
 	if err := a.db.Get(&why, `SELECT
 		EXISTS (SELECT 1 FROM bounces WHERE subscriber_id = $1 AND type = 'complaint')
-			OR EXISTS (SELECT 1 FROM denma_optouts WHERE email_hash = denma_email_hash(s.email) AND kind = 'complained') AS complained,
+			OR COALESCE(denma_optout_kind(s.email) = 'complained', false) AS complained,
 		EXISTS (SELECT 1 FROM bounces WHERE subscriber_id = $1 AND type = 'hard')
 			OR COALESCE(s.attribs ? 'auto_blocklist_reason', false) AS bounced
 		FROM subscribers s WHERE s.id = $1`, sub.ID); err != nil {
@@ -335,11 +335,12 @@ func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta mo
 		return err
 	}
 	defer tx.Rollback()
-	// Their opt-out goes (cmd/denma_optouts.go): confirming is their consent.
-	// A complaint's stays, and enabling them is refused. So does the fence on
+	// Their opt-out goes (cmd/denma_optouts.go), and their address's
+	// variants': confirming is their consent, from the same mailbox. A
+	// complaint's stays, and enabling them is refused. So does the fence on
 	// those the API added (cmd/denma_noconsent.go).
-	if _, err := tx.Exec(`DELETE FROM denma_optouts WHERE kind = 'unsubscribed'
-		AND email_hash = (SELECT denma_email_hash(email) FROM subscribers WHERE id = $1)`, subID); err != nil {
+	if _, err := tx.Exec(`DELETE FROM denma_optouts o USING subscribers s WHERE s.id = $1 AND o.kind = 'unsubscribed'
+		AND (o.email_hash = denma_email_hash(s.email) OR o.canon_hash = denma_canon_hash(s.email))`, subID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM denma_no_consent

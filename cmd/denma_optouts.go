@@ -18,7 +18,9 @@ package main
 //   - Someone who complained never can, in that center.
 //
 // Each center keeps them in denma_optouts, by a SHA-256 of the address, so
-// that it outlives the subscriber (deleting them keeps the opt-out), and
+// that it outlives the subscriber (deleting them keeps the opt-out), and of
+// its canonical form (denma_email_canon: without a +tag, and for Gmail
+// without dots), so that a variant of the address is opted out too; and
 // database triggers enforce it: an opted-out address can't be enabled (an
 // error says why) and is blocklisted if it's added again, and its
 // subscriptions stay unsubscribed. Confirming a re-subscription removes an
@@ -83,6 +85,44 @@ IF to_regclass('denma_optouts') IS NULL THEN
 END IF;
 END $$;
 
+-- Since features version 32: an address's canonical form, so that a
+-- variant of an opted-out one is opted out too: lowercase, its local part
+-- without a +tag, and Gmail's without dots, at gmail.com. (A +tag goes to
+-- the same mailbox at most providers; erring the other way would let an
+-- admin past an opt-out.)
+CREATE OR REPLACE FUNCTION denma_email_canon(e TEXT) RETURNS TEXT
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT CASE WHEN d IN ('gmail.com', 'googlemail.com') THEN replace(l, '.', '') || '@gmail.com' ELSE l || '@' || d END
+    FROM (SELECT COALESCE(NULLIF(split_part(split_part(x, '@', 1), '+', 1), ''), split_part(x, '@', 1)) AS l,
+            substr(x, length(split_part(x, '@', 1)) + 2) AS d
+        FROM (SELECT lower(trim(e)) AS x) a) b
+$$;
+CREATE OR REPLACE FUNCTION denma_canon_hash(e TEXT) RETURNS TEXT
+LANGUAGE sql IMMUTABLE AS $$ SELECT encode(sha256(convert_to(denma_email_canon(e), 'UTF8')), 'hex') $$;
+ALTER TABLE denma_optouts ADD COLUMN IF NOT EXISTS canon_hash TEXT NULL;
+CREATE INDEX IF NOT EXISTS denma_optouts_canon ON denma_optouts (canon_hash);
+-- An opt-out's canonical hash, from its subscriber's address, when the
+-- writer didn't give it; and those from before, whose subscriber is here.
+CREATE OR REPLACE FUNCTION denma_optout_canon() RETURNS TRIGGER
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+BEGIN
+    IF NEW.canon_hash IS NULL THEN
+        SELECT denma_canon_hash(s.email) INTO NEW.canon_hash FROM subscribers s WHERE denma_email_hash(s.email) = NEW.email_hash LIMIT 1;
+    END IF;
+    RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS denma_optout_canon ON denma_optouts;
+CREATE TRIGGER denma_optout_canon BEFORE INSERT OR UPDATE ON denma_optouts
+    FOR EACH ROW EXECUTE FUNCTION denma_optout_canon();
+UPDATE denma_optouts o SET canon_hash = denma_canon_hash(s.email) FROM subscribers s
+    WHERE o.canon_hash IS NULL AND denma_email_hash(s.email) = o.email_hash;
+-- The opt-out an address has, its own or a variant's: a complaint first.
+CREATE OR REPLACE FUNCTION denma_optout_kind(e TEXT) RETURNS TEXT
+LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
+    SELECT kind FROM denma_optouts WHERE email_hash = denma_email_hash(e) OR canon_hash = denma_canon_hash(e)
+    ORDER BY kind = 'complained' DESC LIMIT 1
+$$;
+
 -- An opted-out address stays blocklisted: added again, it's blocklisted;
 -- enabling it is refused.
 CREATE OR REPLACE FUNCTION denma_keep_optouts() RETURNS TRIGGER
@@ -91,7 +131,7 @@ DECLARE k TEXT;
 BEGIN
     IF NEW.status = 'blocklisted' THEN RETURN NEW; END IF;
     IF TG_OP = 'UPDATE' AND OLD.status <> 'blocklisted' AND lower(OLD.email) = lower(NEW.email) THEN RETURN NEW; END IF;
-    SELECT kind INTO k FROM denma_optouts WHERE email_hash = denma_email_hash(NEW.email);
+    k := denma_optout_kind(NEW.email);
     IF k IS NULL THEN RETURN NEW; END IF;
     IF TG_OP = 'INSERT' THEN
         NEW.status := 'blocklisted';
@@ -111,8 +151,7 @@ CREATE OR REPLACE FUNCTION denma_keep_optout_lists() RETURNS TRIGGER
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     IF NEW.status <> 'unsubscribed' AND EXISTS (SELECT 1 FROM subscribers s
-        JOIN denma_optouts o ON o.email_hash = denma_email_hash(s.email)
-        WHERE s.id = NEW.subscriber_id AND s.status = 'blocklisted') THEN
+        WHERE s.id = NEW.subscriber_id AND s.status = 'blocklisted' AND denma_optout_kind(s.email) IS NOT NULL) THEN
         NEW.status := 'unsubscribed';
     END IF;
     RETURN NEW;
@@ -157,7 +196,9 @@ func (a *App) denmaOptOutOf(email string) *denmaOptOut {
 		return nil
 	}
 	var o denmaOptOut
-	if err := a.db.Get(&o, `SELECT kind, source, created_at FROM denma_optouts WHERE email_hash = denma_email_hash($1)`, email); err != nil {
+	if err := a.db.Get(&o, `SELECT kind, source, created_at FROM denma_optouts
+		WHERE email_hash = denma_email_hash($1) OR canon_hash = denma_canon_hash($1)
+		ORDER BY kind = 'complained' DESC, email_hash = denma_email_hash($1) DESC LIMIT 1`, email); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			a.log.Printf("denma: error reading an opt-out: %v", err)
 		}

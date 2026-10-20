@@ -1254,7 +1254,8 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		}
 		if r.Confirmed {
 			var optedOut sql.NullTime
-			if err := a.db.Get(&optedOut, `SELECT MAX(created_at) FROM denma_optouts WHERE email_hash = denma_email_hash($1)`, email); err != nil {
+			if err := a.db.Get(&optedOut, `SELECT MAX(created_at) FROM denma_optouts
+				WHERE email_hash = denma_email_hash($1) OR canon_hash = denma_canon_hash($1)`, email); err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 			}
 			if optedOut.Valid && !consentAt.After(optedOut.Time) {

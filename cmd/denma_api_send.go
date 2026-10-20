@@ -587,7 +587,7 @@ func (a *App) denmaTxRefused(email string, skip map[string]bool) (bool, error) {
 		return true, nil
 	}
 	var kind string
-	if err := a.db.Get(&kind, `SELECT COALESCE((SELECT kind FROM denma_optouts WHERE email_hash = denma_email_hash($1)), '')`, email); err != nil {
+	if err := a.db.Get(&kind, `SELECT COALESCE(denma_optout_kind($1), '')`, email); err != nil {
 		return false, err
 	}
 	if kind == denmaOptOutComplained {
@@ -936,7 +936,7 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 	var added []string
 	if err := tx.Select(&added, `INSERT INTO subscribers (uuid, email, name, status, attribs)
 		SELECT gen_random_uuid(), i.email, COALESCE(NULLIF(i.name, ''), split_part(i.email, '@', 1)), 'enabled',
-			CASE WHEN EXISTS (SELECT 1 FROM denma_optouts o WHERE o.email_hash = denma_email_hash(i.email)) THEN '{}'::JSONB ELSE i.attribs END
+			CASE WHEN denma_optout_kind(i.email) IS NOT NULL THEN '{}'::JSONB ELSE i.attribs END
 		FROM unnest($1::TEXT[], $2::TEXT[], $3::JSONB[]) AS i(email, name, attribs)
 		ON CONFLICT DO NOTHING RETURNING LOWER(email)`, pq.Array(emails), pq.Array(names), pq.Array(attribs)); err != nil {
 		return fail(err)

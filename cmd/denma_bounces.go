@@ -244,8 +244,8 @@ func (d *denmaCenters) recordIn(slug string, b models.Bounce) error {
 // (cmd/denma_optouts.go) to find, as would one deleted before, and an
 // unsubscribe's opt-out becomes a complaint's.
 func denmaComplaintOptOut(db *sqlx.DB, b models.Bounce) error {
-	_, err := db.Exec(`INSERT INTO denma_optouts (email_hash, kind, source)
-		SELECT DISTINCT denma_email_hash(e), 'complained', 'complaint' FROM (
+	_, err := db.Exec(`INSERT INTO denma_optouts (email_hash, canon_hash, kind, source)
+		SELECT DISTINCT ON (denma_email_hash(e)) denma_email_hash(e), denma_canon_hash(e), 'complained', 'complaint' FROM (
 			SELECT email FROM subscribers WHERE $1 <> '' AND uuid::TEXT = $1
 			UNION ALL SELECT $2 WHERE $2 <> '') x(e)
 		ON CONFLICT (email_hash) DO UPDATE SET kind = 'complained', source = 'complaint', created_at = NOW()`,
