@@ -94,6 +94,21 @@ func (a *App) denmaRecipients(id int, listIDs []int, tags []string, typ string) 
 	return count, nil
 }
 
+// denmaCheckCompiles refuses to start or schedule a campaign whose e-mail
+// can't be made, its plain-text version included (made from the body,
+// cmd/denma_features.go): the campaign manager would try it every few
+// seconds and never send it. Called by denmaCheckCampaignStart.
+func (a *App) denmaCheckCompiles(id int) error {
+	camp, err := a.core.GetCampaignForPreview(id, 0)
+	if err != nil {
+		return err
+	}
+	if err := camp.CompileTemplate(a.manager.TemplateFuncs(&camp)); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("templates.errorCompiling", "error", err.Error()))
+	}
+	return nil
+}
+
 // errDenmaNoRecipients refuses to start a campaign that would go to no one.
 var errDenmaNoRecipients = errors.New("No one would get this campaign: no one subscribed is on its lists or has its tags. Add a list with subscribers first.")
 

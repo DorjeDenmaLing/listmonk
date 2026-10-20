@@ -1704,14 +1704,17 @@ func denmaBadRequest(err error) error {
 }
 
 // denmaCheckCampaignStart refuses to start or schedule a campaign whose
-// sender's domain SES hasn't verified, a draft that would go to no one
-// (cmd/denma_start.go), or one to another campaign's API list
-// (cmd/denma_noconsent.go).
+// sender's domain SES hasn't verified, a draft that would go to no one or
+// whose e-mail can't be made (cmd/denma_start.go), or one to another
+// campaign's API list (cmd/denma_noconsent.go).
 func (a *App) denmaCheckCampaignStart(id int, status string) error {
 	if status != models.CampaignStatusRunning && status != models.CampaignStatusScheduled {
 		return nil
 	}
 	if err := a.denmaCheckRecipients(id); err != nil {
+		return err
+	}
+	if err := a.denmaCheckCompiles(id); err != nil {
 		return err
 	}
 	if err := a.denmaCheckAPILists(id); err != nil {

@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 32
+const denmaFeaturesVersion = 33
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -348,12 +348,22 @@ DECLARE
     label TEXT;
     url TEXT;
     link TEXT;
+    acts TEXT[] := '{}';
 BEGIN
+    t := regexp_replace(t, '\{\{\s*TrackView\s*\}\}', '', 'g');
+    -- Template actions are set aside, and put back as they were, so that the
+    -- HTML around them reads as HTML (one in an href has quotes of its own)
+    -- and they stay whole.
+    LOOP
+        m := regexp_match(t, '\{\{.*?\}\}');
+        EXIT WHEN m IS NULL;
+        acts := acts || m[1];
+        t := overlay(t PLACING chr(1) || cardinality(acts) || chr(2) FROM strpos(t, m[1]) FOR length(m[1]));
+    END LOOP;
     FOREACH label IN ARRAY ARRAY['head', 'style', 'script', 'title'] LOOP
         t := regexp_replace(t, format('<%s\M[^>]*>(?:[^<]|<(?!/%s))*</%s>', label, label, label), '', 'gi');
     END LOOP;
     t := regexp_replace(t, '<!--(?:[^-]|-(?!->))*-->', '', 'g');
-    t := regexp_replace(t, '\{\{\s*TrackView\s*\}\}', '', 'g');
     t := regexp_replace(t, '\s+', ' ', 'g');  -- HTML whitespace; line breaks come from tags below
 
     -- Links: "text (URL)".
@@ -384,6 +394,9 @@ BEGIN
     t := regexp_replace(t, '[ \t]+', ' ', 'g');
     t := regexp_replace(t, ' *\n *', E'\n', 'g');
     t := regexp_replace(t, E'\n{3,}', E'\n\n', 'g');
+    FOR i IN REVERSE cardinality(acts)..1 LOOP
+        t := replace(t, chr(1) || i || chr(2), acts[i]);
+    END LOOP;
     RETURN trim(BOTH E' \n' FROM t);
 END;
 $$;
