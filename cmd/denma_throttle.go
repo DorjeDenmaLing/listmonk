@@ -20,6 +20,14 @@ package main
 // the window; the page says when to try again. Counting unknown names too
 // means the answer doesn't tell whether an account exists. A right password
 // clears its account's count, not its address's.
+//
+// So that guessing can't lock someone out (OWASP's device cookies): a
+// browser whose password was right for an account is given a cookie for it
+// (denmaDeviceCookie: a random token, kept hashed in denma.login_devices,
+// for denmaDeviceDays after its last use). Its tries for that account count
+// against its own limit of 10 wrong in 15 minutes, not the account's or its
+// address's; the account's and the address's limits are for the browsers
+// without one, so they shut out the guesser, not the account's own.
 
 import (
 	"errors"
@@ -33,6 +41,7 @@ import (
 
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/tmptokens"
+	"github.com/knadh/listmonk/internal/utils"
 	"github.com/labstack/echo/v4"
 	"github.com/pquerna/otp/totp"
 )
@@ -57,6 +66,7 @@ const denmaThrottleKeys = 10000
 var (
 	denmaPasswordByAccount = newDenmaThrottle(10, 15*time.Minute)
 	denmaPasswordByIP      = newDenmaThrottle(30, 15*time.Minute)
+	denmaPasswordByDevice  = newDenmaThrottle(10, 15*time.Minute)
 	denmaTwofaByPerson     = newDenmaThrottle(5, 15*time.Minute)
 	denmaForgotByEmail     = newDenmaThrottle(3, time.Hour)
 	denmaForgotByIP        = newDenmaThrottle(10, time.Hour)
@@ -142,9 +152,13 @@ func (a *App) denmaPersonKey(name string) string {
 }
 
 // denmaPasswordWait is the error for a password that may not be tried now
-// (for this account, or from this address), or nil.
-func denmaPasswordWait(c echo.Context, account string) error {
+// (for this account, or from this address; or from this browser, one the
+// account has signed in from), or nil.
+func (a *App) denmaPasswordWait(c echo.Context, account string) error {
 	wait := max(denmaPasswordByAccount.wait(account), denmaPasswordByIP.wait(c.RealIP()))
+	if dev := a.denmaDevice(c, account); dev != "" {
+		wait = denmaPasswordByDevice.wait(dev)
+	}
 	if wait > 0 {
 		return denmaTooMany(wait)
 	}
@@ -152,14 +166,78 @@ func denmaPasswordWait(c echo.Context, account string) error {
 }
 
 // denmaPasswordResult counts a wrong password, or clears the account's count
-// for a right one.
-func denmaPasswordResult(c echo.Context, account string, ok bool) {
+// for a right one and remembers the browser for it.
+func (a *App) denmaPasswordResult(c echo.Context, account string, ok bool) {
+	dev := a.denmaDevice(c, account)
 	if ok {
 		denmaPasswordByAccount.clear(account)
+		if dev != "" {
+			denmaPasswordByDevice.clear(dev)
+		}
+		a.denmaRememberDevice(c, account, dev)
+		return
+	}
+	if dev != "" {
+		denmaPasswordByDevice.add(dev)
 		return
 	}
 	denmaPasswordByAccount.add(account)
 	denmaPasswordByIP.add(c.RealIP())
+}
+
+const (
+	denmaDeviceCookie = "denma_device"
+	denmaDeviceDays   = 180
+)
+
+// denmaDevice is the browser's token's hash if its cookie is for account,
+// else "".
+func (a *App) denmaDevice(c echo.Context, account string) string {
+	ck, err := c.Cookie(denmaDeviceCookie)
+	if err != nil || ck.Value == "" {
+		return ""
+	}
+	hash := denmaAPIHash(ck.Value)
+	var ok bool
+	if err := a.db.Get(&ok, `SELECT EXISTS (SELECT 1 FROM denma.login_devices WHERE token_hash = $1 AND account = $2
+		AND used_at > NOW() - make_interval(days => $3))`, hash, account, denmaDeviceDays); err != nil || !ok {
+		return ""
+	}
+	return hash
+}
+
+// denmaRememberDevice gives the browser a cookie for account, or renews the
+// one it has (dev, its hash).
+func (a *App) denmaRememberDevice(c echo.Context, account, dev string) {
+	token := ""
+	if dev != "" {
+		if _, err := a.db.Exec(`UPDATE denma.login_devices SET used_at = NOW() WHERE token_hash = $1`, dev); err != nil {
+			a.log.Printf("denma: error renewing a sign-in's browser: %v", err)
+		}
+		ck, _ := c.Cookie(denmaDeviceCookie)
+		token = ck.Value
+	} else {
+		var err error
+		if token, err = utils.GenerateRandomString(32); err != nil {
+			return
+		}
+		if _, err := a.db.Exec(`DELETE FROM denma.login_devices WHERE used_at < NOW() - make_interval(days => $1)`, denmaDeviceDays); err != nil {
+			a.log.Printf("denma: error forgetting old sign-ins' browsers: %v", err)
+		}
+		if _, err := a.db.Exec(`INSERT INTO denma.login_devices (token_hash, account) VALUES ($1, $2)`, denmaAPIHash(token), account); err != nil {
+			a.log.Printf("denma: error remembering a sign-in's browser: %v", err)
+			return
+		}
+	}
+	c.SetCookie(&http.Cookie{
+		Name:     denmaDeviceCookie,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   c.Scheme() == "https" || c.Request().Header.Get("X-Forwarded-Proto") == "https",
+		MaxAge:   denmaDeviceDays * 24 * 3600,
+	})
 }
 
 // denmaForgotAllowed reports whether a forgotten password e-mail may go to

@@ -116,6 +116,14 @@ func denmaInitPeople(db *sqlx.DB) error {
 			token_hash TEXT NOT NULL,
 			expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 		);
+		-- Browsers that have signed in to an account (cmd/denma_throttle.go):
+		-- their cookie's SHA-256, and the account's limit key.
+		CREATE TABLE IF NOT EXISTS denma.login_devices (
+			token_hash TEXT PRIMARY KEY,
+			account    TEXT NOT NULL,
+			created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+			used_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+		);
 		-- Center admins' set-password links, from before people.
 		DROP TABLE IF EXISTS denma.invites;`)
 	return err

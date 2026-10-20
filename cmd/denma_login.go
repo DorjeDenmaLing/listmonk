@@ -195,11 +195,11 @@ func (a *App) DenmaLogin(c echo.Context) error {
 	// Not too many guesses (cmd/denma_throttle.go): past the limit, the
 	// password isn't checked.
 	account := a.denmaPersonKey(username)
-	if err := denmaPasswordWait(c, account); err != nil {
+	if err := a.denmaPasswordWait(c, account); err != nil {
 		return a.renderLoginPage(c, err)
 	}
 	invalid := func() error {
-		denmaPasswordResult(c, account, false)
+		a.denmaPasswordResult(c, account, false)
 		return a.renderLoginPage(c, echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidLogin")))
 	}
 
@@ -225,7 +225,7 @@ func (a *App) DenmaLogin(c echo.Context) error {
 	if err != nil || username == "" || password == "" {
 		return invalid()
 	}
-	denmaPasswordResult(c, account, true)
+	a.denmaPasswordResult(c, account, true)
 	return a.denmaPasswordOK(c, &p, next)
 }
 

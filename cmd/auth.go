@@ -97,11 +97,11 @@ func (a *App) LoginPage(c echo.Context) error {
 	if c.Request().Method == http.MethodPost {
 		// denma: not too many guesses (cmd/denma_throttle.go).
 		account := denmaAccountKey(c.FormValue("username"))
-		if err := denmaPasswordWait(c, account); err != nil {
+		if err := a.denmaPasswordWait(c, account); err != nil {
 			return a.renderLoginPage(c, err)
 		}
 		loginErr = a.doLogin(c)
-		denmaPasswordResult(c, account, loginErr == nil) // denma
+		a.denmaPasswordResult(c, account, loginErr == nil) // denma
 		if loginErr == nil {
 			return c.Redirect(http.StatusFound, utils.SanitizeURI(c.FormValue("next")))
 		}
