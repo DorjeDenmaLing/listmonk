@@ -11,9 +11,10 @@
 // counts against the limit straight away, so that automations in several
 // centers running in the same minute can't each take the same room. Each
 // claimed e-mail sent turns a claim into a send (AddClaimed); what an
-// automation claimed but didn't send it gives back (Release). Claims are
-// in memory only, and a claim left untouched for claimTimeout is dropped,
-// in case e-mails claimed were never sent.
+// automation claimed but didn't send it gives back (Release). Each claim is
+// kept by its ID, which its e-mails carry, so a late send counts against its
+// own claim and no other's. Claims are in memory only, and a claim left
+// untouched for claimTimeout is dropped, in case its e-mails were never sent.
 //
 // Each center also has a Counter of its own (Counters), against its own
 // daily cap, which a superadmin sets on its Config page; it has no reserve.
@@ -42,13 +43,14 @@ type Minute struct {
 type Counter struct {
 	mu      sync.Mutex
 	limit   int
-	reserve int           // percent of limit that campaigns leave
-	minutes []Minute      // the last 24 hours', oldest first
-	total   int           // their sum
-	pending map[int64]int // counted since the last save
-	waiting bool          // the limit was reached (logged once)
-	claimed int           // claimed by automations and transactional e-mails, not sent yet
-	claimAt time.Time     // when claims last changed
+	reserve int              // percent of limit that campaigns leave
+	minutes []Minute         // the last 24 hours', oldest first
+	total   int              // their sum
+	pending map[int64]int    // counted since the last save
+	waiting bool             // the limit was reached (logged once)
+	claimed int              // claimed by automations and transactional e-mails, not sent yet
+	claims  map[int64]*claim // the claims, by ID; claimed is their sum
+	lastID  int64            // the last claim's ID
 	db      *sqlx.DB
 	log     *log.Logger
 	center  string // a center's counter (Counters); "" for the hub's
@@ -123,15 +125,26 @@ func (d *Counter) Save() {
 	}
 }
 
-// claimTimeout is how long claims last untouched before they're dropped.
-const claimTimeout = time.Hour
+// claim is what's left of one claim, and when it last changed.
+type claim struct {
+	n  int
+	at time.Time
+}
+
+// claimTimeout is how long a claim lasts untouched before it's dropped: a
+// day, as its e-mails can wait that long behind campaign messages waiting
+// for the limit, and dropping it early would let them go over it.
+const claimTimeout = 24 * time.Hour
 
 // expire drops the minutes older than 24 hours, and claims left untouched
 // for claimTimeout. Call with mu held.
 func (d *Counter) expire(now time.Time) {
-	if d.claimed > 0 && now.Sub(d.claimAt) > claimTimeout {
-		d.log.Printf("denma: dropping %d e-mails claimed an hour ago and not sent", d.claimed)
-		d.claimed = 0
+	for id, c := range d.claims {
+		if now.Sub(c.at) > claimTimeout {
+			d.log.Printf("denma: dropping %d e-mails claimed a day ago and not sent", c.n)
+			d.claimed -= c.n
+			delete(d.claims, id)
+		}
 	}
 	cutoff := now.Unix()/60 - dayMinutes
 	i := 0
@@ -165,23 +178,40 @@ func (d *Counter) add(now time.Time) {
 	d.pending[m]++
 }
 
-// AddClaimed counts an e-mail sent that an automation had claimed.
-func (d *Counter) AddClaimed() {
-	d.Add()
+// AddClaimed counts an e-mail sent that claim id had claimed (one dropped
+// already, or 0: just counted).
+func (d *Counter) AddClaimed(id int64) {
+	now := time.Now()
 	d.mu.Lock()
-	if d.claimed > 0 {
-		d.claimed--
-		d.claimAt = time.Now()
+	defer d.mu.Unlock()
+	d.expire(now)
+	d.add(now)
+	d.unclaim(id, 1, now)
+}
+
+// unclaim takes up to n off claim id. Call with mu held.
+func (d *Counter) unclaim(id int64, n int, now time.Time) {
+	c := d.claims[id]
+	if c == nil || n <= 0 {
+		return
 	}
-	d.mu.Unlock()
+	n = min(n, c.n)
+	c.n -= n
+	d.claimed -= n
+	c.at = now
+	if c.n == 0 {
+		delete(d.claims, id)
+	}
 }
 
 // Claim takes up to n of what's left for campaigns and automations, for an
-// automation's batch, and returns how many it got, and whether they're
-// claimed: without a limit, all n, unclaimed (nothing to count against).
-func (d *Counter) Claim(n int) (int, bool) {
+// automation's batch, and returns how many it got, and the claim's ID for
+// its e-mails (AddClaimed) and what isn't sent (Release): 0 if none was
+// claimed. Without a limit, it gets all n, unclaimed (nothing to count
+// against).
+func (d *Counter) Claim(n int) (int, int64) {
 	if d.Left() < 0 {
-		return n, false
+		return n, 0
 	}
 	now := time.Now()
 	d.mu.Lock()
@@ -189,21 +219,22 @@ func (d *Counter) Claim(n int) (int, bool) {
 	d.expire(now)
 	left := max(d.limit-d.limit*d.reserve/100-d.total-d.claimed, 0)
 	got := min(max(n, 0), left)
-	if got > 0 {
-		d.claimed += got
-		d.claimAt = now
+	if got == 0 {
+		return 0, 0
 	}
-	return got, true
+	if d.claims == nil {
+		d.claims = map[int64]*claim{}
+	}
+	d.lastID++
+	d.claims[d.lastID] = &claim{n: got, at: now}
+	d.claimed += got
+	return got, d.lastID
 }
 
-// Release gives back n claimed e-mails that weren't sent.
-func (d *Counter) Release(n int) {
-	if n <= 0 {
-		return
-	}
+// Release gives back n of claim id's e-mails that weren't sent.
+func (d *Counter) Release(id int64, n int) {
 	d.mu.Lock()
-	d.claimed = max(d.claimed-n, 0)
-	d.claimAt = time.Now()
+	d.unclaim(id, n, time.Now())
 	d.mu.Unlock()
 }
 

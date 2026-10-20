@@ -488,42 +488,34 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 		}
 	}
 	cc := denmaCenterCounter(a.ko)
-	claimed := false
+	var centerClaim int64
 	if cc != nil && len(msgs) > 0 {
-		got, ok := cc.Claim(len(msgs))
+		got, id := cc.Claim(len(msgs))
 		if got < len(msgs) {
-			if ok {
-				cc.Release(got)
-			}
+			cc.Release(id, got)
 			a.apiUnclaim(k.ID, denmaAPIUseSend, len(msgs))
 			return a.apiCapErr(len(msgs))
 		}
-		claimed = ok
+		centerClaim = id
 	}
 	// And the hub's daily limit, short of the reserve kept for opt-ins and
 	// password resets (cmd/denma_sending.go).
 	daily, err := denmaClaimDaily(len(msgs))
 	if err != nil {
-		if claimed {
-			cc.Release(len(msgs))
+		if cc != nil {
+			cc.Release(centerClaim, len(msgs))
 		}
 		a.apiUnclaim(k.ID, denmaAPIUseSend, len(msgs))
 		return err
 	}
 	for i, msg := range msgs {
-		if claimed {
-			msg.Headers.Set(denmaCenterClaimHeader, "1") // cmd/denma_daily.go
-		}
-		if daily {
-			msg.Headers.Set(denmaClaimHeader, "1")
-		}
+		denmaMarkClaim(&msg, denmaCenterClaimHeader, centerClaim) // cmd/denma_daily.go
+		denmaMarkClaim(&msg, denmaClaimHeader, daily)
 		if err := a.manager.PushMessage(msg); err != nil {
-			if claimed {
-				cc.Release(1)
+			if cc != nil {
+				cc.Release(centerClaim, 1)
 			}
-			if daily {
-				denmaDaily.Release(1)
-			}
+			denmaDaily.Release(daily, 1)
 			res.Skipped = append(res.Skipped, denmaAPISkip{subs[i].Email, "couldn't be sent: " + err.Error()})
 			continue
 		}

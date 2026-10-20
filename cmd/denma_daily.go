@@ -89,8 +89,8 @@ func denmaCenterCap(mgr *manager.Manager, ko *koanf.Koanf) {
 }
 
 // denmaCenterClaimHeader marks an e-mail as claimed against the center's cap
-// (Counter.Claim, by automations and the API); it's taken off before the
-// e-mail is sent.
+// (Counter.Claim, by automations and the API), with the claim's ID; it's
+// taken off before the e-mail is sent.
 const denmaCenterClaimHeader = "X-Denma-Center-Claim"
 
 // denmaCountedMessenger counts what a center's manager sends against its cap,
@@ -107,9 +107,8 @@ func (m denmaCountedMessenger) Push(msg models.Message) error {
 	}
 	if msg.Headers != nil && msg.Headers.Get(manager.DenmaCenterCounted) != "" {
 		msg.Headers.Del(manager.DenmaCenterCounted) // counted by its wait
-	} else if msg.Headers != nil && msg.Headers.Get(denmaCenterClaimHeader) != "" {
-		msg.Headers.Del(denmaCenterClaimHeader)
-		m.count.AddClaimed()
+	} else if claim, ok := denmaClaimOf(msg, denmaCenterClaimHeader); ok {
+		m.count.AddClaimed(claim)
 	} else {
 		m.count.Add()
 	}

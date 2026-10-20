@@ -148,22 +148,24 @@ func TestDailyReserve(t *testing.T) {
 // same room, sends turn claims into counts, and what isn't sent is given
 // back.
 func TestDailyClaim(t *testing.T) {
-	if got, ok := counter(0).Claim(500); got != 500 || ok {
-		t.Fatalf("no limit: got %d, claimed %v; want 500, false", got, ok)
+	if got, id := counter(0).Claim(500); got != 500 || id != 0 {
+		t.Fatalf("no limit: got %d, claim %d; want 500, none", got, id)
 	}
 
 	// A limit of 1,000 with a 10% reserve: 900 for campaigns and automations,
 	// 600 of them sent.
 	d := counter(1000, [2]int{5, 600})
 	d.reserve = 10
-	if got, ok := d.Claim(200); got != 200 || !ok {
-		t.Fatalf("first claim: got %d, claimed %v; want 200, true", got, ok)
+	got, first := d.Claim(200)
+	if got != 200 || first == 0 {
+		t.Fatalf("first claim: got %d, claim %d; want 200, one", got, first)
 	}
-	if got, _ := d.Claim(200); got != 100 {
-		t.Fatalf("second claim: got %d, want the 100 left", got)
+	got, second := d.Claim(200)
+	if got != 100 || second == first {
+		t.Fatalf("second claim: got %d (want the 100 left), claim %d (the first's %d)", got, second, first)
 	}
-	if got, _ := d.Claim(50); got != 0 {
-		t.Fatalf("third claim: got %d, want 0", got)
+	if got, id := d.Claim(50); got != 0 || id != 0 {
+		t.Fatalf("third claim: got %d, claim %d; want 0, none", got, id)
 	}
 	if s := d.Status(); s.Left != 0 || s.Claimed != 300 {
 		t.Fatalf("after claiming: left %d, claimed %d; want 0, 300", s.Left, s.Claimed)
@@ -171,24 +173,41 @@ func TestDailyClaim(t *testing.T) {
 
 	// 150 of the first 200 sent, the other 50 given back.
 	for range 150 {
-		d.AddClaimed()
+		d.AddClaimed(first)
 	}
-	d.Release(50)
+	d.Release(first, 50)
 	if s := d.Status(); s.Sent != 750 || s.Claimed != 100 || s.Left != 50 {
 		t.Fatalf("after sending: sent %d, claimed %d, left %d; want 750, 100, 50", s.Sent, s.Claimed, s.Left)
 	}
+	// A late send of a claim given back counts, and takes nothing off another's.
+	d.AddClaimed(first)
+	d.Release(first, 10)
+	if s := d.Status(); s.Sent != 751 || s.Claimed != 100 {
+		t.Fatalf("after a late send: sent %d, claimed %d; want 751, 100", s.Sent, s.Claimed)
+	}
 
-	// Claims left untouched for claimTimeout are dropped.
-	d.claimAt = time.Now().Add(-claimTimeout - time.Minute)
-	if s := d.Status(); s.Claimed != 0 || s.Left != 150 {
-		t.Fatalf("after the timeout: claimed %d, left %d; want 0, 150", s.Claimed, s.Left)
+	// A claim left untouched for claimTimeout is dropped; another isn't.
+	_, third := counter(0).Claim(1) // unclaimed: no limit
+	d.claims[second].at = time.Now().Add(-claimTimeout - time.Minute)
+	got, fourth := d.Claim(20)
+	if s := d.Status(); got != 20 || s.Claimed != 20 || s.Left != 129 {
+		t.Fatalf("after the timeout: got %d, claimed %d, left %d; want 20, 20, 129", got, s.Claimed, s.Left)
+	}
+	d.claims[fourth].at = time.Now().Add(-time.Hour) // an hour isn't enough
+	if s := d.Status(); s.Claimed != 20 {
+		t.Fatalf("a claim dropped after an hour: claimed %d, want 20", s.Claimed)
+	}
+	// Its late sends count, and take nothing off the newer claim.
+	d.AddClaimed(second)
+	d.AddClaimed(third)
+	if s := d.Status(); s.Claimed != 20 || s.Sent != 753 {
+		t.Fatalf("sends of a dropped claim: claimed %d, sent %d; want 20, 753", s.Claimed, s.Sent)
 	}
 
 	// Sends that weren't claimed don't touch the claims.
-	d.Claim(10)
 	d.Add()
-	if s := d.Status(); s.Claimed != 10 || s.Sent != 751 {
-		t.Fatalf("an unclaimed send: claimed %d, sent %d; want 10, 751", s.Claimed, s.Sent)
+	if s := d.Status(); s.Claimed != 20 || s.Sent != 754 {
+		t.Fatalf("an unclaimed send: claimed %d, sent %d; want 20, 754", s.Claimed, s.Sent)
 	}
 }
 
@@ -206,8 +225,8 @@ func TestCentersSeparate(t *testing.T) {
 	if a.Left() != 0 || b.Left() != -1 {
 		t.Fatalf("a left %d (want 0, at its cap), b left %d (want -1, no cap)", a.Left(), b.Left())
 	}
-	if got, ok := a.Claim(5); got != 0 || !ok {
-		t.Fatalf("a claimed %d at its cap (claimed %v)", got, ok)
+	if got, id := a.Claim(5); got != 0 || id != 0 {
+		t.Fatalf("a claimed %d at its cap (claim %d)", got, id)
 	}
 	b.SetLimit(10, 0)
 	if got, _ := b.Claim(20); got != 9 {

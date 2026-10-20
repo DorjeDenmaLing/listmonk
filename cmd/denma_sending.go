@@ -34,6 +34,7 @@ package main
 import (
 	"net/http"
 	"net/textproto"
+	"strconv"
 	"sync"
 	"time"
 
@@ -121,8 +122,8 @@ func (p *denmaPacer) configure(ko *koanf.Koanf) {
 }
 
 // denmaClaimHeader marks an e-mail (an automation's, a transactional one) as
-// claimed against the daily limit (denmaDaily.Claim); it's taken off before
-// the e-mail is sent.
+// claimed against the daily limit (denmaDaily.Claim), with the claim's ID;
+// it's taken off before the e-mail is sent.
 const denmaClaimHeader = "X-Denma-Daily-Claim"
 
 // errDenmaDaily is the hub's daily limit reached for what can be claimed: the
@@ -131,35 +132,56 @@ var errDenmaDaily = echo.NewHTTPError(http.StatusTooManyRequests,
 	"Sending has reached its daily limit (what's kept for confirmations and password resets aside). Try again later.")
 
 // denmaClaimDaily claims n transactional e-mails of the hub's daily limit,
-// short of the reserve, all or none, as automations' are claimed. claimed is
-// whether they are (nothing is without a limit): mark each with
-// denmaClaimHeader, and release those not sent.
-func denmaClaimDaily(n int) (claimed bool, err error) {
+// short of the reserve, all or none, as automations' are claimed. claim is
+// the claim's ID, 0 if there's none (no limit): mark each with it
+// (denmaMarkClaim), and release those not sent.
+func denmaClaimDaily(n int) (claim int64, err error) {
 	if n <= 0 {
-		return false, nil
+		return 0, nil
 	}
-	got, ok := denmaDaily.Claim(n)
+	got, id := denmaDaily.Claim(n)
 	if got < n {
-		if ok {
-			denmaDaily.Release(got)
-		}
-		return false, errDenmaDaily
+		denmaDaily.Release(id, got)
+		return 0, errDenmaDaily
 	}
-	return ok, nil
+	return id, nil
 }
 
-// denmaClaimTx claims the admin's transactional e-mail (/api/tx), as
-// denmaClaimDaily, marking it.
-func denmaClaimTx(m *models.Message) error {
-	claimed, err := denmaClaimDaily(1)
-	if err != nil || !claimed {
-		return err
+// denmaMarkClaim marks an e-mail with its claim (header, claim ID), if any.
+func denmaMarkClaim(m *models.Message, header string, claim int64) {
+	if claim == 0 {
+		return
 	}
 	if m.Headers == nil {
 		m.Headers = textproto.MIMEHeader{}
 	}
-	m.Headers.Set(denmaClaimHeader, "1")
-	return nil
+	m.Headers.Set(header, strconv.FormatInt(claim, 10))
+}
+
+// denmaClaimOf takes an e-mail's claim (header) off it, returning its ID, 0
+// if none.
+func denmaClaimOf(m models.Message, header string) (int64, bool) {
+	if m.Headers == nil {
+		return 0, false
+	}
+	v := m.Headers.Get(header)
+	if v == "" {
+		return 0, false
+	}
+	m.Headers.Del(header)
+	id, _ := strconv.ParseInt(v, 10, 64)
+	return id, true
+}
+
+// denmaClaimTx claims the admin's transactional e-mail (/api/tx), as
+// denmaClaimDaily, marking it; release gives the claim back if it isn't sent.
+func denmaClaimTx(m *models.Message) (release func(), err error) {
+	claim, err := denmaClaimDaily(1)
+	if err != nil {
+		return nil, err
+	}
+	denmaMarkClaim(m, denmaClaimHeader, claim)
+	return func() { denmaDaily.Release(claim, 1) }, nil
 }
 
 // denmaPacedMessenger is a (non e-mail) messenger whose messages wait for the
@@ -205,10 +227,9 @@ func denmaLimitSending(msgrs []manager.Messenger, ko *koanf.Koanf) []manager.Mes
 				m.Headers.Del(manager.DenmaDailyCounted)
 				return
 			}
-			// An automation's e-mail, claimed already (cmd/denma_automations.go).
-			if m.Headers != nil && m.Headers.Get(denmaClaimHeader) != "" {
-				m.Headers.Del(denmaClaimHeader)
-				denmaDaily.AddClaimed()
+			// An automation's or transactional e-mail, claimed already.
+			if claim, ok := denmaClaimOf(m, denmaClaimHeader); ok {
+				denmaDaily.AddClaimed(claim)
 				return
 			}
 			denmaDaily.Add()

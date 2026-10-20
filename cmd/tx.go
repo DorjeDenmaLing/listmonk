@@ -168,10 +168,12 @@ func (a *App) SendTxMessage(c echo.Context) error {
 			}
 		}
 
-		if err := denmaClaimTx(&msg); err != nil { // denma: the hub's daily limit (cmd/denma_sending.go)
+		release, err := denmaClaimTx(&msg) // denma: the hub's daily limit (cmd/denma_sending.go)
+		if err != nil {
 			return err
 		}
 		if err := a.manager.PushMessage(msg); err != nil {
+			release() // denma
 			a.log.Printf("error sending message (%s): %v", msg.Subject, err)
 			return err
 		}

@@ -564,8 +564,8 @@ var denmaAutoHeld sync.Map
 
 func (a *App) runAutomation(auto denmaAutomation) {
 	limit := denmaAutoBatch
-	claimed, pushed := false, 0 // its e-mails claimed against the daily limit, and pushed
-	centerClaimed := false      // and against the center's cap
+	var claim, centerClaim int64 // its e-mails' claims against the daily limit and the center's cap
+	pushed := 0
 	if auto.SendEmail {
 		if a.emailMsgr == nil {
 			return
@@ -588,24 +588,20 @@ func (a *App) runAutomation(auto denmaAutomation) {
 		// left, claimed before anything is sent, so that automations running
 		// at the same time in other centers can't take the same room. What
 		// isn't sent is given back; the rest are run later.
-		got, ok := denmaDaily.Claim(limit)
+		got, id := denmaDaily.Claim(limit)
 		if got == 0 {
 			return
 		}
-		limit, claimed = got, ok
-		if claimed {
-			defer func() { denmaDaily.Release(got - pushed) }()
-		}
+		limit, claim = got, id
+		defer func() { denmaDaily.Release(claim, got-pushed) }()
 		// And the center's own daily cap, the same way.
 		if cc := denmaCenterCounter(a.ko); cc != nil {
-			cgot, ok := cc.Claim(limit)
+			cgot, id := cc.Claim(limit)
 			if cgot == 0 {
 				return
 			}
-			limit, centerClaimed = cgot, ok
-			if centerClaimed {
-				defer func() { cc.Release(cgot - pushed) }()
-			}
+			limit, centerClaim = cgot, id
+			defer func() { cc.Release(centerClaim, cgot-pushed) }()
 		}
 	}
 
@@ -684,12 +680,8 @@ func (a *App) runAutomation(auto denmaAutomation) {
 		}
 		msg, err := a.autoMessage(auto, tpl, s)
 		if err == nil {
-			if claimed {
-				msg.Headers.Set(denmaClaimHeader, "1") // counted against its claim when it goes (cmd/denma_sending.go)
-			}
-			if centerClaimed {
-				msg.Headers.Set(denmaCenterClaimHeader, "1") // cmd/denma_daily.go
-			}
+			denmaMarkClaim(&msg, denmaClaimHeader, claim)             // counted against its claim when it goes (cmd/denma_sending.go)
+			denmaMarkClaim(&msg, denmaCenterClaimHeader, centerClaim) // cmd/denma_daily.go
 			err = a.manager.PushMessage(msg)
 		}
 		if err != nil {

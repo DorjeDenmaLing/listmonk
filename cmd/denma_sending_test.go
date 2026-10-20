@@ -11,19 +11,20 @@ import (
 func TestDenmaClaimDaily(t *testing.T) {
 	defer denmaDaily.SetLimit(0, 0)
 	denmaDaily.SetLimit(10, 50) // 5 for campaigns, automations and transactional e-mails
-	if claimed, err := denmaClaimDaily(6); !errors.Is(err, errDenmaDaily) || claimed {
-		t.Errorf("6 of 5: claimed %v, %v", claimed, err)
+	if claim, err := denmaClaimDaily(6); !errors.Is(err, errDenmaDaily) || claim != 0 {
+		t.Errorf("6 of 5: claim %d, %v", claim, err)
 	}
-	if claimed, err := denmaClaimDaily(5); err != nil || !claimed {
-		t.Errorf("5 of 5: claimed %v, %v", claimed, err)
+	claim, err := denmaClaimDaily(5)
+	if err != nil || claim == 0 {
+		t.Errorf("5 of 5: claim %d, %v", claim, err)
 	}
 	if _, err := denmaClaimDaily(1); !errors.Is(err, errDenmaDaily) {
 		t.Errorf("one more: %v", err)
 	}
-	denmaDaily.Release(5)
+	denmaDaily.Release(claim, 5)
 	denmaDaily.SetLimit(0, 0)
-	if claimed, err := denmaClaimDaily(1000); err != nil || claimed {
-		t.Errorf("without a limit: claimed %v, %v", claimed, err)
+	if claim, err := denmaClaimDaily(1000); err != nil || claim != 0 {
+		t.Errorf("without a limit: claim %d, %v", claim, err)
 	}
 }
 
