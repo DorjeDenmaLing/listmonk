@@ -1368,18 +1368,18 @@ svg.denma-logo {
     white-space: nowrap;
 }
 
-/* ---- Top bar and sidebar as in listmonk v6.2.0 (partials/denma/topnav.html,
-   partials/denma/sidebar.html): a white bar and a white 240px column with a
-   faint shadow, 15px text, and the current page in blue with a bar on its
-   right. 6.2.0's light colours; matching ones in the dark theme. Overrides
+/* ---- Top bar and sidebar (partials/denma/topnav.html,
+   partials/denma/sidebar.html): listmonk v6.2.0's layout, a white bar and a
+   white 240px column, in the admin's own type, colours and menus. Overrides
    listmonk's layout (assets/css/style.css) and Oat's sidebar. ---- */
 :root {
-  --denma-nav-bg: light-dark(#fff, #14161a);
-  --denma-nav-text: light-dark(#4a4a4a, #c9ccd1);
-  --denma-nav-strong: light-dark(#363636, #f7f8f8);
-  --denma-nav-hover: light-dark(#fafafa, rgb(255 255 255 / 0.05));
-  --denma-nav-line: light-dark(#dbdbdb, #2d3139);
-  --denma-nav-primary: light-dark(#0055d4, #4f8ce6);
+  --denma-nav-bg: var(--card);
+  --denma-nav-text: var(--muted-foreground);
+  --denma-nav-strong: var(--foreground);
+  --denma-nav-hover: light-dark(rgb(0 85 212 / 0.06), rgb(255 255 255 / 0.06));
+  --denma-nav-current: light-dark(rgb(0 85 212 / 0.08), rgb(79 140 230 / 0.14));
+  --denma-nav-line: var(--border);
+  --denma-nav-primary: var(--primary);
   --denma-nav-height: 49px;
 }
 
@@ -1414,10 +1414,10 @@ svg.denma-logo {
   height: var(--denma-nav-height);
   padding: 0;
   border: 0;
+  border-bottom: 1px solid var(--denma-nav-line);
   background: var(--denma-nav-bg);
-  box-shadow: 0 0 3px var(--denma-nav-line);
   color: var(--denma-nav-text);
-  font-size: 15px;
+  font-size: var(--text-7);
   line-height: 1.5;
   /* Oat's hidden tooltips (the superadmin notice's) still take up width. */
   overflow-x: clip;
@@ -1483,12 +1483,12 @@ svg.denma-logo {
     }
 
     .icon {
-      width: 15px;
-      height: 15px;
+      width: 16px;
+      height: 16px;
     }
   }
 
-  /* The avatar, with 6.2.0's blue arrow after it. */
+  /* The avatar, with a small arrow after it. */
   .denma-user {
     display: flex;
   }
@@ -1499,7 +1499,7 @@ svg.denma-logo {
     align-items: center;
     height: 100%;
     margin: 0;
-    padding: 7.5px 37.5px 7.5px 11.25px;
+    padding: 0 var(--space-8) 0 var(--space-3);
     border: 0;
     border-radius: 0;
     background: none;
@@ -1510,16 +1510,13 @@ svg.denma-logo {
       content: "";
       position: absolute;
       top: 50%;
-      right: 16.875px;
-      width: 9.375px;
-      height: 9.375px;
-      margin-top: -9px;
-      border: 3px solid var(--denma-nav-primary);
-      border-top: 0;
-      border-right: 0;
-      border-radius: 2px;
-      transform: rotate(-45deg);
-      transform-origin: center;
+      right: var(--space-4);
+      width: 6px;
+      height: 6px;
+      margin-top: -5px;
+      border-right: 1.5px solid var(--denma-nav-text);
+      border-bottom: 1.5px solid var(--denma-nav-text);
+      transform: rotate(45deg);
       pointer-events: none;
     }
 
@@ -1529,78 +1526,73 @@ svg.denma-logo {
     }
   }
 
-  /* The user's menu: under the bar, against its right edge. */
+  /* The user's menu: under the bar, against its right edge, as the admin's
+     other menus (Oat's ot-dropdown). */
   .denma-user menu[popover] {
     min-width: 0;
-    padding: 7.5px 0;
-    border: 0;
-    border-top: 2px solid var(--denma-nav-line);
-    border-radius: 0 0 6px 6px;
-    background: var(--denma-nav-bg);
-    box-shadow: 0 8px 8px rgb(10 10 10 / 0.1);
-    font-size: 15px;
-    /* Shown at once, as 6.2.0's (not Oat's fade). */
-    transform: none;
-    transition: none;
-
-    &:popover-open {
-      opacity: 1;
-    }
+    margin-top: var(--space-1);
+    padding: var(--space-1);
+    border: 1px solid var(--denma-nav-line);
+    border-radius: var(--radius-medium);
+    background: var(--background);
+    box-shadow: var(--shadow-small);
+    font-size: var(--text-7);
 
     > a,
     .denma-user-centers > a {
       display: flex;
       align-items: center;
-      gap: 4px;
-      padding: 5.625px 45px 5.625px 15px;
-      border-radius: 0;
+      gap: var(--space-2);
+      padding: var(--space-2) var(--space-6) var(--space-2) var(--space-3);
+      border-radius: var(--radius-small);
       background: none;
-      color: var(--denma-nav-primary);
+      color: var(--denma-nav-strong);
       white-space: nowrap;
 
       &:is(:hover, :focus-visible) {
-        background: var(--denma-nav-hover);
+        background: var(--accent);
       }
 
       .icon {
-        width: 15px;
-        height: 15px;
+        width: 16px;
+        height: 16px;
+        color: var(--denma-nav-text);
       }
     }
 
     /* A person's other centers (cmd/denma_people.go). */
     .denma-user-centers {
-      margin: 7.5px 0;
-      padding-top: 7.5px;
+      margin: var(--space-1) 0;
+      padding-top: var(--space-1);
       border-top: 1px solid var(--denma-nav-line);
 
       > small {
         display: block;
-        padding: 0 15px 2px;
+        padding: var(--space-1) var(--space-3) 2px;
         color: var(--denma-nav-text);
-        font-size: 11.25px;
+        font-size: var(--text-8);
       }
     }
 
     > a.denma-user-name {
       display: block;
       min-width: 150px;
-      color: var(--denma-nav-text);
 
       strong {
         display: block;
-        font-weight: 700;
+        font-weight: var(--font-semibold);
       }
 
       small {
         display: block;
-        font-size: 11.25px;
+        color: var(--denma-nav-text);
+        font-size: var(--text-8);
       }
     }
 
     .denma-theme-switch {
-      margin-top: 7.5px;
-      padding: 7.5px 15px 0;
+      margin-top: var(--space-1);
+      padding: var(--space-1) var(--space-3) 0;
       border-top: 1px solid var(--denma-nav-line);
     }
   }
@@ -1614,11 +1606,11 @@ svg.denma-logo {
   width: 32px;
   height: 32px;
   overflow: hidden;
-  border-radius: 100%;
-  background: light-dark(#ddd, #3a3f47);
+  border-radius: var(--radius-full);
+  background: var(--border);
   color: var(--denma-nav-text);
-  font-size: 13.125px;
-  font-weight: 700;
+  font-size: var(--text-8);
+  font-weight: var(--font-semibold);
   line-height: 1;
   text-transform: uppercase;
 
@@ -1660,12 +1652,12 @@ svg.denma-logo {
   }
 
   &:hover {
-    background: rgb(0 0 0 / 0.05);
+    background: var(--denma-nav-hover);
   }
 }
 
 #app[data-sidebar-open] .denma-burger {
-  background: rgb(0 0 0 / 0.05);
+  background: var(--denma-nav-hover);
 
   span:nth-child(1) { transform: translateY(5px) rotate(45deg); }
   span:nth-child(2) { opacity: 0; }
@@ -1681,16 +1673,17 @@ svg.denma-logo {
   height: calc(100dvh - var(--denma-nav-height));
   margin: 0;
   border: 0;
+  border-inline-end: 1px solid var(--denma-nav-line);
   background: var(--denma-nav-bg);
-  box-shadow: 0 0 3px var(--denma-nav-line);
+  box-shadow: none;
 
   /* At the bottom: the credit and source link (denma-powered-by), without
      listmonk's page render time (not in 6.2.0). */
   > footer {
-    padding: 11.25px 25px;
+    padding: var(--space-3) var(--space-6);
     border-top: 1px solid var(--denma-nav-line);
     color: var(--denma-nav-text);
-    font-size: 13px;
+    font-size: var(--text-8);
 
     > span {
       display: none;
@@ -1712,39 +1705,38 @@ svg.denma-logo {
 #app > aside[data-sidebar] > nav.denma-menu {
   max-height: none;
   margin: 0;
-  padding: 26px 0 15px;
+  padding: var(--space-6) var(--space-3) var(--space-3);
   color: var(--denma-nav-text);
-  font-size: 15px;
-  line-height: 22.5px;
+  font-size: var(--text-7);
+  line-height: 1.25rem;
 
   ul {
     gap: 0;
   }
 
   > ul > li {
-    margin: 0 0 10px;
+    margin: 0 0 2px;
   }
 
   /* The center (or the hub) the admin shows, above Dashboard. */
   > ul > li.denma-menu-place {
-    padding: 0 11.25px 4px 25px;
-    font-size: 12px;
-    font-weight: 600;
+    padding: 0 var(--space-3) var(--space-3);
+    font-size: var(--text-8);
+    font-weight: var(--font-semibold);
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--denma-nav-text);
-    opacity: 0.7;
     overflow-wrap: anywhere;
   }
 
   li ul {
     animation: none;
-    margin: 11.25px 0 11.25px 11.25px;
-    padding: 0 0 0 11.25px;
+    margin: 2px 0 var(--space-2) var(--space-5);
+    padding: 0 0 0 var(--space-2);
     border-left: 1px solid var(--denma-nav-line);
 
     > li {
-      margin: 0;
+      margin: 0 0 2px;
     }
   }
 
@@ -1758,23 +1750,23 @@ svg.denma-logo {
   :is(a, summary) {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-3);
     margin: 0;
-    padding: 7.5px 11.25px 7.5px 25px;
+    padding: var(--space-2) var(--space-3);
     border: 0;
-    border-radius: 0;
+    border-radius: var(--radius-medium);
     background: none;
     color: var(--denma-nav-text);
-    font-size: 15px;
-    font-weight: 400;
-    line-height: 22.5px;
+    font-size: var(--text-7);
+    font-weight: var(--font-normal);
+    line-height: 1.25rem;
     text-decoration: none;
     cursor: pointer;
 
     .icon {
       flex: none;
-      width: 15px;
-      height: 15px;
+      width: 16px;
+      height: 16px;
     }
 
     &:hover {
@@ -1812,8 +1804,7 @@ svg.denma-logo {
   }
 
   details[open] > summary {
-    background: var(--denma-nav-hover);
-    color: var(--denma-nav-primary);
+    color: var(--denma-nav-strong);
 
     &::after {
       transform: translateY(0.25em) rotate(225deg);
@@ -1821,9 +1812,9 @@ svg.denma-logo {
   }
 
   a[aria-current] {
-    border-right: 5px solid var(--denma-nav-primary);
-    background: var(--denma-nav-hover);
+    background: var(--denma-nav-current);
     color: var(--denma-nav-primary);
+    font-weight: var(--font-medium);
   }
 
   /* Phones only (below). */
@@ -1890,11 +1881,9 @@ svg.denma-logo {
     max-height: calc(100dvh - var(--denma-nav-height));
     overflow-y: auto;
     transform: none;
-    box-shadow: 0 8px 16px rgb(10 10 10 / 0.1);
-  }
-
-  #app > aside[data-sidebar] > footer {
-    padding-left: 11.25px;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--denma-nav-line);
+    box-shadow: var(--shadow-large);
   }
 
   #app[data-sidebar-open] > aside[data-sidebar] {
@@ -1903,56 +1892,46 @@ svg.denma-logo {
 
   #app > aside[data-sidebar] > nav.denma-menu {
     overflow: visible;
-    padding: 7.5px 0;
-
-    > ul > li {
-      margin: 0;
-    }
-
-    :is(a, summary) {
-      padding-left: 11.25px;
-    }
+    padding: var(--space-2) var(--space-3);
 
     .denma-menu-more {
       display: block;
-
-      > a {
-        padding-left: 11.25px;
-      }
     }
 
     .denma-menu-user {
       display: flex;
       flex-direction: column;
       align-items: flex-start;
-      margin-top: 15px;
-      padding: 15px 15px 0;
+      margin-top: var(--space-4);
+      padding: var(--space-4) var(--space-3) 0;
       border-top: 1px solid var(--denma-nav-line);
 
       .denma-avatar {
-        margin-bottom: 15px;
+        margin-bottom: var(--space-3);
       }
 
       strong {
-        font-weight: 700;
+        color: var(--denma-nav-strong);
+        font-weight: var(--font-semibold);
       }
 
       small {
-        margin-bottom: 7.5px;
-        font-size: 11.25px;
+        margin-bottom: var(--space-2);
+        font-size: var(--text-8);
       }
 
       a {
-        padding: 5.625px 0;
-        color: var(--denma-nav-primary);
+        padding: var(--space-2) 0;
+        color: var(--denma-nav-strong);
 
         &:hover {
           background: none;
+          color: var(--denma-nav-primary);
         }
       }
 
       .denma-theme-switch {
-        margin-top: 7.5px;
+        margin-top: var(--space-2);
       }
     }
   }
