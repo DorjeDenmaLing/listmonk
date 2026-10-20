@@ -770,8 +770,9 @@ func denmaDateCond(col, op, v string) (string, error) {
 
 // ---- Names ----
 
-// list, campaign and template find a list (one the user can see), campaign
-// or template by name or ID.
+// list, campaign and template find a list, campaign or template the user
+// can see by name or ID: lists as the lists pages show them, campaigns as
+// checkCampaignPerm lets them see one, and templates with templates:get.
 func (p *denmaParser) list(v string) (int, error) {
 	if p.lists == nil {
 		p.lists = []denmaNamed{}
@@ -796,7 +797,18 @@ func (p *denmaParser) list(v string) (int, error) {
 func (p *denmaParser) campaign(v string) (int, error) {
 	if p.camps == nil {
 		p.camps = []denmaNamed{}
-		if err := p.a.db.Select(&p.camps, `SELECT id, name FROM campaigns ORDER BY id`); err != nil {
+		u := p.user
+		allLists, ids := u.GetPermittedLists(auth.PermTypeGet | auth.PermTypeManage)
+		var err error
+		switch {
+		case u.HasPerm(auth.PermCampaignsGetAll) || u.HasPerm(auth.PermCampaignsManageAll) ||
+			((u.HasPerm(auth.PermCampaignsGet) || u.HasPerm(auth.PermCampaignsManage)) && allLists):
+			err = p.a.db.Select(&p.camps, `SELECT id, name FROM campaigns ORDER BY id`)
+		case u.HasPerm(auth.PermCampaignsGet) || u.HasPerm(auth.PermCampaignsManage):
+			err = p.a.db.Select(&p.camps, `SELECT id, name FROM campaigns c WHERE EXISTS (
+				SELECT 1 FROM campaign_lists cl WHERE cl.campaign_id = c.id AND cl.list_id = ANY($1)) ORDER BY id`, pq.Array(ids))
+		}
+		if err != nil {
 			return 0, err
 		}
 	}
@@ -806,8 +818,10 @@ func (p *denmaParser) campaign(v string) (int, error) {
 func (p *denmaParser) template(v string) (int, error) {
 	if p.tpls == nil {
 		p.tpls = []denmaNamed{}
-		if err := p.a.db.Select(&p.tpls, `SELECT id, name FROM templates ORDER BY id`); err != nil {
-			return 0, err
+		if p.user.HasPerm(auth.PermTemplatesGet) {
+			if err := p.a.db.Select(&p.tpls, `SELECT id, name FROM templates ORDER BY id`); err != nil {
+				return 0, err
+			}
 		}
 	}
 	return denmaFind(p.tpls, v, "template")
