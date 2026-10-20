@@ -15,23 +15,90 @@ package main
 //   - GIF (perhaps animated) and SVG are stored as they are.
 //
 // Anything that can't be read is stored as it is, as listmonk would.
+//
+// Decoding takes memory by the pixel (listmonk's thumbnail decodes the
+// whole image too), so an image whose decoding would take more than
+// denmaMediaMaxDecode is refused, from its header, and one upload's images
+// are processed at a time (denmaMediaLimit): a few large photos at once
+// could otherwise take the server's memory.
 
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"image/png"
 	"io"
+	"net/http"
+	"path/filepath"
+	"strings"
 
 	"github.com/disintegration/imaging"
+	"github.com/labstack/echo/v4"
 )
 
 const (
-	denmaMediaMaxSize  = 1600     // px, the longer side
-	denmaMediaQuality  = 82       // JPEG
-	denmaMediaMaxPixel = 60000000 // larger images aren't decoded (memory)
+	denmaMediaMaxSize   = 1600      // px, the longer side
+	denmaMediaQuality   = 82        // JPEG
+	denmaMediaMaxDecode = 512 << 20 // bytes an image's decoding may take
 )
+
+// denmaMediaTurn is the turn to process an uploaded image: one at a time.
+var denmaMediaTurn = make(chan struct{}, 1)
+
+// denmaMediaLimit wraps the media upload: an image (by its extension) too
+// large to decode is refused, and images wait for their turn.
+func (a *App) denmaMediaLimit(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		file, err := c.FormFile("file")
+		if err != nil {
+			return next(c) // listmonk says what's wrong
+		}
+		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(file.Filename)), ".")
+		if !inArray(ext, imageExts) {
+			return next(c)
+		}
+		if src, err := file.Open(); err == nil {
+			cfg, _, err := image.DecodeConfig(src)
+			src.Close()
+			if err == nil && denmaDecodeSize(cfg) > denmaMediaMaxDecode {
+				return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(
+					"The image is %d x %d pixels, too large to process. Make it smaller (say, 4000 px on its longer side) and upload it again.",
+					cfg.Width, cfg.Height))
+			}
+		}
+		select {
+		case denmaMediaTurn <- struct{}{}:
+		case <-c.Request().Context().Done():
+			return c.Request().Context().Err()
+		}
+		defer func() { <-denmaMediaTurn }()
+		return next(c)
+	}
+}
+
+// denmaDecodeSize is about how much memory decoding an image takes: its
+// pixels as decoded, and again as imaging's 8-bit RGBA copy.
+func denmaDecodeSize(cfg image.Config) int64 {
+	bpp := int64(4)
+	switch cfg.ColorModel {
+	case color.RGBA64Model, color.NRGBA64Model:
+		bpp = 8
+	case color.Gray16Model:
+		bpp = 2
+	case color.GrayModel:
+		bpp = 1
+	case color.YCbCrModel:
+		bpp = 3 // at most, unsubsampled
+	default:
+		if _, ok := cfg.ColorModel.(color.Palette); ok {
+			bpp = 1
+		}
+	}
+	return int64(cfg.Width) * int64(cfg.Height) * (bpp + 4)
+}
 
 // denmaMedia is an optimized upload: data is nil to store the upload as it is.
 type denmaMedia struct {
@@ -81,8 +148,8 @@ func denmaOptimize(orig []byte) (denmaMedia, error) {
 	if err != nil {
 		return denmaMedia{}, err
 	}
-	if cfg.Width*cfg.Height > denmaMediaMaxPixel {
-		return denmaMedia{}, nil
+	if denmaDecodeSize(cfg) > denmaMediaMaxDecode {
+		return denmaMedia{}, nil // refused before (denmaMediaLimit)
 	}
 	tooBig := cfg.Width > denmaMediaMaxSize || cfg.Height > denmaMediaMaxSize
 
