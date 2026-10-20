@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
 	"github.com/lib/pq"
 )
@@ -31,6 +32,24 @@ func (a *App) denmaSignupDomain(email string) error {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("%s can't receive e-mail: %s. Check the address.", email, reason))
 	}
 	return nil
+}
+
+// denmaSubFormLists gives a public sign-up that names no lists the center's
+// public lists, as the page doesn't show them (subscription-form.html).
+func (a *App) denmaSubFormLists(uuids []string) []string {
+	if len(uuids) > 0 {
+		return uuids
+	}
+	lists, err := a.core.GetLists(models.ListTypePublic, models.ListStatusActive, true, nil)
+	if err != nil {
+		a.log.Printf("denma: error reading the public lists for a sign-up: %v", err)
+		return nil
+	}
+	out := make([]string, 0, len(lists))
+	for _, l := range lists {
+		out = append(out, l.UUID)
+	}
+	return out
 }
 
 // denmaSubFormAnswer gives the public page's answer (processSubForm's

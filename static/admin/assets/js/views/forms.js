@@ -56,22 +56,11 @@ function component(lists = []) {
         + `    <p><input type="email" name="email" required placeholder="${i18n.t('subscribers.email')}" /></p>\n`
         + `    <p><input type="text" name="name" placeholder="${i18n.t('public.subName')}" /></p>\n\n`;
 
+      // denma: the lists go in hidden, as public pages never name them (cmd/denma_signupanswers.go).
       this.checked.forEach((uuid) => {
-        const l = this.lists.find((x) => x.uuid === uuid);
-        if (!l) {
-          return;
+        if (this.lists.some((x) => x.uuid === uuid)) {
+          h += `    <input type="hidden" name="l" value="${uuid}" />\n`;
         }
-
-        h += '    <p>\n'
-          + `      <input id="${l.uuid.substr(0, 5)}" type="checkbox" name="l" checked value="${l.uuid}" />\n`
-          + `      <label for="${l.uuid.substr(0, 5)}">${l.name}</label>\n`;
-
-        if (l.description) {
-          h += '      <br />\n'
-            + `      <span>${l.description}</span>\n`;
-        }
-
-        h += '    </p>\n';
       });
 
       // Captcha?

@@ -16,18 +16,7 @@
                 <input id="name" name="name" type="text" placeholder="{{ L.T "public.subName" }}" >
             </p>
 
-            <ul class="lists">
-                <h2>{{ L.T "globals.terms.lists" }}</h2>
-                {{ range $i, $l := .Data.Lists }}
-                    <li>
-                        <input checked="true" id="l-{{ $l.UUID}}" type="checkbox" name="l" value="{{ $l.UUID }}" >
-                        <label for="l-{{ $l.UUID}}">{{ $l.Name }}</label>
-                        {{ if ne $l.Description "" }}
-                            <p class="description">{{ $l.Description }}</p>
-                        {{ end }}
-                    </li>
-                {{ end }}
-            </ul>
+            {{- /* denma: lists are internal, so none are shown: signing up here joins the center's public lists (cmd/denma_signupanswers.go). */}}
 
             {{ if .Data.Captcha.Enabled }}
                 <div class="captcha">

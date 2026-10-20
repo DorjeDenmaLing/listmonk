@@ -834,6 +834,7 @@ func (a *App) processSubForm(c echo.Context) (hasOptin bool, err error) { // den
 		return false, err
 	}
 
+	req.FormListUUIDs = a.denmaSubFormLists(req.FormListUUIDs) // denma: none named, the center's public lists (cmd/denma_signupanswers.go)
 	if len(req.FormListUUIDs) == 0 {
 		return false, echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("public.noListsSelected"))
 	}
