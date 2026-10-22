@@ -20,7 +20,7 @@ const METRICS = [
   ['newSubs', 'New subscribers', 'count', true, 'Subscribers added in this period.'],
 ];
 
-const KEYS = ['campaigns', 'sends', 'camp_bounces', 'tracked_delivered', 'opens', 'clicks', 'unsubs', 'hard', 'soft', 'complaint', 'new_subscribers'];
+const KEYS = ['campaigns', 'sends', 'camp_bounces', 'tracked_delivered', 'opens', 'clicks', 'unlinked', 'unsubs', 'hard', 'soft', 'complaint', 'new_subscribers'];
 
 const placeholders = (list) => list.map((m) => ({ key: m[0], label: m[1], help: m[4] || m[3], value: '…', change: null, health: null }));
 
@@ -128,6 +128,13 @@ function component() {
       const sending = list.filter((c) => c.cur && c.cur.campaigns > 0).length;
       const who = this.selected ? '' : ` from ${sending} of ${plural(list.length, 'center', 'centers')}`;
       this.note = `${plural(cur.campaigns, 'campaign', 'campaigns')}${who} in this period, compared with the previous ${plural(days, 'day', 'days')}. ${subs.toLocaleString()} subscribers in all.`;
+      const unlinked = total(list, 'cur').unlinked;
+      if (unlinked) {
+        this.note += ` ${plural(unlinked, "open isn't", "opens aren't")} linked to anyone (people deleted since, or opened while individual tracking was off), so the open rate leaves ${unlinked === 1 ? 'it' : 'them'} out.`;
+      }
+      if (window._LM_CONFIG?.privacy?.individual_tracking === false) {
+        this.note += ' ⚠ Individual subscriber tracking is off (Settings → Privacy): new opens and clicks aren\'t linked to people, so campaigns sent now get no open or click rates.';
+      }
 
       // Centers not running (other than disabled ones), to look into.
       const failed = this.centers.filter((c) => c.error && c.status !== 'disabled' && !c.starting).length;

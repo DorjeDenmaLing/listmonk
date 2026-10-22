@@ -163,15 +163,16 @@ func (a *App) DenmaStatSubscribers(c echo.Context) error {
 }
 
 // DenmaUntrackedCampaigns returns the IDs of the campaigns whose opens are
-// counted only in total, not per subscriber (they have views without one:
-// sent while individual tracking was off, as before production turned it on).
-// Open and click rates leave them out (denma-stats.js isTracked), as the
-// hub's analytics do (cmd/denma_hub_analytics.go).
+// counted only in total, not per subscriber: all their views are without one
+// (sent while individual tracking was off, as before production turned it
+// on). A deleted subscriber's views are anonymous too, but leave a campaign
+// with others counted. Open and click rates leave them out (denma-stats.js
+// isTracked), as the hub's figures do (denmaTrackedCampSQL).
 //
 //	GET /api/denma/stats/untracked
 func (a *App) DenmaUntrackedCampaigns(c echo.Context) error {
 	ids := []int{}
-	if err := a.db.Select(&ids, `SELECT DISTINCT campaign_id FROM campaign_views WHERE subscriber_id IS NULL ORDER BY 1`); err != nil {
+	if err := a.db.Select(&ids, `SELECT campaign_id FROM campaign_views GROUP BY 1 HAVING COUNT(subscriber_id) = 0 ORDER BY 1`); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(http.StatusOK, okResp{ids})

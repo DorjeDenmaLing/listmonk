@@ -10,7 +10,8 @@ package main
 // full figures, not every center's day by day.
 //
 // Mailbox providers count every campaign that started in the period and was
-// sent with individual tracking (as on the hub's dashboard, cmd/denma_hub.go),
+// sent with individual tracking (denmaTrackedCampSQL, as on the hub's
+// dashboard, cmd/denma_hub.go),
 // not only a center's latest.
 
 import (
@@ -100,7 +101,7 @@ SELECT ev.kind, TO_CHAR(ev.at AT TIME ZONE $3, 'YYYY-MM-DD') AS day, P(s.email) 
 const denmaReachSQL = `WITH camp AS (
 	SELECT c.id, c.started_at, c.max_subscriber_id FROM S.campaigns c
 	WHERE c.started_at >= $1 AND c.started_at < $2 AND c.sent > 0 AND c.type <> 'optin'
-		AND NOT EXISTS (SELECT 1 FROM S.campaign_views v WHERE v.campaign_id = c.id AND v.subscriber_id IS NULL)
+		AND ` + denmaTrackedCampSQL + `
 ), got AS (
 	SELECT DISTINCT camp.id, s.id AS subscriber_id, s.email FROM camp
 	JOIN S.campaign_lists cl ON cl.campaign_id = camp.id

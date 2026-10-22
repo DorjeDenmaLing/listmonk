@@ -107,8 +107,9 @@ type denmaHubCenter struct {
 // denmaPeriod is a center's sending in a period, defined as on the centers'
 // dashboards (assets/js/denma-stats.js): campaigns count in the period they
 // started sending; opens and clicks are unique people per campaign, from
-// campaigns sent with individual tracking (those with no anonymous views);
-// unsubscribes leave out bounce removals; bounces count by when they came.
+// campaigns sent with individual tracking (denmaTrackedCampSQL), and
+// unlinked is those campaigns' views without a subscriber; unsubscribes
+// leave out bounce removals; bounces count by when they came.
 type denmaPeriod struct {
 	Campaigns        int `db:"campaigns" json:"campaigns"`
 	Sends            int `db:"sends" json:"sends"`
@@ -116,6 +117,7 @@ type denmaPeriod struct {
 	TrackedDelivered int `db:"tracked_delivered" json:"tracked_delivered"`
 	Opens            int `db:"opens" json:"opens"`
 	Clicks           int `db:"clicks" json:"clicks"`
+	Unlinked         int `db:"unlinked" json:"unlinked"`
 	Unsubscribes     int `db:"unsubs" json:"unsubs"`
 	Hard             int `db:"hard" json:"hard"`
 	Soft             int `db:"soft" json:"soft"`
@@ -135,7 +137,7 @@ const denmaCenterInfoSQL = `SELECT
 const denmaPeriodSQL = `WITH camp AS (
 	SELECT c.id, c.sent,
 		LEAST((SELECT COUNT(*) FROM S.bounces b WHERE b.campaign_id = c.id), c.sent) AS bounced,
-		NOT EXISTS (SELECT 1 FROM S.campaign_views v WHERE v.campaign_id = c.id AND v.subscriber_id IS NULL) AS tracked
+		` + denmaTrackedCampSQL + ` AS tracked
 	FROM S.campaigns c WHERE c.started_at >= $1 AND c.started_at < $2 AND c.sent > 0
 )
 SELECT
@@ -147,6 +149,8 @@ SELECT
 		JOIN camp ON camp.id = v.campaign_id AND camp.tracked WHERE v.subscriber_id IS NOT NULL) x) AS opens,
 	(SELECT COUNT(*) FROM (SELECT DISTINCT l.campaign_id, l.subscriber_id FROM S.link_clicks l
 		JOIN camp ON camp.id = l.campaign_id AND camp.tracked WHERE l.subscriber_id IS NOT NULL) x) AS clicks,
+	(SELECT COUNT(*) FROM S.campaign_views v JOIN camp ON camp.id = v.campaign_id AND camp.tracked
+		WHERE v.subscriber_id IS NULL) AS unlinked,
 	(SELECT COUNT(DISTINCT sl.subscriber_id) FROM S.subscriber_lists sl
 		WHERE sl.status = 'unsubscribed' AND sl.updated_at >= $1 AND sl.updated_at < $2
 		AND sl.subscriber_id NOT IN (SELECT subscriber_id FROM S.bounces
@@ -155,6 +159,14 @@ SELECT
 	(SELECT COUNT(*) FROM S.bounces WHERE type = 'soft' AND created_at >= $1 AND created_at < $2) AS soft,
 	(SELECT COUNT(*) FROM S.bounces WHERE type = 'complaint' AND created_at >= $1 AND created_at < $2) AS complaint,
 	(SELECT COUNT(*) FROM S.subscribers WHERE created_at >= $1 AND created_at < $2) AS new_subscribers`
+
+// denmaTrackedCampSQL is whether campaign c was sent with individual
+// tracking, so its opens and clicks count per person: some of its views are
+// a subscriber's, or none is anonymous. Views are anonymous when sent while
+// individual tracking was off, and once their subscriber is deleted (listmonk
+// keeps them), which doesn't stop the others counting.
+const denmaTrackedCampSQL = `(EXISTS (SELECT 1 FROM S.campaign_views v WHERE v.campaign_id = c.id AND v.subscriber_id IS NOT NULL)
+		OR NOT EXISTS (SELECT 1 FROM S.campaign_views v WHERE v.campaign_id = c.id AND v.subscriber_id IS NULL))`
 
 // denmaNoConsentCountSQL is how many of a center's subscribers the API added
 // without consent (cmd/denma_noconsent.go), left out of its figures.

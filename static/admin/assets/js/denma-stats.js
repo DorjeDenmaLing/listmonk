@@ -104,10 +104,11 @@ export function startedIn(campaigns, p) {
   });
 }
 
-// Whether a campaign's opens and clicks are counted per subscriber: not if it
-// has opens without one (sent while individual tracking was off, as before
-// production turned it on), which open and click figures leave out, as the
-// hub's analytics do (cmd/denma_stats.go).
+// Whether a campaign's opens and clicks are counted per subscriber: not if
+// all its opens are without one (sent while individual tracking was off, as
+// before production turned it on), which open and click figures leave out,
+// as the hub's do (cmd/denma_stats.go). A deleted subscriber's opens are
+// anonymous too, but leave the campaign counted.
 export const isTracked = (c) => c.denmaTracked !== false;
 
 // Unique views or clicks per campaign ({id: count}) since `from`.
