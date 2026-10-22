@@ -818,9 +818,11 @@ func (a *App) DenmaSignup(c echo.Context) error {
 		logf("invalid e-mail address")
 		return reply(http.StatusBadRequest, a.i18n.T("subscribers.invalidEmail"))
 	}
-	name := denmaSignupField(fields, "name", 200)
+	// First and last names, else the name (cmd/denma_names.go).
+	first, last := denmaSignupField(fields, "first_name", denmaNameMax), denmaSignupField(fields, "last_name", denmaNameMax)
+	name := denmaJoinName(first, last)
 	if name == "" {
-		name = strings.TrimSpace(denmaSignupField(fields, "first_name", 100) + " " + denmaSignupField(fields, "last_name", 100))
+		name = denmaSignupField(fields, "name", 200)
 	}
 	if name == "" {
 		name = strings.Split(email, "@")[0]
@@ -899,6 +901,9 @@ func (a *App) DenmaSignup(c echo.Context) error {
 		return reply(http.StatusBadRequest, fmt.Sprint(err.(*echo.HTTPError).Message))
 	}
 	a.denmaNoConsentSignup(email) // their own sign-up (cmd/denma_noconsent.go)
+	if first != "" || last != "" {
+		attribs = denmaWithNames(attribs, first, last) // a new subscriber's
+	}
 	result, isNew, err := a.signupSubscribe(email, name, listIDs, attribs)
 	if errors.Is(err, errDenmaOptinLimited) { // answered as sent: the limit would say they're new (cmd/denma_signupanswers.go)
 		result, err = "opt-in limit reached: no e-mail sent", nil
@@ -1061,6 +1066,8 @@ func (a *App) signupLog(c echo.Context, format string, args ...any) {
 type denmaSignupServerReq struct {
 	Email     string         `json:"email"`
 	Name      string         `json:"name"`
+	FirstName string         `json:"first_name"`
+	LastName  string         `json:"last_name"`
 	Lists     []int          `json:"lists"`
 	Attribs   map[string]any `json:"attribs"`
 	Tags      []string       `json:"tags"`
@@ -1159,6 +1166,10 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	}
 
 	name := denmaSignupField(map[string]string{"n": r.Name}, "n", 200)
+	first, last := denmaTidyName(r.FirstName), denmaTidyName(r.LastName) // cmd/denma_names.go
+	if n := denmaJoinName(first, last); n != "" {
+		name = n
+	}
 	if k := denmaReservedAttrib(r.Attribs, true); k != "" {
 		return echo.NewHTTPError(http.StatusBadRequest, denmaReservedAttribMsg(k))
 	}
@@ -1223,12 +1234,12 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	if newName == "" {
 		newName = strings.Split(email, "@")[0]
 	}
-	if _, err := a.db.Exec(`INSERT INTO subscribers (uuid, email, name, status) VALUES (gen_random_uuid(), $1, $2, 'enabled')
-		ON CONFLICT DO NOTHING`, email, newName); err != nil {
+	if _, err := a.db.Exec(`INSERT INTO subscribers (uuid, email, name, first_name, last_name, status) VALUES (gen_random_uuid(), $1, $2, $3, $4, 'enabled')
+		ON CONFLICT DO NOTHING`, email, newName, first, last); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	var sub models.Subscriber
-	if err := a.db.Get(&sub, `SELECT id, uuid, email, name, attribs, status, created_at, updated_at FROM subscribers WHERE LOWER(email) = $1`, email); err != nil {
+	if err := a.db.Get(&sub, `SELECT id, uuid, email, name, first_name, last_name, attribs, status, created_at, updated_at FROM subscribers WHERE LOWER(email) = $1`, email); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
@@ -1265,7 +1276,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		}
 	}
 
-	if out.TagsCreated, out.AttribsKept, err = a.appendSubscriber(sub.ID, email, name, r.Attribs, tags, h.CreateTags); err != nil {
+	if out.TagsCreated, out.AttribsKept, err = a.appendSubscriber(sub.ID, email, name, first, last, r.Attribs, tags, h.CreateTags); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	// consent_at and consent_source are the center's, from their first consent,
@@ -1489,7 +1500,7 @@ func denmaFirstConsent(attribs map[string]any) (time.Time, string) {
 // the center's tags getting those it doesn't have if createTags. It returns
 // the tags new to the center and the attributes kept (they already had
 // another value).
-func (a *App) appendSubscriber(id int, email, name string, attribs map[string]any, tags []string, createTags bool) (created, kept []string, err error) {
+func (a *App) appendSubscriber(id int, email, name, first, last string, attribs map[string]any, tags []string, createTags bool) (created, kept []string, err error) {
 	created, kept = []string{}, []string{}
 	tx, err := a.db.Beginx()
 	if err != nil {
@@ -1522,12 +1533,16 @@ func (a *App) appendSubscriber(id int, email, name string, attribs map[string]an
 		have, _ := m["tags"].([]any) // an array, kept so by the database (denma_norm_tags)
 		m["tags"] = denmaAppendJSON(have, add, "tags", &kept)
 	}
+	newName := denmaGivenName(cur.Name, name, email)
+	if newName != cur.Name && (first != "" || last != "") {
+		m = denmaWithNames(m, first, last) // in place of a stand-in (cmd/denma_names.go)
+	}
 	b, err := json.Marshal(m)
 	if err != nil {
 		return nil, nil, err
 	}
 	if _, err := tx.Exec(`UPDATE subscribers SET name = $2, attribs = $3, updated_at = NOW() WHERE id = $1`,
-		id, denmaGivenName(cur.Name, name, email), string(b)); err != nil {
+		id, newName, string(b)); err != nil {
 		return nil, nil, err
 	}
 	sort.Strings(created)
@@ -1541,7 +1556,8 @@ func denmaGivenName(cur, given, email string) string {
 	switch c := strings.ToLower(strings.TrimSpace(cur)); {
 	case given == "":
 		return cur
-	case c == "", c == strings.ToLower(email), c == strings.ToLower(local):
+	case c == "", c == strings.ToLower(email), c == strings.ToLower(local),
+		c == strings.ToLower(strings.Join(strings.Fields(strings.ReplaceAll(local, ".", " ")), " ")): // the importer's
 		return given
 	}
 	return cur

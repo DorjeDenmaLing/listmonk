@@ -66,9 +66,10 @@ func denmaNormTags(in []string) []string {
 
 // denmaCampaignColumnsSQL adds what listmonk's campaign queries read of ours:
 // the tags, preview text and reply-to (cmd/denma_reply_to.go) columns and
-// the failed sends (cmd/denma_retries.go).
+// the failed sends (cmd/denma_retries.go); and, for its export queries,
+// subscribers' first and last names (cmd/denma_names.go).
 const denmaCampaignColumnsSQL = `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';` +
-	denmaPreviewTextSQL + denmaReplyToSQL + denmaRetriesSQL
+	denmaPreviewTextSQL + denmaReplyToSQL + denmaRetriesSQL + denmaNamesColumnsSQL
 
 // denmaPreviewTextSQL adds the campaign's preview text (models.Campaign
 // PreviewText).

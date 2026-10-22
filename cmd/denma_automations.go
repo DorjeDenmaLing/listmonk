@@ -662,7 +662,7 @@ func (a *App) runAutomation(auto denmaAutomation) {
 	tpl, err := a.autoTemplate(int(auto.TemplateID.Int), true)
 	var subs []models.Subscriber
 	if err == nil {
-		err = a.db.Select(&subs, `SELECT id, created_at, updated_at, uuid, email, name, attribs, status FROM subscribers WHERE id = ANY($1)`, pq.Array(ids))
+		err = a.db.Select(&subs, `SELECT id, created_at, updated_at, uuid, email, name, first_name, last_name, attribs, status FROM subscribers WHERE id = ANY($1)`, pq.Array(ids))
 	}
 	if err != nil {
 		a.autoFailed(auto.ID, ids, err)
@@ -1521,7 +1521,7 @@ func (a *App) DenmaTestAutomation(c echo.Context) error {
 
 	sub := models.Subscriber{UUID: dummyUUID, Email: email, Name: "Sample Subscriber", Attribs: models.JSON{}}
 	var found models.Subscriber
-	if err := a.db.Get(&found, `SELECT id, created_at, updated_at, uuid, email, name, attribs, status FROM subscribers WHERE LOWER(email) = LOWER($1)`, email); err == nil {
+	if err := a.db.Get(&found, `SELECT id, created_at, updated_at, uuid, email, name, first_name, last_name, attribs, status FROM subscribers WHERE LOWER(email) = LOWER($1)`, email); err == nil {
 		sub = found
 	}
 	tpl, err := a.autoTemplate(f.TemplateID, true)
@@ -1551,7 +1551,7 @@ func (a *App) ViewDenmaAutomationMessage(c echo.Context) error {
 		return notFound()
 	}
 	var sub models.Subscriber
-	if err := a.db.Get(&sub, `SELECT id, created_at, updated_at, uuid, email, name, attribs, status FROM subscribers WHERE uuid = $1`, c.Param("subUUID")); err != nil {
+	if err := a.db.Get(&sub, `SELECT id, created_at, updated_at, uuid, email, name, first_name, last_name, attribs, status FROM subscribers WHERE uuid = $1`, c.Param("subUUID")); err != nil {
 		return notFound()
 	}
 	tpl, err := a.autoTemplate(int(auto.TemplateID.Int), false)

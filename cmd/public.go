@@ -343,6 +343,8 @@ func (a *App) SubscriptionPrefs(c echo.Context) error {
 	// Read the form.
 	var req struct {
 		Name      string   `form:"name" json:"name"`
+		First     string   `form:"first_name"` // denma: first and last names (cmd/denma_names.go)
+		Last      string   `form:"last_name"`  // denma
 		ListUUIDs []string `form:"l" json:"list_uuids"`
 		Blocklist bool     `form:"blocklist" json:"blocklist"`
 		Manage    bool     `form:"manage" json:"manage"`
@@ -375,6 +377,7 @@ func (a *App) SubscriptionPrefs(c echo.Context) error {
 	}
 
 	// Manage preferences.
+	req.Name = denmaFormName(req.Name, req.First, req.Last) // denma
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" || len(req.Name) > 256 {
 		return c.Render(http.StatusBadRequest, tplMessage,
@@ -389,6 +392,7 @@ func (a *App) SubscriptionPrefs(c echo.Context) error {
 				"name", a.i18n.T("globals.terms.subscriber"))))
 	}
 	sub.Name = req.Name
+	denmaPrefsNames(&sub, req.First, req.Last) // denma
 
 	// Update the subscriber properties in the DB.
 	if _, err := a.core.UpdateSubscriber(sub.ID, sub); err != nil {
@@ -827,6 +831,8 @@ func (a *App) processSubForm(c echo.Context) (hasOptin bool, err error) { // den
 	// Get and validate fields.
 	var req struct {
 		Name          string   `form:"name" json:"name"`
+		First         string   `form:"first_name"` // denma: first and last names (cmd/denma_names.go)
+		Last          string   `form:"last_name"`  // denma
 		Email         string   `form:"email" json:"email"`
 		FormListUUIDs []string `form:"l" json:"list_uuids"`
 	}
@@ -850,6 +856,7 @@ func (a *App) processSubForm(c echo.Context) (hasOptin bool, err error) { // den
 	}
 	req.Email = em
 
+	req.Name = denmaFormName(req.Name, req.First, req.Last) // denma
 	req.Name = strings.TrimSpace(req.Name)
 	if len(req.Name) == 0 {
 		// If there's no name, use the name bit from the e-mail.
@@ -880,9 +887,10 @@ func (a *App) processSubForm(c echo.Context) (hasOptin bool, err error) { // den
 
 	// Insert the subscriber into the DB.
 	newSub, hasOptin, err := a.core.InsertSubscriber(models.Subscriber{ // denma: was _
-		Name:   req.Name,
-		Email:  req.Email,
-		Status: models.SubscriberStatusEnabled,
+		Name:    req.Name,
+		Email:   req.Email,
+		Status:  models.SubscriberStatusEnabled,
+		Attribs: denmaFormNames(req.First, req.Last), // denma
 	}, nil, listUUIDs, false, true)
 	if err == nil && newSub.Status == models.SubscriberStatusBlockListed { // denma: an address that opted out before (cmd/denma_optouts.go)
 		return a.denmaResubForm(newSub, listUUIDs)

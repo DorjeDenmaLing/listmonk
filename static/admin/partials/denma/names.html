@@ -1,0 +1,15 @@
+{{- /* denma: a subscriber's first and last names (cmd/denma_names.go), in
+   place of listmonk's one name field. */ -}}
+
+{{ define "denma-name-fields" -}}
+<div class="row denma-names">
+	<label data-field class="col-6">
+		First name
+		<input name="first_name" maxlength="100" x-model="form.first_name" data-testid="first-name" />
+	</label>
+	<label data-field class="col-6">
+		Last name
+		<input name="last_name" maxlength="100" x-model="form.last_name" data-testid="last-name" />
+	</label>
+</div>
+{{- end }}

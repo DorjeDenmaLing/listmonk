@@ -11,9 +11,14 @@
 
                 <input name="nonce" class="nonce" value="" />
             </p>
+            {{- /* denma: first and last names (cmd/denma_names.go) */}}
             <p>
-                <label for="name">{{ L.T "public.subName" }}</label>
-                <input id="name" name="name" type="text" placeholder="{{ L.T "public.subName" }}" >
+                <label for="first_name">First name</label>
+                <input id="first_name" name="first_name" type="text" maxlength="100" autocomplete="given-name" >
+            </p>
+            <p>
+                <label for="last_name">Last name</label>
+                <input id="last_name" name="last_name" type="text" maxlength="100" autocomplete="family-name" >
             </p>
 
             {{- /* denma: lists are internal, so none are shown: signing up here joins the center's public lists (cmd/denma_signupanswers.go). */}}

@@ -576,7 +576,9 @@
               { "type": "array", "minItems": 1, "maxItems": 50, "items": { "type": "string", "format": "email" } }
             ]
           },
-          "name": { "type": "string", "description": "The recipient's name, for a new address (at most 200 characters are kept)." },
+          "first_name": { "type": "string", "description": "The recipient's first name, for a new address (at most 100 characters are kept); either it or `last_name` can be left out." },
+          "last_name": { "type": "string", "description": "The recipient's last name, for a new address (at most 100 characters are kept)." },
+          "name": { "type": "string", "description": "The recipient's whole name, for a new address, without `first_name` and `last_name`: split at the first space (at most 200 characters are kept)." },
           "data": { "type": "object", "description": "For the template: `{{ .Tx.Data.<name> }}`. Its links can go only to the key's link domains and the center's own." },
           "subject": { "type": "string", "maxLength": 1000, "description": "The subject; else the template's." },
           "reply_to": { "type": "string", "description": "The Reply-To address, at one of the center's sending domains; else the center's, if it has one. (The sender is the key's.)" }
@@ -596,7 +598,9 @@
         "additionalProperties": false,
         "properties": {
           "email": { "type": "string", "format": "email" },
-          "name": { "type": "string", "description": "At most 200 characters are kept." },
+          "first_name": { "type": "string", "description": "At most 100 characters are kept; either it or `last_name` can be left out. Kept by a new address, and by one whose name is a stand-in (their address) once the campaign starts." },
+          "last_name": { "type": "string", "description": "At most 100 characters are kept." },
+          "name": { "type": "string", "description": "Their whole name, without `first_name` and `last_name`: split at the first space. At most 200 characters are kept." },
           "attribs": {
             "type": "object",
             "description": "For the template, in this campaign's e-mails: `{{ .Subscriber.Attribs.<name> }}`, over the subscriber's own. A new address keeps them (written once); an existing subscriber's aren't changed. Up to 10,000 bytes; none the center keeps itself (`tags`, `consent_at`...)."

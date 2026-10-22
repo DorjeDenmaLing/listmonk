@@ -46,10 +46,7 @@
 	<input name="email" type="email" maxlength="200" autofocus required x-model="form.email" />
 </label>
 
-<label data-field>
-	{{ $root.L.T "globals.fields.name" }}
-	<input name="name" maxlength="200" x-model="form.name" />
-</label>
+{{ template "denma-name-fields" $root }}{{/* denma: first and last names, in place of the name (cmd/denma_names.go) */}}
 
 <div data-field>
 	<label for="sub-status">{{ $root.L.T "globals.fields.status" }}</label>

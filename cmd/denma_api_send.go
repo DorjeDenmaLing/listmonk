@@ -322,6 +322,8 @@ type denmaAPIMessageReq struct {
 	Template string         `json:"template"`
 	To       denmaAPITo     `json:"to"`
 	Name     string         `json:"name"`
+	First    string         `json:"first_name"`
+	Last     string         `json:"last_name"`
 	Data     map[string]any `json:"data"`
 	Subject  string         `json:"subject"`
 	ReplyTo  string         `json:"reply_to"`
@@ -399,6 +401,10 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, `"subject" is over 1,000 characters.`)
 	}
 	name := denmaSignupField(map[string]string{"n": r.Name}, "n", 200)
+	first, last := denmaTidyName(r.First), denmaTidyName(r.Last) // cmd/denma_names.go
+	if n := denmaJoinName(first, last); n != "" {
+		name = n
+	}
 	if denmaNameHasLink(name) {
 		return echo.NewHTTPError(http.StatusBadRequest, `"name" can't have a link in it.`)
 	}
@@ -435,7 +441,7 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 			continue
 		}
 		seen[email] = true
-		sub, why, err := a.apiTxRecipient(apiKeyOf(c).ID, email, name, skip)
+		sub, why, err := a.apiTxRecipient(apiKeyOf(c).ID, email, name, first, last, skip)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -550,14 +556,14 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 // (added without lists if new, so that bounces and complaints are recorded,
 // and with no consent, cmd/denma_noconsent.go), or denmaAPINotSent if it's
 // not sent to.
-func (a *App) apiTxRecipient(keyID int, email, name string, skip map[string]bool) (models.Subscriber, string, error) {
+func (a *App) apiTxRecipient(keyID int, email, name, first, last string, skip map[string]bool) (models.Subscriber, string, error) {
 	var sub models.Subscriber
 	if no, err := a.denmaTxRefused(email, skip); err != nil || no {
 		return sub, denmaAPINotSent, err
 	}
 
 	get := func() error {
-		return a.db.Get(&sub, `SELECT id, uuid, email, name, attribs, status, created_at, updated_at FROM subscribers WHERE LOWER(email) = $1`, email)
+		return a.db.Get(&sub, `SELECT id, uuid, email, name, first_name, last_name, attribs, status, created_at, updated_at FROM subscribers WHERE LOWER(email) = $1`, email)
 	}
 	err := get()
 	if errors.Is(err, sql.ErrNoRows) {
@@ -565,8 +571,8 @@ func (a *App) apiTxRecipient(keyID int, email, name string, skip map[string]bool
 			name = strings.Split(email, "@")[0]
 		}
 		var added []string
-		if err := a.db.Select(&added, `INSERT INTO subscribers (uuid, email, name, status) VALUES (gen_random_uuid(), $1, $2, 'enabled')
-			ON CONFLICT DO NOTHING RETURNING LOWER(email)`, email, name); err != nil {
+		if err := a.db.Select(&added, `INSERT INTO subscribers (uuid, email, name, first_name, last_name, status) VALUES (gen_random_uuid(), $1, $2, $3, $4, 'enabled')
+			ON CONFLICT DO NOTHING RETURNING LOWER(email)`, email, name, first, last); err != nil {
 			return sub, "", err
 		}
 		if err := denmaNoConsentAdd(a.db, keyID, added); err != nil {
@@ -623,6 +629,8 @@ func (a *App) denmaTxSkipped(email string, notFound *[]string) bool {
 type denmaAPIRecipient struct {
 	Email   string         `json:"email"`
 	Name    string         `json:"name"`
+	First   string         `json:"first_name"`
+	Last    string         `json:"last_name"`
 	Attribs map[string]any `json:"attribs"`
 }
 
@@ -885,7 +893,7 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 // starts (denma_api_campaign_contacts), not for a draft never sent.
 func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]denmaAPISkip, error) {
 	skipped := []denmaAPISkip{}
-	var emails, names, attribs []string
+	var emails, names, firsts, lasts, attribs []string
 	seen := map[string]bool{}
 	for _, r := range in {
 		if k := denmaReservedAttrib(r.Attribs, false); k != "" {
@@ -910,11 +918,16 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 			}
 		}
 		name := denmaSignupField(map[string]string{"n": r.Name}, "n", 200)
+		first, last := denmaTidyName(r.First), denmaTidyName(r.Last) // cmd/denma_names.go
+		if n := denmaJoinName(first, last); n != "" {
+			name = n
+		}
 		if denmaNameHasLink(name) {
 			return nil, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Recipient %s: a name can't have a link in it.", email))
 		}
 		emails = append(emails, email)
 		names = append(names, name)
+		firsts, lasts = append(firsts, first), append(lasts, last)
 		attribs = append(attribs, string(attr))
 	}
 	if len(emails) == 0 {
@@ -934,11 +947,11 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 	// keep theirs. An address that opted out is added blocklisted, without
 	// them. None has consent (cmd/denma_noconsent.go).
 	var added []string
-	if err := tx.Select(&added, `INSERT INTO subscribers (uuid, email, name, status, attribs)
-		SELECT gen_random_uuid(), i.email, COALESCE(NULLIF(i.name, ''), split_part(i.email, '@', 1)), 'enabled',
+	if err := tx.Select(&added, `INSERT INTO subscribers (uuid, email, name, first_name, last_name, status, attribs)
+		SELECT gen_random_uuid(), i.email, COALESCE(NULLIF(i.name, ''), split_part(i.email, '@', 1)), i.first, i.last, 'enabled',
 			CASE WHEN denma_optout_kind(i.email) IS NOT NULL THEN '{}'::JSONB ELSE i.attribs END
-		FROM unnest($1::TEXT[], $2::TEXT[], $3::JSONB[]) AS i(email, name, attribs)
-		ON CONFLICT DO NOTHING RETURNING LOWER(email)`, pq.Array(emails), pq.Array(names), pq.Array(attribs)); err != nil {
+		FROM unnest($1::TEXT[], $2::TEXT[], $3::JSONB[], $4::TEXT[], $5::TEXT[]) AS i(email, name, attribs, first, last)
+		ON CONFLICT DO NOTHING RETURNING LOWER(email)`, pq.Array(emails), pq.Array(names), pq.Array(attribs), pq.Array(firsts), pq.Array(lasts)); err != nil {
 		return fail(err)
 	}
 	if err := denmaNoConsentAdd(tx, keyID, added); err != nil {
@@ -965,10 +978,11 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 	if _, err := tx.Exec(`INSERT INTO subscriber_lists (subscriber_id, list_id, status, meta)
 		SELECT s.id, $2, 'confirmed', (CASE WHEN i.attribs = '{}'::JSONB THEN '{}'::JSONB ELSE jsonb_build_object('attribs', i.attribs) END)
 			|| (CASE WHEN i.name = '' THEN '{}'::JSONB ELSE jsonb_build_object('name', i.name) END)
-		FROM unnest($3::TEXT[], $4::JSONB[], $5::TEXT[]) AS i(email, attribs, name) JOIN subscribers s ON LOWER(s.email) = i.email
+			|| (CASE WHEN i.first = '' AND i.last = '' THEN '{}'::JSONB ELSE jsonb_build_object('first_name', i.first, 'last_name', i.last) END)
+		FROM unnest($3::TEXT[], $4::JSONB[], $5::TEXT[], $6::TEXT[], $7::TEXT[]) AS i(email, attribs, name, first, last) JOIN subscribers s ON LOWER(s.email) = i.email
 		WHERE s.id = ANY($1::INT[])
 		ON CONFLICT (subscriber_id, list_id) DO UPDATE SET meta = EXCLUDED.meta, updated_at = NOW()`,
-		pq.Array(ids), listID, pq.Array(emails), pq.Array(attribs), pq.Array(names)); err != nil {
+		pq.Array(ids), listID, pq.Array(emails), pq.Array(attribs), pq.Array(names), pq.Array(firsts), pq.Array(lasts)); err != nil {
 		return fail(err)
 	}
 	// The key's contacts are recorded as it starts (denma_api_campaign_contacts).

@@ -34,6 +34,8 @@ type Subscriber struct {
 	Attribs JSON           `db:"attribs" json:"attribs"`
 	Status  string         `db:"status" json:"status"`
 	Lists   types.JSONText `db:"lists" json:"lists"`
+
+	DenmaNames // denma: first and last names (denma_names.go)
 }
 
 type subLists struct {
@@ -105,6 +107,9 @@ func (subs Subscribers) LoadLists(stmt *sqlx.Stmt) error {
 // of the name that's greater than 2 characters in length, assuming
 // that it is the subscriber's first name.
 func (s Subscriber) FirstName() string {
+	if s.denmaHasNames() { // denma: the stored ones (denma_names.go)
+		return s.DenmaFirstName
+	}
 	for _, s := range strings.Split(s.Name, " ") {
 		if len(s) > 2 {
 			return s
@@ -118,6 +123,9 @@ func (s Subscriber) FirstName() string {
 // of the name that's greater than 2 characters in length, assuming
 // that it is the subscriber's last name.
 func (s Subscriber) LastName() string {
+	if s.denmaHasNames() { // denma
+		return s.DenmaLastName
+	}
 	chunks := strings.Split(s.Name, " ")
 	for i := len(chunks) - 1; i >= 0; i-- {
 		chunk := chunks[i]
@@ -147,6 +155,8 @@ type SubscriberExport struct {
 	Name    string `db:"name" json:"name"`
 	Attribs string `db:"attribs" json:"attribs"`
 	Status  string `db:"status" json:"status"`
+
+	DenmaNames // denma: first and last names (denma_names.go)
 }
 
 // SubscriberExportProfile represents a subscriber's collated data in JSON for export.

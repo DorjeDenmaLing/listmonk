@@ -24,8 +24,11 @@
                 <input type="hidden" name="manage" value="true" />
 
                 <h2>{{ L.T "public.managePrefs" }}</h2>
-                <label>{{ L.T "globals.fields.name" }}</label>
-                <input type="text" name="name" value="{{ .Data.Subscriber.Name }}" maxlength="256" required />
+                {{- /* denma: first and last names (cmd/denma_names.go) */}}
+                <label for="first_name">First name</label>
+                <input type="text" id="first_name" name="first_name" value="{{ .Data.Subscriber.DenmaFirstName }}" maxlength="100" autocomplete="given-name" />
+                <label for="last_name">Last name</label>
+                <input type="text" id="last_name" name="last_name" value="{{ .Data.Subscriber.DenmaLastName }}" maxlength="100" autocomplete="family-name" />
 
                 <p>
                     <button type="submit" class="button" id="btn-save">{{ L.T "globals.buttons.save" }}</button>

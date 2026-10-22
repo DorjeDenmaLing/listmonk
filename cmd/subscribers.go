@@ -484,7 +484,7 @@ func (a *App) ExportSubscribers(c echo.Context) error {
 	hdr.Set(echo.HeaderContentDisposition, "attachment; filename="+"subscribers.csv")
 	hdr.Set("Content-Transfer-Encoding", "binary")
 	hdr.Set("Cache-Control", "no-cache")
-	wr.Write([]string{"uuid", "email", "name", "attributes", "status", "created_at", "updated_at"})
+	wr.Write([]string{"uuid", "email", "name", "first_name", "last_name", "attributes", "status", "created_at", "updated_at"}) // denma: first and last names
 
 loop:
 	// Iterate in batches until there are no more subscribers to export.
@@ -498,7 +498,7 @@ loop:
 		}
 
 		for _, r := range out {
-			if err = wr.Write([]string{r.UUID, r.Email, r.Name, r.Attribs, r.Status,
+			if err = wr.Write([]string{r.UUID, r.Email, r.Name, r.DenmaFirstName, r.DenmaLastName, r.Attribs, r.Status, // denma: first and last names
 				r.CreatedAt.Time.String(), r.UpdatedAt.Time.String()}); err != nil {
 				a.log.Printf("error streaming CSV export: %v", err)
 				break loop
@@ -534,6 +534,7 @@ func (a *App) CreateSubscriber(c echo.Context) error {
 	if err := a.denmaKeepCenterAttribs(0, &req.Attribs); err != nil { // denma: cmd/denma_signup.go
 		return err
 	}
+	denmaNamesIn(&req.Subscriber, nil) // denma: first and last names (cmd/denma_names.go)
 
 	// Filter lists against the current user's permitted lists.
 	listIDs := user.FilterListsByPerm(auth.PermTypeManage, req.Lists)
@@ -583,6 +584,7 @@ func (a *App) UpdateSubscriber(c echo.Context) error {
 	if err := a.denmaKeepCenterAttribs(getID(c), &req.Attribs); err != nil { // denma: cmd/denma_signup.go
 		return err
 	}
+	denmaNamesIn(&req.Subscriber, nil) // denma: first and last names (cmd/denma_names.go)
 
 	// Filter lists against the current user's permitted lists.
 	listIDs := user.FilterListsByPerm(auth.PermTypeManage, req.Lists)
@@ -671,6 +673,7 @@ func (a *App) PatchSubscriber(c echo.Context) error {
 	if err := a.denmaCheckOptOut(id, req.Email, req.Status); err != nil { // denma: cmd/denma_optouts.go
 		return err
 	}
+	denmaNamesIn(&req.Subscriber, &sub) // denma: first and last names (cmd/denma_names.go)
 
 	// If lists were explicitly sent, replace the existing subscriptions.
 	overwriteSubs := false

@@ -21,6 +21,7 @@ function component(sub = null) {
     uuid: '',
     email: '',
     name: '',
+    first_name: '', last_name: '', // denma: cmd/denma_names.go
     status: 'enabled',
     lists: [],
     preconfirm: false,
@@ -85,6 +86,7 @@ function component(sub = null) {
       const data = await api('subscribers.save', `/subscribers/${this.form.id}`, 'PATCH', {
         email: this.form.email,
         name: this.form.name,
+        first_name: this.form.first_name, last_name: this.form.last_name, // denma
         status: this.form.status,
         attribs: denmaWithTags(attribs, this.form.tags), // denma
       });
@@ -325,6 +327,7 @@ function component(sub = null) {
       return {
         email: this.form.email,
         name: this.form.name,
+        first_name: this.form.first_name, last_name: this.form.last_name, // denma
         status: this.form.status,
         attribs: denmaWithTags(attribs, this.form.tags), // denma
         preconfirm_subscriptions: this.form.preconfirm,

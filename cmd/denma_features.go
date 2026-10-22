@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 34
+const denmaFeaturesVersion = 35
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -185,6 +185,17 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 23 {
 		if err := denmaDeleteAPIUsers(tx, "center "+c.Slug); err != nil {
 			return fmt.Errorf("deleting the API users: %v", err)
+		}
+	}
+	// Version 35: first and last names, from the names subscribers had
+	// (cmd/denma_names.go).
+	if ver < 35 {
+		res, err := tx.Exec(denmaSplitNamesSQL)
+		if err != nil {
+			return fmt.Errorf("splitting the subscribers' names: %v", err)
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			lo.Printf("denma: center %s: %d subscribers' names split into first and last names", c.Slug, n)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)
@@ -732,7 +743,7 @@ UPDATE subscribers SET attribs = attribs WHERE jsonb_typeof(attribs) = 'object' 
 -- The tags a campaign is sent to, besides its lists.
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';
 INSERT INTO denma_tags (tag) SELECT DISTINCT unnest(denma_tags) FROM campaigns ON CONFLICT DO NOTHING;
-` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaOptinTokenSQL
+` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaOptinTokenSQL + denmaNamesSQL
 
 // denmaVisualTemplate is the center's default visual template's ID (0 for
 // none).

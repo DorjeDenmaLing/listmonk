@@ -582,6 +582,7 @@ func (s *Session) LoadCSV(srcPath string, delim rune) error {
 				sub.Attribs = attribs
 			}
 		}
+		sub = denmaImportNames(sub, row) // denma: first and last names (denma.go)
 
 		// Send the subscriber to the queue.
 		s.subQueue <- sub

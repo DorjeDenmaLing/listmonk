@@ -328,6 +328,7 @@ SELECT subscribers.id,
        subscribers.uuid,
        subscribers.email,
        subscribers.name,
+       subscribers.first_name, subscribers.last_name, /* denma: cmd/denma_names.go */
        subscribers.status,
        subscribers.attribs,
        subscribers.created_at,
@@ -406,7 +407,7 @@ UPDATE subscriber_lists SET status='unsubscribed', updated_at=NOW()
 -- privacy
 -- name: export-subscriber-data
 WITH prof AS (
-    SELECT id, uuid, email, name, attribs, status, created_at, updated_at FROM subscribers WHERE
+    SELECT id, uuid, email, name, first_name, last_name, attribs, status, created_at, updated_at FROM subscribers WHERE /* denma: first and last names */
     CASE WHEN $1 > 0 THEN id = $1 ELSE uuid = $2 END
 ),
 subs AS (
