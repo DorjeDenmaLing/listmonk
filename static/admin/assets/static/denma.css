@@ -2209,3 +2209,19 @@ svg.denma-logo {
     }
   }
 }
+
+/* A visual template or design (views/template.html): the builder as wide and
+   tall as the campaign editor's, edge to edge in the card (through its
+   padding, --space-6) and as tall as the screen. */
+section.templates .editor-body:has(> visual-editor) {
+  margin-inline: calc(-1 * var(--space-6));
+
+  visual-editor {
+    border-inline: 0;
+    border-radius: 0;
+  }
+
+  visual-editor iframe {
+    min-height: 100dvh;
+  }
+}

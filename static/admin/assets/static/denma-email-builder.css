@@ -1,0 +1,95 @@
+/* denma: the visual e-mail builder (listmonk's email-builder, in an iframe),
+   for campaigns, templates and designs: the Text block's Markdown help link
+   and formatting bar, and phones. Loaded into its frame by
+   assets/js/denma-visual-editor.js. */
+
+/* The ? by the Text block's Markdown switch. */
+.denma-md-help {
+  display: inline-flex;
+  margin-inline-start: 6px;
+  vertical-align: middle;
+  color: rgba(0, 0, 0, 0.54);
+}
+
+.denma-md-help:hover,
+.denma-md-help:focus-visible {
+  color: #1976d2;
+}
+
+/* The Markdown bar above the Text block's Content, while Markdown is on. */
+.denma-md-bar {
+  display: flex;
+  gap: 2px;
+}
+
+.denma-md-bar + .MuiTextField-root {
+  margin-top: 10px !important;
+}
+
+.denma-md-bar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+}
+
+.denma-md-bar button:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.denma-md-bar button:focus-visible {
+  outline: 2px solid #1976d2;
+}
+
+/* Phones. The settings panel (Styles / Inspect) is 320px wide and pushes the
+   e-mail aside, which leaves a phone almost nothing: here it opens over the
+   e-mail instead, under the toolbar, and its button (top right) closes it.
+   The toolbar keeps the Edit, Preview, HTML and JSON tabs; the JSON download
+   and upload and the desktop / phone preview switch don't fit, and aren't
+   needed on a phone. */
+@media (max-width: 600px) {
+  /* The closed panel waits off to the right, out of sight (iOS Safari
+     ignores overflow on html and body). */
+  #visual-editor-container {
+    position: relative;
+    overflow-x: clip;
+  }
+
+  .sidebar {
+    width: 0 !important;
+  }
+
+  /* The e-mail, full width. */
+  .sidebar + .MuiStack-root {
+    margin-right: 0 !important;
+  }
+
+  .sidebar + .MuiStack-root > .MuiBox-root {
+    min-width: 0 !important;
+  }
+
+  .sidebar + .MuiStack-root .MuiStack-root:has(> .MuiToggleButtonGroup-root) {
+    display: none;
+  }
+
+  /* The panel, over the e-mail. */
+  .sidebar .MuiDrawer-paper {
+    top: 49px !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: auto !important;
+    height: calc(100% - 49px) !important;
+    z-index: 2 !important;
+  }
+
+  .sidebar .MuiDrawer-paper > .MuiBox-root {
+    width: 100% !important;
+  }
+}
