@@ -150,7 +150,7 @@ func TestDenmaSearchValuesQuoted(t *testing.T) {
 		denmaSubscribers: {`name:"%s"`, `name="%s"`, `name!="%s"`, `email:"%s"`, `email="%s"`, `domain:"%s"`, `"%s"`,
 			`attr.city:"%s"`, `attr.city="%s"`, `attr.city!="%s"`, `attr.city>"%s"`, `attr.city<="%s"`, `attr.a.b="%s"`,
 			`has:"attr.%s"`, `has:"%s"`, `tag:"%s"`, `clicked:"https://%s"`, `-name:"%s" OR "%s"`},
-		denmaLists:     {`name:"%s"`, `name="%s"`, `tag:"%s"`, `"%s"`, `-tag:"%s"`},
+		denmaLists:     {`name:"%s"`, `name="%s"`, `"%s"`, `-name:"%s"`},
 		denmaCampaigns: {`name:"%s"`, `subject="%s"`, `from:"%s"`, `tag:"%s"`, `"%s"`, `(name="%s" OR subject!="%s")`},
 	}
 	for kind, fs := range fields {

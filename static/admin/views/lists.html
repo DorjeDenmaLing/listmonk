@@ -24,7 +24,7 @@
 					{{- $optinIcon := "user-x" }}{{ if eq $optin "double" }}{{ $optinIcon = "user-check" }}{{ end }}
 					{{ template "filter-badge" dict "Label" (list (Icon $optinIcon) (.L.T (printf "lists.optins.%s" $optin))) "Class" "enum" "URL" ($d.Page.FilterURL $base "optin") }}
 				{{- end }}
-				{{- if $tags }} {{ template "filter-badge" dict "Label" (printf "#%s" $tags) "Class" "tag" "URL" ($d.Page.FilterURL $base "tag") }}{{ end }}
+				{{- /* denma: no list tags to filter by (cmd/denma_listmove.go) */}}
 				{{- if gt $d.Page.Page 1 }} {{ template "filter-badge" dict "Label" (.L.Ts "globals.terms.page" "n" (printf "%d" $d.Page.Page)) "URL" ($d.Page.FilterURL $base) }}{{ end }}
 			</h1>
 		</div>
@@ -82,9 +82,7 @@
 									{{ template "avatar" dict "Seed" (printf "%d" .ID) "Name" .Name }}
 									<div>
 										<a href="{{ URI "/admin/lists" }}/{{ .ID }}" class="unstyled">{{ .Name }}</a>
-										<div class="hstack gap-2 text-8">
-											{{ range .Tags }}<a href="?{{ $d.Page.Encode "tag" }}&tag={{ . }}">#{{ . }}</a>{{ end }}
-										</div>
+										{{/* denma: lists have no tags (cmd/denma_listmove.go) */}}
 									</div>
 								</div>
 							</td>

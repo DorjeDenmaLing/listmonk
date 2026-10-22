@@ -9,6 +9,7 @@ import * as u from '../utils.js';
 import { // denma: subscriber tags (cmd/denma_tags.go)
   denmaBulkTags, denmaSplitTags, denmaWithTags,
 } from '../denma-tags-ui.js';
+import { denmaListMoves, denmaAddRun } from '../denma-listmove-ui.js'; // denma: cmd/denma_listmove.go
 
 function component(sub = null) {
   // The current view's filters are injected by the template.
@@ -39,6 +40,7 @@ function component(sub = null) {
 
   return {
     ...denmaBulkTags(), // denma
+    ...denmaListMoves(), // denma
     filters,
     query: filters.query || '',
     isSqlOpen: false,
@@ -111,6 +113,7 @@ function component(sub = null) {
       if (this.manage.preconfirm) {
         data.status = 'confirmed';
       }
+      Object.assign(data, denmaAddRun(this.manage)); // denma
 
       await api('subscribers', '/subscribers/lists', 'PUT', data);
       u.reload({ message: i18n.t('subscribers.listChangeApplied') });
@@ -270,6 +273,7 @@ function component(sub = null) {
       if (this.bulk.preconfirm) {
         data.status = 'confirmed';
       }
+      Object.assign(data, denmaAddRun(this.bulk)); // denma
 
       if (!this.bulk.allSelected) {
         data.ids = this.bulk.selected;

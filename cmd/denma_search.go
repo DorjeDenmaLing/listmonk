@@ -23,7 +23,7 @@ package main
 //   opened, clicked (a campaign, a link, any, or when), bounced (hard, soft,
 //   complaint, any, or when), tag (a tag, any, or none: cmd/denma_tags.go),
 //   attr.<name> (attr.address.city for nested), has:attr.<name>, id.
-// Lists: name, type, optin, status, tag, subscribers (a count), campaign (sent
+// Lists: name, type, optin, status, subscribers (a count), campaign (sent
 //   to by a campaign, or any), mailed (when a campaign last started to it, or
 //   any), created, updated, id.
 // Campaigns: name, subject, from, status, type, format, tag, list, template,
@@ -59,7 +59,7 @@ const (
 
 var denmaSearchKeys = map[denmaKind]string{
 	denmaSubscribers: "email, name, domain, status, list, confirmed, unconfirmed, unsubscribed, created, updated, opened, clicked, bounced, tag, attr.<name>, has, id",
-	denmaLists:       "name, type, optin, status, tag, subscribers, campaign, mailed, created, updated, id",
+	denmaLists:       "name, type, optin, status, subscribers, campaign, mailed, created, updated, id",
 	denmaCampaigns:   "name, subject, from, status, type, format, tag, list, template, created, updated, started, scheduled, sent, opens, clicks, bounces, archive, id",
 }
 
@@ -481,8 +481,6 @@ func (p *denmaParser) listTerm(key, op, v string) (string, error) {
 		return denmaEnum("l.optin", key, op, v, "single", "double")
 	case "status":
 		return denmaEnum("l.status", key, op, v, "active", "archived")
-	case "tag":
-		return denmaTag("l.tags", key, op, v)
 	case "subscribers":
 		return denmaNum("(SELECT COUNT(*) FROM subscriber_lists dsl WHERE dsl.list_id = l.id AND dsl.status <> 'unsubscribed')", key, op, v)
 	case "created", "updated":

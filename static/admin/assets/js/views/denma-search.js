@@ -117,7 +117,6 @@ const FIELDS = {
     choice('type', 'Type', [['public', 'public'], ['private', 'private'], ['temporary', 'temporary']]),
     choice('optin', 'Opt-in', [['single', 'single'], ['double', 'double']]),
     choice('status', 'Status', [['active', 'active'], ['archived', 'archived']]),
-    tag(),
     number('subscribers', 'Subscribers'),
     did('campaign', 'Campaign', [['did', 'was sent'], ['didnt', "wasn't sent"]], 'campaign'),
     {
@@ -181,7 +180,6 @@ const HELP = {
     rows: [
       [['name:news', 'name="DDL Newsletter"'], 'contains, or is'],
       [['type:public', 'optin:double', 'status:archived'], 'public, private, temporary; single, double; active, archived'],
-      [['tag:retreats'], 'has the tag'],
       [['subscribers>100'], 'subscribed people (not unsubscribed)'],
       [['campaign:"Spring appeal"', 'campaign:any'], 'sent to by a campaign'],
       [['mailed>90d', '-mailed>90d', '-mailed:any'], 'when a campaign last went to it'],

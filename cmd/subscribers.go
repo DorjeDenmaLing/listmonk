@@ -47,6 +47,7 @@ type subQueryReq struct {
 	Status             string `json:"status"`
 	SubscriptionStatus string `json:"subscription_status"`
 	All                bool   `json:"all"`
+	DenmaAutomations   *bool  `json:"run_automations"` // denma: an admin's add without the lists' automations (cmd/denma_listmove.go)
 }
 
 // subOptin contains the data that's passed to the double opt-in e-mail template.
@@ -817,7 +818,7 @@ func (a *App) ManageSubscriberLists(c echo.Context) error {
 	var err error
 	switch req.Action {
 	case "add":
-		err = a.core.AddSubscriptions(subIDs, listIDs, req.Status)
+		err = a.denmaAddSubscriptions(subIDs, listIDs, req.Status, req.DenmaAutomations) // denma: cmd/denma_listmove.go
 	case "remove":
 		err = a.core.DeleteSubscriptions(subIDs, listIDs)
 	case "unsubscribe":
@@ -1002,7 +1003,7 @@ func (a *App) ManageSubscriberListsByQuery(c echo.Context) error {
 	var err error
 	switch req.Action {
 	case "add":
-		err = a.core.AddSubscriptionsByQuery(req.Search, req.Query, sourceListIDs, targetListIDs, req.Status, req.SubscriptionStatus)
+		err = a.denmaAddSubscriptionsByQuery(req.Search, req.Query, sourceListIDs, targetListIDs, req.Status, req.SubscriptionStatus, req.DenmaAutomations) // denma: cmd/denma_listmove.go
 	case "remove":
 		err = a.core.DeleteSubscriptionsByQuery(req.Search, req.Query, sourceListIDs, targetListIDs, req.SubscriptionStatus)
 	case "unsubscribe":

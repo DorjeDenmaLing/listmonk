@@ -60,6 +60,7 @@
 						{{- if $d.Can "subscribers:manage" }}
 							<button type="button" role="menuitem" class="ghost" data-testid="btn-manage-lists" @click.prevent="onOpenManageLists(allSelected, selected)">{{ Icon "list" }} {{ .L.T "subscribers.manageLists" }}</button>
 							{{ template "denma-bulk-tags-button" . }}{{/* denma: cmd/denma_tags.go */}}
+							{{ template "denma-bulk-move-button" . }}{{/* denma: cmd/denma_listmove.go */}}
 							<button type="button" role="menuitem" class="ghost" data-testid="btn-manage-blocklist" @click.prevent="onBlocklistSelected(allSelected, selected, total)">{{ Icon "user-x" }} {{ .L.T "import.blocklist" }}</button>
 							<hr />
 							<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-delete-subscribers" :disabled="isLoading('subscribers')" @click.prevent="onDeleteSelected(allSelected, selected, total)">{{ Icon "trash-2" }} {{ .L.T "globals.buttons.delete" }} <span x-text="numSelected"></span></button>
@@ -129,8 +130,7 @@
 										<a href="{{ URI "/api/subscribers" }}/{{ .ID }}/export" role="menuitem" class="button ghost" data-testid="btn-download">{{ Icon "download-cloud" }} {{ $.L.T "subscribers.downloadData" }}</a>
 										{{- if $d.Can "subscribers:manage" }}
 											<a href="{{ URI "/admin/subscribers" }}/{{ .ID }}" role="menuitem" class="button ghost" data-testid="btn-edit">{{ Icon "edit-2" }} {{ $.L.T "globals.buttons.edit" }}</a>
-											<hr />
-											<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-delete" :disabled="isLoading('subscribers')" @click.prevent="onDeleteSubscriber({{ .ID }}, {{ ToJSON .Email }})">{{ Icon "trash-2" }} {{ $.L.T "globals.buttons.delete" }}</button>
+											{{ template "denma-sub-row-actions" dict "Root" $ "Sub" . "List" $d.CurrentList }}{{/* denma: move, remove from a list, delete (partials/denma/lists-move.html) */}}
 										{{- end }}
 									</menu>
 								</ot-dropdown>
@@ -161,6 +161,7 @@
 		</form>
 	</dialog>
 	{{ template "denma-bulk-tags-dialog" . }}{{/* denma */}}
+	{{ template "denma-move-dialog" . }}{{/* denma */}}
 </section>
 
 <script type="module" src="{{ URI "/admin/static/js/views/subscribers.js" }}?v={{ .AssetVersion }}" defer></script>

@@ -145,7 +145,8 @@ CREATE TRIGGER denma_api_list_campaigns BEFORE UPDATE OF status ON campaigns FOR
 -- recipients on, and campaigns to a tag and automations leave it out
 -- (denmaAPIListActive). Only the API gives it, making the list with
 -- denma.api_list set for its transaction (apiNewCampaignList); no other list
--- can have it, and an API campaign's list keeps it.
+-- can have it, and an API campaign's list keeps it. Lists have no other tags
+-- (cmd/denma_listmove.go): the admin doesn't offer them, and none are kept.
 CREATE OR REPLACE FUNCTION denma_keep_api_list_tag() RETURNS TRIGGER
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
@@ -156,15 +157,16 @@ BEGIN
     ELSE
         api := '` + denmaAPIListTag + `' = ANY(COALESCE(OLD.tags, '{}'));
     END IF;
-    NEW.tags := array_remove(COALESCE(NEW.tags, '{}'), '` + denmaAPIListTag + `');
+    NEW.tags := '{}';
     IF api THEN
-        NEW.tags := NEW.tags || '` + denmaAPIListTag + `'::VARCHAR;
+        NEW.tags := ARRAY['` + denmaAPIListTag + `']::VARCHAR[];
     END IF;
     RETURN NEW;
 END $$;
 DROP TRIGGER IF EXISTS denma_keep_api_list_tag ON lists;
 CREATE TRIGGER denma_keep_api_list_tag BEFORE INSERT OR UPDATE OF tags ON lists
     FOR EACH ROW EXECUTE FUNCTION denma_keep_api_list_tag();
+UPDATE lists SET tags = '{}' WHERE tags <> '{}' AND NOT ('` + denmaAPIListTag + `' = ANY(tags));
 `
 
 // denmaForeignAPIListsSQL finds a campaign's (NEW.id) API campaign lists

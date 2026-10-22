@@ -191,8 +191,10 @@ DECLARE
     dbl BOOLEAN;
 BEGIN
     SELECT optin = 'double' INTO dbl FROM lists WHERE id = NEW.list_id;
-    IF (dbl AND NEW.status = 'confirmed' AND (TG_OP = 'INSERT' OR OLD.status <> 'confirmed'))
-        OR (NOT dbl AND NEW.status <> 'unsubscribed' AND (TG_OP = 'INSERT' OR OLD.status = 'unsubscribed')) THEN
+    -- An admin's add or move without the lists' automations isn't a join (cmd/denma_listmove.go).
+    IF ((dbl AND NEW.status = 'confirmed' AND (TG_OP = 'INSERT' OR OLD.status <> 'confirmed'))
+        OR (NOT dbl AND NEW.status <> 'unsubscribed' AND (TG_OP = 'INSERT' OR OLD.status = 'unsubscribed')))
+        AND COALESCE(current_setting('denma.quiet_joins', true), '') <> 'on' THEN
         INSERT INTO denma_list_joins (subscriber_id, list_id) VALUES (NEW.subscriber_id, NEW.list_id)
             ON CONFLICT (subscriber_id, list_id) DO UPDATE SET joined_at = NOW();
     END IF;

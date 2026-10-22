@@ -14,4 +14,5 @@
 	<input type="checkbox" x-model="{{ $model }}.preconfirm" data-testid="preconfirm" :disabled="!{{ $model }}HasOptinList" /> {{ $root.L.T "subscribers.preconfirm" }}
 	<small data-hint>{{ $root.L.T "subscribers.preconfirmHelp" }}</small>
 </label>
+{{ template "denma-add-automations" dict "Model" $model }}{{/* denma: cmd/denma_listmove.go */}}
 {{- end }}

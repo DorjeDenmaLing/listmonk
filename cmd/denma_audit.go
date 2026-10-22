@@ -651,6 +651,9 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 	case "POST /api/subscribers/query/delete":
 		return "Deleted subscribers by search"
 	case "PUT /api/subscribers/lists", "PUT /api/subscribers/lists/:id", "PUT /api/subscribers/query/lists":
+		if run, ok := b["run_automations"].(bool); ok && !run && str("action") == "add" { // cmd/denma_listmove.go
+			return "Changed list subscriptions (add, without the lists' automations)"
+		}
 		return fmt.Sprintf("Changed list subscriptions (%s)", str("action"))
 	case "DELETE /api/subscribers":
 		return "Deleted subscribers"
@@ -754,6 +757,18 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 			return fmt.Sprintf("Renamed the tag %q to %q", str("tag"), str("to"))
 		}
 		return fmt.Sprintf("Deleted the tag %q", str("tag"))
+	case "PUT /api/denma/subscribers/move": // cmd/denma_listmove.go
+		who := "the subscribers found by a search"
+		if ids, ok := b["ids"].([]any); ok && len(ids) == 1 {
+			who = "subscriber " + fmt.Sprint(ids[0])
+		} else if ok && len(ids) > 1 {
+			who = fmt.Sprintf("%d subscribers", len(ids))
+		}
+		auto := ""
+		if run, _ := b["run_automations"].(bool); run {
+			auto = ", running its automations"
+		}
+		return fmt.Sprintf("Moved %s from list %v to list %v%s", who, b["from_list_id"], b["to_list_id"], auto)
 	case "PUT /api/denma/tags/subscribers":
 		tags := []string{}
 		if ts, ok := b["tags"].([]any); ok {

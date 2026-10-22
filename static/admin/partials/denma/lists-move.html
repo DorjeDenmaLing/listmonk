@@ -1,0 +1,82 @@
+{{- /* denma: the Subscribers page's Move to list, Remove from list and Delete
+   subscriber (cmd/denma_listmove.go, assets/js/denma-listmove-ui.js). */ -}}
+
+{{/* A subscriber row's list actions and Delete: dict "Root", "Sub", "List"
+   (the list being viewed, or nil). */}}
+{{ define "denma-sub-row-actions" -}}
+{{- $sub := .Sub -}}
+{{- $cur := .List -}}
+{{- $has := false }}{{ range $sub.ParsedLists }}{{ if not .Restricted }}{{ $has = true }}{{ end }}{{ end -}}
+<hr />
+{{- if $has }}
+	<button type="button" role="menuitem" class="ghost" data-testid="btn-move" @click.prevent="onOpenMove('move', {{ $sub.ID }}, {{ ToJSON $sub.Email }}, {{ ToJSON $sub.ParsedLists }})">{{ Icon "log-out" }} Move to list…</button>
+	{{- if $cur }}
+		<button type="button" role="menuitem" class="ghost" data-testid="btn-remove-list" @click.prevent="onRemoveFromList({{ $sub.ID }}, {{ ToJSON $sub.Email }}, {{ $cur.ID }}, {{ ToJSON $cur.Name }})">{{ Icon "minus-circle" }} Remove from this list</button>
+	{{- else }}
+		<button type="button" role="menuitem" class="ghost" data-testid="btn-remove-list" @click.prevent="onOpenMove('remove', {{ $sub.ID }}, {{ ToJSON $sub.Email }}, {{ ToJSON $sub.ParsedLists }})">{{ Icon "minus-circle" }} Remove from list…</button>
+	{{- end }}
+	<hr />
+{{- end }}
+<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-delete" @click.prevent="onDeleteForGood({{ $sub.ID }}, {{ ToJSON $sub.Email }})">{{ Icon "trash-2" }} Delete subscriber</button>
+{{- end }}
+
+{{ define "denma-bulk-move-button" -}}
+<button type="button" role="menuitem" class="ghost" data-testid="btn-bulk-move" @click.prevent="onOpenBulkMove(allSelected, selected, total)">{{ Icon "log-out" }} Move to list…</button>
+{{- end }}
+
+{{/* Manage lists' option, for Add: dict "Model" its state (bulk or manage). */}}
+{{ define "denma-add-automations" -}}
+<label data-field x-show="{{ .Model }}.action === 'add'">
+	<input type="checkbox" x-model="{{ .Model }}.runAutos" data-testid="add-automations" /> Run the lists' automations
+	<small data-hint x-text="denmaAutosHint(denmaAutosFor({{ .Model }}.lists.map((l) => l.id)))"></small>
+</label>
+{{- end }}
+
+{{ define "denma-move-dialog" -}}
+<dialog x-ref="moveDialog">
+	<form @submit.prevent="onSubmitMove">
+		<div class="dialog-card content">
+			<header class="dialog-head">
+				<h4 class="dialog-title"><span x-text="mv.mode === 'move' ? 'Move' : 'Remove'"></span> <span x-text="mvWho()"></span></h4>
+			</header>
+			<section class="dialog-body">
+				<label data-field>
+					<span x-text="mv.mode === 'move' ? 'From' : 'From list'"></span>
+					<select x-model.number="mv.from" required data-testid="move-from">
+						<template x-for="l in mv.fromLists" :key="l.id">
+							<option :value="l.id" x-text="l.name" :selected="l.id === mv.from"></option>
+						</template>
+					</select>
+				</label>
+				<template x-if="mv.mode === 'move'">
+					<div>
+						<label data-field>
+							To
+							<select x-model.number="mv.to" required data-testid="move-to">
+								<option value="" disabled :selected="!mv.to">Pick a list</option>
+								<template x-for="l in mvToLists()" :key="l.id">
+									<option :value="l.id" x-text="l.name + (l.optin === 'double' ? ' (double opt-in)' : '')" :selected="l.id === mv.to"></option>
+								</template>
+							</select>
+							<small data-hint>They keep their status there: anyone unsubscribed stays unsubscribed. Someone who hasn't confirmed a double opt-in list isn't moved to a single opt-in one.</small>
+						</label>
+						<label data-field x-show="mvToDouble()">
+							<input type="checkbox" x-model="mv.preconfirm" data-testid="move-preconfirm" /> Confirm them on the new list
+							<small data-hint>Only if they've agreed to it. Otherwise only those who confirmed a double opt-in list are confirmed there; the others get nothing from it until they confirm.</small>
+						</label>
+						<label data-field>
+							<input type="checkbox" x-model="mv.runAutos" data-testid="move-automations" /> Run the new list's automations
+							<small data-hint x-text="denmaAutosHint(denmaAutosFor([mv.to]))"></small>
+						</label>
+					</div>
+				</template>
+				<p x-show="mv.mode === 'remove'" class="text-light">They stay on their other lists, and in the center.</p>
+			</section>
+			<footer class="dialog-foot hstack gap-3 justify-end">
+				<button type="button" class="outline" @click="$refs.moveDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+				<button type="submit" data-variant="primary" data-testid="btn-move-save" :disabled="!mv.from || (mv.mode === 'move' && !mv.to) || isLoading('subscribers')" x-text="mv.mode === 'move' ? 'Move' : 'Remove'"></button>
+			</footer>
+		</div>
+	</form>
+</dialog>
+{{- end }}
