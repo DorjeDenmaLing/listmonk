@@ -2225,3 +2225,35 @@ section.templates .editor-body:has(> visual-editor) {
     min-height: 100dvh;
   }
 }
+
+/* The import's preview (partials/denma/import.html). */
+.denma-import-preview {
+  margin: var(--space-6) 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+}
+.denma-import-preview .denma-stale {
+  opacity: 0.5;
+}
+.denma-import-preview .denma-ignored {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.denma-import-sample td {
+  vertical-align: top;
+}
+.denma-import-attribs {
+  display: block;
+  max-width: 40ch;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.85em;
+}
+.denma-import-problems code {
+  word-break: break-all;
+}
+.denma-import-warnings {
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-8);
+  border-radius: var(--radius-medium, 6px);
+  background: color-mix(in srgb, var(--warning, #d97706) 12%, transparent);
+}

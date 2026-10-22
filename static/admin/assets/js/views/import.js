@@ -5,6 +5,7 @@ import {
   ListTag,
 } from '../main.js';
 import * as u from '../utils.js';
+import { denmaImportPreview } from '../denma-import-ui.js'; // denma: cmd/denma_importpreview.go
 
 // Regexp for splitting a log line into [timestamp] [file] [message].
 // 2021/05/01 00:00:00:00 init.go:99: reading config: config.toml
@@ -26,12 +27,15 @@ function component() {
     status: window._importStatus || { status: 'none' },
     logLines: [],
     pollID: null,
+    ...denmaImportPreview(), // denma
 
     init() {
       // Reset the status radio whenever the mode changes.
       this.$watch('form.mode', (mode) => {
         this.form.subStatus = mode === 'subscribe' ? 'unconfirmed' : 'unsubscribed';
       });
+
+      this.denmaInitPreview(); // denma
 
       // Start polling if the upload's running.
       if (this.isRunning) {
@@ -52,6 +56,7 @@ function component() {
     },
 
     get canUpload() {
+      if (!this.denmaPreviewOK()) return false; // denma: after the preview, of this file and these settings
       return !!this.form.file && !(this.form.mode === 'subscribe' && this.form.lists.length === 0);
     },
 
@@ -94,6 +99,7 @@ function component() {
 
     async onSubmit() {
       this.isProcessing = true;
+      if (!(await this.denmaCreateTags())) { this.isProcessing = false; return; } // denma: the new tags picked
 
       const params = new FormData();
       params.set('params', JSON.stringify({

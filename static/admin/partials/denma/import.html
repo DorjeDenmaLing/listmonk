@@ -1,0 +1,169 @@
+{{- /* denma: the import page's preview (cmd/denma_importpreview.go,
+   assets/js/denma-import-ui.js), in its form, before Upload. */ -}}
+
+{{ define "denma-import-preview" -}}
+<section class="denma-import-preview" x-show="form.file" x-cloak data-testid="import-preview">
+	<h4 class="hstack gap-3">Preview <span x-show="denmaPrevBusy" aria-busy="true" data-spinner="small"></span></h4>
+	<p class="text-danger" role="alert" x-show="denmaPrevError" x-text="denmaPrevError" data-testid="preview-error"></p>
+
+	<template x-if="denmaPrev">
+		<div class="vstack gap-6" :class="{ 'denma-stale': denmaPrevBusy }">
+			{{/* The file as read. */}}
+			<div>
+				<p>
+					<strong x-text="denmaPrev.file"></strong>:
+					<span x-text="denmaN(denmaPrev.rows)"></span> rows,
+					<span data-testid="preview-valid" x-text="denmaN(denmaPrev.valid)"></span> to import
+					(<span x-text="denmaN(denmaPrev.addresses)"></span> addresses).
+				</p>
+				<p class="text-danger" role="alert" x-show="denmaPrev.error" x-text="denmaPrev.error" data-testid="preview-file-error"></p>
+				<p>
+					Columns used:
+					<template x-for="c in denmaPrev.columns" :key="c"><code class="denma-tag" x-text="c"></code></template>
+					<template x-if="!denmaPrev.columns.length"><em>none</em></template>
+					<template x-if="denmaPrev.ignored.length">
+						<span> · ignored: <template x-for="c in denmaPrev.ignored" :key="c"><code class="denma-tag denma-ignored" x-text="c" data-testid="preview-ignored"></code></template></span>
+					</template>
+				</p>
+				<p class="text-danger" x-show="denmaPrev.stops_at" data-testid="preview-stops">
+					Line <span x-text="denmaPrev.stops_at"></span> can't be read, so the import stops there.
+				</p>
+				<template x-if="denmaPrev.problem_count">
+					<details data-testid="preview-problems">
+						<summary><span x-text="denmaN(denmaPrev.problem_count)"></span> lines with a problem</summary>
+						<ul class="denma-import-problems">
+							<template x-for="p in denmaPrev.problems" :key="p.line + p.message">
+								<li>Line <span x-text="p.line"></span><template x-if="p.value"><span> (<code x-text="p.value"></code>)</span></template>: <span x-text="p.message"></span></li>
+							</template>
+						</ul>
+						<small class="text-light" x-show="denmaPrev.problem_count > denmaPrev.problems.length">Only the first <span x-text="denmaPrev.problems.length"></span> are shown.</small>
+					</details>
+				</template>
+			</div>
+
+			{{/* The first rows, as imported. */}}
+			<template x-if="denmaPrev.sample.length">
+				<div>
+					<h5>The first rows, as they'd be imported</h5>
+					<div class="table-wrapper">
+						<table class="denma-import-sample" data-testid="preview-sample">
+							<thead><tr><th>Line</th><th>E-mail</th><th>First name</th><th>Last name</th><th>Tags</th><th>Attributes</th><th></th></tr></thead>
+							<tbody>
+								<template x-for="r in denmaPrev.sample" :key="r.line">
+									<tr>
+										<td data-label="Line" x-text="r.line"></td>
+										<td data-label="E-mail" x-text="r.email"></td>
+										<td data-label="First name" x-text="r.first_name"></td>
+										<td data-label="Last name" x-text="r.last_name"></td>
+										<td data-label="Tags"><template x-for="t in r.tags" :key="t"><span class="denma-tag" x-text="t"></span> </template></td>
+										<td data-label="Attributes">
+											<code class="denma-import-attribs" x-show="denmaAttribsText(r.attribs)" x-text="denmaAttribsText(r.attribs)"></code>
+											<template x-if="r.dropped.length"><small class="text-light"> Left out: <span x-text="r.dropped.join(', ')"></span></small></template>
+										</td>
+										<td>
+											<span class="badge" x-show="r.blocked" data-variant="danger">Blocklisted</span>
+											<span class="badge" x-show="!r.blocked && r.existing" data-variant="secondary">In the center</span>
+											<span class="badge" x-show="!r.blocked && !r.existing" data-variant="success">New</span>
+										</td>
+									</tr>
+								</template>
+							</tbody>
+						</table>
+					</div>
+					<template x-if="denmaPrev.attribs.length">
+						<p>
+							Attributes in the file:
+							<template x-for="a in denmaPrev.attribs" :key="a.key">
+								<span><code class="denma-tag" :class="{ 'denma-ignored': a.dropped }" x-text="a.key"></code> <small class="text-light" x-text="denmaN(a.rows)"></small> </span>
+							</template>
+						</p>
+					</template>
+				</div>
+			</template>
+
+			{{/* The people. */}}
+			<template x-if="denmaPrev.addresses">
+				<div data-testid="preview-people">
+					<h5>People</h5>
+					<ul>
+						<li><span data-testid="preview-new" x-text="denmaN(denmaPrev.new)"></span> new to the center</li>
+						<li><span data-testid="preview-existing" x-text="denmaN(denmaPrev.existing)"></span> already in the center</li>
+						<template x-for="l in denmaPrev.lists" :key="l.id">
+							<li>
+								<span x-text="denmaN(l.subscribed)"></span> already on <strong x-text="l.name"></strong>
+								<template x-if="l.unsubscribed"><span>, and <span x-text="denmaN(l.unsubscribed)"></span> unsubscribed from it</span></template>
+							</li>
+						</template>
+					</ul>
+					<template x-if="denmaPrev.blocked.complained + denmaPrev.blocked.unsubscribed + denmaPrev.blocked.bounced + denmaPrev.blocked.admin + denmaPrev.blocked.no_consent">
+						<div>
+							<p>Not subscribed:</p>
+							<ul data-testid="preview-blocked">
+								<li x-show="denmaPrev.blocked.unsubscribed"><span data-testid="preview-unsubscribed" x-text="denmaN(denmaPrev.blocked.unsubscribed)"></span> unsubscribed from the center: they stay blocklisted, and only they can subscribe again.</li>
+								<li x-show="denmaPrev.blocked.complained"><span x-text="denmaN(denmaPrev.blocked.complained)"></span> marked its e-mails as spam: they stay blocklisted for good.</li>
+								<li x-show="denmaPrev.blocked.bounced"><span x-text="denmaN(denmaPrev.blocked.bounced)"></span> bounced, or their domain can't receive mail: they're blocklisted.</li>
+								<li x-show="denmaPrev.blocked.admin"><span x-text="denmaN(denmaPrev.blocked.admin)"></span> blocklisted in the center by an admin: they stay blocklisted.</li>
+								<li x-show="denmaPrev.blocked.no_consent"><span x-text="denmaN(denmaPrev.blocked.no_consent)"></span> added by the sending API without their consent: they aren't added to lists until they sign up themselves.</li>
+							</ul>
+						</div>
+					</template>
+					<small class="text-light">After the import, addresses whose domain can't receive mail are blocklisted too; the import's log says how many.</small>
+				</div>
+			</template>
+
+			{{/* The tags. */}}
+			<template x-if="denmaPrev.tags.length">
+				<div data-testid="preview-tags">
+					<h5 class="hstack justify-between">
+						<span>Tags</span>
+						<span class="hstack gap-3" x-show="denmaPrev.can_add_tags && denmaNewTags().length">
+							<button type="button" class="ghost small" @click="denmaAddAllTags(true)" data-testid="btn-add-all-tags">Add all new</button>
+							<button type="button" class="ghost small" @click="denmaAddAllTags(false)">Skip all new</button>
+						</span>
+					</h5>
+					<div class="table-wrapper">
+						<table>
+							<thead><tr><th>Tag</th><th class="align-right">People</th><th class="align-right">Already in the center</th><th>The center has it</th></tr></thead>
+							<tbody>
+								<template x-for="t in denmaPrev.tags" :key="t.tag">
+									<tr data-testid="preview-tag" :data-tag="t.tag">
+										<td>
+											<span class="denma-tag" x-text="t.tag"></span>
+											<template x-if="denmaQuoted(t.tag)"><small class="text-danger"> still has quote marks from the export</small></template>
+										</td>
+										<td class="align-right" data-label="People" x-text="denmaN(t.rows)"></td>
+										<td class="align-right" data-label="Already in the center" x-text="denmaN(t.existing)"></td>
+										<td data-label="The center has it">
+											<template x-if="t.exists"><span>Yes</span></template>
+											<template x-if="!t.exists && denmaPrev.can_add_tags">
+												<label><input type="checkbox" x-model="denmaAddTags[t.tag]" data-testid="add-tag" /> No, add it</label>
+											</template>
+											<template x-if="!t.exists && !denmaPrev.can_add_tags"><span class="text-light">No: left out</span></template>
+										</td>
+									</tr>
+								</template>
+							</tbody>
+						</table>
+					</div>
+					<small class="text-light" x-show="denmaNewTags().length">
+						<span x-show="denmaPrev.can_add_tags">Tags you choose to add are added to the center when you upload, as under Subscribers → Tags. The rest are left out.</span>
+						<span x-show="!denmaPrev.can_add_tags">Tags the center doesn't have are left out. Someone who can manage subscribers can add them under Subscribers → Tags.</span>
+					</small>
+				</div>
+			</template>
+
+			<template x-if="denmaWarnings().length">
+				<ul class="denma-import-warnings" role="alert" data-testid="preview-warnings">
+					<template x-for="w in denmaWarnings()" :key="w"><li x-text="w"></li></template>
+				</ul>
+			</template>
+		</div>
+	</template>
+</section>
+{{- end }}
+
+{{/* The instructions' note on tags. */}}
+{{ define "denma-import-help" -}}
+<h6>Tags</h6>
+<p class="text-light">Give tags in the attributes, as a list: <code>"{""tags"": [""volunteer"", ""donor""]}"</code>. A tag the center doesn't have is left out, unless you choose to add it in the preview.</p>
+{{- end }}

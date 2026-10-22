@@ -158,6 +158,16 @@ func (a *App) denmaUnknownTags(tags []string) error {
 // the API) only have the center's tags. Called by CreateSubscriber,
 // UpdateSubscriber and PatchSubscriber.
 func (a *App) denmaCheckSubscriberTags(attribs map[string]any) error {
+	tags := denmaAttribTags(attribs)
+	if len(tags) == 0 {
+		return nil
+	}
+	return a.denmaUnknownTags(tags)
+}
+
+// denmaAttribTags is the tags in attributes' "tags" (a string, or a list,
+// nested once at most), tidied as the database does.
+func denmaAttribTags(attribs map[string]any) []string {
 	var tags []string
 	var add func(v any, depth int)
 	add = func(v any, depth int) {
@@ -173,10 +183,7 @@ func (a *App) denmaCheckSubscriberTags(attribs map[string]any) error {
 		}
 	}
 	add(attribs["tags"], 0)
-	if tags = denmaNormTags(tags); len(tags) == 0 {
-		return nil
-	}
-	return a.denmaUnknownTags(tags)
+	return denmaNormTags(tags)
 }
 
 func initDenmaTagHandlers(g *echo.Group, a *App) {

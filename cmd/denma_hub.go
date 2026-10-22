@@ -59,6 +59,7 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	initDenmaAutomationAPIHandlers(g, a)
 	initDenmaSearchAPIHandlers(g, a)
 	initDenmaTagAPIHandlers(g, a)   // cmd/denma_tags.go
+	initDenmaImportHandlers(g, a)   // cmd/denma_importpreview.go
 	initDenmaListMoveHandlers(g, a) // cmd/denma_listmove.go
 	initDenmaRetryHandlers(g, a)    // cmd/denma_retries.go
 	initDenmaStartHandlers(g, a)    // cmd/denma_start.go

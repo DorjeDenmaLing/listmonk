@@ -84,6 +84,7 @@
 					</ot-upload>
 				</div>
 
+				{{ template "denma-import-preview" . }}{{/* denma: cmd/denma_importpreview.go */}}
 				<div class="hstack">
 					<button type="submit" data-variant="primary" data-testid="btn-upload" :disabled="!canUpload || isProcessing" :aria-busy="isProcessing">
 						{{ Icon "upload" }} {{ .L.T "import.upload" }}
@@ -143,6 +144,7 @@
 				<pre class="csv-example">email,name,attributes
 user1@mail.com,"User One","{""age"": 42, ""planet"": ""Mars""}"
 user2@mail.com,"User Two","{""age"": 24, ""job"": ""Time Traveller""}"</pre>
+				{{ template "denma-import-help" . }}{{/* denma */}}
 			</div>
 		{{ end }}
 	</div>
