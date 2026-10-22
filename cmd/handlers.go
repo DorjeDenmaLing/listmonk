@@ -397,6 +397,7 @@ func serveCustomAppearance(name string) echo.HandlerFunc {
 			hdr = "application/javascript; charset=utf-8"
 		}
 
+		denmaCustomAssetCache(c) // denma: kept by the browser (cmd/denma_assets.go)
 		return c.Blob(http.StatusOK, hdr, out)
 	}
 }

@@ -1048,7 +1048,7 @@ func initHTTPRouter(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.Fi
 	if err != nil {
 		lo.Fatalf("error globbing nested admin templates: %v", err)
 	}
-	adminTpl, err := stuffbin.ParseTemplates(tplFuncs, fs, append(adminPaths, nestedPaths...)...)
+	adminTpl, err := denmaAdminTemplates(app, tplFuncs, fs, append(adminPaths, nestedPaths...)) // denma: a center's on first use (cmd/denma_admintpl.go)
 	if err != nil {
 		lo.Fatalf("error parsing admin templates: %v", err)
 	}

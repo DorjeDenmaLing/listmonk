@@ -43,7 +43,7 @@ type pubTplRenderer struct {
 
 // adminTplRenderer wraps admin templates for echo.
 type adminTplRenderer struct {
-	templates          *template.Template
+	templates          *denmaAdminTpl // denma: parsed on first use (cmd/denma_admintpl.go)
 	SiteName           string
 	RootURL            string
 	LogoURL            string
@@ -195,7 +195,7 @@ func (t *adminTplRenderer) Render(w io.Writer, name string, data any, c echo.Con
 
 // Render routes template execution to admin or public templates.
 func (t *appTplRenderer) Render(w io.Writer, name string, data any, c echo.Context) error {
-	if t.AdminRenderer != nil && t.AdminRenderer.templates.Lookup(name) != nil {
+	if t.AdminRenderer != nil && t.AdminRenderer.templates.Has(name) { // denma: without parsing them (cmd/denma_admintpl.go)
 		return t.AdminRenderer.Render(w, name, data, c)
 	}
 

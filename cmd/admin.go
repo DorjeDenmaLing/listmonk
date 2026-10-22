@@ -80,7 +80,7 @@ func (a *App) makeServerConfig() (serverConfig, error) {
 	out.MediaProvider = a.cfg.MediaUpload.Provider
 
 	// Language list.
-	langList, err := getI18nLangList(a.fs)
+	langList, err := denmaLangList(a.fs) // denma: read once (cmd/denma_i18n.go)
 	if err != nil {
 		return out, fmt.Errorf("error loading language list: %v", err)
 	}

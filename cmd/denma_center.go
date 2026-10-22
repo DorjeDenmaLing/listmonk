@@ -212,7 +212,7 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	langs, err := getI18nLangList(a.fs)
+	langs, err := denmaLangList(a.fs)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -307,7 +307,7 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 			return bad("The logo or favicon address is too long.")
 		}
 	}
-	langs, err := getI18nLangList(a.fs)
+	langs, err := denmaLangList(a.fs)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
