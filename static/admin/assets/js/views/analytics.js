@@ -2,6 +2,7 @@ import Alpine from 'alpinejs';
 import Chart from 'chart.js/auto';
 
 import { api } from '../main.js';
+import { denmaReplaceOptions } from '../denma-datalist.js'; // denma: a steady campaigns list
 
 const chartColorRed = '#ee7d5b';
 const chartColors = [
@@ -147,7 +148,7 @@ function analyticsForm() {
 
         try {
           const data = await api('analytics.campaigns', `/campaigns?${params.toString()}`, 'GET');
-          el.list.replaceChildren(...(data.results || [])
+          denmaReplaceOptions(el.list, (data.results || []) // denma: only when they change (denma-datalist.js)
             .filter((c) => !chosen.has(c.id))
             .map((c) => {
               const o = new Option(`#${c.id}: ${c.name}`);

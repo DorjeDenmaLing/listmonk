@@ -31,7 +31,7 @@
 				<tbody>
 					<template x-for="r in reports.rows" :key="r.id">
 						<tr>
-							<td class="denma-break"><a :href="r.url" x-text="r.name"></a></td>
+							<td class="denma-break"><a :href="r.url" x-text="r.name" title="Its analytics"></a> <a class="denma-sub" :href="r.campaignUrl">campaign</a></td>
 							<td class="denma-nowrap" x-text="r.date"></td>
 							<td class="num" x-text="r.sent"></td>
 							<td class="num" x-text="r.delivered"></td>
@@ -134,7 +134,7 @@
 										<template x-for="m in g.detail" :key="m.id">
 											<tr>
 												<td class="denma-break">
-													<a :href="m.url" x-text="m.name"></a>
+													<a :href="m.url" x-text="m.name" title="Its analytics"></a> <a class="denma-sub" :href="m.campaignUrl">campaign</a>
 													<span class="denma-warn" x-show="m.warn" title="Open rate was less than half of everyone else's on this campaign."> ⚠</span>
 												</td>
 												<td class="denma-nowrap" x-text="m.date"></td>

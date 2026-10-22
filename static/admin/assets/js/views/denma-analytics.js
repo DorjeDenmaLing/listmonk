@@ -13,6 +13,18 @@ import * as s from '../denma-stats.js';
 
 const { pct, PROVIDERS } = s;
 const campaignURL = (c) => `${urls.admin}/campaigns/${encodeURIComponent(c.id)}`;
+
+// A campaign's analytics (Campaigns -> Analytics), from the day before it
+// started to tomorrow: the page reads dates in the server's time zone, and
+// shows only the last 7 days without them.
+const analyticsURL = (c) => {
+  const day = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T00:00`;
+  const from = new Date(c.started_at);
+  from.setDate(from.getDate() - 1);
+  const to = new Date();
+  to.setDate(to.getDate() + 1);
+  return `${urls.admin}/campaigns/analytics?id=${encodeURIComponent(c.id)}&from=${day(from)}&to=${day(to)}`;
+};
 const campaignName = (c) => c.name || c.subject || 'Untitled';
 
 // ---- Audience growth ----
@@ -164,7 +176,8 @@ function component(opts) {
         return {
           id: c.id,
           name: campaignName(c),
-          url: campaignURL(c),
+          url: analyticsURL(c),
+          campaignUrl: campaignURL(c),
           date: s.fmtDate(new Date(c.started_at)),
           sent: c.sent.toLocaleString(),
           delivered: pct(delivered, c.sent, 1),
@@ -318,7 +331,8 @@ function component(opts) {
           return {
             id: m.c.id,
             name: campaignName(m.c),
-            url: campaignURL(m.c),
+            url: analyticsURL(m.c),
+            campaignUrl: campaignURL(m.c),
             date: s.fmtDate(new Date(m.c.started_at)),
             warn: campaignWarning(rows, key, m),
             received: m.received.toLocaleString(),
