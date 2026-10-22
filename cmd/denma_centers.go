@@ -30,6 +30,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -131,6 +132,12 @@ type denmaCenters struct {
 	// load (and the first App keep sending), and a reload finishing after a
 	// disable would put the center back.
 	lifeMu sync.Mutex
+
+	// One pass of the hub's settings to the centers at a time
+	// (propagateShared); a hub reload during one asks for another after it.
+	propMu      sync.Mutex
+	propRunning bool
+	propAgain   bool
 }
 
 // denmaNoExit, once centers are on, turns errors that would stop the server
@@ -976,11 +983,47 @@ func (d *denmaCenters) syncShared(db *sqlx.DB) (bool, error) {
 }
 
 // propagateShared copies the hub's changed settings to every center and
-// reloads those that changed, one at a time. A center that is sending a
-// campaign is reloaded once it has finished (it shows "needs restart" until
-// then, as listmonk does for a settings save).
+// reloads those that changed, one at a time, each once the one before has
+// been rebuilt. A center that is sending a campaign is reloaded once it has
+// finished (it shows "needs restart" until then, as listmonk does for a
+// settings save).
+//
+// Only one pass runs at a time: a hub reload during one (the hub's settings
+// saved again) asks for one more pass after it, which reloads only the
+// centers whose settings changed again. Two passes at once rebuilt each
+// center twice over, and ran out of memory with 300 centers.
 func (d *denmaCenters) propagateShared() {
+	d.propMu.Lock()
+	if d.propRunning {
+		d.propAgain = true
+		d.propMu.Unlock()
+		return
+	}
+	d.propRunning = true
+	d.propMu.Unlock()
+	for {
+		d.propagatePass()
+		d.propMu.Lock()
+		if !d.propAgain {
+			d.propRunning = false
+			d.propMu.Unlock()
+			// The rebuilt centers' old Apps are garbage now: hand their
+			// memory back (Go keeps it otherwise).
+			debug.FreeOSMemory()
+			return
+		}
+		d.propAgain = false
+		d.propMu.Unlock()
+		lo.Printf("denma: the hub's settings changed again: copying them to the centers again")
+	}
+}
+
+// propagatePass is one pass of propagateShared.
+func (d *denmaCenters) propagatePass() {
 	for _, c := range d.loaded() {
+		if c = d.get(c.Slug); c == nil {
+			continue // disabled meanwhile
+		}
 		changed, err := d.syncShared(c.app.db)
 		if err != nil {
 			lo.Printf("denma: error copying the hub's settings to center %s: %v", c.Slug, err)
@@ -997,8 +1040,21 @@ func (d *denmaCenters) propagateShared() {
 			continue
 		}
 		denmaSignalReload(c.app)
+		d.awaitReload(c)
 		time.Sleep(200 * time.Millisecond)
 	}
+}
+
+// awaitReload waits (a minute at most) for center c to be replaced by its
+// reload, or disabled.
+func (d *denmaCenters) awaitReload(c *denmaCenter) {
+	for range 600 {
+		if d.get(c.Slug) != c {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	lo.Printf("denma: center %s hasn't reloaded within a minute; going on to the next", c.Slug)
 }
 
 // reloadWhenIdle reloads a center once it has no running campaigns, unless it
