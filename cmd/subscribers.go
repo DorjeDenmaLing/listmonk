@@ -47,7 +47,8 @@ type subQueryReq struct {
 	Status             string `json:"status"`
 	SubscriptionStatus string `json:"subscription_status"`
 	All                bool   `json:"all"`
-	DenmaAutomations   *bool  `json:"run_automations"` // denma: an admin's add without the lists' automations (cmd/denma_listmove.go)
+	DenmaAutomations   *bool  `json:"run_automations"`   // denma: an admin's add without the lists' automations (cmd/denma_listmove.go)
+	SubscriberStatus   string `json:"subscriber_status"` // denma: cmd/denma_bulkfilter.go
 }
 
 // subOptin contains the data that's passed to the double opt-in e-mail template.
@@ -465,6 +466,9 @@ func (a *App) ExportSubscribers(c echo.Context) error {
 	}
 
 	if err := a.denmaSearch(user, &searchStr, &query); err != nil { // denma: cmd/denma_search.go
+		return err
+	}
+	if err := denmaWithSubStatus(c.QueryParam("status"), &query); err != nil { // denma: cmd/denma_bulkfilter.go
 		return err
 	}
 
@@ -910,7 +914,7 @@ func (a *App) DeleteSubscribersByQuery(c echo.Context) error {
 		}
 	}
 
-	if err := a.denmaSearch(user, &req.Search, &req.Query); err != nil { // denma: cmd/denma_search.go
+	if err := a.denmaBulkSearch(user, &req); err != nil { // denma: cmd/denma_bulkfilter.go
 		return err
 	}
 
@@ -953,7 +957,7 @@ func (a *App) BlocklistSubscribersByQuery(c echo.Context) error {
 		}
 	}
 
-	if err := a.denmaSearch(user, &req.Search, &req.Query); err != nil { // denma: cmd/denma_search.go
+	if err := a.denmaBulkSearch(user, &req); err != nil { // denma: cmd/denma_bulkfilter.go
 		return err
 	}
 
@@ -994,7 +998,7 @@ func (a *App) ManageSubscriberListsByQuery(c echo.Context) error {
 		}
 	}
 
-	if err := a.denmaSearch(user, &req.Search, &req.Query); err != nil { // denma: cmd/denma_search.go
+	if err := a.denmaBulkSearch(user, &req); err != nil { // denma: cmd/denma_bulkfilter.go
 		return err
 	}
 

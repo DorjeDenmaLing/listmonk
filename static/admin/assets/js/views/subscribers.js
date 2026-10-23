@@ -42,7 +42,7 @@ function component(sub = null) {
   return {
     ...denmaBulkTags(), // denma
     ...denmaListMoves(), // denma
-    filters,
+    subFilters: filters, // denma: not "filters", which the table's own hide
     query: filters.query || '',
     isSqlOpen: false,
     get advanced() {
@@ -203,16 +203,19 @@ function component(sub = null) {
         }
 
         const q = new URLSearchParams();
-        if (this.filters.search) {
-          q.append('search', this.filters.search);
-        } else if (this.filters.query) {
-          q.append('query', this.filters.query);
+        if (this.subFilters.search) {
+          q.append('search', this.subFilters.search);
+        } else if (this.subFilters.query) {
+          q.append('query', this.subFilters.query);
         }
-        if (this.filters.listID) {
-          q.append('list_id', this.filters.listID);
+        if (this.subFilters.listID) {
+          q.append('list_id', this.subFilters.listID);
         }
-        if (this.filters.subStatus) {
-          q.append('subscription_status', this.filters.subStatus);
+        if (this.subFilters.subStatus) {
+          q.append('subscription_status', this.subFilters.subStatus);
+        }
+        if (this.subFilters.status) { // denma: cmd/denma_bulkfilter.go
+          q.append('status', this.subFilters.status);
         }
         if (!allSelected && selected.length > 0) {
           selected.forEach((id) => q.append('id', id));
@@ -307,14 +310,15 @@ function component(sub = null) {
     // Private functions.
     // Body for the "by query" bulk endpoints.
     _queryBody() {
-      const search = this.filters.search || '';
-      const query = this.filters.query || '';
+      const search = this.subFilters.search || '';
+      const query = this.subFilters.query || '';
       return {
         all: query.trim() === '' && search.trim() === '',
         search,
         query,
-        list_ids: this.filters.listID ? [this.filters.listID] : null,
-        subscription_status: this.filters.subStatus || null,
+        list_ids: this.subFilters.listID ? [this.subFilters.listID] : null,
+        subscription_status: this.subFilters.subStatus || null,
+        subscriber_status: this.subFilters.status || '', // denma: cmd/denma_bulkfilter.go
       };
     },
 

@@ -85,7 +85,7 @@ export function denmaListMoves() {
     },
 
     _mvOpen(mv) {
-      const cur = this.filters.listID;
+      const cur = this.subFilters.listID;
       const from = mv.fromLists.some((l) => l.id === cur) ? cur : (mv.fromLists[0] || {}).id || null;
       this.mv = {
         allSelected: false, selected: [], id: null, email: '', to: null, preconfirm: false, runAutos: false, ...mv, from,

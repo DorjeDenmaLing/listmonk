@@ -13,7 +13,8 @@
 		listID: {{ if $d.CurrentList }}{{ $d.CurrentList.ID }}{{ else }}null{{ end }},
 		search: {{ ToJSON $d.Page.Search }},
 		query: {{ ToJSON $d.Page.Query }},
-		subStatus: {{ ToJSON $subStatus }}
+		subStatus: {{ ToJSON $subStatus }},
+		status: {{ ToJSON $status }}{{/* denma: cmd/denma_bulkfilter.go */}}
 	};
 </script>
 

@@ -183,7 +183,7 @@ func (a *App) DenmaMoveSubscribers(c echo.Context) error {
 	} else if req.Search == "" && req.Query == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "query"))
 	}
-	if err := a.denmaSearch(user, &req.Search, &req.Query); err != nil {
+	if err := a.denmaBulkSearch(user, &req.subQueryReq); err != nil {
 		return err
 	}
 	listIDs := user.GetPermittedListIDs(auth.PermTypeManage, req.ListIDs)
