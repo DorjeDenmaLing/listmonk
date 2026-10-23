@@ -1,13 +1,19 @@
 package manager
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/textproto"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/knadh/listmonk/models"
+	"github.com/knadh/smtppool/v2"
 )
 
 // denma: many centers run in one process, each with its own campaign manager,
@@ -166,7 +172,9 @@ func (m *Manager) DenmaSetCenterWait(wait func(stopped func() bool) bool) {
 // Failed sends (cmd/denma_retries.go). Each is recorded with its reason and
 // whether it's worth trying again: the mail server unreachable or answering
 // "try later" (a 4xx reply) is temporary; a 5xx reply, or a message that
-// couldn't be made from the template, isn't. A pipe first sends the
+// couldn't be made from the template, isn't; nor is one that may have been
+// delivered all the same (DenmaUncertain), which is never sent again
+// automatically. A pipe first sends the
 // campaign's failed sends again (all of them when a paused campaign is
 // resumed; the temporary ones on a retry run, which does nothing else), and a
 // campaign that reaches the end of its list with temporary ones left stays
@@ -183,13 +191,39 @@ func denmaTemporary(err error) bool {
 	if errors.As(err, &tp) {
 		return tp.Code < 500
 	}
-	return true
+	return !DenmaUncertain(err)
+}
+
+// DenmaUncertain reports whether a failed send may have been delivered all
+// the same: the connection failed without the mail server's answer, which,
+// after the message is written, may mean it took it. smtppool sends again
+// itself when an earlier step fails (a stale connection), so what's left is
+// mostly that; a failed connect, DNS lookup, TLS handshake or wait for a
+// connection, or an answer, is certain.
+func DenmaUncertain(err error) bool {
+	var (
+		tp   *textproto.Error
+		op   *net.OpError
+		dns  *net.DNSError
+		ne   net.Error
+		cert *tls.CertificateVerificationError
+		ua   x509.UnknownAuthorityError
+		ae   tls.AlertError
+	)
+	switch {
+	case err == nil, errors.As(err, &tp), errors.As(err, &dns), errors.As(err, &cert), errors.As(err, &ua), errors.As(err, &ae),
+		errors.Is(err, smtppool.ErrPoolClosed), strings.Contains(err.Error(), "waiting for free conn"):
+		return false
+	case errors.As(err, &op) && (op.Op == "dial" || op.Op == "remote error"):
+		return false
+	}
+	return errors.As(err, &ne) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 // denmaSent records a message's outcome: a failure, or a retry sent.
 func (p *pipe) denmaSent(msg CampaignMessage, err error) {
 	if err != nil {
-		p.denmaFailed(msg.Subscriber.ID, err.Error(), denmaTemporary(err))
+		p.denmaFailed(msg.Subscriber.ID, err.Error(), denmaTemporary(err), DenmaUncertain(err))
 		return
 	}
 	p.denmaStreak.Store(0)
@@ -202,13 +236,13 @@ func (p *pipe) denmaSent(msg CampaignMessage, err error) {
 
 // denmaRenderFailed records a subscriber whose message couldn't be made.
 func (p *pipe) denmaRenderFailed(s models.Subscriber, err error) {
-	p.denmaFailed(s.ID, "The message couldn't be made from the campaign's template: "+err.Error(), false)
+	p.denmaFailed(s.ID, "The message couldn't be made from the campaign's template: "+err.Error(), false, false)
 }
 
 // denmaFailed records a failed send, and pauses the campaign after
 // denmaStreakLimit in a row.
-func (p *pipe) denmaFailed(subID int, reason string, temporary bool) {
-	if err := p.m.store.DenmaSendFailed(p.camp.ID, subID, reason, temporary); err != nil {
+func (p *pipe) denmaFailed(subID int, reason string, temporary, uncertain bool) {
+	if err := p.m.store.DenmaSendFailed(p.camp.ID, subID, reason, temporary, uncertain); err != nil {
 		p.m.log.Printf("denma: error recording a failed send (%s, subscriber %d): %v", p.camp.Name, subID, err)
 	}
 	n := p.denmaStreak.Add(1)

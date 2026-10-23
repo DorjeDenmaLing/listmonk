@@ -60,7 +60,7 @@ type Store interface {
 	DeleteSubscriber(id int64) error
 
 	// denma: failed sends and their retries (denma.go, cmd/denma_retries.go).
-	DenmaSendFailed(campID, subID int, reason string, temporary bool) error
+	DenmaSendFailed(campID, subID int, reason string, temporary, uncertain bool) error
 	DenmaRetrySent(campID, subID int) error
 	DenmaRetrySubscribers(campID, afterID, limit int, all bool) ([]models.Subscriber, error)
 	DenmaRetryLater(campID int) (bool, error)

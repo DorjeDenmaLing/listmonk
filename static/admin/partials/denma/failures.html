@@ -37,7 +37,7 @@
 						{{- range $f.Items }}
 						<tr data-testid="failure-row">
 							<td><a href="{{ URI "/admin/subscribers" }}/{{ .SubscriberID }}">{{ .Email }}</a></td>
-							<td>{{ .Reason }}{{ if not .Temporary }} <span class="text-light">(not retried)</span>{{ end }}</td>
+							<td>{{ .Reason }}{{ if .Uncertain }} <span class="text-light">(it may have been delivered: not retried)</span>{{ else if not .Temporary }} <span class="text-light">(not retried)</span>{{ end }}</td>
 							<td class="align-right" data-label="Tries">{{ .Tries }}</td>
 							<td class="text-nowrap" data-label="Last tried">{{ NiceDate .FailedAt true }}</td>
 						</tr>

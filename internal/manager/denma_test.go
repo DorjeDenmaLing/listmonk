@@ -33,7 +33,7 @@ type mockStore struct {
 	statuses   []string            // UpdateCampaignStatus' statuses
 }
 
-func (s *mockStore) DenmaSendFailed(campID, subID int, reason string, temporary bool) error {
+func (s *mockStore) DenmaSendFailed(campID, subID int, reason string, temporary, uncertain bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failures == nil {

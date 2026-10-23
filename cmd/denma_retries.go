@@ -11,11 +11,14 @@ package main
 //     campaign reaches the end of its list: the campaign stays running, and
 //     is picked up again after a wait (campaigns.denma_retry_at) to send only
 //     those, up to len(denmaRetryWaits) more times. One the server refused for
-//     good (a 5xx reply) isn't.
+//     good (a 5xx reply) isn't, nor one that may have been delivered all the
+//     same (uncertain: the connection lost before the server's answer to the
+//     message, internal/manager/denma.go), which would be a second copy.
 //   - A run of failures in a row (internal/manager/denma.go) pauses the
 //     campaign, so a mail server that's down doesn't fail everyone left.
 //   - Resuming a paused campaign tries its failed sends again first (every
-//     one, as whatever failed may have been fixed), then carries on.
+//     one but the uncertain, as whatever failed may have been fixed), then
+//     carries on.
 //   - The campaign's page lists them with the reasons, and a finished
 //     campaign's "Resend to them" sends only those again.
 //
@@ -51,18 +54,19 @@ CREATE TABLE IF NOT EXISTS denma_send_failures (
     failed_at     TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     PRIMARY KEY (campaign_id, subscriber_id)
 );
+ALTER TABLE denma_send_failures ADD COLUMN IF NOT EXISTS uncertain BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_retry_at TIMESTAMP WITH TIME ZONE;
 `
 
 // DenmaSendFailed records a failed send (or a retry's failure) for the
 // campaign manager.
-func (s *store) DenmaSendFailed(campID, subID int, reason string, temporary bool) error {
+func (s *store) DenmaSendFailed(campID, subID int, reason string, temporary, uncertain bool) error {
 	if r := []rune(reason); len(r) > 500 {
 		reason = string(r[:500])
 	}
-	_, err := s.core.DenmaDB().Exec(`INSERT INTO denma_send_failures (campaign_id, subscriber_id, reason, temporary) VALUES ($1, $2, $3, $4)
+	_, err := s.core.DenmaDB().Exec(`INSERT INTO denma_send_failures (campaign_id, subscriber_id, reason, temporary, uncertain) VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (campaign_id, subscriber_id) DO UPDATE SET reason = EXCLUDED.reason, temporary = EXCLUDED.temporary,
-		retries = denma_send_failures.retries + 1, failed_at = NOW()`, campID, subID, reason, temporary)
+		uncertain = EXCLUDED.uncertain, retries = denma_send_failures.retries + 1, failed_at = NOW()`, campID, subID, reason, temporary, uncertain)
 	return err
 }
 
@@ -75,11 +79,11 @@ func (s *store) DenmaRetrySent(campID, subID int) error {
 // DenmaRetrySubscribers returns the next batch (after afterID) of a
 // campaign's failed sends to try again: temporary ones, or all of them, that
 // haven't been retried as often as they may be, to subscribers who haven't
-// since been blocklisted (which unsubscribing does).
+// since been blocklisted (which unsubscribing does). Never the uncertain.
 func (s *store) DenmaRetrySubscribers(campID, afterID, limit int, all bool) ([]models.Subscriber, error) {
 	var out []models.Subscriber
 	err := s.core.DenmaDB().Select(&out, `SELECT s.* FROM denma_send_failures f JOIN subscribers s ON s.id = f.subscriber_id
-		WHERE f.campaign_id = $1 AND s.id > $2 AND ($4 OR f.temporary) AND f.retries < $5 AND s.status != 'blocklisted'
+		WHERE f.campaign_id = $1 AND s.id > $2 AND ($4 OR f.temporary) AND NOT f.uncertain AND f.retries < $5 AND s.status != 'blocklisted'
 		ORDER BY s.id LIMIT $3`, campID, afterID, limit, all, len(denmaRetryWaits))
 	if err == nil {
 		err = denmaAPIRecipientData(s.core.DenmaDB(), campID, out) // an API campaign's data (cmd/denma_api_send.go)
@@ -107,6 +111,7 @@ type denmaSendFailure struct {
 	Name         string    `db:"name" json:"name"`
 	Reason       string    `db:"reason" json:"reason"`
 	Temporary    bool      `db:"temporary" json:"temporary"`
+	Uncertain    bool      `db:"uncertain" json:"uncertain"`
 	Tries        int       `db:"tries" json:"tries"`
 	FailedAt     time.Time `db:"failed_at" json:"failed_at"`
 }
@@ -148,7 +153,7 @@ func (a *App) denmaCampaignFailures(campID int) (*denmaSendFailures, error) {
 		GROUP BY reason ORDER BY n DESC, reason LIMIT 5`, campID); err != nil {
 		return nil, err
 	}
-	if err := a.db.Select(&out.Items, `SELECT f.subscriber_id, s.email, s.name, f.reason, f.temporary, f.retries + 1 AS tries, f.failed_at
+	if err := a.db.Select(&out.Items, `SELECT f.subscriber_id, s.email, s.name, f.reason, f.temporary, f.uncertain, f.retries + 1 AS tries, f.failed_at
 		FROM denma_send_failures f JOIN subscribers s ON s.id = f.subscriber_id WHERE f.campaign_id = $1
 		ORDER BY f.failed_at DESC, f.subscriber_id LIMIT $2`, campID, denmaSendFailuresShown); err != nil {
 		return nil, err
@@ -212,7 +217,7 @@ func (a *App) DenmaResendFailures(c echo.Context) error {
 	if status != models.CampaignStatusFinished {
 		return echo.NewHTTPError(http.StatusBadRequest, "Only a finished campaign can be resent to those it couldn't send to; resuming a paused one tries them again.")
 	}
-	res, err := tx.Exec(`UPDATE denma_send_failures f SET retries = 0, temporary = true FROM subscribers s
+	res, err := tx.Exec(`UPDATE denma_send_failures f SET retries = 0, temporary = true, uncertain = false FROM subscribers s
 		WHERE f.campaign_id = $1 AND s.id = f.subscriber_id AND s.status != 'blocklisted'`, id)
 	if err != nil {
 		return a.denmaResendErr(id, err)
