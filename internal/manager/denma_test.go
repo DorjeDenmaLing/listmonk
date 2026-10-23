@@ -23,6 +23,7 @@ type mockStore struct {
 	batches          [][]models.Subscriber // returned by successive NextSubscribers calls
 	gotCursors       []int                 // the cursors NextSubscribers was called with
 	checkpointWrites []int                 // UpdateCampaignCounts' lastSubID
+	sentSaved        int64                 // the sent counts saved (NextCampaigns, UpdateCampaignCounts)
 
 	failures   map[int]bool        // failed sends: subscriber ID -> temporary
 	retries    []models.Subscriber // returned by the first DenmaRetrySubscribers call
@@ -57,7 +58,19 @@ func (s *mockStore) DenmaRetrySubscribers(campID, afterID, limit int, all bool) 
 }
 func (s *mockStore) DenmaRetryLater(campID int) (bool, error) { return s.retryLater, nil }
 
+// sent is the sent counts saved.
+func (s *mockStore) sent() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sentSaved
+}
+
 func (s *mockStore) NextCampaigns(currentIDs []int64, sentCounts []int64, lastSubIDs []int64) ([]*models.Campaign, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, n := range sentCounts {
+		s.sentSaved += n
+	}
 	return nil, nil
 }
 
@@ -92,6 +105,7 @@ func (s *mockStore) UpdateCampaignCounts(campID int, toSend int, sent int, lastS
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.checkpointWrites = append(s.checkpointWrites, lastSubID)
+	s.sentSaved += int64(sent)
 	return nil
 }
 func (s *mockStore) CreateLink(url string) (string, error) { return "", nil }
@@ -323,8 +337,62 @@ func TestCheckpointThroughWorkers(t *testing.T) {
 	if len(bad) > 0 {
 		t.Fatal(bad[0])
 	}
-	if s := p.sent.Load(); s != 59 {
-		t.Fatalf("sent %d, want 59 (one failed)", s)
+	for time.Now().Before(deadline) {
+		m.pipesMut.RLock()
+		n := len(m.pipes)
+		m.pipesMut.RUnlock()
+		if n == 0 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if saved := store.sent(); saved != 59 {
+		t.Fatalf("sent %d saved, want 59 (one failed)", saved)
+	}
+}
+
+// The scan and the pipe's end each save the sends since the last save, so
+// none is counted twice or lost.
+func TestSentCountsSavedOnce(t *testing.T) {
+	store := &mockStore{}
+	m := newTestManager(store, mockMessenger{})
+	p, err := m.newPipe(newTestCampaign(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := store.sent
+
+	p.sent.Store(5)
+	if _, err := m.denmaNextCampaigns(); err != nil || saved() != 5 {
+		t.Fatalf("after a scan: %d saved (%v), want 5", saved(), err)
+	}
+	p.sent.Add(2)
+	if err := p.denmaSaveCounts(); err != nil || saved() != 7 {
+		t.Fatalf("after the pipe's save: %d saved (%v), want 7", saved(), err)
+	}
+	if _, err := m.denmaNextCampaigns(); err != nil || saved() != 7 {
+		t.Fatalf("a scan after the pipe's save: %d saved (%v), want still 7", saved(), err)
+	}
+
+	const n = 20000
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < n; i++ {
+			p.sent.Add(1)
+		}
+		close(done)
+	}()
+	for scanning := true; scanning; {
+		select {
+		case <-done:
+			scanning = false
+		default:
+			_, _ = m.denmaNextCampaigns()
+		}
+	}
+	_ = p.denmaSaveCounts()
+	if got := saved(); got != 7+n {
+		t.Fatalf("with scans while sending: %d saved, want %d", got, 7+n)
 	}
 }
 
@@ -494,8 +562,8 @@ func TestRetryRunOnly(t *testing.T) {
 	if len(store.gotCursors) != 0 || fmt.Sprint(store.retryAll) != "[false false]" {
 		t.Fatalf("main fetches %v, retry fetches %v; want none, and temporary ones only", store.gotCursors, store.retryAll)
 	}
-	if fmt.Sprint(store.retrySent) != "[3]" || p.sent.Load() != 1 {
-		t.Fatalf("retries sent %v (sent %d), want [3]", store.retrySent, p.sent.Load())
+	if fmt.Sprint(store.retrySent) != "[3]" || store.sent() != 1 {
+		t.Fatalf("retries sent %v (sent %d), want [3]", store.retrySent, store.sent())
 	}
 	if p.lastID.Load() != 8 {
 		t.Fatalf("checkpoint %d, want 8 (a retry doesn't move it)", p.lastID.Load())
@@ -543,8 +611,8 @@ func TestDailyWaitSkips(t *testing.T) {
 	<-stopped
 	p.wg.Done()
 	time.Sleep(20 * time.Millisecond)
-	if p.sent.Load() != 0 || p.lastID.Load() != 0 || len(store.failures) != 0 {
-		t.Fatalf("sent %d, checkpoint %d, failures %v; want it skipped, not sent or failed", p.sent.Load(), p.lastID.Load(), store.failures)
+	if p.sent.Load()+store.sent() != 0 || p.lastID.Load() != 0 || len(store.failures) != 0 {
+		t.Fatalf("sent %d, checkpoint %d, failures %v; want it skipped, not sent or failed", p.sent.Load()+store.sent(), p.lastID.Load(), store.failures)
 	}
 }
 
@@ -575,7 +643,7 @@ func TestPaceWaitSkips(t *testing.T) {
 	<-stopped
 	p.wg.Done()
 	time.Sleep(20 * time.Millisecond)
-	if p.sent.Load() != 0 || p.lastID.Load() != 0 || len(store.failures) != 0 {
-		t.Fatalf("sent %d, checkpoint %d, failures %v; want it skipped, not sent or failed", p.sent.Load(), p.lastID.Load(), store.failures)
+	if p.sent.Load()+store.sent() != 0 || p.lastID.Load() != 0 || len(store.failures) != 0 {
+		t.Fatalf("sent %d, checkpoint %d, failures %v; want it skipped, not sent or failed", p.sent.Load()+store.sent(), p.lastID.Load(), store.failures)
 	}
 }

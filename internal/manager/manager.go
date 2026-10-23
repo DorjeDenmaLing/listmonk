@@ -94,6 +94,8 @@ type Manager struct {
 	pipes    map[int]*pipe
 	pipesMut sync.RWMutex
 
+	denmaCountsMut sync.Mutex // denma: the sent counts' saves, one at a time (denma.go)
+
 	tpls    map[int]*models.Template
 	tplsMut sync.RWMutex
 
@@ -467,8 +469,7 @@ func (m *Manager) scanCampaigns(tick time.Duration) {
 		if m.scanStopped() { // denma: manager/denma.go
 			return
 		}
-		ids, counts, lastIDs := m.getCurrentCampaigns() // denma: and their checkpoints (upstream PR #3222)
-		campaigns, err := m.store.NextCampaigns(ids, counts, lastIDs)
+		campaigns, err := m.denmaNextCampaigns() // denma: denma.go
 		if err != nil {
 			m.log.Printf("error fetching campaigns: %v", err)
 			continue
@@ -644,8 +645,7 @@ func (m *Manager) getCurrentCampaigns() ([]int64, []int64, []int64) {
 
 		// Get the sent counts for campaigns and reset them to 0
 		// as in the database, they're stored cumulatively (sent += $newSent).
-		counts = append(counts, p.sent.Load())
-		p.sent.Store(0)
+		counts = append(counts, p.sent.Swap(0))           // denma: in one step
 		lastIDs = append(lastIDs, int64(p.lastID.Load())) // denma
 	}
 

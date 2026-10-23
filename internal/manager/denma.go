@@ -80,6 +80,23 @@ func (p *pipe) denmaFinished(subID int) {
 	}
 }
 
+// denmaNextCampaigns is the campaign scan's NextCampaigns, which saves the
+// running campaigns' sent counts and checkpoints.
+func (m *Manager) denmaNextCampaigns() ([]*models.Campaign, error) {
+	m.denmaCountsMut.Lock()
+	defer m.denmaCountsMut.Unlock()
+	ids, counts, lastIDs := m.getCurrentCampaigns()
+	return m.store.NextCampaigns(ids, counts, lastIDs)
+}
+
+// denmaSaveCounts saves a pipe's sent count since the last save, and its
+// checkpoint, when it ends.
+func (p *pipe) denmaSaveCounts() error {
+	p.m.denmaCountsMut.Lock()
+	defer p.m.denmaCountsMut.Unlock()
+	return p.m.store.UpdateCampaignCounts(p.camp.ID, 0, int(p.sent.Swap(0)), int(p.lastID.Load()))
+}
+
 // DenmaStop stops the manager for a shutdown: it picks up no more campaigns,
 // and each running campaign stops where it is and saves its progress (its
 // pipe's cleanup: the sent count and the exact checkpoint), keeping its

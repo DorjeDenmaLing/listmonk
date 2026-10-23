@@ -245,7 +245,7 @@ func (p *pipe) cleanup() {
 	}()
 
 	// Update campaign's 'sent count.
-	if err := p.m.store.UpdateCampaignCounts(p.camp.ID, 0, int(p.sent.Load()), int(p.lastID.Load())); err != nil {
+	if err := p.denmaSaveCounts(); err != nil { // denma: denma.go
 		p.m.log.Printf("error updating campaign counts (%s): %v", p.camp.Name, err)
 	}
 
