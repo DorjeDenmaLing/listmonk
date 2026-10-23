@@ -117,6 +117,10 @@ type Campaign struct {
 	DenmaRetryAt null.Time `db:"denma_retry_at" json:"-"`
 	DenmaFailed  int       `db:"denma_failed" json:"denma_failed"`
 
+	// denma: how many people opened and clicked it, for the campaigns list
+	// (cmd/denma_campaign_people.go); nil if not counted.
+	DenmaPeople *DenmaCampaignPeople `db:"-" json:"-"`
+
 	// Pseudofield for getting the total number of subscribers
 	// in searches and queries.
 	Total int `db:"total" json:"-"`

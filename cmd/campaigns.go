@@ -238,6 +238,7 @@ func (a *App) getViewCampaigns(c echo.Context) ([]models.Campaign, models.PagePr
 		res[i].Body = ""
 		res[i].BodySource.Valid = false
 	}
+	a.denmaCampaignPeople(res) // denma: cmd/denma_campaign_people.go
 
 	return res, models.NewPageProps(q, total, pg.Page, pg.PerPage), nil
 }
