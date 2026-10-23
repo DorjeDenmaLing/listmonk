@@ -212,7 +212,7 @@ func main() {
 	)
 
 	// Star the update checker.
-	if ko.Bool("app.check_updates") {
+	if false && ko.Bool("app.check_updates") { // denma: no update checks: upstream's releases aren't the fork's
 		go app.checkUpdates(versionString, time.Hour*24)
 	}
 
