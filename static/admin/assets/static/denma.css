@@ -251,22 +251,66 @@ svg.denma-logo {
     --badge-bg: var(--tone-red-bg);
 }
 
-/* Oat's (hidden) tooltips are one unwrapped line and still take up width, so
-   the long figure descriptions widened the page on phones. Wrap them, and
-   clip sideways so one can't push the page wider. */
-.denma-dash {
-    overflow-x: clip;
+/* ---- Tables wider than their card scroll sideways in it, not the page ---- */
+.table-wrapper {
+    overflow-x: auto;
+}
+
+/* The page and fieldsets shrink to the window rather than to their widest
+   content (grid items and fieldsets don't by default), and long addresses
+   wrap. */
+#app > main,
+fieldset {
+    min-width: 0;
+}
+
+.denma-signup-help code {
+    overflow-wrap: anywhere;
+}
+
+/* ---- Tooltips (js/denma-tooltip.js), in place of Oat's ---- */
+[data-tooltip]::before,
+[data-tooltip]::after {
+    content: none !important;
+}
+
+.denma-tip {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    width: max-content;
+    max-width: min(20rem, calc(100vw - 16px));
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-medium);
+    background: var(--foreground);
+    color: var(--background);
+    font-size: var(--text-7);
+    line-height: 1.4;
+    white-space: pre-line;
+    overflow: visible;
+    pointer-events: none;
+
+    /* The arrow, at the element's middle. */
+    &::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: var(--denma-tip-arrow, 50%);
+        translate: -50% 0;
+        border: 6px solid transparent;
+        border-top-color: var(--foreground);
+    }
+
+    &.below::after {
+        top: auto;
+        bottom: 100%;
+        border-top-color: transparent;
+        border-bottom-color: var(--foreground);
+    }
 }
 
 .denma-stats {
-    [data-tooltip]::after {
-        width: max-content;
-        max-width: min(18rem, 70vw);
-        white-space: normal;
-        line-height: 1.35;
-        text-align: left;
-    }
-
     .denma-stat-head {
         display: flex;
         flex-wrap: wrap;
@@ -766,9 +810,6 @@ section.analytics {
   a {
     font-weight: 500;
   }
-}
-.denma-hub .denma-hub-centers .table-wrapper {
-  overflow-x: auto;
 }
 .denma-centers .denma-invite {
   flex: 1;
@@ -1499,8 +1540,6 @@ section.analytics {
 
   > main {
     padding: 30px 30px 30px 45px;
-    /* Oat's hidden tooltips near the right edge still take up width. */
-    overflow-x: clip;
 
     > .container {
       max-width: none;
@@ -1526,8 +1565,6 @@ section.analytics {
   color: var(--denma-nav-text);
   font-size: var(--text-7);
   line-height: 1.5;
-  /* Oat's hidden tooltips (the superadmin notice's) still take up width. */
-  overflow-x: clip;
 
   a {
     text-decoration: none;

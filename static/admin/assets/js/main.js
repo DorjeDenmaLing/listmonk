@@ -1,5 +1,6 @@
 import Alpine from 'alpinejs';
 import '@knadh/oat';
+import './denma-tooltip.js'; // denma: tooltips that aren't cut off
 import { I18n } from './i18n.js';
 import { register as registerTable } from './table.js';
 import * as u from './utils.js';

@@ -25,13 +25,13 @@
 					{{- if $s.HasHostMem }}
 					<div class="vstack gap-1">
 						<dt class="hstack justify-between">System memory<span class="text-light">{{ FormatNumber (int $s.MemUsedMB) }} / {{ FormatNumber (int $s.MemTotalMB) }} MB</span></dt>
-						<dd><meter min="0" max="100" value="{{ $s.MemPct }}" optimum="30" low="70" high="90" title="{{ $s.MemPct }}%"></meter></dd>
+						<dd><meter min="0" max="100" value="{{ $s.MemPct }}" optimum="30" low="70" high="90" title="{{ $s.MemPct }}% of the memory in use"></meter></dd>
 					</div>
 					{{- end }}
 					{{- if $s.HasLoad }}
 					<div class="vstack gap-1">
 						<dt class="hstack justify-between">CPU load<span class="text-light">{{ $s.Load1 }} / {{ $s.Load5 }} / {{ $s.Load15 }}</span></dt>
-						<dd><meter min="0" max="100" value="{{ $s.LoadPct }}" optimum="30" low="70" high="90" title="{{ $s.LoadPct }}%"></meter></dd>
+						<dd><meter min="0" max="100" value="{{ $s.LoadPct }}" optimum="30" low="70" high="90" title="{{ $s.LoadPct }}% of the CPUs busy, over the last minute"></meter></dd>
 					</div>
 					{{- end }}
 					<div class="hstack justify-between"><dt>CPU cores</dt><dd class="text-light">{{ $s.NumCPU }}</dd></div>
@@ -71,7 +71,7 @@
 					{{- if .ConnsMax }}
 					<div class="vstack gap-1" data-testid="system-connections">
 						<dt class="hstack justify-between">Connections<span class="text-light">{{ .ConnsUsed }} / {{ .ConnsMax }}</span></dt>
-						<dd><meter min="0" max="100" value="{{ .ConnsPct }}" optimum="30" low="70" high="90" title="{{ .ConnsPct }}%"></meter></dd>
+						<dd><meter min="0" max="100" value="{{ .ConnsPct }}" optimum="30" low="70" high="90" title="{{ .ConnsPct }}% of the connections Postgres allows"></meter></dd>
 					</div>
 					{{- end }}
 					<div class="hstack justify-between"><dt>App pools</dt><dd class="text-light">{{ .PoolOpen }} open, {{ .PoolInUse }} in use (hub + {{ sub .PoolApps 1 }} centers, up to {{ .PoolMaxEach }} each)</dd></div>
@@ -111,7 +111,7 @@
 					{{- if .DiskTotal }}
 					<div class="vstack gap-1">
 						<dt class="hstack justify-between">Disk<span class="text-light">{{ .DiskUsed }} / {{ .DiskTotal }}, {{ .DiskFree }} free</span></dt>
-						<dd><meter min="0" max="100" value="{{ .DiskPct }}" optimum="30" low="70" high="90" title="{{ .DiskPct }}%"></meter></dd>
+						<dd><meter min="0" max="100" value="{{ .DiskPct }}" optimum="30" low="70" high="90" title="{{ .DiskPct }}% of the disk used"></meter></dd>
 					</div>
 					{{- end }}
 					{{- if .Largest }}
