@@ -7,7 +7,8 @@
 	permissions are kept; Media and Analytics keep their page IDs.
 
 	In the hub (superadmins): Dashboard, Centers, People, Sending domains,
-	Analytics, Activity, Users, Settings and System. In a center: listmonk's items and ours; its settings are the
+	Analytics, Activity, Media (its own, for its branding),
+	Users, Settings and System. In a center: listmonk's items and ours; its settings are the
 	hub's, and it has Activity (its own log) and Config, with General (its own
 	details) and Webhooks (cmd/denma_center.go). Superadmins go back to the hub with the top
 	bar's button.
@@ -43,6 +44,9 @@
 		</li>
 		<li>
 			<a href="{{ URI "/admin/activity" }}" {{ IsNav $p "denma.activity" }} data-cy="activity">{{ template "denma-icon" "history" }}<span>Activity</span></a>
+		</li>
+		<li>
+			<a href="{{ URI "/admin/campaigns/media" }}" {{ IsNav $p "campaigns.media" }} data-cy="media">{{ template "denma-icon" "image-outline" }}<span>{{ .L.T "menu.media" }}</span></a>
 		</li>
 		{{- end }}
 		{{- else }}

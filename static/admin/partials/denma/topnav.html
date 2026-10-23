@@ -59,20 +59,57 @@
 {{- if DenmaIsHub }}
 <fieldset class="card" data-keywords="admin logo top bar nav navigation branding icon">
 	<legend>Admin logo</legend>
-	<label data-field>
-		Logo
-		<input name="denma.admin_logo_url" type="url" pattern="https?://.*" maxlength="300"
-			placeholder="https://example.org/logo.png" x-model="form['denma.admin_logo_url']" data-testid="admin-logo" />
-		<small data-hint>Shown in place of listmonk's logo at the top left of the admin, in the hub and every center. Empty for listmonk's. About 32 pixels high shows best; it doesn't change with the dark theme, so pick one that reads on both.</small>
-	</label>
-	<label data-field>
-		Icon for narrow screens
-		<input name="denma.admin_icon_url" type="url" pattern="https?://.*" maxlength="300"
-			placeholder="https://example.org/icon.png" x-model="form['denma.admin_icon_url']" data-testid="admin-icon" />
-		<small data-hint>A small square version, shown instead of the logo on narrow screens. Empty to use the logo there too.</small>
-	</label>
+	{{ template "denma-image-field" (dict "Key" "denma.admin_logo_url" "Kind" "logo" "U" .Data.Profile "TestID" "admin-logo"
+		"Label" "Logo" "Placeholder" "https://example.org/logo.png"
+		"Hint" "From Media, or an image's address. Shown in place of listmonk's logo at the top left of the admin, in the hub and every center. Empty for listmonk's. About 32 pixels high shows best; it doesn't change with the dark theme, so pick one that reads on both.") }}
+	{{ template "denma-image-field" (dict "Key" "denma.admin_icon_url" "Kind" "favicon" "U" .Data.Profile "TestID" "admin-icon"
+		"Label" "Icon for narrow screens" "Placeholder" "https://example.org/icon.png"
+		"Hint" "A small square version, shown instead of the logo on narrow screens. Empty to use the logo there too.") }}
 </fieldset>
+{{- if Can .Data.Profile "media:get" }}
+<dialog id="denma-media-picker" class="media-picker-modal" data-src="{{ URI "/admin/campaigns/media/fragment" }}">
+	<div class="dialog-card">
+		<header class="dialog-head hstack justify-between">
+			<h4 class="dialog-title">{{ .L.T "media.title" }}</h4>
+		</header>
+		<section class="dialog-body">
+			<iframe title="{{ .L.T "media.title" }}"></iframe>
+		</section>
+		<footer class="dialog-foot align-right">
+			<button type="button" class="outline" autofocus @click="$el.closest('dialog').close()">{{ .L.T "globals.buttons.close" }}</button>
+		</footer>
+	</div>
+</dialog>
 {{- end }}
+{{- end }}
+{{ end }}
+
+{{/* The hub's own logo and favicon (Settings -> General, in place of
+	listmonk's fields), with Media. */}}
+{{ define "denma-hub-images" }}
+{{ template "denma-image-field" (dict "Key" "app.logo_url" "Kind" "logo" "U" .Data.Profile
+	"Label" (.L.T "settings.general.logoURL") "Placeholder" "https://listmonk.yoursite.com/logo.png" "Hint" (.L.T "settings.general.logoURLHelp")) }}
+{{ template "denma-image-field" (dict "Key" "app.favicon_url" "Kind" "favicon" "U" .Data.Profile
+	"Label" (.L.T "settings.general.faviconURL") "Placeholder" "https://listmonk.yoursite.com/favicon.png" "Hint" (.L.T "settings.general.faviconURLHelp")) }}
+{{ end }}
+
+{{/* An image's field in the hub's settings, as a center's Config page has
+	them (views/denma-center.html): its address, a Media button picking from
+	the hub's Media (cmd/denma_hubmedia.go) and the image. The dialog is
+	denma-admin-logo-settings'. Kind is logo or favicon (its size). */}}
+{{ define "denma-image-field" }}
+<label data-field>
+	{{ .Label }}
+	<div class="hstack gap-3 denma-center-image">
+		<input name="{{ .Key }}" type="url" pattern="https?://.*" maxlength="300" placeholder="{{ .Placeholder }}"
+			x-model="form['{{ .Key }}']"{{ with .TestID }} data-testid="{{ . }}"{{ end }} />
+		{{- if and DenmaIsHub (Can .U "media:get") }}
+		<button type="button" class="outline" @click="$denmaPickMedia((url) => { form['{{ .Key }}'] = url })" data-testid="media-{{ .Key }}">{{ Icon "image" }} Media</button>
+		{{- end }}
+		<template x-if="form['{{ .Key }}']"><img :src="form['{{ .Key }}']" alt="{{ .Label }} preview" class="denma-center-{{ .Kind }}" /></template>
+	</div>
+	<small data-hint>{{ .Hint }}</small>
+</label>
 {{ end }}
 
 {{/* A user's round avatar: their picture, or their username's first letter. */}}

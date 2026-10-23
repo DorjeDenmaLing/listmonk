@@ -878,24 +878,23 @@ svg.denma-logo {
   }
 }
 
-/* A center's Config page (views/denma-center.html). */
-.denma-center-form {
-  .denma-center-image input {
-    flex: 1;
-    min-width: 0;
-  }
+/* An image's field with Media: a center's Config page (views/denma-center.html)
+   and the hub's Settings -> General (partials/denma/topnav.html). */
+.denma-center-image input {
+  flex: 1;
+  min-width: 0;
+}
 
-  .denma-center-logo {
-    max-height: 2.5rem;
-    max-width: 10rem;
-    object-fit: contain;
-  }
+.denma-center-logo {
+  max-height: 2.5rem;
+  max-width: 10rem;
+  object-fit: contain;
+}
 
-  .denma-center-favicon {
-    width: 1.5rem;
-    height: 1.5rem;
-    object-fit: contain;
-  }
+.denma-center-favicon {
+  width: 1.5rem;
+  height: 1.5rem;
+  object-fit: contain;
 }
 
 /* Config -> Webhooks: the sign-up webhooks (cmd/denma_signup.go). */

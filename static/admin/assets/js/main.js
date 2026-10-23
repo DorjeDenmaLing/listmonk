@@ -4,6 +4,7 @@ import { I18n } from './i18n.js';
 import { register as registerTable } from './table.js';
 import * as u from './utils.js';
 import './denma-place.js'; // denma: API requests say the page's center
+import './denma-media-pick.js'; // denma: $denmaPickMedia, Media for any field
 
 // ==============================
 // Private constants.

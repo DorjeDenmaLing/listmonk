@@ -266,6 +266,7 @@ func denmaUploadsInfo(base *App, names map[string]string, reg []denmaCenterRef) 
 	for _, r := range reg {
 		slugNames[r.Slug] = r.Name
 	}
+	slugNames[denmaHubMediaDir] = "The hub" // its own media (cmd/denma_hubmedia.go)
 
 	type usage struct {
 		total int64

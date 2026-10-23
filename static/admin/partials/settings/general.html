@@ -14,6 +14,7 @@
 			<small data-hint>{{ .L.T "settings.general.rootURLHelp" }}</small>
 		</label>
 
+		{{- if DenmaIsHub }}{{ template "denma-hub-images" . }}{{ else }}{{/* denma: with the hub's Media, partials/denma/topnav.html */}}
 		<label data-field>
 			{{ .L.T "settings.general.logoURL" }}
 			<input name="app.logo_url" type="url" pattern="https?://.*" maxlength="300"
@@ -27,6 +28,7 @@
 				placeholder="https://listmonk.yoursite.com/favicon.png" x-model="form['app.favicon_url']" />
 			<small data-hint>{{ .L.T "settings.general.faviconURLHelp" }}</small>
 		</label>
+		{{- end }}
 		<div data-field>
 			<label for="app-lang">{{ .L.T "settings.general.language" }}</label>
 			<select id="app-lang" name="app.lang" x-model="form['app.lang']">

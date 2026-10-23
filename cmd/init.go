@@ -814,6 +814,7 @@ func initMediaStore(ko *koanf.Koanf) media.Store {
 	case "s3":
 		var o s3.Opt
 		ko.Unmarshal("upload.s3", &o)
+		denmaHubMediaS3(ko, &o) // denma: the hub's own folder (cmd/denma_hubmedia.go)
 		o.RootURL = ko.String("app.root_url")
 
 		up, err := s3.NewS3Store(o)
@@ -830,6 +831,7 @@ func initMediaStore(ko *koanf.Koanf) media.Store {
 		o.RootURL = ko.String("app.root_url")
 		o.UploadPath = filepath.Clean(o.UploadPath)
 		o.UploadURI = filepath.Clean(o.UploadURI)
+		denmaHubMediaFS(ko, &o) // denma: the hub's own folder (cmd/denma_hubmedia.go)
 		up, err := filesystem.New(o)
 		if err != nil {
 			lo.Fatalf("error initializing filesystem upload provider %s", err)

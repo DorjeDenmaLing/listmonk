@@ -284,7 +284,7 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 					}
 				}
 				switch {
-				case !denmaHubPath(p):
+				case !denmaHubPath(p) && !denmaHubUpload(d.current(), p): // its own uploads (cmd/denma_hubmedia.go)
 					return echo.NewHTTPError(http.StatusNotFound, "not found")
 				}
 				denmaSandbox(d.current(), c.Response().Header(), p) // cmd/denma_csp.go
@@ -443,7 +443,7 @@ func denmaEveryMinute(a *App, at int, job string, fn func()) (int, error) {
 // no center content), the health check, the static files its pages use, and
 // the bounce webhooks (for every center, cmd/denma_bounces.go).
 func denmaHubPath(p string) bool {
-	if denmaCenterContent(p) {
+	if denmaCenterContent(p) && !denmaHubMediaPage(p) {
 		return false
 	}
 	for _, pre := range []string{"/admin", "/api/", "/public/", "/health", "/webhooks/"} {
@@ -455,13 +455,14 @@ func denmaHubPath(p string) bool {
 }
 
 // denmaCenterContent reports whether a path is one of a center's content
-// pages or APIs (lists, subscribers, campaigns, templates, media and the
-// rest), which the hub, having none, doesn't serve.
+// pages or APIs (lists, subscribers, campaigns, templates and the rest),
+// which the hub, having none, doesn't serve. The hub has its own Media, for
+// its branding (cmd/denma_hubmedia.go).
 func denmaCenterContent(p string) bool {
 	for _, pre := range []string{
 		"/admin/lists", "/admin/subscribers", "/admin/campaigns", "/admin/templates",
 		"/admin/calendar", "/admin/automations", "/admin/center",
-		"/api/lists", "/api/subscribers", "/api/campaigns", "/api/templates", "/api/media",
+		"/api/lists", "/api/subscribers", "/api/campaigns", "/api/templates",
 		"/api/import", "/api/bounces", "/api/tx", "/api/public", "/api/dashboard",
 		"/api/denma/automations", "/api/denma/center", "/api/denma/search", "/api/denma/stats", "/api/denma/tags",
 		"/api/denma/campaigns", "/api/denma/subscribers",
