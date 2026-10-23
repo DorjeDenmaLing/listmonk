@@ -190,6 +190,47 @@
 						<input name="from_email" maxlength="300" x-model="form.from_email" placeholder="{{ $d.FromEmail }}" />
 						<small data-hint>Empty for the center's sender.</small>
 					</label>
+
+					{{- /* denma: follow-up e-mails (cmd/denma_auto_series.go) */}}
+					<div class="vstack gap-3 denma-auto-steps" data-testid="auto-steps">
+						<template x-for="(s, i) in steps" :key="i">
+							<div class="vstack gap-3 denma-auto-step" :data-testid="`auto-step-${i + 2}`">
+								<div class="hstack justify-between">
+									<strong x-text="`Follow-up: e-mail ${i + 2}`"></strong>
+									<button type="button" class="ghost small" @click="removeStep(i)" data-testid="btn-remove-step">{{ Icon "trash-2" }} Remove</button>
+								</div>
+								<div data-field>
+									<span>Sent</span>
+									<div class="hstack gap-1">
+										<input type="number" min="1" max="525600" required x-model.number="s.wait" aria-label="Wait" />
+										<select x-model="s.unit" aria-label="Wait unit">
+											<option value="minutes">minutes</option>
+											<option value="hours">hours</option>
+											<option value="days">days</option>
+										</select>
+										<span class="text-nowrap" x-text="`after e-mail ${i + 1}`"></span>
+									</div>
+								</div>
+								<label data-field>
+									Template
+									<select required x-model.number="s.template_id" @change="onStepTemplate(s)" data-testid="select-step-template">
+										<option value="0" disabled>Choose a template…</option>
+										{{- range $d.Templates }}
+										<option value="{{ .ID }}">{{ .Name }} ({{ if eq .Type "tx" }}transactional{{ else }}visual{{ end }})</option>
+										{{- end }}
+									</select>
+								</label>
+								<label data-field>
+									Subject
+									<input maxlength="500" required x-model="s.subject" />
+								</label>
+							</div>
+						</template>
+						<div>
+							<button type="button" class="ghost small" @click="addStep" x-show="steps.length < maxSteps" data-testid="btn-add-step">{{ Icon "plus" }} Add a follow-up e-mail</button>
+						</div>
+						<small data-hint>A series: each follow-up is sent a wait after the e-mail before it. Lists and tags change only once, with the first e-mail. Before each follow-up they must still be subscribed here (not unsubscribed or blocklisted) and meet the conditions above, so "Not if they have the tag" ends their series. Turned off, the series wait; turned on again, those due go.</small>
+					</div>
 				</div>
 			</template>
 			{{- if $isNew }}
@@ -204,6 +245,15 @@
 		<fieldset class="card" x-show="form.send_email">
 			<legend>Test</legend>
 			<div class="hstack gap-3 denma-auto-test">
+				<label data-field x-show="steps.length">
+					E-mail
+					<select x-model.number="testStep" data-testid="select-test-step">
+						<option value="1">E-mail 1</option>
+						<template x-for="(s, i) in steps" :key="i">
+							<option :value="i + 2" x-text="`E-mail ${i + 2}`"></option>
+						</template>
+					</select>
+				</label>
 				<label data-field>
 					Send a test to
 					<input type="email" maxlength="200" x-model="testEmail" data-testid="test-email" />
@@ -216,10 +266,17 @@
 
 		{{- if not $isNew }}
 		<p class="text-light text-8" data-testid="auto-stats">
-			Ran for {{ $a.Runs }}{{ if $a.SendEmail }} ({{ $a.Sent }} e-mails sent, {{ $a.Clicked }} {{ if eq $a.Clicked 1 }}person{{ else }}people{{ end }} clicked a link){{ end }}{{ if $a.Failed }}, {{ $a.Failed }} failed{{ end }}{{ if $a.Skipped }}, {{ $a.Skipped }} skipped by its conditions{{ end }}.
+			Ran {{ $a.Runs }} {{ if eq $a.Runs 1 }}time{{ else }}times{{ end }}{{ if $a.SendEmail }} ({{ $a.Sent }} e-mails sent, {{ $a.Clicked }} {{ if eq $a.Clicked 1 }}person{{ else }}people{{ end }} clicked a link){{ end }}{{ if $a.Failed }}, {{ $a.Failed }} failed{{ end }}{{ if $a.Skipped }}, {{ $a.Skipped }} skipped by its conditions{{ end }}.
 			{{- if $a.ActiveSince.Valid }} For what's happened since {{ NiceDate $a.ActiveSince.Time true }}.{{ end }}
 			Each person's runs are on their Activity tab.
 		</p>
+		{{- if gt (len $d.StepStats) 1 }}
+		<ul class="text-light text-8" data-testid="auto-step-stats">
+			{{- range $d.StepStats }}
+			<li>E-mail {{ .Step }}: {{ .Sent }} sent{{ if .Waiting }}, {{ .Waiting }} waiting for it{{ end }}{{ if .Failed }}, {{ .Failed }} failed{{ end }}{{ if .Skipped }}, {{ .Skipped }} stopped before it{{ end }}.</li>
+			{{- end }}
+		</ul>
+		{{- end }}
 		{{- end }}
 	</div>
 </form>

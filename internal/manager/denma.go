@@ -185,6 +185,10 @@ func (m *Manager) DenmaSetCenterWait(wait func(stopped func() bool) bool) {
 // server that's down would otherwise fail everyone left.
 const denmaFailStreak = 20
 
+// DenmaRetryable reports whether a failed send is worth trying again
+// (denmaTemporary), for others that send.
+func DenmaRetryable(err error) bool { return denmaTemporary(err) }
+
 // denmaTemporary reports whether a failed send is worth trying again.
 func denmaTemporary(err error) bool {
 	var tp *textproto.Error

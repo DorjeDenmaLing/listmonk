@@ -1369,8 +1369,15 @@ section.analytics {
     }
   }
 
-  #auto-wait {
+  #auto-wait,
+  .denma-auto-step input[type="number"] {
     width: 5.5rem;
+  }
+
+  /* A follow-up e-mail (cmd/denma_auto_series.go). */
+  .denma-auto-step {
+    border-left: 3px solid var(--border);
+    padding-left: var(--space-4);
   }
 
   #auto-template {

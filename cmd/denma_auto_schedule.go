@@ -7,10 +7,11 @@ package main
 // and automation, so hundreds of automations and thousands of people waiting
 // stay quick: the page shows a chart of the days, the automations of the day
 // chosen, and the people of one of them only when asked, a page at a time.
-// Who ran is denma_automation_sends (the last run for each person and
-// automation); who's coming up is what denmaAutoPendingSQL finds, due when
-// their wait is over (now, if that's passed and they're still waiting: the
-// next run, or a sender's domain SES hasn't verified, or the daily limit).
+// Who ran is denma_automation_log (each step of each run); who's coming up
+// is what denmaAutoPendingSQL finds, due when their wait is over (now, if
+// that's passed and they're still waiting: the next run, or a sender's
+// domain SES hasn't verified, or the daily limit), and the follow-ups and
+// e-mails tried again that are waiting (cmd/denma_auto_series.go).
 // Whether they meet its conditions is checked when it runs. People's
 // addresses are only for users who can see all subscribers.
 
@@ -32,10 +33,15 @@ const (
 )
 
 // denmaAutoDueSQL is what's coming up (cond on a, the automation), with when
-// it's due: when the wait is over, or now if that's passed.
+// it's due: when the wait is over, or now if that's passed. A run's next
+// e-mail too.
 func denmaAutoDueSQL(cond string) string {
 	return `SELECT p.automation_id, p.subscriber_id, GREATEST(p.first_at + make_interval(mins => p.delay_minutes), NOW()) AS due
-		FROM (` + denmaAutoPendingSQL(cond) + `) p`
+		FROM (` + denmaAutoPendingSQL(cond) + `) p
+		UNION ALL
+		SELECT d.automation_id, d.subscriber_id, GREATEST(d.next_at, NOW()) AS due
+		FROM denma_automation_sends d JOIN denma_automations a ON a.id = d.automation_id
+		WHERE d.status IN ('waiting', 'retry') AND d.next_at IS NOT NULL AND a.active AND a.send_email AND ` + denmaAutoRunnableSQL + ` AND (` + cond + `)`
 }
 
 // schedQuery is a schedule request: the viewer's time zone, and an
@@ -120,12 +126,12 @@ func (a *App) DenmaAutoSchedule(c echo.Context) error {
 	var days []denmaSchedDay
 	if err := a.db.Select(&days, `
 		WITH ran AS (
-			SELECT (d.sent_at AT TIME ZONE $1)::DATE AS day,
-				COUNT(*) FILTER (WHERE d.status IN ('sent', 'done')) AS ran,
+			SELECT (d.at AT TIME ZONE $1)::DATE AS day,
+				COUNT(*) FILTER (WHERE d.status IN ('sent', 'uncertain', 'done')) AS ran,
 				COUNT(*) FILTER (WHERE d.status = 'failed') AS failed,
 				COUNT(*) FILTER (WHERE d.status = 'skipped') AS skipped
-			FROM denma_automation_sends d
-			WHERE d.sent_at >= $2 AND d.sent_at < $3 AND `+autoCond+`
+			FROM denma_automation_log d
+			WHERE d.at >= $2 AND d.at < $3 AND `+autoCond+`
 			GROUP BY 1
 		), up AS (
 			SELECT (due AT TIME ZONE $1)::DATE AS day, COUNT(*) AS upcoming
@@ -193,12 +199,12 @@ func (a *App) DenmaAutoScheduleDay(c echo.Context) error {
 	if err := a.db.Select(&groups, `
 		WITH ran AS (
 			SELECT d.automation_id AS id,
-				COUNT(*) FILTER (WHERE d.status IN ('sent', 'done')) AS ran,
-				COUNT(*) FILTER (WHERE d.status = 'sent') AS sent,
+				COUNT(*) FILTER (WHERE d.status IN ('sent', 'uncertain', 'done')) AS ran,
+				COUNT(*) FILTER (WHERE d.status IN ('sent', 'uncertain')) AS sent,
 				COUNT(*) FILTER (WHERE d.status = 'failed') AS failed,
 				COUNT(*) FILTER (WHERE d.status = 'skipped') AS skipped
-			FROM denma_automation_sends d
-			WHERE d.sent_at >= $1 AND d.sent_at < $2 AND `+autoCond+`
+			FROM denma_automation_log d
+			WHERE d.at >= $1 AND d.at < $2 AND `+autoCond+`
 			GROUP BY 1
 		), up AS (
 			SELECT automation_id AS id, COUNT(*) AS upcoming, MIN(due) AS next_at
@@ -246,7 +252,7 @@ type denmaSchedPerson struct {
 	Email  string    `db:"email" json:"email"`
 	Name   string    `db:"name" json:"name"`
 	At     time.Time `db:"at" json:"at"`
-	Status string    `db:"status" json:"status"` // upcoming, sent, done, failed, skipped
+	Status string    `db:"status" json:"status"` // upcoming, sent, uncertain, done, failed, skipped
 	Did    string    `db:"did" json:"did"`
 	Error  string    `db:"error" json:"error"`
 	Total  int       `db:"total" json:"-"`
@@ -282,10 +288,10 @@ func (a *App) DenmaAutoSchedulePeople(c echo.Context) error {
 			WHERE u.due >= $1 AND u.due < $2
 			ORDER BY u.due, s.id LIMIT $4 OFFSET $5`, args...)
 	} else {
-		err = a.db.Select(&out, `SELECT s.id, s.email, s.name, d.sent_at AS at, d.status, d.did, d.error, COUNT(*) OVER () AS total
-			FROM denma_automation_sends d JOIN subscribers s ON s.id = d.subscriber_id
-			WHERE d.automation_id = $3 AND d.sent_at >= $1 AND d.sent_at < $2
-			ORDER BY d.sent_at DESC, s.id LIMIT $4 OFFSET $5`, args...)
+		err = a.db.Select(&out, `SELECT s.id, s.email, s.name, d.at, d.status, d.did, d.error, COUNT(*) OVER () AS total
+			FROM denma_automation_log d JOIN subscribers s ON s.id = d.subscriber_id
+			WHERE d.automation_id = $3 AND d.at >= $1 AND d.at < $2
+			ORDER BY d.at DESC, d.id DESC LIMIT $4 OFFSET $5`, args...)
 	}
 	if err != nil {
 		a.log.Printf("denma: error getting an automation's people: %v", err)

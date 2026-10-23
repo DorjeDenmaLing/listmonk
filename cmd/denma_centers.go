@@ -22,6 +22,7 @@ package main
 // SIGHUP restarts the whole process.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1203,12 +1204,19 @@ func denmaRetire(old *App, original bool) {
 	if old.bounce != nil {
 		old.bounce.StopScanning() // the hub's bounce mailbox
 	}
+	jobs := context.Background()
 	if old.crons != nil {
-		old.crons.Stop()
+		jobs = old.crons.Stop()
 	}
 
 	go func() {
 		time.Sleep(5 * time.Second)
+		// Its jobs finish first: an automation's run may still be handing
+		// e-mails to the manager (cmd/denma_automations.go).
+		select {
+		case <-jobs.Done():
+		case <-time.After(10 * time.Minute):
+		}
 		for old.importer.GetStats().Status == subimporter.StatusImporting ||
 			old.importer.GetStats().Status == subimporter.StatusStopping {
 			time.Sleep(10 * time.Second)
@@ -1221,6 +1229,7 @@ func denmaRetire(old *App, original bool) {
 		for _, m := range old.messengers {
 			m.Close()
 		}
+		manager.DenmaDeliveriesWait(30 * time.Second) // automation e-mails being sent record how they went first
 		old.db.Close()
 	}()
 }

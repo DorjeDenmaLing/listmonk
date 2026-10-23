@@ -14,6 +14,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/knadh/listmonk/internal/manager"
 )
 
 // denmaStopWait is how long the managers have to save, within Docker's
@@ -34,10 +36,14 @@ func denmaAwaitShutdown(app *App) {
 			}
 		}
 		lo.Printf("denma: %v: stopping the running campaigns where they are", sig)
+		manager.DenmaStopDeliveries() // no more automation e-mails handed over (cmd/denma_auto_series.go)
 		var wg sync.WaitGroup
 		for _, a := range apps {
 			if a == nil || a.manager == nil {
 				continue
+			}
+			if a.crons != nil {
+				a.crons.Stop() // no more automation runs
 			}
 			wg.Add(1)
 			go func(a *App) {
@@ -47,6 +53,14 @@ func denmaAwaitShutdown(app *App) {
 				}
 			}(a)
 		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Automation e-mails being sent finish (cmd/denma_automations.go).
+			if !manager.DenmaDeliveriesWait(denmaStopWait) {
+				lo.Printf("denma: automation e-mails being sent didn't finish in %v; they're marked as maybe delivered", denmaStopWait)
+			}
+		}()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

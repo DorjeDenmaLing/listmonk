@@ -26,17 +26,19 @@
 	{{- if $d.DenmaRuns }}{{/* denma: cmd/denma_automations.go */}}
 		<h5 class="mt-6">Automations</h5>
 		<table data-testid="auto-runs">
-			<thead><tr><th>Automation</th><th>What it did</th><th width="20%">Last ran</th></tr></thead>
+			<thead><tr><th>Automation</th><th>What it did</th><th width="20%">When</th></tr></thead>
 			<tbody>
 				{{- range $d.DenmaRuns }}
 					<tr>
-						<td><a href="{{ URI "/admin/automations" }}/{{ .ID }}">{{ .Name }}</a>{{ if gt .Runs 1 }}<p class="text-light">{{ .Runs }} times</p>{{ end }}</td>
+						<td><a href="{{ URI "/admin/automations" }}/{{ .ID }}">{{ .Name }}</a>{{ if gt .Step 1 }}<p class="text-light">E-mail {{ .Step }}</p>{{ end }}{{ if gt .Runs 1 }}<p class="text-light">Run {{ .Runs }}</p>{{ end }}</td>
 						<td data-label="What it did">
 							{{- if eq .Status "failed" }}<span class="text-danger">Failed: {{ .Error }}</span>
+							{{- else if eq .Status "waiting" }}<span class="text-light">E-mail {{ .Step }} is due{{ with .Error }} (tried again: {{ . }}){{ end }}</span>
+							{{- else if eq .Status "uncertain" }}{{ .Did }}. <span class="text-light">{{ .Error }}</span>
 							{{- else if .Did }}{{ .Did }}
 							{{- else }}&mdash;{{ end }}
 						</td>
-						<td data-label="Last ran">{{ NiceDate .At }}</td>
+						<td data-label="When">{{ NiceDate .At }}</td>
 					</tr>
 				{{- end }}
 			</tbody>

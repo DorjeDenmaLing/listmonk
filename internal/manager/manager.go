@@ -96,6 +96,9 @@ type Manager struct {
 
 	denmaCountsMut sync.Mutex // denma: the sent counts' saves, one at a time (denma.go)
 
+	denmaCloseMu sync.RWMutex // denma: msgQ's closing, and deliveries pushed to it (denma_delivery.go)
+	denmaClosed  bool
+
 	tpls    map[int]*models.Template
 	tplsMut sync.RWMutex
 
@@ -303,6 +306,7 @@ func (m *Manager) Run() {
 	for i := 0; i < m.cfg.Concurrency; i++ {
 		go m.worker()
 	}
+	go m.denmaMsgWorker() // denma: one for arbitrary messages only (denma_delivery.go)
 
 	// Indefinitely wait on the pipe queue to fetch the next set of subscribers
 	// for any active campaigns.
@@ -454,6 +458,7 @@ func (m *Manager) StopCampaign(id int) {
 // Close closes and exits the campaign manager.
 func (m *Manager) Close() {
 	close(m.nextPipes)
+	m.denmaMarkClosed() // denma: no delivery is pushed after (denma_delivery.go)
 	close(m.msgQ)
 }
 
@@ -620,9 +625,7 @@ func (m *Manager) worker() {
 			}
 
 			// Push the message to the messenger.
-			if err := m.messengers[msg.Messenger].Push(msg); err != nil {
-				m.log.Printf("error sending message '%s': %v", msg.Subject, err)
-			}
+			m.denmaSendMsg(msg) // denma: and its delivery's outcome (denma_delivery.go)
 		}
 	}
 }

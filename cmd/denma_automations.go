@@ -267,14 +267,19 @@ DO $$ BEGIN
         CREATE TRIGGER denma_log_tags AFTER INSERT OR UPDATE OF attribs ON subscribers
             FOR EACH ROW EXECUTE FUNCTION denma_log_tags();
     END IF;
-END $$;`
+END $$;` + denmaAutoSeriesSQL // follow-ups and history (cmd/denma_auto_series.go)
+
+// denmaAutoRunnableSQL is whether automation a can run: what it sends has
+// its templates.
+const denmaAutoRunnableSQL = `(NOT a.send_email OR (a.template_id IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM denma_automation_steps st WHERE st.automation_id = a.id AND st.template_id IS NULL)))`
 
 // denmaAutoPendingSQL is what's happened to people that the active
 // automations matching cond (a condition on a, the automation) haven't run
 // for yet: one row per automation and subscriber, with the first and last of
 // those events. Each kind of trigger's events come from their own table.
 func denmaAutoPendingSQL(cond string) string {
-	on := `a.active AND (NOT a.send_email OR a.template_id IS NOT NULL) AND (` + cond + `)`
+	on := `a.active AND ` + denmaAutoRunnableSQL + ` AND (` + cond + `)`
 	return `
 WITH ev AS (
     SELECT a.id AS automation_id, a.each_time, a.delay_minutes, j.subscriber_id, j.joined_at AS at
@@ -338,6 +343,7 @@ type denmaAutomation struct {
 	RemoveTags        pq.StringArray `db:"remove_tags" json:"remove_tags"`
 	SendEmail         bool           `db:"send_email" json:"send_email"`
 	EachTime          bool           `db:"each_time" json:"each_time"`
+	Steps             denmaAutoSteps `db:"steps" json:"steps"` // its follow-ups (cmd/denma_auto_series.go)
 
 	ListIDs         pq.Int64Array  `db:"list_ids" json:"list_ids"` // its trigger's
 	ListNames       pq.StringArray `db:"list_names" json:"list_names"`
@@ -355,6 +361,7 @@ type denmaAutomation struct {
 	Clicked         int            `db:"clicked" json:"clicked"`           // people who clicked a link in its e-mail
 	LastSentAt      null.Time      `db:"last_sent_at" json:"last_sent_at"` // its last run
 	Waiting         int            `db:"waiting" json:"waiting"`
+	InSeries        int            `db:"in_series" json:"in_series"` // waiting for a follow-up, or one being sent
 }
 
 // denmaAutoListsSQL is an automation's lists of a kind, as ids or names.
@@ -373,12 +380,14 @@ SELECT a.*,
     ` + denmaAutoListsSQL("name", "remove", "remove_list_names") + `,
     COALESCE(c.name, '') AS campaign_name,
     COALESCE(t.name, '') AS template_name, COALESCE(t.type::TEXT, '') AS template_type,
-    (SELECT COUNT(*) FROM denma_automation_sends d WHERE d.automation_id = a.id AND d.status = 'sent') AS sent,
-    (SELECT COUNT(*) FROM denma_automation_sends d WHERE d.automation_id = a.id AND d.status IN ('sent', 'done')) AS runs,
-    (SELECT COUNT(*) FROM denma_automation_sends d WHERE d.automation_id = a.id AND d.status = 'failed') AS failed,
-    (SELECT COUNT(*) FROM denma_automation_sends d WHERE d.automation_id = a.id AND d.status = 'skipped') AS skipped,
+    ` + denmaAutoStepsSQL + ` AS steps,
+    (SELECT COUNT(*) FROM denma_automation_log g WHERE g.automation_id = a.id AND g.status IN ('sent', 'uncertain')) AS sent,
+    (SELECT COUNT(*) FROM denma_automation_log g WHERE g.automation_id = a.id AND g.step = 1 AND g.status IN ('sent', 'uncertain', 'done')) AS runs,
+    (SELECT COUNT(*) FROM denma_automation_log g WHERE g.automation_id = a.id AND g.status = 'failed') AS failed,
+    (SELECT COUNT(*) FROM denma_automation_log g WHERE g.automation_id = a.id AND g.status = 'skipped') AS skipped,
     (SELECT COUNT(DISTINCT k.subscriber_id) FROM denma_automation_clicks k WHERE k.automation_id = a.id) AS clicked,
-    (SELECT MAX(sent_at) FROM denma_automation_sends d WHERE d.automation_id = a.id AND d.status <> 'skipped') AS last_sent_at,
+    (SELECT MAX(g.at) FROM denma_automation_log g WHERE g.automation_id = a.id AND g.status <> 'skipped') AS last_sent_at,
+    (SELECT COUNT(*) FROM denma_automation_sends d WHERE d.automation_id = a.id AND d.status IN ('waiting', 'retry', 'queued', 'sending')) AS in_series,
     0 AS waiting
 FROM denma_automations a
 LEFT JOIN templates t ON t.id = a.template_id
@@ -405,8 +414,12 @@ type denmaAutoForm struct {
 	FromEmail         string   `json:"from_email"`
 	Active            bool     `json:"active"`
 
-	// TestEmail is where "Send a test" sends it.
+	Steps []denmaAutoStepForm `json:"steps"` // its follow-ups (cmd/denma_auto_series.go)
+
+	// TestEmail is where "Send a test" sends it, and TestStep which of its
+	// e-mails (1, or a follow-up's).
 	TestEmail string `json:"test_email"`
+	TestStep  int    `json:"test_step"`
 }
 
 // denmaAutoOption is a list, template or campaign in the automation page's
@@ -432,6 +445,7 @@ type denmaAutomationView struct {
 	Campaigns          []denmaAutoOption
 	FromEmail          string
 	IndividualTracking bool
+	StepStats          []denmaAutoStepStat // how each of its e-mails has gone (cmd/denma_auto_series.go)
 }
 
 // denmaAutomationsOn reports whether the app has automations: a center, or
@@ -550,8 +564,9 @@ func denmaMigrateSignupSetting(tx *sqlx.Tx) (bool, error) {
 
 // runAutomations runs what's due.
 func (a *App) runAutomations() {
+	a.denmaAutoRecover() // what the last process left (cmd/denma_auto_series.go)
 	var autos []denmaAutomation
-	if err := a.db.Select(&autos, denmaAutoSelectSQL+` WHERE a.active AND (NOT a.send_email OR a.template_id IS NOT NULL) ORDER BY a.id`); err != nil {
+	if err := a.db.Select(&autos, denmaAutoSelectSQL+` WHERE a.active AND `+denmaAutoRunnableSQL+` ORDER BY a.id`); err != nil {
 		a.log.Printf("denma: error getting automations: %v", err)
 		return
 	}
@@ -564,6 +579,8 @@ func (a *App) runAutomations() {
 // waiting for its sender's domain, to log it once an hour.
 var denmaAutoHeld sync.Map
 
+// runAutomation runs an automation for those whose wait is over, and sends
+// its e-mails that are due (follow-ups, and those tried again).
 func (a *App) runAutomation(auto denmaAutomation) {
 	limit := denmaAutoBatch
 	var claim, centerClaim int64 // its e-mails' claims against the daily limit and the center's cap
@@ -606,24 +623,39 @@ func (a *App) runAutomation(auto denmaAutomation) {
 			defer func() { cc.Release(centerClaim, cgot-pushed) }()
 		}
 	}
+	pushed += a.runAutoFirst(auto, limit, claim, centerClaim)
+	pushed += a.runAutoDue(auto, limit-pushed, claim, centerClaim) // cmd/denma_auto_series.go
+}
 
+// runAutoFirst runs an automation for those whose wait is over (up to
+// limit): its conditions, its lists and tags, and its first e-mail. Returns
+// how many e-mails were handed over.
+func (a *App) runAutoFirst(auto denmaAutomation, limit int, claim, centerClaim int64) int {
 	// Mark who's due as done first, so that no one is run twice for the same
-	// thing.
-	var ids []int
-	if err := a.db.Select(&ids, `
+	// thing. A run whose e-mail is being sent is left to finish.
+	var due []struct {
+		ID  int `db:"subscriber_id"`
+		Run int `db:"runs"`
+	}
+	if err := a.db.Select(&due, `
 		INSERT INTO denma_automation_sends AS d (automation_id, subscriber_id, trigger_at, status, sent_at)
 		SELECT p.automation_id, p.subscriber_id, p.last_at, 'done', NOW() FROM (`+denmaAutoPendingSQL("a.id = $1")+`) p
 		WHERE p.first_at + make_interval(mins => p.delay_minutes) <= NOW()
 		ORDER BY p.first_at LIMIT $2
 		ON CONFLICT (automation_id, subscriber_id) DO UPDATE SET trigger_at = EXCLUDED.trigger_at, status = 'done',
-			error = '', did = '', runs = d.runs + 1, sent_at = NOW()
-			WHERE d.trigger_at < EXCLUDED.trigger_at
-		RETURNING subscriber_id`, auto.ID, limit); err != nil {
+			error = '', did = '', runs = d.runs + 1, sent_at = NOW(), step = 1, next_at = NULL, retries = 0
+			WHERE d.trigger_at < EXCLUDED.trigger_at AND d.status NOT IN ('queued', 'sending')
+		RETURNING subscriber_id, runs`, auto.ID, limit); err != nil {
 		a.log.Printf("denma: error getting automation %d's subscribers: %v", auto.ID, err)
-		return
+		return 0
 	}
-	if len(ids) == 0 {
-		return
+	if len(due) == 0 {
+		return 0
+	}
+	ids := make([]int, len(due))
+	runs := map[int]int{}
+	for i, d := range due {
+		ids[i], runs[d.ID] = d.ID, d.Run
 	}
 
 	// Its conditions, now that the wait is over.
@@ -633,7 +665,7 @@ func (a *App) runAutomation(auto denmaAutomation) {
 			(cardinality($2::TEXT[]) = 0 OR COALESCE(attribs->'tags' ?| $2::TEXT[], false))
 			AND NOT COALESCE(attribs->'tags' ?| $3::TEXT[], false))`, pq.Array(ids), denmaTextArray(auto.IfTags), denmaTextArray(auto.UnlessTags)); err != nil {
 			a.autoFailed(auto.ID, ids, err)
-			return
+			return 0
 		}
 		if len(skip) > 0 {
 			a.autoDid(auto.ID, skip, "skipped", "Skipped: "+auto.Conditions()+".")
@@ -641,22 +673,21 @@ func (a *App) runAutomation(auto denmaAutomation) {
 		}
 	}
 	if len(ids) == 0 {
-		return
+		return 0
 	}
 
 	// Its lists and tags, together.
 	did, notes, err := a.autoActions(auto, ids)
 	if err != nil {
 		a.autoFailed(auto.ID, ids, err)
-		return
+		return 0
 	}
 	if !auto.SendEmail {
 		a.autoDid(auto.ID, ids, "done", did)
 		a.autoNotes(auto.ID, notes)
 		a.log.Printf("denma: automation %q ran for %d subscribers", auto.Name, len(ids))
-		return
+		return 0
 	}
-	defer a.autoNotes(auto.ID, notes)
 
 	// Its e-mail, but not to imported subscribers.
 	tpl, err := a.autoTemplate(int(auto.TemplateID.Int), true)
@@ -666,7 +697,7 @@ func (a *App) runAutomation(auto denmaAutomation) {
 	}
 	if err != nil {
 		a.autoFailed(auto.ID, ids, err)
-		return
+		return 0
 	}
 	withDid := func(s string) string {
 		if did == "" {
@@ -674,28 +705,47 @@ func (a *App) runAutomation(auto denmaAutomation) {
 		}
 		return did + "; " + s
 	}
-	var sent, imported []int
+	var send []models.Subscriber
+	var imported, sendIDs []int
 	for _, s := range subs {
 		if _, ok := s.Attribs["imported_at"]; ok {
 			imported = append(imported, s.ID)
 			continue
 		}
-		msg, err := a.autoMessage(auto, tpl, s)
-		if err == nil {
-			denmaMarkClaim(&msg, denmaClaimHeader, claim)             // counted against its claim when it goes (cmd/denma_sending.go)
-			denmaMarkClaim(&msg, denmaCenterClaimHeader, centerClaim) // cmd/denma_daily.go
-			err = a.manager.PushMessage(msg)
-		}
-		if err != nil {
-			a.autoFailed(auto.ID, []int{s.ID}, err)
-			continue
-		}
-		pushed++
-		sent = append(sent, s.ID)
+		send, sendIDs = append(send, s), append(sendIDs, s.ID)
 	}
-	a.autoDid(auto.ID, sent, "sent", withDid("sent the e-mail"))
 	a.autoDid(auto.ID, imported, "done", withDid("no e-mail (imported)"))
-	a.log.Printf("denma: automation %q ran for %d subscribers and sent %d e-mails", auto.Name, len(ids), len(sent))
+	importedNotes := map[int]string{}
+	for _, id := range imported {
+		if n, ok := notes[id]; ok {
+			importedNotes[id] = n
+		}
+	}
+	a.autoNotes(auto.ID, importedNotes)
+	if len(send) == 0 {
+		return 0
+	}
+	didFor := func(id int) string {
+		d := withDid("sent the e-mail")
+		if n, ok := notes[id]; ok {
+			d += " (" + n + ")"
+		}
+		return d
+	}
+	dids := make([]string, len(sendIDs))
+	for i, id := range sendIDs {
+		dids[i] = didFor(id)
+	}
+	// What it did is kept with the run, for a retry's history.
+	if _, err := a.db.Exec(`UPDATE denma_automation_sends d SET status = 'queued', sent_at = NOW(), did = x.did
+		FROM unnest($2::INT[], $3::TEXT[]) x(id, did) WHERE d.automation_id = $1 AND d.subscriber_id = x.id`,
+		auto.ID, pq.Array(sendIDs), pq.Array(dids)); err != nil {
+		a.autoFailed(auto.ID, sendIDs, err)
+		return 0
+	}
+	pushed := a.autoSend(auto, 1, tpl, send, runs, didFor, claim, centerClaim) // cmd/denma_auto_series.go
+	a.log.Printf("denma: automation %q ran for %d subscribers and handed over %d e-mails", auto.Name, len(ids), pushed)
+	return pushed
 }
 
 // autoActions adds and removes an automation's lists and tags for
@@ -760,23 +810,32 @@ func (a *App) autoActions(auto denmaAutomation, ids []int) (string, map[int]stri
 	return strings.Join(auto.ActionList(false), "; "), notes, nil
 }
 
-// autoNotes adds a note to what an automation did for some subscribers.
+// autoNotes adds a note to what an automation did for some subscribers (in
+// their run and its history).
 func (a *App) autoNotes(id int, notes map[int]string) {
 	for sub, note := range notes {
 		if _, err := a.db.Exec(`UPDATE denma_automation_sends SET did = did || ' (' || $3 || ')'
 			WHERE automation_id = $1 AND subscriber_id = $2 AND status <> 'failed'`, id, sub, note); err != nil {
 			a.log.Printf("denma: error recording automation %d's run: %v", id, err)
 		}
+		if _, err := a.db.Exec(`UPDATE denma_automation_log SET did = did || ' (' || $3 || ')'
+			WHERE id = (SELECT MAX(id) FROM denma_automation_log WHERE automation_id = $1 AND subscriber_id = $2) AND status <> 'failed'`,
+			id, sub, note); err != nil {
+			a.log.Printf("denma: error recording automation %d's run: %v", id, err)
+		}
 	}
 }
 
-// autoDid records what an automation did for subscribers.
+// autoDid records what an automation did for subscribers, ending their runs
+// (and in its history).
 func (a *App) autoDid(id int, subIDs []int, status, did string) {
 	if len(subIDs) == 0 {
 		return
 	}
-	if _, err := a.db.Exec(`UPDATE denma_automation_sends SET status = $3, did = $4
-		WHERE automation_id = $1 AND subscriber_id = ANY($2)`, id, pq.Array(subIDs), status, did); err != nil {
+	if _, err := a.db.Exec(`WITH d AS (UPDATE denma_automation_sends SET status = $3, did = $4, next_at = NULL
+			WHERE automation_id = $1 AND subscriber_id = ANY($2) RETURNING automation_id, subscriber_id, runs, step)
+		INSERT INTO denma_automation_log (automation_id, subscriber_id, run, step, status, did)
+		SELECT automation_id, subscriber_id, runs, step, $3, $4 FROM d`, id, pq.Array(subIDs), status, did); err != nil {
 		a.log.Printf("denma: error recording automation %d's run: %v", id, err)
 	}
 }
@@ -785,34 +844,44 @@ func (a *App) autoDid(id int, subIDs []int, status, did string) {
 // subscribers.
 func (a *App) autoFailed(id int, subIDs []int, err error) {
 	a.log.Printf("denma: error running automation %d: %v", id, err)
-	if _, e := a.db.Exec(`UPDATE denma_automation_sends SET status = 'failed', error = $3
-		WHERE automation_id = $1 AND subscriber_id = ANY($2)`, id, pq.Array(subIDs), err.Error()); e != nil {
+	if _, e := a.db.Exec(`WITH d AS (UPDATE denma_automation_sends SET status = 'failed', error = $3, next_at = NULL
+			WHERE automation_id = $1 AND subscriber_id = ANY($2) RETURNING automation_id, subscriber_id, runs, step, did)
+		INSERT INTO denma_automation_log (automation_id, subscriber_id, run, step, status, did, error)
+		SELECT automation_id, subscriber_id, runs, step, 'failed', did, $3 FROM d`, id, pq.Array(subIDs), err.Error()); e != nil {
 		a.log.Printf("denma: error recording automation %d's failure: %v", id, e)
 	}
 }
 
-// denmaAutoRun is an automation's run for a subscriber, for their Activity
-// tab.
+// denmaAutoRun is a step of an automation's run for a subscriber (or the
+// next e-mail of a series, NextAt), for their Activity tab.
 type denmaAutoRun struct {
 	ID     int       `db:"id"`
 	Name   string    `db:"name"`
 	Status string    `db:"status"`
 	Did    string    `db:"did"`
 	Error  string    `db:"error"`
-	Runs   int       `db:"runs"`
+	Runs   int       `db:"runs"` // the run's number
+	Step   int       `db:"step"`
 	At     time.Time `db:"sent_at"`
 }
 
-// denmaAutoRuns returns the automations that ran for a subscriber, latest
-// first.
+// denmaAutoRuns returns what automations did for a subscriber, latest first,
+// with their series' next e-mails (status "waiting", At when) first.
 func (a *App) denmaAutoRuns(subID int) []denmaAutoRun {
 	if !denmaAutomationsOn(a) {
 		return nil
 	}
 	var out []denmaAutoRun
-	if err := a.db.Select(&out, `SELECT a.id, a.name, d.status, d.did, d.error, d.runs, d.sent_at
-		FROM denma_automation_sends d JOIN denma_automations a ON a.id = d.automation_id
-		WHERE d.subscriber_id = $1 ORDER BY d.sent_at DESC LIMIT 100`, subID); err != nil {
+	if err := a.db.Select(&out, `SELECT * FROM (
+			SELECT a.id, a.name, 'waiting' AS status, '' AS did, CASE WHEN d.status = 'retry' THEN d.error ELSE '' END AS error, d.runs, d.step, d.next_at AS sent_at
+			FROM denma_automation_sends d JOIN denma_automations a ON a.id = d.automation_id
+			WHERE d.subscriber_id = $1 AND d.status IN ('waiting', 'retry') AND d.next_at IS NOT NULL
+			ORDER BY d.next_at) w
+		UNION ALL
+		SELECT * FROM (
+			SELECT a.id, a.name, g.status, g.did, g.error, g.run, g.step, g.at
+			FROM denma_automation_log g JOIN denma_automations a ON a.id = g.automation_id
+			WHERE g.subscriber_id = $1 ORDER BY g.at DESC, g.id DESC LIMIT 100) h`, subID); err != nil {
 		a.log.Printf("denma: error getting subscriber %d's automations: %v", subID, err)
 	}
 	return out
@@ -859,8 +928,9 @@ type denmaAutoData struct {
 // reDenmaTrackLink is listmonk's https://...@TrackLink shorthand.
 var reDenmaTrackLink = regexp.MustCompile(`(https?://[\p{L}\p{N}_\-\.~!#$&'()*+,/:;=?@\[\]%]*)@TrackLink`)
 
-// autoMessage renders an automation's e-mail to a subscriber.
-func (a *App) autoMessage(auto denmaAutomation, tpl denmaAutoTemplate, s models.Subscriber) (models.Message, error) {
+// autoMessage renders an automation's e-mail (step: 1, or a follow-up's,
+// with auto.Subject its subject) to a subscriber.
+func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate, s models.Subscriber) (models.Message, error) {
 	var (
 		root      = strings.TrimSuffix(a.urlCfg.RootURL, "/")
 		unsubURL  = fmt.Sprintf(a.urlCfg.UnsubURL, auto.UUID, s.UUID)
@@ -870,6 +940,9 @@ func (a *App) autoMessage(auto denmaAutomation, tpl denmaAutoTemplate, s models.
 		withURL   = func(u string) func(...any) string { return func(...any) string { return u } }
 		emptyHTML = func(...any) template.HTML { return "" }
 	)
+	if step > 1 {
+		viewURL += "?step=" + strconv.Itoa(step)
+	}
 	maps.Copy(funcs, a.manager.GenericTemplateFuncs())
 	// Campaign templates' functions; links are tracked, opens aren't.
 	maps.Copy(funcs, template.FuncMap{
@@ -1090,6 +1163,7 @@ func (a *App) ViewDenmaAutomation(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 		out.Title = out.Automation.Name
+		out.StepStats = a.autoStepStats(id) // cmd/denma_auto_series.go
 	}
 	if err := a.db.Select(&out.Lists, `SELECT id, name, type::TEXT, optin::TEXT, '' AS subject FROM lists ORDER BY name`); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -1225,7 +1299,7 @@ func (a *App) validateAutomation(c echo.Context, f *denmaAutoForm) error {
 
 	// Its e-mail.
 	if !f.SendEmail {
-		f.TemplateID, f.Subject, f.FromEmail = 0, "", ""
+		f.TemplateID, f.Subject, f.FromEmail, f.Steps = 0, "", "", nil
 		if len(f.AddListIDs)+len(f.RemoveListIDs)+len(f.AddTags)+len(f.RemoveTags) == 0 {
 			return bad("Choose something for it to do: lists or tags to add or remove, or an e-mail to send.")
 		}
@@ -1248,10 +1322,10 @@ func (a *App) validateAutomation(c echo.Context, f *denmaAutoForm) error {
 		return bad("Choose a template: a transactional or visual one.")
 	}
 	sample := models.Subscriber{UUID: dummyUUID, Email: "subscriber@example.org", Name: "Sample Subscriber", Attribs: models.JSON{}}
-	if _, err := a.autoMessage(denmaAutomation{UUID: dummyUUID, Name: f.Name, Subject: f.Subject}, tpl, sample); err != nil {
+	if _, err := a.autoMessage(denmaAutomation{UUID: dummyUUID, Name: f.Name, Subject: f.Subject}, 1, tpl, sample); err != nil {
 		return bad(err.Error())
 	}
-	return nil
+	return a.validateAutoSteps(f) // its follow-ups (cmd/denma_auto_series.go)
 }
 
 // denmaAutoNode is an automation in the loop check: what sets it off, and
@@ -1424,6 +1498,16 @@ func (a *App) DenmaSaveAutomation(c echo.Context) error {
 		}
 	}
 
+	if err := saveAutoSteps(tx, id, f.Steps); err != nil { // cmd/denma_auto_series.go
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if !f.SendEmail { // it sends nothing now: its series end
+		if _, err := tx.Exec(`UPDATE denma_automation_sends SET status = 'done', next_at = NULL
+			WHERE automation_id = $1 AND status IN ('waiting', 'retry')`, id); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+	}
+
 	// Its lists, of each kind.
 	for kind, ids := range map[string][]int{"trigger": f.ListIDs, "add": f.AddListIDs, "remove": f.RemoveListIDs} {
 		if _, err := tx.Exec(`DELETE FROM denma_automation_lists WHERE automation_id = $1 AND kind = $2 AND NOT (list_id = ANY($3))`,
@@ -1524,11 +1608,15 @@ func (a *App) DenmaTestAutomation(c echo.Context) error {
 	if err := a.db.Get(&found, `SELECT id, created_at, updated_at, uuid, email, name, first_name, last_name, attribs, status FROM subscribers WHERE LOWER(email) = LOWER($1)`, email); err == nil {
 		sub = found
 	}
-	tpl, err := a.autoTemplate(f.TemplateID, true)
+	step, tplID, subject := 1, f.TemplateID, f.Subject
+	if n := f.TestStep; n > 1 && n-2 < len(f.Steps) {
+		step, tplID, subject = n, f.Steps[n-2].TemplateID, f.Steps[n-2].Subject
+	}
+	tpl, err := a.autoTemplate(tplID, true)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	msg, err := a.autoMessage(denmaAutomation{UUID: dummyUUID, Name: f.Name, Subject: "[Test] " + f.Subject, FromEmail: f.FromEmail}, tpl, sub)
+	msg, err := a.autoMessage(denmaAutomation{UUID: dummyUUID, Name: f.Name, Subject: "[Test] " + subject, FromEmail: f.FromEmail}, step, tpl, sub)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
@@ -1554,11 +1642,18 @@ func (a *App) ViewDenmaAutomationMessage(c echo.Context) error {
 	if err := a.db.Get(&sub, `SELECT id, created_at, updated_at, uuid, email, name, first_name, last_name, attribs, status FROM subscribers WHERE uuid = $1`, c.Param("subUUID")); err != nil {
 		return notFound()
 	}
-	tpl, err := a.autoTemplate(int(auto.TemplateID.Int), false)
+	step, _ := strconv.Atoi(c.QueryParam("step"))
+	step = max(step, 1)
+	tplID, subject, ok := auto.stepEmail(step) // cmd/denma_auto_series.go
+	if !ok {
+		return notFound()
+	}
+	tpl, err := a.autoTemplate(tplID, false)
 	if err != nil {
 		return notFound()
 	}
-	msg, err := a.autoMessage(auto, tpl, sub)
+	auto.Subject = subject
+	msg, err := a.autoMessage(auto, step, tpl, sub)
 	if err != nil {
 		return notFound()
 	}
@@ -1586,6 +1681,11 @@ func (d denmaAutomation) Broken() string {
 		return "Its campaign was deleted."
 	case d.SendEmail && !d.TemplateID.Valid:
 		return "Its template was deleted."
+	}
+	for _, s := range d.Steps {
+		if !s.TemplateID.Valid {
+			return fmt.Sprintf("E-mail %d's template was deleted.", s.Step)
+		}
 	}
 	return ""
 }
@@ -1656,7 +1756,15 @@ func (d denmaAutomation) ActionList(mail bool) []string {
 		out = append(out, "untagged "+orList(d.RemoveTags, "and"))
 	}
 	if mail && d.SendEmail {
-		out = append(out, "sent the e-mail "+d.TemplateName)
+		e := "sent the e-mail " + d.TemplateName
+		switch len(d.Steps) {
+		case 0:
+		case 1:
+			e += ", then 1 follow-up"
+		default:
+			e += fmt.Sprintf(", then %d follow-ups", len(d.Steps))
+		}
+		out = append(out, e)
 	}
 	return out
 }

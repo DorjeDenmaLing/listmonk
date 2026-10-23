@@ -47,6 +47,12 @@ function listTags(ids) {
   return (ids || []).map((id) => (window._lists || []).find((l) => l.id === id)).filter(Boolean).map((l) => new ListTag(l));
 }
 
+// A wait in minutes as a number of its largest whole unit.
+function waitUnit(mins) {
+  const unit = (mins % 1440 === 0 && 'days') || (mins % 60 === 0 && 'hours') || 'minutes';
+  return { unit, wait: mins / UNITS[unit] };
+}
+
 // An automation's page.
 function denmaAutomation() {
   const a = window._denmaAutomation || {};
@@ -54,7 +60,7 @@ function denmaAutomation() {
   const mins = a.delay_minutes || 0;
   let unit = 'now';
   if (mins) {
-    unit = (mins % 1440 === 0 && 'days') || (mins % 60 === 0 && 'hours') || 'minutes';
+    ({ unit } = waitUnit(mins));
   }
 
   return {
@@ -81,6 +87,29 @@ function denmaAutomation() {
     wait: mins ? mins / UNITS[unit] : 1,
     eachTime: a.each_time ? 'each' : 'once',
     testEmail: window._denmaTestEmail || '',
+    testStep: 1,
+    // Its follow-up e-mails (cmd/denma_auto_series.go).
+    steps: (a.steps || []).map((s) => ({
+      ...waitUnit(s.delay_minutes), template_id: s.template_id || 0, subject: s.subject,
+    })),
+    maxSteps: 10,
+
+    addStep() {
+      this.steps.push({ wait: 3, unit: 'days', template_id: 0, subject: '' });
+    },
+
+    removeStep(i) {
+      this.steps.splice(i, 1);
+      this.testStep = Math.min(this.testStep, this.steps.length + 1);
+    },
+
+    // A follow-up's transactional template has a subject; use it if there's none yet.
+    onStepTemplate(s) {
+      const t = templates.find((x) => x.id === s.template_id);
+      if (t && t.type === 'tx' && !s.subject.trim()) {
+        s.subject = t.subject;
+      }
+    },
 
     data() {
       const delay = this.unit === 'now' ? 0 : Math.round((Number(this.wait) || 0) * UNITS[this.unit]);
@@ -100,6 +129,11 @@ function denmaAutomation() {
         remove_list_ids: ids(remove),
         delay_minutes: delay,
         each_time: this.eachTime === 'each',
+        steps: this.form.send_email ? this.steps.map((s) => ({
+          delay_minutes: Math.round((Number(s.wait) || 0) * UNITS[s.unit]),
+          template_id: Number(s.template_id) || 0,
+          subject: s.subject,
+        })) : [],
       };
     },
 
@@ -170,7 +204,7 @@ function denmaAutomation() {
       if (!this.listsOK()) {
         return;
       }
-      await api('test', '/denma/automations/test', 'POST', { ...this.data(), test_email: this.testEmail });
+      await api('test', '/denma/automations/test', 'POST', { ...this.data(), test_email: this.testEmail, test_step: Number(this.testStep) });
       u.toast(`Sent a test to ${this.testEmail}.`, 'success');
     },
   };
@@ -400,6 +434,7 @@ function denmaAutoSchedule() {
       switch (p.status) {
         case 'upcoming': return '';
         case 'failed': return `failed: ${p.error}`;
+        case 'uncertain': return `${p.did}: ${p.error}`;
         case 'skipped': return p.did || 'skipped';
         default: return p.did;
       }
