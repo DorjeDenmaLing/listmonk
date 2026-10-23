@@ -439,7 +439,7 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 			return errDenmaUsernameTaken
 		}
 	}
-	ctr, err := denmaRegisterCenter(d.base.db, req.Slug, req.Name, "")
+	ctr, err := denmaRegisterCenter(d.base.db, req.Slug, req.Name)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}

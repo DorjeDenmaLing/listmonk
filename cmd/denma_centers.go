@@ -58,7 +58,7 @@ var (
 var denmaHub *denmaCenters
 
 // denmaCenterOwnSettings are a center's own settings: its address and uploads
-// folder, set when it's created, and what its admins set on its Config
+// folder, set on every load (adopt), and what its admins set on its Config
 // page. Every other setting is the hub's, for all centers: they're
 // managed in the hub's Settings only (centers don't show settings) and copied
 // to each center when it loads and when the hub's are saved.
@@ -524,45 +524,31 @@ func denmaInitRegistry(db *sqlx.DB) error {
 }
 
 // denmaSeedCenters registers centers listed as "slug:Name,slug2:Name 2" if
-// they aren't registered yet. "slug:Name:schema" registers an existing
-// install (such as DDL's, "ddl:Dorje Denma Ling:public") as a center that
-// keeps its data; it's moved into its own schema when it loads. New centers
-// are made in the hub.
+// they aren't registered yet, for dev and CI. Otherwise centers are made in
+// the hub.
 func denmaSeedCenters(db *sqlx.DB, list string) {
 	for _, item := range strings.Split(list, ",") {
-		parts := strings.SplitN(strings.TrimSpace(item), ":", 3)
-		slug, name, schema := parts[0], "", ""
-		if len(parts) > 1 {
-			name = parts[1]
-		}
-		if len(parts) > 2 {
-			schema = parts[2]
-		}
+		slug, name, _ := strings.Cut(strings.TrimSpace(item), ":")
 		if slug == "" {
 			continue
 		}
-		if _, err := denmaRegisterCenter(db, slug, name, schema); err != nil {
+		if _, err := denmaRegisterCenter(db, slug, name); err != nil {
 			lo.Printf("denma: error registering center %s: %v", slug, err)
 		}
 	}
 }
 
 // denmaRegisterCenter adds a center to the registry (it's provisioned when
-// loaded), in schema center_<slug> unless one is given. It returns the new
+// loaded), in schema center_<slug>. It returns the new
 // center, or nil if the slug or schema is taken.
-func denmaRegisterCenter(db *sqlx.DB, slug, name, schema string) (*denmaCenter, error) {
+func denmaRegisterCenter(db *sqlx.DB, slug, name string) (*denmaCenter, error) {
 	if !reDenmaSlug.MatchString(slug) || len(slug) > 50 {
 		return nil, fmt.Errorf("invalid address %q: use lowercase letters, digits and single hyphens", slug)
 	}
 	if strings.TrimSpace(name) == "" {
 		name = slug
 	}
-	if schema == "" {
-		schema = denmaSchemaName(slug)
-	}
-	if !reDenmaSchema.MatchString(schema) {
-		return nil, fmt.Errorf("invalid schema name %q", schema)
-	}
+	schema := denmaSchemaName(slug)
 	var out []*denmaCenter
 	err := db.Select(&out, `INSERT INTO denma.centers (slug, name, schema_name) VALUES ($1, $2, $3)
 		ON CONFLICT DO NOTHING RETURNING id, slug, name, schema_name`,
@@ -606,7 +592,7 @@ func (d *denmaCenters) load(c *denmaCenter) (err error) {
 
 	app := buildApp(ck, cdb, cq, false)
 	d.timings.add(2, &t)
-	// Its own uploads folder (uploads/<slug>, from provisioning), which
+	// Its own uploads folder (uploads/<slug>, set by adopt), which
 	// listmonk expects to exist.
 	if p := ck.String("upload.filesystem.upload_path"); ck.String("upload.provider") == "filesystem" && p != "" {
 		if err := os.MkdirAll(p, 0o755); err != nil {
@@ -653,9 +639,6 @@ func (d *denmaCenters) setup(c *denmaCenter) (*sqlx.DB, *koanf.Koanf, error) {
 	d.setupMu.Lock()
 	defer d.setupMu.Unlock()
 
-	if err := d.ownSchema(c); err != nil { // cmd/denma_layout.go
-		return nil, nil, err
-	}
 	ck := d.centerConfig(c)
 
 	cdb, err := denmaConnect(ck)
@@ -783,13 +766,7 @@ func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) error {
 		return err
 	}
 
-	fsPath, s3Path := denmaUploadPaths(d.base.ko, c.Slug)
-	settings := map[string]any{
-		"app.root_url":                  strings.TrimSuffix(d.current().urlCfg.RootURL, "/") + denmaCenterPath + c.Slug,
-		"app.site_name":                 c.Name,
-		"upload.filesystem.upload_path": fsPath,
-		"upload.s3.bucket_path":         s3Path,
-	}
+	settings := map[string]any{"app.site_name": c.Name}
 	for k, v := range c.initial {
 		settings[k] = v
 	}
@@ -845,19 +822,21 @@ func (d *denmaCenters) provisionRoles(db *sqlx.DB) error {
 	return nil
 }
 
-// adopt keeps a center in step with the hub on every load: its address under
-// the hub's (also for an existing install, such as DDL's, whose links move
-// from / to /c/<slug>/), its uploads in its own folder, the roles the hub
+// adopt keeps a center in step with the hub on every load: its address and
+// uploads folder under the hub's (cmd/denma_layout.go), the roles the hub
 // relies on, no Super Admins but the hub's, its users people, and the
 // features' triggers.
 func (d *denmaCenters) adopt(c *denmaCenter, db *sqlx.DB) error {
-	root := strings.TrimSuffix(d.current().urlCfg.RootURL, "/") + denmaCenterPath + c.Slug
-	if _, err := db.Exec(`UPDATE settings SET value = to_jsonb($1::text), updated_at = NOW()
-		WHERE key = 'app.root_url' AND value IS DISTINCT FROM to_jsonb($1::text)`, root); err != nil {
-		return fmt.Errorf("setting the center's address: %v", err)
-	}
-	if err := d.ownUploads(c, db); err != nil { // cmd/denma_layout.go
-		return err
+	fsPath, s3Path := denmaUploadPaths(d.base.ko, c.Slug)
+	for k, v := range map[string]string{
+		"app.root_url":                  strings.TrimSuffix(d.current().urlCfg.RootURL, "/") + denmaCenterPath + c.Slug,
+		"upload.filesystem.upload_path": fsPath,
+		"upload.s3.bucket_path":         s3Path,
+	} {
+		if _, err := db.Exec(`UPDATE settings SET value = to_jsonb($1::text), updated_at = NOW()
+			WHERE key = $2 AND value IS DISTINCT FROM to_jsonb($1::text)`, v, k); err != nil {
+			return fmt.Errorf("setting %s: %v", k, err)
+		}
 	}
 	if err := d.provisionRoles(db); err != nil {
 		return err
@@ -891,11 +870,9 @@ func denmaCryptoFuncs(db sqlx.Ext) error {
 
 // denmaPrepareHub readies the hub's own schema before listmonk checks it
 // (main.go's init()), in multi-center mode: the search path must be one schema
-// of the hub's own (db.params "search_path=hub"), never public, which may hold
-// a center (DDL's install). On the first start it creates the schema and
-// installs listmonk there, without the sample data, named Listmonk Shambhala,
-// with the settings of the install in public if there is one (DDL's), which
-// become every center's.
+// of the hub's own (db.params "search_path=hub"), never public. On the first
+// start it creates the schema and installs listmonk there, without the sample
+// data, named Listmonk Shambhala.
 func denmaPrepareHub(db *sqlx.DB) {
 	if !ko.Bool("denma.multi_center") {
 		return
@@ -935,18 +912,6 @@ func denmaPrepareHub(db *sqlx.DB) {
 	if _, err := db.Exec(`DELETE FROM campaigns; DELETE FROM subscribers; DELETE FROM lists;
 		UPDATE settings SET value = '"Listmonk Shambhala"', updated_at = NOW() WHERE key = 'app.site_name';`); err != nil {
 		lo.Fatalf("denma: error setting up the hub: %v", err)
-	}
-	var hasPublic bool
-	if err := db.Get(&hasPublic, `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'settings')`); err != nil {
-		lo.Fatalf("denma: error checking for an install in public: %v", err)
-	}
-	if hasPublic {
-		// Its settings become every center's (all but its name and version).
-		if _, err := db.Exec(`UPDATE settings h SET value = p.value, updated_at = NOW() FROM public.settings p
-			WHERE p.key = h.key AND h.key NOT IN ('app.site_name', 'migrations')`); err != nil {
-			lo.Fatalf("denma: error copying the settings from public: %v", err)
-		}
-		lo.Printf("denma: the hub's settings were copied from the install in public")
 	}
 }
 

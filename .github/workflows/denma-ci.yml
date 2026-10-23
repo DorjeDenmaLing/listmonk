@@ -1,7 +1,7 @@
 # denma: checks every push and pull request to ddl, and every deploy first
-# (denma-deploy.yml): builds the fork, vets it, runs the tests, starts it as
-# the cutover does (an install in public becoming the center DDL under the
-# hub) and checks /health/centers, and looks for known vulnerabilities.
+# (denma-deploy.yml): builds the fork, vets it, runs the tests, starts it in
+# multi-center mode (the hub and a new center, DDL) and checks
+# /health/centers, and looks for known vulnerabilities.
 name: DDL checks
 
 on:
@@ -61,13 +61,13 @@ jobs:
           sh .github/denma-build.sh --stuff "$RUNNER_TEMP/run/cmd.test"
           cd "$RUNNER_TEMP/run" && ./cmd.test -test.run 'TestDenma' -test.v
 
-      - name: Start in multi-center mode, as the cutover does
+      - name: Start in multi-center mode
         working-directory: ${{ runner.temp }}/run
         env:
           LISTMONK_app__address: 127.0.0.1:9000
           LISTMONK_denma__multi_center: "true"
           LISTMONK_db__params: search_path=hub
-          DENMA_SEED_CENTERS: "ddl:DDL Mailing List:public"
+          DENMA_SEED_CENTERS: "dorje-denma-ling:Dorje Denma Ling"
           LISTMONK_ADMIN_USER: superadmin
           LISTMONK_ADMIN_PASSWORD: ci-only-password
         run: |
@@ -79,8 +79,7 @@ jobs:
           echo
           ok=true
           curl -fsS http://127.0.0.1:9000/health/centers || ok=false
-          curl -fsS http://127.0.0.1:9000/c/ddl/health || ok=false
-          grep -q "moved center ddl" server.log || ok=false
+          curl -fsS http://127.0.0.1:9000/c/dorje-denma-ling/health || ok=false
           if [ "$ok" != true ]; then cat server.log; exit 1; fi
 
   vulnerabilities:
