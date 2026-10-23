@@ -86,6 +86,7 @@ func denmaCenterCap(mgr *manager.Manager, ko *koanf.Koanf) {
 		c.SetLimit(ko.Int("denma.daily_cap"), 0)
 		mgr.DenmaSetCenterWait(c.Wait)
 	}
+	denmaCenterWindow(mgr, ko) // and its sending hours (cmd/denma_sendwindow.go)
 }
 
 // denmaCenterClaimHeader marks an e-mail as claimed against the center's cap

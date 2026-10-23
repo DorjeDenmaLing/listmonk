@@ -7,10 +7,24 @@ import { api, urls } from '../main.js';
 import * as u from '../utils.js';
 import { denmaTagAutocomplete } from '../denma-tags-ui.js';
 
+// Every time zone the browser knows (with the center's), for its sending
+// hours (cmd/denma_sendwindow.go).
+function timeZones(cur) {
+  const all = (Intl.supportedValuesOf && Intl.supportedValuesOf('timeZone')) || [];
+  return cur && !all.includes(cur) ? [cur, ...all] : all;
+}
+
 function denmaCenter() {
   const form = { ...(window._denmaCenter || {}) };
+  form.time_zone = form.time_zone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  form.send_window = {
+    on: false, days: [0, 1, 2, 3, 4, 5, 6], from: '08:00', to: '21:00', ...(form.send_window || {}),
+  };
+  form.send_window.days = form.send_window.days || [];
   return {
     form,
+    timeZones: timeZones(form.time_zone),
+    weekDays: [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']],
     notify: (form.notify_emails || []).join('\n'),
     utm: (form.utm_domains || []).join('\n'),
     reloading: false,

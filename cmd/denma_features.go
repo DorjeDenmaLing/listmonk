@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 37
+const denmaFeaturesVersion = 38
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -74,6 +74,8 @@ var denmaFeatureDefaults = map[string]any{
 	"denma.design_template":        0,  // cmd/denma_design.go
 	"denma.daily_cap":              0,  // cmd/denma_daily.go
 	"denma.reply_to":               "", // cmd/denma_reply_to.go
+	"denma.timezone":               "", // cmd/denma_sendwindow.go
+	"denma.send_window":            denmaSendWindowDefault,
 }
 
 // features installs the features' triggers in a center (db, its schema)

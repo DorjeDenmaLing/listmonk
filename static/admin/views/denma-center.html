@@ -102,6 +102,33 @@
 				<small data-hint>The most e-mails this center sends in any 24 hours: its campaigns, automations and API e-mails. At the cap, campaigns wait and go on as the 24 hours roll on, automations wait, and the API refuses e-mails. Confirmations, password resets and notices always go. 0 is no cap{{ if not $d.Super }}; only a superadmin can change it{{ end }}.
 				Sent in the last 24 hours: {{ $d.Sending.Sent }}{{ if gt $d.Sending.Cap 0 }} of {{ $d.Sending.Cap }}{{ end }}.</small>
 			</label>
+			{{/* cmd/denma_sendwindow.go */}}
+			<div data-field data-testid="center-send-window">
+				<label class="hstack gap-1">
+					<input type="checkbox" role="switch" x-model="form.send_window.on" data-testid="switch-send-window" />
+					Send campaigns and automation e-mails only at set hours
+				</label>
+				<div class="vstack gap-3 denma-send-window" x-show="form.send_window.on">
+					<div class="hstack gap-2">
+						<span>From</span>
+						<input type="time" x-model="form.send_window.from" aria-label="From" data-testid="send-from" />
+						<span>to</span>
+						<input type="time" x-model="form.send_window.to" aria-label="To" data-testid="send-to" />
+					</div>
+					<div class="hstack gap-3" role="group" aria-label="Days">
+						<template x-for="[n, name] in weekDays" :key="n">
+							<label class="hstack gap-1"><input type="checkbox" :value="n" x-model.number="form.send_window.days" /><span x-text="name"></span></label>
+						</template>
+					</div>
+					<label data-field>
+						Time zone
+						<select x-model="form.time_zone" data-testid="time-zone">
+							<template x-for="z in timeZones" :key="z"><option :value="z" x-text="z" :selected="z === form.time_zone"></option></template>
+						</select>
+					</label>
+				</div>
+				<small data-hint>Outside these hours, campaigns wait and go on when they open, and automation e-mails wait; a campaign started outside them waits too. Confirmations, password resets, notices, tests and the API's transactional e-mails always go.</small>
+			</div>
 		</fieldset>
 
 		{{/* The design for e-mails and pages (cmd/denma_design.go). */}}

@@ -163,6 +163,13 @@ func (m *Manager) denmaMarkCounted(h textproto.MIMEHeader, waited bool) {
 	}
 }
 
+// DenmaSetWindowWait sets the wait for the manager's center's sending hours
+// (cmd/denma_sendwindow.go), as DenmaDailyWait, before the daily limit's.
+// Call it before Run.
+func (m *Manager) DenmaSetWindowWait(wait func(stopped func() bool) bool) {
+	m.denmaWindowWait = wait
+}
+
 // DenmaSetCenterWait sets the wait for the manager's center's own daily cap
 // (cmd/denma_daily.go), as DenmaDailyWait. Call it before Run.
 func (m *Manager) DenmaSetCenterWait(wait func(stopped func() bool) bool) {

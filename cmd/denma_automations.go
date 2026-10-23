@@ -570,7 +570,11 @@ func (a *App) runAutomations() {
 		a.log.Printf("denma: error getting automations: %v", err)
 		return
 	}
+	open := a.denmaSendingOpen() // the center's sending hours (cmd/denma_sendwindow.go)
 	for _, auto := range autos {
+		if auto.SendEmail && !open {
+			continue
+		}
 		a.runAutomation(auto)
 	}
 }

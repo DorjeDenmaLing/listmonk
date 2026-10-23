@@ -30,9 +30,10 @@ var denmaCenterFields = []string{
 	"app.from_email", "app.notify_emails",
 	// The features (cmd/denma_features.go).
 	"denma.unsubscribe_everywhere", "denma.plain_text_auto", "denma.utm_domains", "denma.visual_template",
-	"denma.design_template", // cmd/denma_design.go
-	"denma.daily_cap",       // superadmins only (cmd/denma_daily.go)
-	"denma.reply_to",        // cmd/denma_reply_to.go
+	"denma.design_template",               // cmd/denma_design.go
+	"denma.daily_cap",                     // superadmins only (cmd/denma_daily.go)
+	"denma.reply_to",                      // cmd/denma_reply_to.go
+	"denma.timezone", "denma.send_window", // cmd/denma_sendwindow.go
 }
 
 // denmaPermissions adds ours to listmonk's permissions (permissions.json), so
@@ -101,6 +102,9 @@ type denmaCenterForm struct {
 	DesignTemplate        int      `json:"design_template"` // cmd/denma_design.go
 
 	DailyCap int `json:"daily_cap"` // superadmins only (cmd/denma_daily.go)
+
+	TimeZone   string          `json:"time_zone"`   // cmd/denma_sendwindow.go
+	SendWindow denmaSendWindow `json:"send_window"` // its sending hours
 }
 
 var denmaFormKeys = map[string]string{
@@ -109,6 +113,7 @@ var denmaFormKeys = map[string]string{
 	"unsubscribe_everywhere": "denma.unsubscribe_everywhere", "plain_text_auto": "denma.plain_text_auto",
 	"utm_domains": "denma.utm_domains", "visual_template": "denma.visual_template",
 	"design_template": "denma.design_template", "daily_cap": "denma.daily_cap", "reply_to": "denma.reply_to",
+	"time_zone": "denma.timezone", "send_window": "denma.send_window",
 }
 
 type denmaCenterView struct {
@@ -336,6 +341,10 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	if f.DailyCap < 0 || f.DailyCap > denmaMaxDailyCap {
 		return bad(fmt.Sprintf("The daily cap has to be from 0 (no cap) to %d.", denmaMaxDailyCap))
 	}
+	f.TimeZone = strings.TrimSpace(f.TimeZone)
+	if err := f.SendWindow.check(f.TimeZone); err != nil { // cmd/denma_sendwindow.go
+		return bad(err.Error())
+	}
 	oldLogo := a.ko.String("app.logo_url")
 	// Save each setting.
 	b, _ := json.Marshal(f)
@@ -359,6 +368,11 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	// up the reload (cmd/denma_daily.go).
 	if c := denmaCenterCounter(a.ko); c != nil {
 		c.SetLimit(f.DailyCap, 0)
+	}
+	// And the sending hours (cmd/denma_sendwindow.go).
+	if slug := a.ko.String("denma.center"); slug != "" {
+		w := f.SendWindow
+		denmaWindowOf(slug).Store(&w)
 	}
 
 	// The hub's list shows the registry's name for centers that aren't running.

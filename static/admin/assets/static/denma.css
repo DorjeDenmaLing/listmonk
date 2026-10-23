@@ -2408,3 +2408,16 @@ section.templates .editor-body:has(> visual-editor) {
   border-radius: var(--radius-medium, 6px);
   background: color-mix(in srgb, var(--warning, #d97706) 12%, transparent);
 }
+
+/* A center's sending hours (views/denma-center.html, cmd/denma_sendwindow.go). */
+.denma-send-window {
+  margin-top: var(--space-3);
+
+  .hstack {
+    flex-wrap: wrap;
+  }
+
+  input[type="time"] {
+    width: auto;
+  }
+}
