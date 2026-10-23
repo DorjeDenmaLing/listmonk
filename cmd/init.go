@@ -1096,7 +1096,7 @@ func initHTTPRouter(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.Fi
 	)
 	switch {
 	case uploadProvider == "filesystem" && uploadFsURI != "":
-		srv.Static(uploadFsURI, ko.String("upload.filesystem.upload_path"))
+		srv.Static(uploadFsURI, denmaUploadDir(ko, ko.String("upload.filesystem.upload_path"))) // denma: the hub's own folder (cmd/denma_hubmedia.go)
 	case uploadProvider == "s3" && strings.HasPrefix(publicURL, "/"):
 		srv.GET(path.Join(publicURL, "/:filepath"), app.ServeS3Media)
 	}

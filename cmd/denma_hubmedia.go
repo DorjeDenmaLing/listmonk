@@ -3,9 +3,9 @@ package main
 // denma: the hub's own media, for its branding (Settings -> General: its logo
 // and favicon, and the admin's logo and icon). The hub's uploads folder holds
 // every center's (<uploads>/<slug>), so its own media go in a folder of their
-// own, <uploads>/_hub (or <bucket path>/_hub on S3), and the hub serves only
-// that one, at <upload URI>/_hub/. A slug can't have "_", so no center's
-// folder is the hub's.
+// own, <uploads>/_hub (or <bucket path>/_hub on S3), which the hub serves at
+// its upload URI as a center serves its own. A slug can't have "_", so no
+// center's folder is the hub's.
 
 import (
 	"os"
@@ -25,13 +25,21 @@ func denmaIsHubKo(ko *koanf.Koanf) bool {
 	return ko.Bool("denma.multi_center") && ko.String("denma.center") == ""
 }
 
+// denmaUploadDir is the folder an app's filesystem uploads are in and served
+// from: its own, or the hub's under the hub's uploads folder.
+func denmaUploadDir(ko *koanf.Koanf, dir string) string {
+	if denmaIsHubKo(ko) {
+		return filepath.Join(dir, denmaHubMediaDir)
+	}
+	return dir
+}
+
 // denmaHubMediaFS puts the hub's filesystem uploads in their own folder.
 func denmaHubMediaFS(ko *koanf.Koanf, o *filesystem.Opts) {
 	if !denmaIsHubKo(ko) {
 		return
 	}
-	o.UploadPath = filepath.Join(o.UploadPath, denmaHubMediaDir)
-	o.UploadURI = path.Join(o.UploadURI, denmaHubMediaDir)
+	o.UploadPath = denmaUploadDir(ko, o.UploadPath)
 	if err := os.MkdirAll(o.UploadPath, 0o755); err != nil {
 		denmaLog(ko).Printf("denma: error creating the hub's uploads folder %s: %v", o.UploadPath, err)
 	}
@@ -50,9 +58,8 @@ func denmaHubMediaPage(p string) bool {
 	return p == "/admin/campaigns/media" || strings.HasPrefix(p, "/admin/campaigns/media/")
 }
 
-// denmaHubUpload reports whether p is one of the hub's own uploads, which it
-// serves: under <upload URI>/_hub/ (filesystem), or S3's public URL when the
-// app serves it (a path).
+// denmaHubUpload reports whether p is under the hub's upload URI
+// (filesystem), or S3's public URL when the app serves it (a path).
 func denmaHubUpload(hub *App, p string) bool {
 	if hub == nil {
 		return false
@@ -60,11 +67,11 @@ func denmaHubUpload(hub *App, p string) bool {
 	var uri string
 	switch hub.ko.String("upload.provider") {
 	case "filesystem":
-		uri = path.Join("/", hub.ko.String("upload.filesystem.upload_uri"), denmaHubMediaDir)
+		uri = path.Join("/", hub.ko.String("upload.filesystem.upload_uri"))
 	case "s3":
 		if u := hub.ko.String("upload.s3.public_url"); strings.HasPrefix(u, "/") {
 			uri = path.Clean(u)
 		}
 	}
-	return uri != "" && uri != "/" && strings.HasPrefix(path.Clean(p), uri+"/")
+	return uri != "" && uri != "/" && strings.HasPrefix(p, uri+"/")
 }
