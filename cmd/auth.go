@@ -390,6 +390,7 @@ func (a *App) renderLoginPage(c echo.Context, loginErr error) error {
 		HttpOnly: true,
 		Path:     a.urlCfg.AdminPath, // denma: was "/"; the admin's root path
 		SameSite: http.SameSiteLaxMode,
+		Secure:   c.Scheme() == "https", // denma: as the session cookie
 	})
 	out.Nonce = nonce
 

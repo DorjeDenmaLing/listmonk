@@ -114,9 +114,15 @@ func denmaSandbox(app *App, h http.Header, p string) {
 			h.Set("Content-Type", "text/plain; charset=utf-8")
 		}
 	}
-	if !strings.EqualFold(path.Ext(p), ".pdf") {
-		h.Set("Content-Security-Policy", denmaSandboxPolicy)
+	if strings.EqualFold(path.Ext(p), ".pdf") {
+		return
 	}
+	if upload {
+		// An upload's forms post nowhere: no sign-in page on our domain.
+		h.Set("Content-Security-Policy", denmaSandboxPolicy+"; form-action 'none'")
+		return
+	}
+	h.Set("Content-Security-Policy", denmaSandboxPolicy)
 }
 
 // denmaUploadPath reports whether p is one of app's uploads, served by it

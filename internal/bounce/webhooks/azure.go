@@ -146,7 +146,7 @@ func (a *Azure) verifyAuth(req *http.Request) error {
 
 	// If no local credential is configured, allow webhook payloads.
 	if a.sharedSecret == "" {
-		return nil
+		return errors.New("no webhook secret is set") // denma: fails closed (biofool/listmonk#5)
 	}
 
 	if req == nil {

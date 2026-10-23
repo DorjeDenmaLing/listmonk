@@ -2,6 +2,7 @@ package subimporter
 
 import (
 	"bytes"
+	"database/sql"
 	"log"
 	"os"
 	"strings"
@@ -43,6 +44,26 @@ func (s *Session) denmaAfterImport(since time.Time) {
 		return
 	}
 	s.im.opt.AfterImport(since, s.log)
+}
+
+// DenmaFail ends a session whose file failed (LoadCSV, or its ZIP), which
+// Start would otherwise wait for forever. Its status is already failed.
+func (s *Session) DenmaFail() {
+	if !s.denmaFailed {
+		s.denmaFailed = true
+		close(s.subQueue)
+	}
+}
+
+// denmaEndFailed is Start's end for a failed file: the open batch rolled
+// back, and the after-import checks for the batches already in, but not
+// marked finished.
+func (s *Session) denmaEndFailed(tx *sql.Tx, cur int, started time.Time) {
+	if cur > 0 && tx != nil {
+		tx.Rollback()
+	}
+	s.denmaAfterImport(started)
+	s.log.Printf("import failed")
 }
 
 // DenmaUTF8 is a CSV file as UTF-8, and the encoding it was read from, or ""

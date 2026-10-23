@@ -86,6 +86,8 @@ type Session struct {
 	subQueue chan SubReq
 	log      *log.Logger
 
+	denmaFailed bool // denma: its file failed; Start ends without finishing (denma.go)
+
 	opt SessionOpt
 }
 
@@ -336,6 +338,11 @@ func (s *Session) Start() {
 		}
 	}
 
+	if s.denmaFailed { // denma: denma.go
+		s.denmaEndFailed(tx, cur, started)
+		return
+	}
+
 	// Queue's closed and there's nothing left to commit.
 	if cur == 0 {
 		s.denmaAfterImport(started) // denma
@@ -469,6 +476,7 @@ func (s *Session) LoadCSV(srcPath string, delim rune) error {
 	defer func() {
 		if failed {
 			s.im.setStatus(StatusFailed)
+			s.DenmaFail() // denma: denma.go
 		}
 	}()
 

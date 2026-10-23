@@ -636,6 +636,9 @@ func (a *App) PublicSubscription(c echo.Context) error {
 	if !a.cfg.EnablePublicSubPage {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("public.invalidFeature"))
 	}
+	if err := a.denmaPublicCaptcha(c); err != nil { // denma: as the form (cmd/denma_captcha.go)
+		return err
+	}
 
 	hasOptin, err := a.processSubForm(c)
 	if err != nil {

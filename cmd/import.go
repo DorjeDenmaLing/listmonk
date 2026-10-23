@@ -151,6 +151,7 @@ func (a *App) ImportSubscribers(c echo.Context) error {
 		// place and upload as one in the first place.
 		dir, files, err := sess.ExtractZIP(out.Name(), 1)
 		if err != nil {
+			sess.DenmaFail() // denma: ends its session (internal/subimporter/denma.go)
 			return echo.NewHTTPError(http.StatusInternalServerError,
 				a.i18n.Ts("import.errorProcessingZIP", "error", err.Error()))
 		}

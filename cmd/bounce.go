@@ -173,6 +173,7 @@ func (a *App) BounceWebhook(c echo.Context) error {
 	}
 
 	// Read the request body instead of using c.Bind() to read to save the entire raw request as meta.
+	c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 1<<20) // denma: 1 MB (SNS sends at most 256 KB)
 	rawReq, err := io.ReadAll(c.Request().Body)
 	if err != nil {
 		a.log.Printf("error reading ses notification body: %v", err)
