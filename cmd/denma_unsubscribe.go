@@ -36,10 +36,17 @@ func (a *App) denmaUnsubscribe(subUUID, campUUID string, _ bool) error {
 		return fail(err)
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`INSERT INTO denma_optouts (email_hash, kind, source)
+	res, err := tx.Exec(`INSERT INTO denma_optouts (email_hash, kind, source)
 		SELECT denma_email_hash(email), 'unsubscribed', 'unsubscribe' FROM subscribers WHERE uuid = $1
-		ON CONFLICT (email_hash) DO NOTHING`, subUUID); err != nil {
+		ON CONFLICT (email_hash) DO NOTHING`, subUUID)
+	if err != nil {
 		return fail(err)
+	}
+	// A new opt-out counts for the campaign it came from (cmd/denma_campaign_stats.go).
+	if n, _ := res.RowsAffected(); n > 0 && campUUID != "" {
+		if _, err := tx.Exec(denmaCampaignUnsubSQL, campUUID); err != nil {
+			return fail(err)
+		}
 	}
 	// listmonk's unsubscribe-by-campaign, blocklisting: every list.
 	if _, err := tx.Exec(`WITH sub AS (

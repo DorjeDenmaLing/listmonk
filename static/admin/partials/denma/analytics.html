@@ -25,7 +25,11 @@
 				<thead>
 					<tr>
 						<th>Campaign</th><th>Sent</th><th class="num">Recipients</th><th class="num">Delivered</th>
-						<th class="num">Opens</th><th class="num">Clicks</th><th class="num">Bounces</th>
+						<th class="num">Opens</th><th class="num">Clicks</th>
+						<th class="num"><abbr title="The people who clicked, as a share of those who opened">Click-to-open</abbr></th>
+						<th class="num"><abbr title="People who unsubscribed from this campaign's e-mail">Unsubscribes</abbr></th>
+						<th class="num"><abbr title="Hard and soft bounces">Bounces</abbr></th>
+						<th class="num"><abbr title="People who marked it as spam. Amazon SES reviews an account at 0.1%.">Complaints</abbr></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -37,7 +41,10 @@
 							<td class="num" x-text="r.delivered"></td>
 							{{ template "denma-rate-cell" "r.open" }}
 							{{ template "denma-rate-cell" "r.click" }}
+							<td class="num" x-text="r.cto"></td>
+							{{ template "denma-rate-cell" "r.unsub" }}
 							<td class="num" x-text="r.bounces"></td>
+							{{ template "denma-rate-cell" "r.complaint" }}
 						</tr>
 					</template>
 				</tbody>
@@ -49,7 +56,10 @@
 						<th class="num" x-text="reports.total && reports.total.delivered"></th>
 						{{ template "denma-rate-cell" "reports.total && reports.total.open" }}
 						{{ template "denma-rate-cell" "reports.total && reports.total.click" }}
+						<th class="num" x-text="reports.total && reports.total.cto"></th>
+						{{ template "denma-rate-cell" "reports.total && reports.total.unsub" }}
 						<th class="num" x-text="reports.total && reports.total.bounces"></th>
+						{{ template "denma-rate-cell" "reports.total && reports.total.complaint" }}
 					</tr>
 				</tfoot>
 			</table>

@@ -3,7 +3,7 @@
 // previous period of the same length. Campaigns count in the period they
 // started sending.
 //   Total sends        sum of campaigns' sent counts
-//   Delivery rate      (sent - bounces) / sent
+//   Delivery rate      (sent - bounces) / sent; complaints were delivered
 //   Open rate          unique openers per campaign / delivered
 //   Click rate         unique clickers per campaign / delivered
 //   Clicks per opens   unique clickers / unique openers
@@ -18,7 +18,7 @@ import * as s from '../denma-stats.js';
 // [key, label, format, higher is good, description]
 const METRICS = [
   ['sends', 'Total sends', 'count', true, 'Emails sent by campaigns that started in this period.'],
-  ['delivery', 'Delivery rate', 'pct1', true, "Sent emails that didn't bounce."],
+  ['delivery', 'Delivery rate', 'pct1', true, "Sent emails that didn't bounce. Spam complaints count as delivered."],
   ['open', 'Open rate', 'pct1', true, 'Unique people who opened, as a share of delivered emails (per campaign).'],
   ['click', 'Click rate', 'pct2', true, 'Unique people who clicked a link, as a share of delivered emails (per campaign).'],
   ['cpo', 'Clicks per unique opens', 'pct1', true, 'Unique clickers as a share of unique openers.'],

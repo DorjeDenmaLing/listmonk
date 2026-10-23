@@ -125,6 +125,19 @@ export async function perCampaign(type, ids, from) {
   return out;
 }
 
+// Campaigns' bounces (hard and soft: complaints were delivered), complaints
+// and unsubscribes (cmd/denma_campaign_stats.go), by ID, and since when
+// unsubscribes are counted.
+export async function campaignOutcomes(ids) {
+  if (!ids.length) {
+    return { since: null, byId: {} };
+  }
+  const d = await getJSON(`/denma/stats/campaigns?${ids.map((id) => `id=${id}`).join('&')}`);
+  const byId = {};
+  ((d && d.results) || []).forEach((r) => { byId[r.campaign_id] = r; });
+  return { since: d && d.unsubscribes_since ? new Date(d.unsubscribes_since) : null, byId };
+}
+
 const sumValues = (m) => Object.values(m).reduce((n, v) => n + v, 0);
 
 // Subscribers in one of the server's figures (cmd/denma_stats.go): { total,
@@ -166,7 +179,8 @@ export async function measure(campaigns, p) {
   const inPeriod = startedIn(campaigns, p);
   const tracked = inPeriod.filter(isTracked);
   const sum = (list, f) => list.reduce((n, c) => n + f(c), 0);
-  const bounced = (c) => Math.min(c.bounces || 0, c.sent);
+  const { byId } = await campaignOutcomes(inPeriod.map((c) => c.id));
+  const bounced = (c) => Math.min(byId[c.id]?.bounces || 0, c.sent);
   const sends = sum(inPeriod, (c) => c.sent);
   const bounces = sum(inPeriod, bounced);
   const trackedDelivered = sum(tracked, (c) => c.sent - bounced(c));

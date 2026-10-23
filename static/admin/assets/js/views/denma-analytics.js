@@ -1,7 +1,8 @@
 // DDL: three sections above listmonk's own charts on Campaigns -> Analytics
 // (partials/denma/analytics.html), for the dashboard's date range:
 //   Campaign reports   each campaign sent in the period, with unique opens and
-//                      clicks as a share of delivered emails
+//                      clicks, click-to-open, unsubscribes, bounces and
+//                      complaints (cmd/denma_campaign_stats.go)
 //   Audience growth    subscribers gained and lost, with a chart
 //   Mailbox providers  open and click rates per provider, to spot one sending
 //                      the newsletter to spam (its rate drops while the others
@@ -138,8 +139,9 @@ function component(opts) {
           const tracked = s.startedIn(c, p.cur).filter(s.isTracked);
           const ids = tracked.map((x) => x.id);
           const from = tracked.length ? new Date(Math.min(...tracked.map((x) => new Date(x.started_at)))) : p.cur.start;
-          return Promise.all([c, s.perCampaign('views', ids, from), s.perCampaign('clicks', ids, from)]);
-        }), ([c, opens, clicks]) => this.renderReports(c, p, opens, clicks), 'campaign reports');
+          return Promise.all([c, s.perCampaign('views', ids, from), s.perCampaign('clicks', ids, from),
+            s.campaignOutcomes(s.startedIn(c, p.cur).map((x) => x.id))]);
+        }), ([c, opens, clicks, outcomes]) => this.renderReports(c, p, opens, clicks, outcomes), 'campaign reports');
       }
 
       if (this.show.growth) {
@@ -154,24 +156,34 @@ function component(opts) {
 
     // ---- Campaign reports ----
 
-    renderReports(campaigns, p, opens, clicks) {
+    renderReports(campaigns, p, opens, clicks, outcomes) {
       const list = s.startedIn(campaigns, p.cur).sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
-      const tot = { sent: 0, bounces: 0, delivered: 0, trackedDelivered: 0, opens: 0, clicks: 0 };
-      const metric = (count, delivered, digits, tracked) => (tracked ? { pct: pct(count, delivered, digits), n: count.toLocaleString() } : null);
+      const tot = { sent: 0, bounces: 0, complaints: 0, delivered: 0, trackedDelivered: 0, opens: 0, clicks: 0, unsubs: 0, unsubDelivered: 0 };
+      const metric = (count, delivered, digits, shown = true) => (shown ? { pct: pct(count, delivered, digits), n: count.toLocaleString() } : null);
+      // Unsubscribes are counted from outcomes.since (cmd/denma_campaign_stats.go).
+      const since = outcomes.since;
+      const counted = (c) => since && new Date(c.started_at) >= since;
+      const complaints = (n, delivered) => (n > 0 ? metric(n, delivered, 2) : { pct: '0', n: '' });
 
       this.reports.rows = list.map((c) => {
-        const bounces = Math.min(c.bounces || 0, c.sent);
+        const out = outcomes.byId[c.id] || { bounces: 0, complaints: 0, unsubscribes: 0 };
+        const bounces = Math.min(out.bounces, c.sent);
         const delivered = c.sent - bounces;
         const tracked = s.isTracked(c);
         const o = opens[c.id] || 0;
         const k = clicks[c.id] || 0;
         tot.sent += c.sent;
         tot.bounces += bounces;
+        tot.complaints += out.complaints;
         tot.delivered += delivered;
         if (tracked) {
           tot.trackedDelivered += delivered;
           tot.opens += o;
           tot.clicks += k;
+        }
+        if (counted(c)) {
+          tot.unsubs += out.unsubscribes;
+          tot.unsubDelivered += delivered;
         }
         return {
           id: c.id,
@@ -183,7 +195,10 @@ function component(opts) {
           delivered: pct(delivered, c.sent, 1),
           open: metric(o, delivered, 1, tracked),
           click: metric(k, delivered, 2, tracked),
+          cto: tracked && o > 0 ? pct(k, o, 1) : '—',
+          unsub: metric(out.unsubscribes, delivered, 2, counted(c)),
           bounces: bounces.toLocaleString(),
+          complaint: complaints(out.complaints, delivered),
         };
       });
 
@@ -192,11 +207,15 @@ function component(opts) {
         count: list.length,
         sent: tot.sent.toLocaleString(),
         delivered: pct(tot.delivered, tot.sent, 1),
-        open: tracked ? { pct: pct(tot.opens, tot.trackedDelivered, 1), n: tot.opens.toLocaleString() } : null,
-        click: tracked ? { pct: pct(tot.clicks, tot.trackedDelivered, 2), n: tot.clicks.toLocaleString() } : null,
+        open: metric(tot.opens, tot.trackedDelivered, 1, tracked),
+        click: metric(tot.clicks, tot.trackedDelivered, 2, tracked),
+        cto: tracked && tot.opens > 0 ? pct(tot.clicks, tot.opens, 1) : '—',
+        unsub: metric(tot.unsubs, tot.unsubDelivered, 2, tot.unsubDelivered > 0),
         bounces: tot.bounces.toLocaleString(),
+        complaint: complaints(tot.complaints, tot.delivered),
       } : null;
-      this.reports.note = list.length ? 'Opens and clicks count unique people per campaign, as a share of delivered emails.' : '';
+      const early = since && list.some((c) => !counted(c));
+      this.reports.note = list.length ? 'Opens, clicks, unsubscribes and complaints are shares of delivered emails; opens and clicks count unique people per campaign. Click-to-open is the people who clicked, as a share of those who opened.' : '';
     },
 
     // ---- Audience growth ----

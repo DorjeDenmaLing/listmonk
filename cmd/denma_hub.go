@@ -109,7 +109,8 @@ type denmaHubCenter struct {
 // started sending; opens and clicks are unique people per campaign, from
 // campaigns sent with individual tracking (denmaTrackedCampSQL), and
 // unlinked is those campaigns' views without a subscriber; unsubscribes
-// leave out bounce removals; bounces count by when they came.
+// leave out bounce removals; bounces count by when they came; a campaign's
+// bounces leave out complaints, which were delivered.
 type denmaPeriod struct {
 	Campaigns        int `db:"campaigns" json:"campaigns"`
 	Sends            int `db:"sends" json:"sends"`
@@ -136,7 +137,7 @@ const denmaCenterInfoSQL = `SELECT
 
 const denmaPeriodSQL = `WITH camp AS (
 	SELECT c.id, c.sent,
-		LEAST((SELECT COUNT(*) FROM S.bounces b WHERE b.campaign_id = c.id), c.sent) AS bounced,
+		LEAST((SELECT COUNT(*) FROM S.bounces b WHERE b.campaign_id = c.id AND b.type <> 'complaint'), c.sent) AS bounced,
 		` + denmaTrackedCampSQL + ` AS tracked
 	FROM S.campaigns c WHERE c.started_at >= $1 AND c.started_at < $2 AND c.sent > 0
 )
