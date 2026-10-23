@@ -472,6 +472,9 @@ func (s *Session) LoadCSV(srcPath string, delim rune) error {
 		}
 	}()
 
+	if err := denmaFileToUTF8(srcPath, s.log); err != nil { // denma: denma.go
+		return err
+	}
 	f, err := os.Open(srcPath)
 	if err != nil {
 		return err

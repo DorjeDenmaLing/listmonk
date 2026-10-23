@@ -17,6 +17,9 @@
 					(<span x-text="denmaN(denmaPrev.addresses)"></span> addresses).
 				</p>
 				<p class="text-danger" role="alert" x-show="denmaPrev.error" x-text="denmaPrev.error" data-testid="preview-file-error"></p>
+				<p x-show="denmaPrev.encoding" data-testid="preview-encoding">
+					The file isn't UTF-8. It's read as <span x-text="denmaPrev.encoding"></span><span x-show="denmaPrev.encoding === 'Windows-1252'"> (what Excel on Windows saves as CSV)</span>: check that the names below look right.
+				</p>
 				<p>
 					Columns used:
 					<template x-for="c in denmaPrev.columns" :key="c"><code class="denma-tag" x-text="c"></code></template>

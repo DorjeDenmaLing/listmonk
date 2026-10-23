@@ -61,10 +61,11 @@ func initDenmaImportHandlers(g *echo.Group, a *App) {
 
 // denmaImportPreview is what an import would do.
 type denmaImportPreview struct {
-	File    string   `json:"file"`    // the CSV read (from a ZIP, its name in it)
-	Columns []string `json:"columns"` // the importer's columns found
-	Ignored []string `json:"ignored"` // the file's other columns
-	Error   string   `json:"error"`   // why it can't be imported at all
+	File     string   `json:"file"`     // the CSV read (from a ZIP, its name in it)
+	Columns  []string `json:"columns"`  // the importer's columns found
+	Ignored  []string `json:"ignored"`  // the file's other columns
+	Error    string   `json:"error"`    // why it can't be imported at all
+	Encoding string   `json:"encoding"` // what the file was read as if it isn't UTF-8 (subimporter.DenmaUTF8), or ""
 
 	Rows       int `json:"rows"`        // data rows read
 	Valid      int `json:"valid"`       // rows with an address the import takes
@@ -195,8 +196,9 @@ func (a *App) DenmaImportPreview(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
+	b, enc := subimporter.DenmaUTF8(b)
 	p, addrs, entries := denmaReadImport(b, rune(opt.Delim[0]), a.importer.ValidateFields)
-	p.File = name
+	p.File, p.Encoding = name, enc
 	p.CanAddTags = user.HasPerm("subscribers:manage")
 	if p.Error != "" || len(addrs) == 0 {
 		return c.JSON(http.StatusOK, okResp{p})
