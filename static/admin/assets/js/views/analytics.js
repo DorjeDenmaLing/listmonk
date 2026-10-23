@@ -3,6 +3,7 @@ import Chart from 'chart.js/auto';
 
 import { api } from '../main.js';
 import { denmaReplaceOptions } from '../denma-datalist.js'; // denma: a steady campaigns list
+import { denmaRenderCharts } from '../denma-campaign-charts.js'; // denma: readable, themed charts
 
 const chartColorRed = '#ee7d5b';
 const chartColors = [
@@ -235,6 +236,7 @@ function renderCharts() {
   if (!d) {
     return;
   }
+  if (denmaRenderCharts(d)) return; // denma: in place of these (denma-campaign-charts.js)
 
   const camps = d.campaigns || [];
   renderCounts('views', camps, d.views || []);

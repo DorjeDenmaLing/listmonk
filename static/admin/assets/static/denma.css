@@ -467,6 +467,114 @@ svg.denma-logo {
     }
 }
 
+/* ---- Analytics' campaign charts (js/denma-campaign-charts.js) ---- */
+section.analytics {
+    --denma-series-1: light-dark(#0055d4, #4f8ce6);
+    --denma-series-2: light-dark(#d98e00, #f2b84b);
+    --denma-series-3: light-dark(#2a9484, #4fc2b0);
+    --denma-series-4: light-dark(#e0603a, #f08a68);
+    --denma-series-5: light-dark(#7a5cc7, #a48ae8);
+    --denma-series-6: light-dark(#c2417e, #e872a8);
+    --denma-series-7: light-dark(#5b7083, #93a4b5);
+    --denma-series-8: light-dark(#7d8c12, #b5c64a);
+
+    /* Opened at the campaigns form, below the sticky top bar. */
+    form.card {
+        scroll-margin-top: calc(var(--denma-nav-height, 49px) + var(--space-4));
+    }
+
+    .chart-box,
+    .donut-container {
+        height: 300px;
+    }
+
+    .donut-container[hidden] {
+        display: none;
+    }
+
+    /* The ? after a chart's title, and what it counts. */
+    .denma-help {
+        display: inline-block;
+        margin-inline-start: var(--space-1);
+        vertical-align: middle;
+
+        > button {
+            color: var(--muted-foreground);
+
+            svg {
+                width: 16px;
+                height: 16px;
+            }
+        }
+
+        [popover] {
+            width: min(22rem, calc(100vw - 2rem));
+            padding: var(--space-3) var(--space-4);
+            font-size: var(--text-7);
+            font-weight: normal;
+            color: var(--foreground);
+
+            p {
+                margin: 0;
+            }
+
+            p + p {
+                margin-top: var(--space-2);
+            }
+        }
+    }
+
+    .denma-links {
+        td:first-child {
+            overflow-wrap: anywhere;
+        }
+
+        .num {
+            text-align: right;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+    }
+
+    @media (max-width: 768px) {
+        /* Its left edge on the screen. */
+        .denma-help [popover] {
+            left: 1rem !important;
+        }
+
+        .chart-box {
+            height: 240px;
+        }
+
+        .donut-container {
+            height: 180px;
+            margin-top: var(--space-4);
+        }
+    }
+
+    /* Narrower than a wide screen: the campaigns and the dates one under
+       the other, and the dates and View wrapping when they don't fit. */
+    @media (max-width: 1100px) {
+        form.card .row > * {
+            grid-column: 1 / -1;
+        }
+
+        form.card fieldset.group {
+            flex-wrap: wrap;
+            gap: var(--space-2);
+
+            > * {
+                flex: 1 1 12rem;
+                border-radius: var(--radius-medium);
+            }
+
+            > button {
+                flex-grow: 0;
+            }
+        }
+    }
+}
+
 /* ---- Analytics (partials/denma/analytics.html) ---- */
 .denma-stats {
     --denma-added: light-dark(#36995b, #52c290);

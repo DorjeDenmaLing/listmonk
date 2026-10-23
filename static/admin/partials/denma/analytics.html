@@ -178,3 +178,57 @@
 	<template x-if="!({{ . }})"><span>—</span></template>
 </td>
 {{ end }}
+
+{{/* A ? after a campaign chart's title (views/analytics.html), opening what
+     it counts. Takes Key (views, clicks, bounces, links) and Individual
+     (individual tracking: people counted once, as listmonk's queries do). */}}
+{{ define "denma-analytics-help" -}}
+<ot-dropdown class="denma-help">
+	<button type="button" class="ghost small icon" popovertarget="denma-help-{{ .Key }}" aria-label="What this counts" title="What this counts">{{ Icon "help-circle" }}</button>
+	<div popover id="denma-help-{{ .Key }}">
+		{{- if eq .Key "views" }}
+			{{- if .Individual }}
+			<p>People who opened the e-mail, each counted once per campaign, when they first opened it.</p>
+			{{- else }}
+			<p>Times the e-mail was opened. Individual tracking is off, so someone who opened it three times counts three times.</p>
+			{{- end }}
+			<p>An open is seen when the e-mail's images load. Mail apps that block images aren't counted, and Apple Mail loads them for most of its users whether they read it or not.</p>
+		{{- else if eq .Key "clicks" }}
+			{{- if .Individual }}
+			<p>People who clicked a link in the e-mail, each counted once per campaign, when they first clicked.</p>
+			{{- else }}
+			<p>Clicks on the e-mail's links. Individual tracking is off, so someone who clicked three times counts three times.</p>
+			{{- end }}
+		{{- else if eq .Key "bounces" }}
+			<p>E-mails that couldn't be delivered, and spam complaints: hard bounces (the address doesn't exist), soft bounces (a passing failure, such as a full mailbox) and complaints (marked as spam). Each one recorded counts.</p>
+		{{- else if eq .Key "links" }}
+			{{- if .Individual }}
+			<p>Each link in the e-mail, with how many people clicked it. Someone who clicked it more than once, or in more than one of these campaigns, counts once.</p>
+			{{- else }}
+			<p>Each link in the e-mail, with how many times it was clicked.</p>
+			{{- end }}
+		{{- end }}
+		<p>Only between the dates chosen.</p>
+	</div>
+</ot-dropdown>
+{{- end }}
+
+{{/* The links clicked, most first (views/analytics.html, in place of
+     listmonk's chart). Takes Links and Individual. */}}
+{{ define "denma-analytics-links" -}}
+<div class="table-wrapper denma-links">
+	<table>
+		<thead>
+			<tr><th>Link</th><th class="num">{{ if .Individual }}People{{ else }}Clicks{{ end }}</th></tr>
+		</thead>
+		<tbody>
+			{{- range .Links }}
+			<tr>
+				<td><a href="{{ .URL }}" target="_blank" rel="noopener noreferrer">{{ .URL }}</a></td>
+				<td class="num">{{ FormatNumber .Count }}</td>
+			</tr>
+			{{- end }}
+		</tbody>
+	</table>
+</div>
+{{- end }}

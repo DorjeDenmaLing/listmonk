@@ -50,14 +50,14 @@
 		</form>
 
 		{{- if $d.HasData }}
-			{{ template "analytics-chart" dict "Title" (.L.T "campaigns.views") "Count" $d.Counts.Views "Key" "views" }}
-			{{ template "analytics-chart" dict "Title" (.L.T "campaigns.clicks") "Count" $d.Counts.Clicks "Key" "clicks" }}
-			{{ template "analytics-chart" dict "Title" (.L.T "globals.terms.bounces") "Count" $d.Counts.Bounces "Key" "bounces" }}
+			{{ template "analytics-chart" dict "Title" (.L.T "campaigns.views") "Count" $d.Counts.Views "Key" "views" "Individual" $d.IndividualTracking }}{{/* denma: Individual, for its help */}}
+			{{ template "analytics-chart" dict "Title" (.L.T "campaigns.clicks") "Count" $d.Counts.Clicks "Key" "clicks" "Individual" $d.IndividualTracking }}{{/* denma: Individual, for its help */}}
+			{{ template "analytics-chart" dict "Title" (.L.T "globals.terms.bounces") "Count" $d.Counts.Bounces "Key" "bounces" "Individual" $d.IndividualTracking }}{{/* denma: Individual, for its help */}}
 
 			<article class="card">
-				<h4>{{ .L.T "analytics.links" }}</h4>
+				<h4>{{ .L.T "analytics.links" }}{{ template "denma-analytics-help" dict "Key" "links" "Individual" $d.IndividualTracking }}</h4>{{/* denma: help, partials/denma/analytics.html */}}
 				{{- if $d.Data.Links }}
-					<div class="chart-box"><canvas id="chart-links"></canvas></div>
+					{{ template "denma-analytics-links" dict "Links" $d.Data.Links "Individual" $d.IndividualTracking }}{{/* denma: a table, not a chart */}}
 				{{- else }}
 					{{- template "empty-state" }}
 				{{- end }}
@@ -74,7 +74,7 @@
 {{ define "analytics-chart" -}}
 {{- $key := .Key -}}
 <article class="card">
-	<h4>{{ .Title }}{{ if gt .Count 0 }} <span class="text-lighter">({{ FormatNumber .Count }})</span>{{ end }}</h4>
+	<h4>{{ .Title }}{{ if gt .Count 0 }} <span class="text-lighter">({{ FormatNumber .Count }})</span>{{ end }}{{ template "denma-analytics-help" . }}</h4>{{/* denma: help */}}
 	{{- if gt .Count 0 }}
 		<div class="row">
 			<div class="col-9"><div class="chart-box"><canvas id="chart-{{ $key }}"></canvas></div></div>
