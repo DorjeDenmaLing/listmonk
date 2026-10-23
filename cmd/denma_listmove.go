@@ -162,7 +162,7 @@ func (a *App) DenmaMoveSubscribers(c echo.Context) error {
 	}
 
 	if len(req.SubscriberIDs) > 0 {
-		if err := a.hasSubPerm(user, req.SubscriberIDs); err != nil {
+		if err := a.hasSubPerm(user, auth.PermTypeManage, req.SubscriberIDs); err != nil {
 			return err
 		}
 		res, err := a.db.Exec(denmaMoveSQL(`SELECT UNNEST($1::INT[]) AS id`, "$2", "$3", "$4", "$5"),
@@ -186,8 +186,8 @@ func (a *App) DenmaMoveSubscribers(c echo.Context) error {
 	if err := a.denmaSearch(user, &req.Search, &req.Query); err != nil {
 		return err
 	}
-	listIDs := user.GetPermittedListIDs(req.ListIDs)
-	if all, _ := user.GetPermittedLists(auth.PermTypeGet | auth.PermTypeManage); !all && len(listIDs) == 0 {
+	listIDs := user.GetPermittedListIDs(auth.PermTypeManage, req.ListIDs)
+	if all, _ := user.GetPermittedLists(auth.PermTypeManage); !all && len(listIDs) == 0 {
 		return echo.NewHTTPError(http.StatusForbidden, a.i18n.Ts("globals.messages.permissionDenied", "name", "lists"))
 	}
 	if err := a.queries.ExecSubQueryTpl(req.Search, sanitizeDenmaSQL(req.Query), denmaMoveSQL("%query%", "$5", "$6", "$7", "$8"),

@@ -392,7 +392,7 @@ func (a *App) DenmaTagSubscribers(c echo.Context) error {
 	}
 
 	if len(req.SubscriberIDs) > 0 {
-		if err := a.hasSubPerm(user, req.SubscriberIDs); err != nil {
+		if err := a.hasSubPerm(user, auth.PermTypeManage, req.SubscriberIDs); err != nil {
 			return err
 		}
 		if _, err := a.db.Exec(`UPDATE subscribers SET attribs = `+denmaTagsSet("$2", "$3")+`, updated_at = NOW() WHERE id = ANY($1::INT[])`,
@@ -414,8 +414,8 @@ func (a *App) DenmaTagSubscribers(c echo.Context) error {
 	if err := a.denmaSearch(user, &req.Search, &req.Query); err != nil {
 		return err
 	}
-	listIDs := user.GetPermittedListIDs(req.ListIDs)
-	if all, _ := user.GetPermittedLists(auth.PermTypeGet | auth.PermTypeManage); !all && len(listIDs) == 0 {
+	listIDs := user.GetPermittedListIDs(auth.PermTypeManage, req.ListIDs)
+	if all, _ := user.GetPermittedLists(auth.PermTypeManage); !all && len(listIDs) == 0 {
 		return echo.NewHTTPError(http.StatusForbidden, a.i18n.Ts("globals.messages.permissionDenied", "name", "lists"))
 	}
 	if err := a.queries.ExecSubQueryTpl(req.Search, sanitizeDenmaSQL(req.Query), denmaTagsByQuerySQL, listIDs, a.db, req.SubscriptionStatus, add, pq.Array(tags)); err != nil {

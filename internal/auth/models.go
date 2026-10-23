@@ -281,12 +281,12 @@ func (u *User) FilterListsByPerm(types PermType, listIDs []int) []int {
 	// If the user has full list management permission,
 	// no further checks are required.
 	if get {
-		if _, ok := u.PermissionsMap[PermListGetAll]; ok {
+		if u.HasPerm(PermListGetAll) { // denma: as upstream's a7af420f
 			return listIDs
 		}
 	}
 	if manage {
-		if _, ok := u.PermissionsMap[PermListManageAll]; ok {
+		if u.HasPerm(PermListManageAll) {
 			return listIDs
 		}
 	}
@@ -316,15 +316,23 @@ func (u *User) FilterListsByPerm(types PermType, listIDs []int) []int {
 // IDs are present (empty input or 0 permitted lists), it falls back to the user's
 // permitted list IDs if any. This is useful for endpoints which accept a few IDs
 // or the lack of which implies "all".
-func (u *User) GetPermittedListIDs(listIDs []int) []int {
-	listIDs = u.FilterListsByPerm(PermTypeGet|PermTypeManage, listIDs)
-	if len(listIDs) == 0 {
-		if _, ok := u.PermissionsMap[PermSubscribersGetAll]; !ok {
-			if len(u.GetListIDs) > 0 {
-				return u.GetListIDs
-			}
-			return []int{-1}
+// denma: as upstream's 3918893c and a7af420f: lists asked for and none
+// permitted is none, not all, and the types are the caller's.
+func (u *User) GetPermittedListIDs(types PermType, listIDs []int) []int {
+	if len(listIDs) > 0 {
+		if ids := u.FilterListsByPerm(types, listIDs); len(ids) > 0 {
+			return ids
 		}
+		return []int{-1}
 	}
-	return listIDs
+
+	if types&PermTypeGet != 0 && u.HasPerm(PermSubscribersGetAll) {
+		return nil
+	}
+	if all, ids := u.GetPermittedLists(types); all {
+		return nil
+	} else if len(ids) > 0 {
+		return ids
+	}
+	return []int{-1}
 }

@@ -63,6 +63,9 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 					u.RawQuery = q.Encode()
 					return c.Redirect(http.StatusTemporaryRedirect, u.String())
 				}
+				if err := denmaViewPerm(c); err != nil { // denma: cmd/denma_viewperms.go
+					return err
+				}
 
 				return next(c)
 			}
