@@ -1370,8 +1370,18 @@ section.analytics {
   }
 
   #auto-wait,
-  .denma-auto-step input[type="number"] {
+  .denma-auto-step input[type="number"],
+  .denma-auto-quiet input[type="number"] {
     width: 5.5rem;
+  }
+
+  /* Only if they've had no other e-mail lately. */
+  .denma-auto-quiet {
+    flex-wrap: wrap;
+
+    label {
+      margin: 0;
+    }
   }
 
   /* A follow-up e-mail (cmd/denma_auto_series.go). */

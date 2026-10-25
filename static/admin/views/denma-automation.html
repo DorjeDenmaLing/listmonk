@@ -193,6 +193,17 @@
 						<input name="from_email" maxlength="300" x-model="form.from_email" placeholder="{{ $d.FromEmail }}" />
 						<small data-hint>Empty for the center's sender.</small>
 					</label>
+					<div data-field data-testid="auto-quiet">
+						<div class="hstack gap-2 denma-auto-quiet">
+							<label class="hstack gap-1">
+								<input type="checkbox" role="switch" x-model="quietOn" data-testid="switch-quiet" />
+								Only if they've had no other e-mail from the center in the last
+							</label>
+							<input type="number" min="1" max="30" required x-model.number="quietDays" :disabled="!quietOn" aria-label="Days" data-testid="quiet-days" />
+							<span>days</span>
+						</div>
+						<small data-hint>Checked before each of its e-mails. Campaigns and other automations' e-mails count; confirmations, transactional e-mails, tests and its own e-mails don't. An e-mail that would come too soon after another isn't sent, and the rest of the series goes on. It can be up to 30 days.</small>
+					</div>
 
 					{{- /* denma: follow-up e-mails (cmd/denma_auto_series.go) */}}
 					<div class="vstack gap-3 denma-auto-steps" data-testid="auto-steps">

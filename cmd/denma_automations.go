@@ -86,6 +86,9 @@ const (
 	denmaAutoMaxDelay = 365 * 24 * 60
 	// denmaAutoMaxTags is the most tags in each of an automation's fields.
 	denmaAutoMaxTags = 20
+	// denmaAutoMaxQuietDays is the most days its "no other e-mail" can be
+	// (the record of sent e-mails is kept for longer, cmd/denma_messages.go).
+	denmaAutoMaxQuietDays = 30
 )
 
 // denmaAutoSample is who an automation's e-mail is rendered for, to check it.
@@ -270,7 +273,10 @@ DO $$ BEGIN
         CREATE TRIGGER denma_log_tags AFTER INSERT OR UPDATE OF attribs ON subscribers
             FOR EACH ROW EXECUTE FUNCTION denma_log_tags();
     END IF;
-END $$;` + denmaAutoSeriesSQL // follow-ups and history (cmd/denma_auto_series.go)
+END $$;
+
+-- Only if they've had no other e-mail from the center in this many days (0: off).
+ALTER TABLE denma_automations ADD COLUMN IF NOT EXISTS quiet_days INTEGER NOT NULL DEFAULT 0;` + denmaAutoSeriesSQL // follow-ups and history (cmd/denma_auto_series.go)
 
 // denmaAutoRunnableSQL is whether automation a can run: what it sends has
 // its templates.
@@ -346,6 +352,7 @@ type denmaAutomation struct {
 	RemoveTags        pq.StringArray `db:"remove_tags" json:"remove_tags"`
 	SendEmail         bool           `db:"send_email" json:"send_email"`
 	EachTime          bool           `db:"each_time" json:"each_time"`
+	QuietDays         int            `db:"quiet_days" json:"quiet_days"`
 	Steps             denmaAutoSteps `db:"steps" json:"steps"` // its follow-ups (cmd/denma_auto_series.go)
 
 	ListIDs         pq.Int64Array  `db:"list_ids" json:"list_ids"` // its trigger's
@@ -415,6 +422,7 @@ type denmaAutoForm struct {
 	TemplateID        int      `json:"template_id"`
 	Subject           string   `json:"subject"`
 	FromEmail         string   `json:"from_email"`
+	QuietDays         int      `json:"quiet_days"`
 	Active            bool     `json:"active"`
 
 	Steps []denmaAutoStepForm `json:"steps"` // its follow-ups (cmd/denma_auto_series.go)
@@ -768,6 +776,28 @@ func (a *App) runAutoFirst(auto denmaAutomation, limit int, claim, centerClaim i
 		}
 	}
 	a.autoNotes(auto.ID, importedNotes)
+	// Nor to those who've had another e-mail from the center lately, if it
+	// says so: theirs is skipped, and their series goes on.
+	if auto.QuietDays > 0 && len(sendIDs) > 0 {
+		var recent []int
+		if err := a.db.Select(&recent, `SELECT s.id FROM unnest($1::INT[]) s(id) WHERE `+denmaMessagesWithin("s.id", "$2", "$3"),
+			pq.Array(sendIDs), auto.QuietDays, auto.ID); err != nil {
+			a.autoFailed(auto.ID, sendIDs, err)
+			return 0
+		}
+		if len(recent) > 0 {
+			a.autoSkipEmail(auto.ID, 1, recent, withDid(auto.quietSkipped(1)))
+			quietNotes := map[int]string{}
+			for _, id := range recent {
+				if n, ok := notes[id]; ok {
+					quietNotes[id] = n
+				}
+			}
+			a.autoNotes(auto.ID, quietNotes)
+			send = slices.DeleteFunc(send, func(s models.Subscriber) bool { return slices.Contains(recent, s.ID) })
+			sendIDs = slices.DeleteFunc(sendIDs, func(id int) bool { return slices.Contains(recent, id) })
+		}
+	}
 	if len(send) == 0 {
 		return 0
 	}
@@ -1336,6 +1366,9 @@ func (a *App) validateAutomation(c echo.Context, f *denmaAutoForm) error {
 	if f.DelayMinutes < 0 || f.DelayMinutes > denmaAutoMaxDelay {
 		return bad("The wait can be up to a year.")
 	}
+	if f.QuietDays < 0 || f.QuietDays > denmaAutoMaxQuietDays {
+		return bad(fmt.Sprintf("The days without another e-mail can be from 1 to %d.", denmaAutoMaxQuietDays))
+	}
 	for _, id := range f.AddListIDs {
 		if slices.Contains(f.RemoveListIDs, id) {
 			return bad("A list can't be both added and removed.")
@@ -1349,7 +1382,7 @@ func (a *App) validateAutomation(c echo.Context, f *denmaAutoForm) error {
 
 	// Its e-mail.
 	if !f.SendEmail {
-		f.TemplateID, f.Subject, f.FromEmail, f.Steps = 0, "", "", nil
+		f.TemplateID, f.Subject, f.FromEmail, f.Steps, f.QuietDays = 0, "", "", nil, 0
 		if len(f.AddListIDs)+len(f.RemoveListIDs)+len(f.AddTags)+len(f.RemoveTags) == 0 {
 			return bad("Choose something for it to do: lists or tags to add or remove, or an e-mail to send.")
 		}
@@ -1532,11 +1565,11 @@ func (a *App) DenmaSaveAutomation(c echo.Context) error {
 	if isNew {
 		err := tx.Get(&id, `INSERT INTO denma_automations
 			(uuid, name, template_id, subject, from_email, delay_minutes, active, active_since,
-			 trigger_type, trigger_tags, trigger_campaign_id, if_tags, unless_tags, add_tags, remove_tags, send_email, each_time)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $7 THEN NOW() END, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
+			 trigger_type, trigger_tags, trigger_campaign_id, if_tags, unless_tags, add_tags, remove_tags, send_email, each_time, quiet_days)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $7 THEN NOW() END, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id`,
 			uuid.Must(uuid.NewV4()).String(), f.Name, tplID, f.Subject, f.FromEmail, f.DelayMinutes, f.Active,
 			f.TriggerType, denmaTextArray(f.TriggerTags), campID, denmaTextArray(f.IfTags), denmaTextArray(f.UnlessTags),
-			denmaTextArray(f.AddTags), denmaTextArray(f.RemoveTags), f.SendEmail, f.EachTime)
+			denmaTextArray(f.AddTags), denmaTextArray(f.RemoveTags), f.SendEmail, f.EachTime, f.QuietDays)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -1544,9 +1577,10 @@ func (a *App) DenmaSaveAutomation(c echo.Context) error {
 		if _, err := tx.Exec(`UPDATE denma_automations SET name = $2, template_id = $3, subject = $4,
 			from_email = $5, delay_minutes = $6, trigger_type = $7, trigger_tags = $8, trigger_campaign_id = $9,
 			if_tags = $10, unless_tags = $11, add_tags = $12, remove_tags = $13, send_email = $14, each_time = $15,
-			updated_at = NOW() WHERE id = $1`,
+			quiet_days = $16, updated_at = NOW() WHERE id = $1`,
 			id, f.Name, tplID, f.Subject, f.FromEmail, f.DelayMinutes, f.TriggerType, denmaTextArray(f.TriggerTags), campID,
-			denmaTextArray(f.IfTags), denmaTextArray(f.UnlessTags), denmaTextArray(f.AddTags), denmaTextArray(f.RemoveTags), f.SendEmail, f.EachTime); err != nil {
+			denmaTextArray(f.IfTags), denmaTextArray(f.UnlessTags), denmaTextArray(f.AddTags), denmaTextArray(f.RemoveTags), f.SendEmail, f.EachTime,
+			f.QuietDays); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 	}
@@ -1795,6 +1829,31 @@ func (d denmaAutomation) Conditions() string {
 	return strings.Join(out, ", ")
 }
 
+// Quiet is its "no other e-mail" condition, in words, or "".
+func (d denmaAutomation) Quiet() string {
+	if !d.SendEmail || d.QuietDays == 0 {
+		return ""
+	}
+	return "only if they've had no other e-mail from the center in the last " + denmaDays(d.QuietDays)
+}
+
+// quietSkipped is what's recorded for e-mail n that wasn't sent for it.
+func (d denmaAutomation) quietSkipped(n int) string {
+	e := "the e-mail"
+	if n > 1 {
+		e = "e-mail " + strconv.Itoa(n)
+	}
+	return fmt.Sprintf("didn't send %s: they'd had another e-mail from the center in the last %s", e, denmaDays(d.QuietDays))
+}
+
+// denmaDays is n days, in words: "day", "3 days".
+func denmaDays(n int) string {
+	if n == 1 {
+		return "day"
+	}
+	return strconv.Itoa(n) + " days"
+}
+
 // autoContent checks each of an automation's e-mails, rendered for a sample
 // subscriber: that it shows the center's postal address and, with images,
 // has no image missing from its Media (cmd/denma_address.go).
@@ -1867,6 +1926,9 @@ func (d denmaAutomation) Summary() string {
 	s := d.Trigger() + ", " + d.Wait()
 	if c := d.Conditions(); c != "" {
 		s += ", " + c
+	}
+	if q := d.Quiet(); q != "" {
+		s += ", " + q
 	}
 	if d.EachTime {
 		s += " (each time)"

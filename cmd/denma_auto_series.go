@@ -262,6 +262,24 @@ func (a *App) autoSend(auto denmaAutomation, step int, tpl denmaAutoTemplate, su
 	return pushed
 }
 
+// autoSkipEmail records that e-mail `step` of runs (being started, or
+// queued) wasn't sent, with what it did (did), and moves them on to the next
+// e-mail, if there's one.
+func (a *App) autoSkipEmail(autoID, step int, subIDs []int, did string) {
+	if _, err := a.db.Exec(`WITH u AS (UPDATE denma_automation_sends d SET
+			step = COALESCE(s.step, d.step),
+			status = CASE WHEN s.step IS NULL THEN 'skipped' ELSE 'waiting' END,
+			next_at = CASE WHEN s.step IS NOT NULL THEN NOW() + make_interval(mins => s.delay_minutes) END,
+			retries = 0, error = '', did = $4, sent_at = NOW()
+		FROM (SELECT 1) x LEFT JOIN denma_automation_steps s ON s.automation_id = $1 AND s.step = $2 + 1
+		WHERE d.automation_id = $1 AND d.subscriber_id = ANY($3) AND d.step = $2 AND d.status IN ('done', 'queued')
+		RETURNING d.subscriber_id, d.runs)
+		INSERT INTO denma_automation_log (automation_id, subscriber_id, run, step, status, did)
+		SELECT $1, subscriber_id, runs, $2, 'skipped', $4 FROM u`, autoID, step, pq.Array(subIDs), did); err != nil {
+		a.log.Printf("denma: error recording automation %d's run: %v", autoID, err)
+	}
+}
+
 // autoRetryLater puts queued runs at e-mail `step` back, to be tried again
 // in denmaAutoUntakenMins (not counted as a retry).
 func (a *App) autoRetryLater(autoID int, subIDs []int, step int) {
@@ -389,6 +407,7 @@ func (a *App) runAutoDue(auto denmaAutomation, limit int, claim, centerClaim int
 			ID    int  `db:"id"`
 			OK    bool `db:"ok"`
 			Meets bool `db:"meets"`
+			Quiet bool `db:"quiet"`
 		}
 		if err := a.db.Select(&rows, `SELECT s.id,
 			s.status <> 'blocklisted'
@@ -396,22 +415,32 @@ func (a *App) runAutoDue(auto denmaAutomation, limit int, claim, centerClaim int
 				AND EXISTS (SELECT 1 FROM subscriber_lists asl JOIN lists al ON al.id = asl.list_id WHERE asl.subscriber_id = s.id
 					AND (asl.status = 'confirmed' OR (asl.status = 'unconfirmed' AND al.optin = 'single'))) AS ok,
 			((cardinality($2::TEXT[]) = 0 OR COALESCE(s.attribs->'tags' ?| $2::TEXT[], false))
-				AND NOT COALESCE(s.attribs->'tags' ?| $3::TEXT[], false)) AS meets
-			FROM subscribers s WHERE s.id = ANY($1)`, pq.Array(ids), denmaTextArray(auto.IfTags), denmaTextArray(auto.UnlessTags)); err != nil {
+				AND NOT COALESCE(s.attribs->'tags' ?| $3::TEXT[], false)) AS meets,
+			($4::INT = 0 OR NOT `+denmaMessagesWithin("s.id", "$4", "$5")+`) AS quiet
+			FROM subscribers s WHERE s.id = ANY($1)`, pq.Array(ids), denmaTextArray(auto.IfTags), denmaTextArray(auto.UnlessTags),
+			auto.QuietDays, auto.ID); err != nil {
 			a.log.Printf("denma: error getting automation %d's due e-mails: %v", auto.ID, err)
 			a.autoRetryLater(auto.ID, ids, n)
 			continue
 		}
-		var send []int
+		var send, recent []int
 		for _, r := range rows {
 			switch {
 			case !r.OK:
 				a.autoStop(auto.ID, r.ID, runs[r.ID], n, "skipped", fmt.Sprintf("Stopped before e-mail %d: they've unsubscribed or been blocklisted, or are on no list.", n), "")
 			case n > 1 && !r.Meets:
 				a.autoStop(auto.ID, r.ID, runs[r.ID], n, "skipped", fmt.Sprintf("Stopped before e-mail %d: %s.", n, auto.Conditions()), "")
+			case !r.Quiet:
+				recent = append(recent, r.ID)
 			default:
 				send = append(send, r.ID)
 			}
+		}
+		// Those who've had another e-mail lately: this one is skipped, and
+		// their series goes on.
+		if len(recent) > 0 {
+			q := auto.quietSkipped(n)
+			a.autoSkipEmail(auto.ID, n, recent, strings.ToUpper(q[:1])+q[1:]+".")
 		}
 		if len(send) == 0 {
 			continue

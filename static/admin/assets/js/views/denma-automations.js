@@ -86,6 +86,9 @@ function denmaAutomation() {
     unit,
     wait: mins ? mins / UNITS[unit] : 1,
     eachTime: a.each_time ? 'each' : 'once',
+    // Only if they've had no other e-mail in so many days (cmd/denma_automations.go).
+    quietOn: (a.quiet_days || 0) > 0,
+    quietDays: a.quiet_days || 3,
     testEmail: window._denmaTestEmail || '',
     testStep: 1,
     // Its follow-up e-mails (cmd/denma_auto_series.go).
@@ -129,6 +132,7 @@ function denmaAutomation() {
         remove_list_ids: ids(remove),
         delay_minutes: delay,
         each_time: this.eachTime === 'each',
+        quiet_days: this.form.send_email && this.quietOn ? Number(this.quietDays) || 0 : 0,
         steps: this.form.send_email ? this.steps.map((s) => ({
           delay_minutes: Math.round((Number(s.wait) || 0) * UNITS[s.unit]),
           template_id: Number(s.template_id) || 0,
