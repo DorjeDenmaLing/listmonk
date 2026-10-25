@@ -1159,9 +1159,17 @@ func (d *denmaCenters) watchBaseReload(old *App) {
 	denmaRetire(old, old == d.base)
 }
 
-// denmaRetire shuts down an App that has been replaced: at once, its campaign
-// scanning and cron jobs (the replacement has its own); after a grace period
-// for in-flight requests, and any import running in it, the rest.
+// denmaRetireWait is how long a retired App's running campaigns have to stop
+// and save their progress.
+const denmaRetireWait = time.Minute
+
+// denmaRetire shuts down an App that has been replaced or disabled: at once,
+// its campaign scanning and cron jobs (the replacement has its own), and its
+// running campaigns, which stop where they are and save their progress, as
+// at a shutdown (cmd/denma_shutdown.go), so that they resume (in the
+// replacement, or when the center is enabled again) without sending anyone a
+// second copy; after a grace period for in-flight requests, and any import
+// running in it, the rest.
 func denmaRetire(old *App, original bool) {
 	first := false
 	old.retired.Do(func() { first = true })
@@ -1169,6 +1177,10 @@ func denmaRetire(old *App, original bool) {
 		return // closing its manager and messengers twice would panic
 	}
 	old.manager.StopScanning()
+	stopped := old.manager.DenmaStop(denmaRetireWait)
+	if !stopped {
+		old.log.Printf("denma: a campaign didn't save its progress in %v; it resumes from its last checkpoint", denmaRetireWait)
+	}
 	if old.bounce != nil {
 		old.bounce.StopScanning() // the hub's bounce mailbox
 	}
@@ -1192,6 +1204,9 @@ func denmaRetire(old *App, original bool) {
 		if original {
 			old.db.SetMaxIdleConns(0) // let its connections go; main() closes it
 			return
+		}
+		if !stopped {
+			return // closing its manager under a campaign still sending would panic
 		}
 		old.manager.Close()
 		for _, m := range old.messengers {
