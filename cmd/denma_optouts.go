@@ -124,11 +124,19 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
 $$;
 
 -- An opted-out address stays blocklisted: added again, it's blocklisted;
--- enabling it is refused.
+-- enabling it is refused. A changed address keeps the old one's opt-out.
 CREATE OR REPLACE FUNCTION denma_keep_optouts() RETURNS TRIGGER
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE k TEXT;
 BEGIN
+    IF TG_OP = 'UPDATE' AND lower(OLD.email) <> lower(NEW.email) THEN
+        INSERT INTO denma_optouts (email_hash, canon_hash, kind, source, created_at)
+            SELECT denma_email_hash(NEW.email), denma_canon_hash(NEW.email), kind, source, created_at FROM denma_optouts
+            WHERE email_hash = denma_email_hash(OLD.email) OR canon_hash = denma_canon_hash(OLD.email)
+            ORDER BY kind = 'complained' DESC LIMIT 1
+            ON CONFLICT (email_hash) DO UPDATE SET kind = EXCLUDED.kind, source = EXCLUDED.source, created_at = EXCLUDED.created_at
+                WHERE EXCLUDED.kind = 'complained' AND denma_optouts.kind <> 'complained';
+    END IF;
     IF NEW.status = 'blocklisted' THEN RETURN NEW; END IF;
     IF TG_OP = 'UPDATE' AND OLD.status <> 'blocklisted' AND lower(OLD.email) = lower(NEW.email) THEN RETURN NEW; END IF;
     k := denma_optout_kind(NEW.email);
@@ -229,7 +237,13 @@ func (a *App) denmaCheckOptOut(id int, email, status string) error {
 		email = cur.Email
 	}
 	o := a.denmaOptOutOf(email)
-	if o == nil || (cur.Status != models.SubscriberStatusBlockListed && strings.EqualFold(cur.Email, email)) {
+	changed := !strings.EqualFold(cur.Email, email)
+	if changed { // a new address keeps the old one's opt-out
+		if old := a.denmaOptOutOf(cur.Email); old != nil && (o == nil || old.Kind == denmaOptOutComplained) {
+			o, email = old, cur.Email
+		}
+	}
+	if o == nil || (cur.Status != models.SubscriberStatusBlockListed && !changed) {
 		return nil
 	}
 	if o.Kind == denmaOptOutComplained {
