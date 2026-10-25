@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 41
+const denmaFeaturesVersion = 42
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -210,6 +210,23 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		}
 		if n > 0 {
 			lo.Printf("denma: center %s: %d of its templates show its postal address", c.Slug, n)
+		}
+	}
+	// Version 42: links to its files at the hub's uploads address (DDL's from
+	// before the cutover) point to its own (cmd/denma_images.go).
+	if hub := d.current(); ver < 42 && hub != nil && hub.ko.String("upload.provider") == "filesystem" {
+		root := strings.TrimSuffix(hub.urlCfg.RootURL, "/")
+		uri := "/" + strings.Trim(hub.ko.String("upload.filesystem.upload_uri"), "/")
+		var hubNames []string // the hub's own, served at its uploads address
+		if err := hub.db.Select(&hubNames, `SELECT filename FROM media UNION SELECT thumb FROM media WHERE thumb <> ''`); err != nil {
+			return fmt.Errorf("reading the hub's media: %v", err)
+		}
+		n, err := denmaRewriteHubUploads(tx, root, uri, root+denmaCenterPath+c.Slug+uri+"/", hubNames)
+		if err != nil {
+			return fmt.Errorf("pointing old upload links to the center's own: %v", err)
+		}
+		if n > 0 {
+			lo.Printf("denma: center %s: %d templates and campaigns link its own uploads instead of the hub's address", c.Slug, n)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)

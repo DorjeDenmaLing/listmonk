@@ -28,3 +28,30 @@ func TestDenmaMediaNames(t *testing.T) {
 		t.Errorf("denmaMediaNames = %q", got)
 	}
 }
+
+// Links to a center's files at the hub's uploads address, absolute or
+// root-relative, in HTML and a visual source, point to its own; others
+// (the center's own, other files, other sites) are left as they are.
+func TestDenmaHubUploadsRewriter(t *testing.T) {
+	const own = "https://news.example.org/c/ddl/uploads/"
+	rw, err := denmaHubUploadsRewriter("https://news.example.org", "/uploads", own, []string{"Square-Green.png", "a b.png"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for in, want := range map[string]string{
+		`<img src="https://news.example.org/uploads/Square-Green.png">`:      `<img src="` + own + `Square-Green.png">`,
+		`<img src='/uploads/Square-Green.png?w=1'>`:                         `<img src='` + own + `Square-Green.png?w=1'>`,
+		`<td style="background:url(/uploads/Square-Green.png)">`:            `<td style="background:url(` + own + `Square-Green.png)">`,
+		`{"url":"https://news.example.org/uploads/Square-Green.png"}`:       `{"url":"` + own + `Square-Green.png"}`,
+		`{"text":"<img src=\"/uploads/Square-Green.png\">"}`:                `{"text":"<img src=\"` + own + `Square-Green.png\">"}`,
+		`<img src="` + own + `Square-Green.png">`:                           `<img src="` + own + `Square-Green.png">`,
+		`<img src="https://news.example.org/uploads/Other.png">`:            `<img src="https://news.example.org/uploads/Other.png">`,
+		`<img src="https://news.example.org/uploads/Square-Green.png.bak">`: `<img src="https://news.example.org/uploads/Square-Green.png.bak">`,
+		`<img src="https://other.example/uploads/Square-Green.png">`:        `<img src="https://other.example/uploads/Square-Green.png">`,
+		`<a href="/x/uploads/Square-Green.png">`:                            `<a href="/x/uploads/Square-Green.png">`,
+	} {
+		if got := rw(in); got != want {
+			t.Errorf("%s:\n got %s\nwant %s", in, got, want)
+		}
+	}
+}
