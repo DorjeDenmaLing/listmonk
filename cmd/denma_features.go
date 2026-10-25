@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 38
+const denmaFeaturesVersion = 39
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -745,7 +745,7 @@ UPDATE subscribers SET attribs = attribs WHERE jsonb_typeof(attribs) = 'object' 
 -- The tags a campaign is sent to, besides its lists.
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';
 INSERT INTO denma_tags (tag) SELECT DISTINCT unnest(denma_tags) FROM campaigns ON CONFLICT DO NOTHING;
-` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaOptinTokenSQL + denmaNamesSQL + denmaCampaignStatsSQL
+` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaOptinTokenSQL + denmaNamesSQL + denmaCampaignStatsSQL + denmaMessagesSQL
 
 // denmaVisualTemplate is the center's default visual template's ID (0 for
 // none).

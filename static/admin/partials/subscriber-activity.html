@@ -23,6 +23,8 @@
 		</table>
 	{{- end }}
 
+	{{ template "denma-subscriber-messages" . }}{{/* denma: cmd/denma_messages.go */}}
+
 	{{- if $d.DenmaRuns }}{{/* denma: cmd/denma_automations.go */}}
 		<h5 class="mt-6">Automations</h5>
 		<table data-testid="auto-runs">

@@ -150,9 +150,20 @@ const (
 	DenmaPaced         = "X-Denma-Paced"
 )
 
+// DenmaCampaignTest marks a campaign's test message (no pipe), for the
+// record of sent e-mails (cmd/denma_messages.go).
+const DenmaCampaignTest = "X-Denma-Campaign-Test"
+
 // denmaMarkCounted marks a campaign message's headers with what its waits
-// counted (waited: whether they ran), and clears the marks otherwise.
+// counted (waited: whether they ran), and clears the marks otherwise; a
+// test (not waited) is marked as one, with centers (whose e-mails leave the
+// marks out, email.DenmaDropSenderHeaders).
 func (m *Manager) denmaMarkCounted(h textproto.MIMEHeader, waited bool) {
+	if !waited && DenmaDailyWait != nil {
+		h.Set(DenmaCampaignTest, "1")
+	} else {
+		h.Del(DenmaCampaignTest)
+	}
 	for name, on := range map[string]bool{DenmaDailyCounted: waited && DenmaDailyWait != nil,
 		DenmaCenterCounted: waited && m.denmaCenterWait != nil, DenmaPaced: waited && DenmaPaceWait != nil} {
 		if on {

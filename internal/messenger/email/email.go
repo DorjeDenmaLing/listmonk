@@ -51,6 +51,8 @@ type Emailer struct {
 	// or a domain set per SMTPs server). An empty key holds all servers
 	// and is the fallback round-robin when there's no match (old behaviour).
 	pools map[string][]*Server
+
+	denmaSent func(models.Message, error) // denma: denma.go
 }
 
 // NormalizeAddr normalizes an e-mail address (strip spaces, lowercase).
@@ -227,7 +229,7 @@ func (e *Emailer) Push(m models.Message) error {
 		}
 	}
 
-	return srv.pool.Send(em)
+	return e.denmaDone(m, srv.pool.Send(em)) // denma: denma.go
 }
 
 // Flush flushes the message queue to the server.

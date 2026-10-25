@@ -589,6 +589,11 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 		}
 		return denmaForgotPath
 	}
+	// DenmaMessageDays is how long a subscriber's e-mails are recorded for
+	// (cmd/denma_messages.go).
+	funcs["DenmaMessageDays"] = func() int {
+		return denmaMessageDays
+	}
 	// DenmaSourceURL is the fork's source (cmd/denma_system.go).
 	funcs["DenmaSourceURL"] = func() string {
 		return denmaSourceURL

@@ -1002,6 +1002,7 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 		Headers:     textproto.MIMEHeader{},
 	}
 	msg.Headers.Set(models.EmailHeaderSubscriberUUID, s.UUID)
+	denmaSentAs(&msg, auto.ID, step) // for the record of sent e-mails (cmd/denma_messages.go)
 	if a.cfg.Privacy.UnsubHeader {
 		msg.Headers.Set("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
 		msg.Headers.Set("List-Unsubscribe", `<`+unsubURL+`>`)

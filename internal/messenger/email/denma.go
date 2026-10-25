@@ -14,6 +14,20 @@ import (
 // map is the message's own), such as removing an internal one.
 var BeforePush func(m models.Message)
 
+// DenmaOnSent has e call f with each message it sends and the mail server's
+// answer (the error Push returns), once the server has answered.
+func (e *Emailer) DenmaOnSent(f func(m models.Message, err error)) {
+	e.denmaSent = f
+}
+
+// denmaDone tells the DenmaOnSent function of a message sent, returning err.
+func (e *Emailer) denmaDone(m models.Message, err error) error {
+	if e.denmaSent != nil {
+		e.denmaSent(m, err)
+	}
+	return err
+}
+
 // DenmaDropSenderHeaders, if set (multi-center), leaves a message's own
 // headers with any of DenmaHeaderProblem's problems out of every e-mail,
 // whatever set them: a center's campaign or transactional message could

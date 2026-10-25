@@ -308,6 +308,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 		return nf.NotifySystem(subject, notifs.TplCampaignStatus, data, nil)
 	})
 	mgr.DenmaSetReplyTo(ko.String("denma.reply_to")) // denma: cmd/denma_reply_to.go
+	denmaLogMessages(emailMsgr, db, ko)              // denma: the e-mails it sends (cmd/denma_messages.go)
 
 	// Initialize and cache tx templates in memory.
 	initTxTemplates(mgr, core)

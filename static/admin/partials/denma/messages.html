@@ -1,0 +1,33 @@
+{{- /* denma: the e-mails sent to a subscriber, on their Activity tab
+   (cmd/denma_messages.go). */ -}}
+{{ define "denma-subscriber-messages" -}}
+{{- $d := .Data -}}
+{{- if $d.DenmaMessages }}
+	<h5 class="mt-6">E-mails sent</h5>
+	<p class="text-light text-8">The latest e-mails the center sent them, for {{ DenmaMessageDays }} days, and what the mail server answered.</p>
+	<table data-testid="sub-messages">
+		<thead><tr><th>E-mail</th><th>Outcome</th><th width="20%">When</th></tr></thead>
+		<tbody>
+			{{- range $d.DenmaMessages }}
+				<tr data-kind="{{ .Kind }}">
+					<td>
+						{{ .Subject }}
+						<p class="text-light">
+							{{- if eq .Kind "campaign" }}Campaign{{ if .CampaignID.Valid }} <a href="{{ URI "/admin/campaigns" }}/{{ .CampaignID.Int }}">{{ .CampaignName }}</a>{{ end }}
+							{{- else if eq .Kind "test" }}Test{{ if .CampaignID.Valid }} of campaign <a href="{{ URI "/admin/campaigns" }}/{{ .CampaignID.Int }}">{{ .CampaignName }}</a>{{ else }} of an automation{{ end }}
+							{{- else if eq .Kind "automation" }}Automation {{ if .AutoName }}<a href="{{ URI "/admin/automations" }}/{{ .AutoID.Int }}">{{ .AutoName }}</a>{{ else }}(deleted){{ end }}{{ if and .Step.Valid (gt .Step.Int 1) }}, e-mail {{ .Step.Int }}{{ end }}
+							{{- else }}Confirmation, transactional e-mail or notice{{ end }}
+						</p>
+					</td>
+					<td data-label="Outcome">
+						{{- if eq .Status "sent" }}Sent
+						{{- else if eq .Status "uncertain" }}May have been delivered <span class="text-light">({{ .Error }})</span>
+						{{- else }}<span class="text-danger">Not sent: {{ .Error }}</span>{{ end }}
+					</td>
+					<td data-label="When">{{ NiceDate .SentAt }}</td>
+				</tr>
+			{{- end }}
+		</tbody>
+	</table>
+{{- end }}
+{{- end }}
