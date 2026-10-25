@@ -1333,7 +1333,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
-		if err := a.denmaResubConfirm(sub.ID, lists, nil, models.JSON{"resubscribed": true, "via": "sign-up webhook: " + h.Name}); err != nil {
+		if err := a.denmaResubConfirm(sub.ID, lists, nil, models.JSON{"resubscribed": true, "via": "sign-up webhook: " + h.Name}, false); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 		out.Added = listIDs

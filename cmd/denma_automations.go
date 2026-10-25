@@ -172,7 +172,8 @@ DO $$ BEGIN
 END $$;
 
 -- When each subscriber last joined each list (on a double opt-in list, when
--- they confirmed), for automations; and, on confirming a double opt-in list,
+-- they confirmed), for automations; and, when they confirm a double opt-in
+-- list themselves (denma.own_confirm, cmd/denma_queries.go), not an admin,
 -- attribs.consent_confirmed_at.
 DO $$ BEGIN
     IF to_regclass('denma_list_joins') IS NULL THEN
@@ -204,7 +205,8 @@ BEGIN
         INSERT INTO denma_list_joins (subscriber_id, list_id) VALUES (NEW.subscriber_id, NEW.list_id)
             ON CONFLICT (subscriber_id, list_id) DO UPDATE SET joined_at = NOW();
     END IF;
-    IF dbl AND TG_OP = 'UPDATE' AND NEW.status = 'confirmed' AND OLD.status = 'unconfirmed' THEN
+    IF dbl AND TG_OP = 'UPDATE' AND NEW.status = 'confirmed' AND OLD.status = 'unconfirmed'
+        AND COALESCE(current_setting('denma.own_confirm', true), '') = 'on' THEN
         -- Attributes may be JSON null, which || would make an array.
         UPDATE subscribers
         SET attribs = (CASE WHEN jsonb_typeof(attribs) = 'object' THEN attribs ELSE '{}'::JSONB END) || jsonb_build_object('consent_confirmed_at',

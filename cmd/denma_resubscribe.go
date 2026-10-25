@@ -289,7 +289,7 @@ func (a *App) denmaResubOptin(c echo.Context, subUUID string, confirm bool) (boo
 	if a.cfg.Privacy.RecordOptinIP {
 		meta["optin_ip"] = c.RealIP()
 	}
-	if err := a.denmaResubConfirm(sub.ID, lists, attribs, meta); err != nil {
+	if err := a.denmaResubConfirm(sub.ID, lists, attribs, meta, true); err != nil {
 		a.log.Printf("denma: error re-subscribing subscriber %d: %v", sub.ID, err)
 		return true, c.Render(http.StatusInternalServerError, tplMessage,
 			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.Ts("public.errorProcessingRequest")))
@@ -302,8 +302,9 @@ func (a *App) denmaResubOptin(c echo.Context, subUUID string, confirm bool) (boo
 // denmaResubConfirm takes a subscriber off the blocklist and confirms their
 // subscriptions to lists: each is made unconfirmed, then confirmed, as an
 // opt-in is, so that automations that confirming them sets off run
-// (cmd/denma_automations.go), such as the one moving website signups on.
-func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta models.JSON) error {
+// (cmd/denma_automations.go), such as the one moving website signups on. own:
+// they confirmed it themselves (attribs.consent_confirmed_at).
+func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta models.JSON, own bool) error {
 	ids := make([]int, len(lists))
 	for i, l := range lists {
 		ids[i] = l.ID
@@ -335,6 +336,11 @@ func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta mo
 		return err
 	}
 	defer tx.Rollback()
+	if own {
+		if _, err := tx.Exec(`SELECT set_config('denma.own_confirm', 'on', true)`); err != nil {
+			return err
+		}
+	}
 	// Their opt-out goes (cmd/denma_optouts.go), and their address's
 	// variants': confirming is their consent, from the same mailbox. A
 	// complaint's stays, and enabling them is refused. So does the fence on

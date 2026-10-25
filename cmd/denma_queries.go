@@ -13,6 +13,21 @@ var denmaQueries = map[string]string{
 	"delete-orphan-subscribers": `DELETE FROM subscribers a WHERE a.status <> 'blocklisted' AND NOT EXISTS
     (SELECT 1 FROM subscriber_lists b WHERE b.subscriber_id = a.id)`,
 
+	// The opt-in page's confirmation is the person's own when it comes with
+	// their e-mail's token (denmaOwnConfirm puts denmaOwnConfirmKey in $3,
+	// which isn't kept): it marks the transaction (denma.own_confirm), so that
+	// denma_log_join records it as their consent (cmd/denma_automations.go),
+	// which an admin's confirm, or a POST with only their UUID, isn't.
+	"confirm-subscription-optin": `WITH subID AS (
+    SELECT id FROM subscribers WHERE uuid = $1::UUID
+),
+listIDs AS (
+    SELECT id FROM lists WHERE uuid = ANY($2::UUID[])
+)
+UPDATE subscriber_lists SET status='confirmed', meta=meta || ($3::JSONB - '` + denmaOwnConfirmKey + `'), updated_at=NOW()
+    WHERE subscriber_id = (SELECT id FROM subID) AND list_id = ANY(SELECT id FROM listIDs)
+    AND (SELECT set_config('denma.own_confirm', CASE WHEN $3::JSONB ? '` + denmaOwnConfirmKey + `' THEN 'on' ELSE '' END, true)) IS NOT NULL;`,
+
 	// Unique views and clicks (with individual tracking) are people's: not
 	// the anonymous ones (a deleted subscriber's, or from while it was off),
 	// which DISTINCT ON counted as one more person.

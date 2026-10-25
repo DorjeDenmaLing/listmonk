@@ -62,6 +62,20 @@ func denmaOptinTokenURL(u, subUUID string) string {
 
 // denmaOptinTokenOK reports whether a token is one of a subscriber's opt-in
 // e-mails', and hasn't expired.
+// denmaOwnConfirmKey marks an opt-in page confirmation's meta as the
+// person's own (denmaOwnConfirm); the confirm-subscription-optin override
+// (cmd/denma_queries.go) reads it and doesn't keep it.
+const denmaOwnConfirmKey = "denma_own_confirm"
+
+// denmaOwnConfirm marks meta for the opt-in page's confirmation of the
+// subscriber (subUUID) as their own if it comes with their e-mail's token.
+func (a *App) denmaOwnConfirm(meta models.JSON, subUUID, token string) {
+	var subID int
+	if err := a.db.Get(&subID, `SELECT id FROM subscribers WHERE uuid = $1`, subUUID); err == nil && denmaOptinTokenOK(a.db, subID, token) {
+		meta[denmaOwnConfirmKey] = true
+	}
+}
+
 func denmaOptinTokenOK(db *sqlx.DB, subID int, token string) bool {
 	if token == "" {
 		return false
