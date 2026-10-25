@@ -95,7 +95,8 @@ func denmaCenterCap(mgr *manager.Manager, ko *koanf.Koanf) {
 const denmaCenterClaimHeader = "X-Denma-Center-Claim"
 
 // denmaCountedMessenger counts what a center's manager sends against its cap,
-// once an API campaign's e-mail has passed its link check.
+// once an API campaign's e-mail has passed its link check, and a campaign's
+// or automation's e-mail shows the center's postal address.
 type denmaCountedMessenger struct {
 	manager.Messenger
 	count *denmadaily.Counter
@@ -105,6 +106,11 @@ type denmaCountedMessenger struct {
 func (m denmaCountedMessenger) Push(msg models.Message) error {
 	if err := denmaCheckCampaignLinks(m.slug, msg); err != nil { // cmd/denma_api_send.go
 		return err
+	}
+	if m.Name() == emailMsgr && denmaIsMarketing(msg) { // the center's postal address (cmd/denma_address.go)
+		if err := denmaAddressCheck(m.slug, msg.Body); err != nil {
+			return err
+		}
 	}
 	if msg.Headers != nil && msg.Headers.Get(manager.DenmaCenterCounted) != "" {
 		msg.Headers.Del(manager.DenmaCenterCounted) // counted by its wait

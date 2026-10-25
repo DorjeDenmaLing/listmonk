@@ -36,6 +36,9 @@
 		{{- if not $isNew }}{{ with $a.Broken }}
 		<p class="text-danger" role="alert" data-testid="auto-broken">{{ . }} It doesn't run until it's fixed.</p>
 		{{- end }}{{ end }}
+		{{- with $d.Held }}{{/* cmd/denma_address.go */}}
+		<p class="text-danger" role="alert" data-testid="auto-held">{{ . }} Its e-mails wait until it's fixed.</p>
+		{{- end }}
 
 		<fieldset class="card" {{ if not $canManage }}disabled{{ end }}>
 			<legend>Automation</legend>

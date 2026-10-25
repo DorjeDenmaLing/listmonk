@@ -163,7 +163,6 @@ func (a *App) validateAutoSteps(f *denmaAutoForm) error {
 	if len(f.Steps) > denmaAutoMaxSteps {
 		return bad(fmt.Sprintf("An automation can send at most %d follow-up e-mails.", denmaAutoMaxSteps))
 	}
-	sample := models.Subscriber{UUID: dummyUUID, Email: "subscriber@example.org", Name: "Sample Subscriber", Attribs: models.JSON{}}
 	for i := range f.Steps {
 		s := &f.Steps[i]
 		n := i + 2
@@ -178,7 +177,11 @@ func (a *App) validateAutoSteps(f *denmaAutoForm) error {
 		if err != nil {
 			return bad(fmt.Sprintf("Choose e-mail %d's template: a transactional or visual one.", n))
 		}
-		if _, err := a.autoMessage(denmaAutomation{UUID: dummyUUID, Name: f.Name, Subject: s.Subject}, n, tpl, sample); err != nil {
+		msg, err := a.autoMessage(denmaAutomation{UUID: dummyUUID, Name: f.Name, Subject: s.Subject}, n, tpl, denmaAutoSample)
+		if err != nil {
+			return bad(fmt.Sprintf("E-mail %d: %v", n, err))
+		}
+		if err := a.denmaCheckMessage(msg.Body); err != nil { // cmd/denma_address.go
 			return bad(fmt.Sprintf("E-mail %d: %v", n, err))
 		}
 	}

@@ -26,6 +26,11 @@
 							<input name="slug" maxlength="50" required pattern="[a-z0-9]+(-[a-z0-9]+)*" x-model="form.slug" @input="slugEdited = true" />
 							<small data-hint>{{ $d.CenterURL }}<strong x-text="form.slug || '…'"></strong>/ &mdash; lowercase letters, digits and hyphens. It can't be changed later.</small>
 						</label>
+						<label data-field>{{/* cmd/denma_address.go */}}
+							Postal address
+							<textarea name="postal_address" rows="3" maxlength="500" required x-model="form.postal_address" placeholder="1234 Main Street&#10;Halifax NS  B3H 1A1&#10;Canada" data-testid="postal-address"></textarea>
+							<small data-hint>The center's mailing address, which Canada's anti-spam law (CASL) requires in every campaign and automation e-mail; its templates and design show it. Its admins can change it on its Config page.</small>
+						</label>
 						<label data-field>
 							Sender
 							<input name="from_email" maxlength="300" required x-model="form.from_email" placeholder='"Center name" &lt;name@example.org&gt;' />

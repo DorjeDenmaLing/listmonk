@@ -1,4 +1,5 @@
 {{ define "admin-global-notices" }}
+	{{- template "denma-address-notice" . }}{{/* denma: cmd/denma_address.go */}}
 	{{- /* Upstream update notices: a new release and/or broadcast messages. */ -}}
 	{{- $hasUpdate := false }}
 	{{- with .ConfigJS.Update }}{{ if or .Update.IsNew .Messages }}{{ $hasUpdate = true }}{{ end }}{{ end }}

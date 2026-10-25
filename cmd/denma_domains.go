@@ -1705,8 +1705,9 @@ func denmaBadRequest(err error) error {
 
 // denmaCheckCampaignStart refuses to start or schedule a campaign whose
 // sender's domain SES hasn't verified, a draft that would go to no one or
-// whose e-mail can't be made (cmd/denma_start.go), or one to another
-// campaign's API list (cmd/denma_noconsent.go).
+// whose e-mail can't be made (cmd/denma_start.go), doesn't show the center's
+// postal address or has images no longer in its Media (cmd/denma_address.go),
+// or one to another campaign's API list (cmd/denma_noconsent.go).
 func (a *App) denmaCheckCampaignStart(id int, status string) error {
 	if status != models.CampaignStatusRunning && status != models.CampaignStatusScheduled {
 		return nil
@@ -1720,15 +1721,14 @@ func (a *App) denmaCheckCampaignStart(id int, status string) error {
 	if err := a.denmaCheckAPILists(id); err != nil {
 		return err
 	}
-	if a.denmaCenterOf() == nil || !denmaDomainsOn() {
-		return nil
+	if a.denmaCenterOf() != nil && denmaDomainsOn() {
+		camp, err := a.core.GetCampaign(id, "", "")
+		if err != nil {
+			return err
+		}
+		if err := a.denmaCheckSenderReady(camp.FromEmail); err != nil {
+			return denmaBadRequest(err)
+		}
 	}
-	camp, err := a.core.GetCampaign(id, "", "")
-	if err != nil {
-		return err
-	}
-	if err := a.denmaCheckSenderReady(camp.FromEmail); err != nil {
-		return denmaBadRequest(err)
-	}
-	return nil
+	return a.denmaCheckContent(id)
 }

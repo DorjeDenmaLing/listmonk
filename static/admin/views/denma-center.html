@@ -27,6 +27,13 @@
 				<input name="site_name" maxlength="200" required x-model="form.site_name" />
 				<small data-hint>Shown in the admin, on the public pages and in e-mails.</small>
 			</label>
+			{{/* cmd/denma_address.go */}}
+			<label data-field data-testid="center-postal-address">
+				Postal address
+				<textarea name="postal_address" rows="3" maxlength="500" required x-model="form.postal_address" placeholder="1234 Main Street&#10;Halifax NS  B3H 1A1&#10;Canada" data-testid="postal-address"></textarea>
+				<small data-hint>The center's mailing address. Canada's anti-spam law (CASL) requires it in every campaign and automation e-mail, so none is sent without it. <code>{{ "{{ CenterAddress }}" }}</code> puts it in a template, on one line; the templates the center started with and its design show it.
+				{{- with $d.NoAddressTemplates }} <span class="text-danger" data-testid="no-address-templates">These templates don't show it yet, so campaigns using them can't be sent: {{ range $i, $n := . }}{{ if $i }}, {{ end }}{{ $n }}{{ end }}.</span>{{ end }}</small>
+			</label>
 			<div data-field>
 				<span class="denma-static-label">Address</span>
 				<span class="denma-static" data-testid="center-address">{{ $d.Address }}</span>

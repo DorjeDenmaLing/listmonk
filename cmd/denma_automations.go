@@ -88,6 +88,9 @@ const (
 	denmaAutoMaxTags = 20
 )
 
+// denmaAutoSample is who an automation's e-mail is rendered for, to check it.
+var denmaAutoSample = models.Subscriber{UUID: dummyUUID, Email: "subscriber@example.org", Name: "Sample Subscriber", Attribs: models.JSON{}}
+
 // What sets an automation off.
 const (
 	denmaTrigJoins    = "joins"
@@ -446,6 +449,7 @@ type denmaAutomationView struct {
 	FromEmail          string
 	IndividualTracking bool
 	StepStats          []denmaAutoStepStat // how each of its e-mails has gone (cmd/denma_auto_series.go)
+	Held               string              // why its e-mails can't be sent (cmd/denma_address.go), or ""
 }
 
 // denmaAutomationsOn reports whether the app has automations: a center, or
@@ -583,6 +587,34 @@ func (a *App) runAutomations() {
 // waiting for its sender's domain, to log it once an hour.
 var denmaAutoHeld sync.Map
 
+// denmaAutoShown is when each automation's e-mails (by App, ID and last
+// change) last passed autoContent; it's checked again after
+// denmaAutoShownFor, rather than rendered every minute. Templates can't be
+// saved without the address, a new address reloads the center (a new App),
+// and each e-mail is checked again as it's sent (denmaCountedMessenger).
+var denmaAutoShown sync.Map
+
+const denmaAutoShownFor = 15 * time.Minute
+
+// autoContentOK is autoContent(auto, false), passes remembered.
+func (a *App) autoContentOK(auto denmaAutomation) error {
+	key := fmt.Sprintf("%p/%d/%d", a, auto.ID, auto.UpdatedAt.UnixNano())
+	if t, ok := denmaAutoShown.Load(key); ok && time.Since(t.(time.Time)) < denmaAutoShownFor {
+		return nil
+	}
+	if err := a.autoContent(auto, false); err != nil {
+		return err
+	}
+	denmaAutoShown.Range(func(k, t any) bool { // old Apps' and old versions'
+		if time.Since(t.(time.Time)) > denmaAutoShownFor {
+			denmaAutoShown.Delete(k)
+		}
+		return true
+	})
+	denmaAutoShown.Store(key, time.Now())
+	return nil
+}
+
 // runAutomation runs an automation for those whose wait is over, and sends
 // its e-mails that are due (follow-ups, and those tried again).
 func (a *App) runAutomation(auto denmaAutomation) {
@@ -601,6 +633,16 @@ func (a *App) runAutomation(auto denmaAutomation) {
 		}
 		if err := a.denmaCheckSenderReady(from); err != nil {
 			key := fmt.Sprintf("%s/%d", a.ko.String("denma.center"), auto.ID)
+			if t, ok := denmaAutoHeld.Load(key); !ok || time.Since(t.(time.Time)) > time.Hour {
+				denmaAutoHeld.Store(key, time.Now())
+				a.log.Printf("denma: automation %q waits: %v", auto.Name, err)
+			}
+			return
+		}
+		// Nor while its e-mails don't show the center's postal address
+		// (cmd/denma_address.go). A pass is kept for a while (denmaAutoShown).
+		if err := a.autoContentOK(auto); err != nil {
+			key := fmt.Sprintf("%s/%d/address", a.ko.String("denma.center"), auto.ID)
 			if t, ok := denmaAutoHeld.Load(key); !ok || time.Since(t.(time.Time)) > time.Hour {
 				denmaAutoHeld.Store(key, time.Now())
 				a.log.Printf("denma: automation %q waits: %v", auto.Name, err)
@@ -1169,6 +1211,9 @@ func (a *App) ViewDenmaAutomation(c echo.Context) error {
 		}
 		out.Title = out.Automation.Name
 		out.StepStats = a.autoStepStats(id) // cmd/denma_auto_series.go
+		if err := a.autoContent(out.Automation, false); err != nil && out.Automation.Broken() == "" {
+			out.Held = err.Error()
+		}
 	}
 	if err := a.db.Select(&out.Lists, `SELECT id, name, type::TEXT, optin::TEXT, '' AS subject FROM lists ORDER BY name`); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -1326,8 +1371,11 @@ func (a *App) validateAutomation(c echo.Context, f *denmaAutoForm) error {
 	if err != nil {
 		return bad("Choose a template: a transactional or visual one.")
 	}
-	sample := models.Subscriber{UUID: dummyUUID, Email: "subscriber@example.org", Name: "Sample Subscriber", Attribs: models.JSON{}}
-	if _, err := a.autoMessage(denmaAutomation{UUID: dummyUUID, Name: f.Name, Subject: f.Subject}, 1, tpl, sample); err != nil {
+	msg, err := a.autoMessage(denmaAutomation{UUID: dummyUUID, Name: f.Name, Subject: f.Subject}, 1, tpl, denmaAutoSample)
+	if err != nil {
+		return bad(err.Error())
+	}
+	if err := a.denmaCheckMessage(msg.Body); err != nil { // its postal address and images (cmd/denma_address.go)
 		return bad(err.Error())
 	}
 	return a.validateAutoSteps(f) // its follow-ups (cmd/denma_auto_series.go)
@@ -1553,6 +1601,9 @@ func (a *App) DenmaSetAutomationStatus(c echo.Context) error {
 		if msg := auto.Broken(); msg != "" {
 			return echo.NewHTTPError(http.StatusBadRequest, msg+" Edit it first.")
 		}
+		if err := a.autoContent(auto, true); err != nil { // cmd/denma_address.go
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
 		if err := a.checkAutoLoop(auto.ID, denmaAutoNode{ID: auto.ID, Name: auto.Name, Trigger: auto.TriggerType, Lists: auto.ListIDs,
 			Tags: auto.TriggerTags, AddLists: auto.AddListIDs, AddTags: auto.AddTags}); err != nil {
 			return err
@@ -1742,6 +1793,42 @@ func (d denmaAutomation) Conditions() string {
 		out = append(out, "not if they have the tag "+orList(d.UnlessTags, "or"))
 	}
 	return strings.Join(out, ", ")
+}
+
+// autoContent checks each of an automation's e-mails, rendered for a sample
+// subscriber: that it shows the center's postal address and, with images,
+// has no image missing from its Media (cmd/denma_address.go).
+func (a *App) autoContent(auto denmaAutomation, images bool) error {
+	if !auto.SendEmail {
+		return nil
+	}
+	check := a.denmaCheckAddress
+	if images {
+		check = a.denmaCheckMessage
+	}
+	for n := 1; n <= len(auto.Steps)+1; n++ {
+		tplID, subject, ok := auto.stepEmail(n)
+		if !ok {
+			continue // Broken says so
+		}
+		tpl, err := a.autoTemplate(tplID, false)
+		if err != nil {
+			return err
+		}
+		au := auto
+		au.Subject = subject
+		msg, err := a.autoMessage(au, n, tpl, denmaAutoSample)
+		if err == nil {
+			err = check(msg.Body)
+		}
+		if err != nil && n > 1 {
+			return fmt.Errorf("E-mail %d: %v", n, err)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ActionList is what the automation does, in words, each one a phrase: "add

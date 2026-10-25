@@ -383,6 +383,7 @@ type denmaNewCenter struct {
 	Name          string `json:"name"`
 	Slug          string `json:"slug"`
 	FromEmail     string `json:"from_email"`
+	PostalAddress string `json:"postal_address"` // cmd/denma_address.go
 	AdminName     string `json:"admin_name"`
 	AdminUsername string `json:"admin_username"`
 	AdminEmail    string `json:"admin_email"`
@@ -416,6 +417,9 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 	case !strHasLen(req.AdminName, 1, 200):
 		return echo.NewHTTPError(http.StatusBadRequest, "Enter the admin's name.")
 	}
+	if req.PostalAddress, err = denmaCheckAddressInput(req.PostalAddress); err != nil { // cmd/denma_address.go
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 	if _, err := mail.ParseAddress(req.FromEmail); err != nil || len(req.FromEmail) > 300 {
 		return echo.NewHTTPError(http.StatusBadRequest, `Enter the center's sender, as name@example.org or "Name" <name@example.org>.`)
 	}
@@ -447,8 +451,9 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusConflict, fmt.Sprintf("There's already a center at /c/%s/.", req.Slug))
 	}
 	ctr.initial = map[string]any{
-		"app.from_email":    req.FromEmail,
-		"app.notify_emails": []string{adminEmail},
+		"app.from_email":       req.FromEmail,
+		"app.notify_emails":    []string{adminEmail},
+		"denma.postal_address": req.PostalAddress,
 	}
 
 	lo.Printf("denma: creating center %s (%s)", ctr.Slug, ctr.Name)
@@ -593,6 +598,14 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 	// (cmd/denma_messages.go).
 	funcs["DenmaMessageDays"] = func() int {
 		return denmaMessageDays
+	}
+	// DenmaNoAddress reports whether the page's center has no postal address
+	// (cmd/denma_address.go).
+	funcs["DenmaNoAddress"] = func() bool {
+		if denmaHub == nil || u.RootPath == denmaHub.current().urlCfg.RootPath {
+			return false
+		}
+		return denmaAddress(path.Base(u.RootPath)) == ""
 	}
 	// DenmaSourceURL is the fork's source (cmd/denma_system.go).
 	funcs["DenmaSourceURL"] = func() string {

@@ -278,7 +278,7 @@ func denmaDesignLayout(logo, name, marker string) (body, source string) {
 		"root": map[string]any{"type": "EmailLayout", "data": map[string]any{
 			"backdropColor": "#F9F9F9", "canvasColor": "#FFFFFF", "textColor": "#111111",
 			"borderColor": "#EEEEEE", "fontFamily": "MODERN_SANS",
-			"childrenIds": []string{img, line, slot},
+			"childrenIds": []string{img, line, slot, denmaDesignAddrBlock},
 		}},
 		img: map[string]any{"type": "Image", "data": map[string]any{
 			"style": map[string]any{"padding": pad(40, 40, 15, 40), "textAlign": "left"},
@@ -292,6 +292,7 @@ func denmaDesignLayout(logo, name, marker string) (body, source string) {
 			"style": map[string]any{"fontSize": 16, "padding": pad(30, 40, 40, 40)},
 			"props": map[string]any{"contents": marker},
 		}},
+		denmaDesignAddrBlock: denmaDesignAddress(pad), // the center's postal address (cmd/denma_address.go)
 	}
 	b, _ := json.Marshal(src)
 	body = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body>` +
@@ -300,7 +301,7 @@ func denmaDesignLayout(logo, name, marker string) (body, source string) {
 		`<div style="padding:40px 40px 15px 40px;text-align:left"><img alt="` + html.EscapeString(name) + `" src="` + html.EscapeString(logo) + `" height="90" style="height:90px;outline:none;border:none;text-decoration:none;vertical-align:middle;display:inline-block;max-width:100%"/></div>` +
 		`<div style="padding:0px 40px 0px 40px"><hr style="width:100%;border:none;border-top:1px solid #EEEEEE;margin:0"/></div>` +
 		`<div style="font-size:16px;padding:30px 40px 40px 40px">` + marker + `</div>` +
-		`</td></tr></tbody></table></div></body></html>`
+		denmaDesignAddrHTML + denmaDesignEnd
 	return body, string(b)
 }
 

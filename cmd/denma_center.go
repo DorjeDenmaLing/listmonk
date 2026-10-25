@@ -34,6 +34,7 @@ var denmaCenterFields = []string{
 	"denma.daily_cap",                     // superadmins only (cmd/denma_daily.go)
 	"denma.reply_to",                      // cmd/denma_reply_to.go
 	"denma.timezone", "denma.send_window", // cmd/denma_sendwindow.go
+	"denma.postal_address", // cmd/denma_address.go
 }
 
 // denmaPermissions adds ours to listmonk's permissions (permissions.json), so
@@ -105,6 +106,8 @@ type denmaCenterForm struct {
 
 	TimeZone   string          `json:"time_zone"`   // cmd/denma_sendwindow.go
 	SendWindow denmaSendWindow `json:"send_window"` // its sending hours
+
+	PostalAddress string `json:"postal_address"` // cmd/denma_address.go
 }
 
 var denmaFormKeys = map[string]string{
@@ -113,7 +116,7 @@ var denmaFormKeys = map[string]string{
 	"unsubscribe_everywhere": "denma.unsubscribe_everywhere", "plain_text_auto": "denma.plain_text_auto",
 	"utm_domains": "denma.utm_domains", "visual_template": "denma.visual_template",
 	"design_template": "denma.design_template", "daily_cap": "denma.daily_cap", "reply_to": "denma.reply_to",
-	"time_zone": "denma.timezone", "send_window": "denma.send_window",
+	"time_zone": "denma.timezone", "send_window": "denma.send_window", "postal_address": "denma.postal_address",
 }
 
 type denmaCenterView struct {
@@ -129,6 +132,9 @@ type denmaCenterView struct {
 	DomainsOn bool
 
 	Sending denmaCapStatus // against its daily cap (cmd/denma_daily.go)
+
+	// Its templates that don't show its postal address (cmd/denma_address.go).
+	NoAddressTemplates []string
 
 	// For the features' choices.
 	VisualTemplates []denmaOption
@@ -235,6 +241,7 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 	}
 	view.DomainsOn = denmaDomainsOn()
 	view.Sending = a.denmaCapStatus()
+	view.NoAddressTemplates = a.denmaAddressTemplateNames()
 	return c.Render(http.StatusOK, "admin-denma-center", view)
 }
 
@@ -279,13 +286,16 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	if !strHasLen(f.SiteName, 1, 200) {
 		return bad("Enter the center's name.")
 	}
+	var err error
+	if f.PostalAddress, err = denmaCheckAddressInput(f.PostalAddress); err != nil { // cmd/denma_address.go
+		return bad(err.Error())
+	}
 	if _, err := mail.ParseAddress(f.FromEmail); err != nil {
 		return bad(`The sender isn't a valid address. Use name@example.org or "Name" <name@example.org>.`)
 	}
 	if err := a.denmaCheckSender(f.FromEmail); err != nil { // cmd/denma_domains.go
 		return denmaBadRequest(err)
 	}
-	var err error
 	if f.ReplyTo, err = denmaCheckReplyTo(f.ReplyTo); err != nil { // cmd/denma_reply_to.go
 		return bad(err.Error())
 	}
@@ -369,10 +379,12 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	if c := denmaCenterCounter(a.ko); c != nil {
 		c.SetLimit(f.DailyCap, 0)
 	}
-	// And the sending hours (cmd/denma_sendwindow.go).
+	// And the sending hours (cmd/denma_sendwindow.go), and the postal
+	// address (cmd/denma_address.go).
 	if slug := a.ko.String("denma.center"); slug != "" {
 		w := f.SendWindow
 		denmaWindowOf(slug).Store(&w)
+		denmaSetAddress(slug, f.PostalAddress)
 	}
 
 	// The hub's list shows the registry's name for centers that aren't running.

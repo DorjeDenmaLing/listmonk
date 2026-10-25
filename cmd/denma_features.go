@@ -76,6 +76,7 @@ var denmaFeatureDefaults = map[string]any{
 	"denma.reply_to":               "", // cmd/denma_reply_to.go
 	"denma.timezone":               "", // cmd/denma_sendwindow.go
 	"denma.send_window":            denmaSendWindowDefault,
+	"denma.postal_address":         "", // cmd/denma_address.go
 }
 
 // features installs the features' triggers in a center (db, its schema)
@@ -198,6 +199,17 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			lo.Printf("denma: center %s: %d subscribers' names split into first and last names", c.Slug, n)
+		}
+	}
+	// Version 39: the stock templates' footers and the default design show the
+	// center's postal address (cmd/denma_address.go).
+	if ver < 39 {
+		n, err := denmaAddAddressToTemplates(tx)
+		if err != nil {
+			return fmt.Errorf("adding the postal address to the templates: %v", err)
+		}
+		if n > 0 {
+			lo.Printf("denma: center %s: %d of its templates show its postal address", c.Slug, n)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)

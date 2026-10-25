@@ -69,7 +69,8 @@ var denmaCenterOwnSettings = []string{
 	"app.site_name", "app.logo_url", "app.favicon_url", "app.lang",
 	"app.from_email", "app.notify_emails",
 	"denma.design_template", "denma.default_design", // cmd/denma_design.go
-	"denma.daily_cap", // cmd/denma_daily.go
+	"denma.daily_cap",      // cmd/denma_daily.go
+	"denma.postal_address", // cmd/denma_address.go
 }
 
 // denmaCenterSettingsPath reports whether a path (in a center) is one of the
@@ -776,7 +777,8 @@ func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) error {
 		if err != nil {
 			return err
 		}
-		if _, err := db.Exec(`UPDATE settings SET value = $1::jsonb, updated_at = NOW() WHERE key = $2`, string(b), k); err != nil {
+		if _, err := db.Exec(`INSERT INTO settings (key, value) VALUES ($2, $1::jsonb)
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`, string(b), k); err != nil {
 			return fmt.Errorf("setting %s: %v", k, err)
 		}
 	}

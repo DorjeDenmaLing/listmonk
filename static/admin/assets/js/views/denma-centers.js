@@ -17,7 +17,7 @@ function slugify(name) {
 function denmaNewCenter() {
   return {
     form: {
-      name: '', slug: '', from_email: '', admin_name: '', admin_email: '', admin_username: '',
+      name: '', slug: '', from_email: '', postal_address: '', admin_name: '', admin_email: '', admin_username: '',
     },
     slugEdited: false,
     created: null,
