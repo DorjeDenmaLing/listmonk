@@ -174,27 +174,31 @@ func TestDenmaLinks(t *testing.T) {
 // attributes.
 func TestDenmaRedactPersonal(t *testing.T) {
 	for route, personal := range map[string]bool{"/api/subscribers/:id": true, "/api/subscribers": true, "/api/import/subscribers": true,
-		"/api/denma/people/:id": true, "/api/lists/:id": false, "/api/campaigns": false, "/api/denma/subscribers/resubscribe": true} {
+		"/api/denma/people/:id": true, "/api/lists/:id": false, "/api/campaigns": false, "/api/denma/subscribers/resubscribe": true,
+		"/api/tx": true, "/api/campaigns/:id/test": true, "/api/denma/automations/test": true, "/api/denma/tags/subscribers": true,
+		"/api/campaigns/:id": false, "/api/denma/tags": false} {
 		if got := denmaAuditPersonal(route); got != personal {
 			t.Errorf("%s: personal %v, want %v", route, got, personal)
 		}
 	}
 	in := map[string]any{"email": "a@x.org", "name": "Ann", "attribs": map[string]any{"city": "x"}, "lists": []any{float64(3)},
-		"query": "subscribers.email = 'b@y.org'", "status": "enabled", "emails": []any{"c@z.org"}}
+		"query": "subscribers.email = 'b@y.org'", "status": "enabled", "emails": []any{"c@z.org"},
+		"subscriber_email": "d@x.org", "subscribers": []any{"e@x.org"}, "test_email": "f@x.org", "data": map[string]any{"order": "Ann's"},
+		"note": "for g@x.org"}
 	out := denmaRedactPersonal(in).(map[string]any)
-	for _, k := range []string{"email", "name", "attribs", "emails"} {
+	for _, k := range []string{"email", "name", "attribs", "emails", "query", "subscriber_email", "subscribers", "test_email", "data"} {
 		if out[k] != "(not recorded)" {
 			t.Errorf("%s: %v", k, out[k])
 		}
 	}
-	if out["query"] != "subscribers.email = '(an address)'" || out["status"] != "enabled" || !reflect.DeepEqual(out["lists"], []any{float64(3)}) {
+	if out["note"] != "for (an address)" || out["status"] != "enabled" || !reflect.DeepEqual(out["lists"], []any{float64(3)}) {
 		t.Errorf("the rest: %v", out)
 	}
 	if b := denmaRedactPersonalJSON([]byte(`{"email": "a@x.org", "list_ids": [1]}`)); string(b) != `{"email":"(not recorded)","list_ids":[1]}` {
 		t.Errorf("JSON: %s", b)
 	}
-	q := denmaRedactPersonal(map[string][]string{"query": {"a@x.org"}, "name": {"Ann"}, "page": {"2"}}).(map[string][]string)
-	if q["query"][0] != "(an address)" || q["name"][0] != "(not recorded)" || q["page"][0] != "2" {
+	q := denmaRedactPersonal(map[string][]string{"query": {"a@x.org"}, "name": {"Ann"}, "page": {"2"}, "to": {"b@x.org"}}).(map[string][]string)
+	if q["query"][0] != "(not recorded)" || q["name"][0] != "(not recorded)" || q["page"][0] != "2" || q["to"][0] != "(an address)" {
 		t.Errorf("a query: %v", q)
 	}
 }

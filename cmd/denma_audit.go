@@ -252,7 +252,9 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 	personal := denmaAuditPersonal(route)
 	redact := denmaRedact
 	if personal {
-		targetName = ""
+		if denmaAuditAboutPerson(route) {
+			targetName = ""
+		}
 		body = denmaRedactPersonalJSON(body)
 		redact = func(v any) any { return denmaRedact(denmaRedactPersonal(v)) }
 	}
@@ -345,9 +347,20 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 }
 
 // denmaAuditPersonal is whether a route is about people, recorded without
-// their addresses, names or attributes: subscribers (and their imports), and
-// the hub's people.
+// their addresses, names or attributes: subscribers (and their imports), the
+// hub's people, transactional e-mails, tests sent to addresses, and tagging
+// by a search.
 func denmaAuditPersonal(route string) bool {
+	switch denmaAuditResource(route) {
+	case "subscribers", "import", "people", "tx":
+		return true
+	}
+	return strings.HasSuffix(route, "/test") || route == "/api/denma/tags/subscribers"
+}
+
+// denmaAuditAboutPerson is whether a route's target is a person, whose name
+// isn't recorded.
+func denmaAuditAboutPerson(route string) bool {
 	switch denmaAuditResource(route) {
 	case "subscribers", "import", "people":
 		return true
@@ -356,8 +369,10 @@ func denmaAuditPersonal(route string) bool {
 }
 
 // Keys whose values are about a person, left out of denmaAuditPersonal's
-// requests.
-var denmaPersonalKey = regexp.MustCompile(`(?i)^(e-?mails?|names?|first_?name|last_?name|attribs|attributes)$`)
+// requests: addresses, names, attributes, a transactional e-mail's data, and
+// searches (which can name them).
+var denmaPersonalKey = regexp.MustCompile(`(?i)^(e-?mails?|names?|first_?name|last_?name|attribs|attributes|` +
+	`subscribers?|subscriber_e-?mails?|test_e-?mails?|data|query|search)$`)
 
 // denmaAuditWho is the username of the person (or hub user) typed in to sign
 // in or reset a password, by username or address, or "(unknown)".
