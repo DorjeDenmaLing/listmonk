@@ -1074,8 +1074,10 @@ type denmaSignupServerReq struct {
 	Confirmed bool           `json:"confirmed"`
 }
 
-// What became of someone a Server webhook signs up.
+// What became of someone a Server webhook signs up, for the activity log;
+// the answer is denmaSignupReceived for everyone.
 const (
+	denmaSignupReceived            = "received"
 	denmaSignupSubscribed          = "subscribed"
 	denmaSignupResubscribed        = "re-subscribed"
 	denmaSignupConfirmationSent    = "confirmation sent"
@@ -1098,6 +1100,9 @@ const (
 // (appendSubscriber); their first consent is their consent_at and
 // consent_source. Tags are added; those the webhook may create are added to
 // the center's.
+//
+// The answer is the same whatever became of them, as a leaked secret's
+// mustn't say whether the center had someone; the activity log has it.
 func (a *App) DenmaSignupServer(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -1203,6 +1208,21 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
 	}
+
+	// New tags are added once the request is valid, before anything about
+	// the person, so that tags_created says nothing about them.
+	created := []string{}
+	if h.CreateTags && len(tags) > 0 {
+		if err := a.db.Select(&created, `INSERT INTO denma_tags (tag) SELECT UNNEST($1::TEXT[])
+			ON CONFLICT DO NOTHING RETURNING tag`, pq.Array(tags)); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		sort.Strings(created)
+		if len(created) > 0 {
+			a.signupLog(c, "tags added to the center: %s", strings.Join(created, ", "))
+		}
+	}
+
 	if r.Attribs == nil {
 		r.Attribs = map[string]any{}
 	}
@@ -1212,20 +1232,18 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	}
 
 	type result struct {
-		Result       string   `json:"result"`
-		Added        []int    `json:"added"`        // lists they're on now (confirmed or waiting to confirm)
-		Resubscribed []int    `json:"resubscribed"` // of those, the ones they'd unsubscribed from
-		TagsCreated  []string `json:"tags_created"` // new to the center: added to its tags
-		AttribsKept  []string `json:"attribs_kept"` // attributes they already had another value for, kept
+		Result      string   `json:"result"`
+		TagsCreated []string `json:"tags_created"` // new to the center: added to its tags
 	}
-	out := result{Added: []int{}, Resubscribed: []int{}, TagsCreated: []string{}, AttribsKept: []string{}}
+	var outcome string
+	var added, resubscribed []int
 	done := func(why string) error {
 		if why != "" {
-			a.signupLog(c, "subscriber: %s (%s)", out.Result, why) // the reason for the log, not the answer
+			a.signupLog(c, "subscriber: %s (%s)", outcome, why) // for the log, not the answer
 		} else {
-			a.signupLog(c, "subscriber: %s", out.Result)
+			a.signupLog(c, "subscriber: %s", outcome)
 		}
-		return c.JSON(http.StatusOK, okResp{out})
+		return c.JSON(http.StatusOK, okResp{result{Result: denmaSignupReceived, TagsCreated: created}})
 	}
 
 	// Them, added if they're new. An address that opted out before is added
@@ -1246,7 +1264,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	// Vouched for: no confirmation e-mail runs the address's checks.
 	if r.Confirmed {
 		if why := a.signupVouchedCheck(sub); why != "" {
-			out.Result = denmaSignupNotSubscribed
+			outcome = denmaSignupNotSubscribed
 			return done(why)
 		}
 	}
@@ -1260,7 +1278,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 		if why != "" {
-			out.Result = denmaSignupNotSubscribed
+			outcome = denmaSignupNotSubscribed
 			return done(why)
 		}
 		if r.Confirmed {
@@ -1270,20 +1288,14 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 			}
 			if optedOut.Valid && !consentAt.After(optedOut.Time) {
-				out.Result = denmaSignupNotSubscribed
+				outcome = denmaSignupNotSubscribed
 				return done("consent from before they unsubscribed")
 			}
 		}
 	}
 
-	if out.TagsCreated, out.AttribsKept, err = a.appendSubscriber(sub.ID, email, name, first, last, r.Attribs, tags, h.CreateTags); err != nil {
+	if err := a.appendSubscriber(sub.ID, email, name, first, last, r.Attribs, tags); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
-	// consent_at and consent_source are the center's, from their first consent,
-	// not the request's: kept without saying so.
-	out.AttribsKept = slices.DeleteFunc(out.AttribsKept, func(k string) bool { return k == "consent_at" || k == "consent_source" })
-	if len(out.TagsCreated) > 0 {
-		a.signupLog(c, "tags added to the center: %s", strings.Join(out.TagsCreated, ", "))
 	}
 	// Signing up through another system that vouches for their consent lifts
 	// the API's fence; otherwise it's their sign-up, to confirm
@@ -1317,15 +1329,15 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			var he *echo.HTTPError
 			switch {
 			case errors.As(err, &he) && he.Code < 500:
-				out.Result = denmaSignupNotSubscribed
+				outcome = denmaSignupNotSubscribed
 				return done(fmt.Sprint(he.Message))
 			case err != nil:
 				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 			}
-			out.Result = denmaSignupConfirmationSent
+			outcome = denmaSignupConfirmationSent
 			return done(status)
 		}
-		if err := a.db.Select(&out.Resubscribed, `SELECT list_id FROM subscriber_lists
+		if err := a.db.Select(&resubscribed, `SELECT list_id FROM subscriber_lists
 			WHERE subscriber_id = $1 AND list_id = ANY($2) AND status = 'unsubscribed' ORDER BY list_id`, sub.ID, pq.Array(listIDs)); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -1336,8 +1348,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		if err := a.denmaResubConfirm(sub.ID, lists, nil, models.JSON{"resubscribed": true, "via": "sign-up webhook: " + h.Name}, false); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
-		out.Added = listIDs
-		out.Result = denmaSignupResubscribed
+		outcome = denmaSignupResubscribed
 		return done("")
 	}
 
@@ -1366,33 +1377,33 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		if row.Status == models.SubscriptionStatusUnsubscribed {
 			continue // kept so by the database (cmd/denma_optouts.go)
 		}
-		out.Added = append(out.Added, row.ListID)
+		added = append(added, row.ListID)
 		if row.Was.String == models.SubscriptionStatusUnsubscribed {
-			out.Resubscribed = append(out.Resubscribed, row.ListID)
+			resubscribed = append(resubscribed, row.ListID)
 		}
 		if row.Status == models.SubscriptionStatusUnconfirmed {
 			unconfirmed = append(unconfirmed, row.ListID)
 		}
 	}
 	switch {
-	case len(out.Added) == 0:
-		out.Result = denmaSignupNotSubscribed
+	case len(added) == 0:
+		outcome = denmaSignupNotSubscribed
 		return done("unsubscribed from the lists, or no consent")
 	case len(unconfirmed) > 0:
 		// The confirmation e-mail, with the opt-in checks (cmd/denma_emailcheck.go).
 		if _, err := a.fnOptinNotify(sub, unconfirmed); err != nil {
 			var he *echo.HTTPError
 			if errors.As(err, &he) && he.Code < 500 {
-				out.Result = denmaSignupConfirmationNotSent
+				outcome = denmaSignupConfirmationNotSent
 				return done(fmt.Sprint(he.Message))
 			}
 			return err
 		}
-		out.Result = denmaSignupConfirmationSent
-	case len(out.Resubscribed) > 0:
-		out.Result = denmaSignupResubscribed
+		outcome = denmaSignupConfirmationSent
+	case len(resubscribed) > 0:
+		outcome = denmaSignupResubscribed
 	default:
-		out.Result = denmaSignupSubscribed
+		outcome = denmaSignupSubscribed
 	}
 	return done("")
 }
@@ -1496,15 +1507,11 @@ func denmaFirstConsent(attribs map[string]any) (time.Time, string) {
 // appendSubscriber adds a Server webhook's name, attributes and tags to a
 // subscriber's, with their row locked, so that two requests at once both
 // count. The name replaces theirs only if it's a stand-in (denmaGivenName);
-// the attributes are added to theirs (denmaAppendJSON), and the tags too,
-// the center's tags getting those it doesn't have if createTags. It returns
-// the tags new to the center and the attributes kept (they already had
-// another value).
-func (a *App) appendSubscriber(id int, email, name, first, last string, attribs map[string]any, tags []string, createTags bool) (created, kept []string, err error) {
-	created, kept = []string{}, []string{}
+// the attributes are added to theirs (denmaAppendJSON), and the tags too.
+func (a *App) appendSubscriber(id int, email, name, first, last string, attribs map[string]any, tags []string) error {
 	tx, err := a.db.Beginx()
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	defer tx.Rollback()
 	var cur struct {
@@ -1512,26 +1519,20 @@ func (a *App) appendSubscriber(id int, email, name, first, last string, attribs 
 		Attribs []byte `db:"attribs"`
 	}
 	if err := tx.Get(&cur, `SELECT name, attribs FROM subscribers WHERE id = $1 FOR UPDATE`, id); err != nil {
-		return nil, nil, err
+		return err
 	}
 	m := map[string]any{}
 	if err := json.Unmarshal(cur.Attribs, &m); err != nil || m == nil {
 		m = map[string]any{} // not an object: listmonk's own handling starts afresh too
 	}
-	m = denmaAppendJSON(m, map[string]any(attribs), "", &kept).(map[string]any)
+	m = denmaAppendJSON(m, map[string]any(attribs)).(map[string]any)
 	if len(tags) > 0 {
-		if createTags {
-			if err := tx.Select(&created, `INSERT INTO denma_tags (tag) SELECT UNNEST($1::TEXT[])
-				ON CONFLICT DO NOTHING RETURNING tag`, pq.Array(tags)); err != nil {
-				return nil, nil, err
-			}
-		}
 		add := make([]any, len(tags))
 		for i, t := range tags {
 			add[i] = t
 		}
 		have, _ := m["tags"].([]any) // an array, kept so by the database (denma_norm_tags)
-		m["tags"] = denmaAppendJSON(have, add, "tags", &kept)
+		m["tags"] = denmaAppendJSON(have, add)
 	}
 	newName := denmaGivenName(cur.Name, name, email)
 	if newName != cur.Name && (first != "" || last != "") {
@@ -1539,14 +1540,13 @@ func (a *App) appendSubscriber(id int, email, name, first, last string, attribs 
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	if _, err := tx.Exec(`UPDATE subscribers SET name = $2, attribs = $3, updated_at = NOW() WHERE id = $1`,
 		id, newName, string(b)); err != nil {
-		return nil, nil, err
+		return err
 	}
-	sort.Strings(created)
-	return created, kept, tx.Commit()
+	return tx.Commit()
 }
 
 // denmaGivenName is a subscriber's name after a request gives one: theirs,
@@ -1566,9 +1566,8 @@ func denmaGivenName(cur, given, email string) string {
 // denmaAppendJSON adds add to old (decoded JSON) without taking anything
 // away: what old doesn't have is added, objects are merged a key at a time,
 // arrays get the items they don't have yet, and a value old already has is
-// kept. Each place where add has another value, which is left out, is named
-// in kept ("a.b").
-func denmaAppendJSON(old, add any, path string, kept *[]string) any {
+// kept.
+func denmaAppendJSON(old, add any) any {
 	if add == nil {
 		return old
 	}
@@ -1590,11 +1589,7 @@ func denmaAppendJSON(old, add any, path string, kept *[]string) any {
 			}
 			sort.Strings(keys)
 			for _, k := range keys {
-				p := k
-				if path != "" {
-					p = path + "." + k
-				}
-				out[k] = denmaAppendJSON(o[k], ad[k], p, kept)
+				out[k] = denmaAppendJSON(o[k], ad[k])
 			}
 			return out
 		}
@@ -1608,9 +1603,6 @@ func denmaAppendJSON(old, add any, path string, kept *[]string) any {
 			}
 			return out
 		}
-	}
-	if !denmaJSONEqual(old, add) {
-		*kept = append(*kept, path)
 	}
 	return old
 }

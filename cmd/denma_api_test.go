@@ -154,26 +154,20 @@ func TestDenmaAppendJSON(t *testing.T) {
 	}
 	old := dec(`{"consent_at": "2026-01-01", "rg": {"person_id": 7, "registration_ids": [1]}, "consents": [{"at": "2026-01-01"}], "tags": ["a"]}`)
 	add := dec(`{"consent_at": "2026-05-05", "rg": {"person_id": 7, "registration_ids": [1, 2]}, "consents": [{"at": "2026-01-01"}, {"at": "2026-05-05"}], "phone": "555", "x": null}`)
-	var kept []string
-	got, _ := json.Marshal(denmaAppendJSON(old, add, "", &kept))
+	got, _ := json.Marshal(denmaAppendJSON(old, add))
 	want := `{"consent_at":"2026-01-01","consents":[{"at":"2026-01-01"},{"at":"2026-05-05"}],"phone":"555","rg":{"person_id":7,"registration_ids":[1,2]},"tags":["a"]}`
 	if string(got) != want {
 		t.Errorf("merged:\n%s\nwant\n%s", got, want)
 	}
-	if strings.Join(kept, ",") != "consent_at" {
-		t.Errorf("kept %v, want [consent_at]", kept)
-	}
 
-	// Another type kept, named by its path; nothing to add from nothing.
-	kept = nil
-	got, _ = json.Marshal(denmaAppendJSON(dec(`{"a": {"b": "s"}}`), dec(`{"a": {"b": {"c": 1}}}`), "", &kept))
-	if string(got) != `{"a":{"b":"s"}}` || strings.Join(kept, ",") != "a.b" {
-		t.Errorf("another type: %s %v", got, kept)
+	// Another type kept; nothing to add from nothing.
+	got, _ = json.Marshal(denmaAppendJSON(dec(`{"a": {"b": "s"}}`), dec(`{"a": {"b": {"c": 1}}}`)))
+	if string(got) != `{"a":{"b":"s"}}` {
+		t.Errorf("another type: %s", got)
 	}
-	kept = nil
-	got, _ = json.Marshal(denmaAppendJSON(dec(`{"a": 1}`), map[string]any(nil), "", &kept))
-	if string(got) != `{"a":1}` || len(kept) != 0 {
-		t.Errorf("nothing added: %s %v", got, kept)
+	got, _ = json.Marshal(denmaAppendJSON(dec(`{"a": 1}`), map[string]any(nil)))
+	if string(got) != `{"a":1}` {
+		t.Errorf("nothing added: %s", got)
 	}
 }
 
