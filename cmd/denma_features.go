@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 44
+const denmaFeaturesVersion = 45
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -237,6 +237,13 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			lo.Printf("denma: center %s: %d opt-in campaigns cancelled", c.Slug, n)
+		}
+	}
+	// Version 45: pgcrypto's functions in a center not made by the hub (DDL,
+	// moved in), which adding a user needs.
+	if ver < 45 {
+		if err := denmaCryptoFuncs(tx); err != nil {
+			return err
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)
