@@ -643,7 +643,7 @@
             "description": "`draft`: made with `\"start\": false`; `starting`: its addresses being checked; then `scheduled` or `running`, and `finished` or `cancelled`. `paused` when the center's sending is paused."
           },
           "error": { "type": "string", "description": "Why it didn't start, if it didn't." },
-          "recipients": { "type": "integer", "description": "How many on its list can be sent it." },
+          "recipients": { "type": "integer", "description": "How many addresses it has, while it's a draft; once started, how many can be sent it (the others are in `skipped`)." },
           "to_send": { "type": "integer" },
           "sent": { "type": "integer" },
           "failed": { "type": "integer" },

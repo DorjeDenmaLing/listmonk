@@ -680,10 +680,12 @@ type denmaAPICampaign struct {
 	Skipped []denmaAPISkip `db:"-" json:"skipped,omitempty"` // when recipients are added, and who won't be sent it when it starts
 }
 
+// A draft's recipients are everyone given: the count doesn't say who the
+// center has blocklisted until it starts (apiNotSent).
 const denmaAPICampaignSQL = `SELECT c.id, c.uuid, c.name, c.subject, x.error,
 	CASE WHEN x.state = 'starting' AND c.status = 'draft' THEN 'starting' ELSE c.status::TEXT END AS status,
 	(SELECT COUNT(*) FROM subscriber_lists sl JOIN subscribers s ON s.id = sl.subscriber_id
-		WHERE sl.list_id = x.list_id AND sl.status <> 'unsubscribed' AND s.status <> 'blocklisted') AS recipients,
+		WHERE sl.list_id = x.list_id AND (c.status = 'draft' OR (sl.status <> 'unsubscribed' AND s.status <> 'blocklisted'))) AS recipients,
 	c.to_send, c.sent,
 	(SELECT COUNT(*) FROM denma_send_failures f WHERE f.campaign_id = c.id) AS failed,
 	(SELECT COUNT(DISTINCT v.subscriber_id) FROM campaign_views v WHERE v.campaign_id = c.id) AS opens,
