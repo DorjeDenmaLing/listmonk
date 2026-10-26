@@ -521,3 +521,55 @@ func (a *App) DenmaLoginEmail(c echo.Context) error {
 	}
 	return msg(http.StatusOK, "Done: you now sign in and get your e-mails at "+ch.Email+".")
 }
+
+// denmaLogoutAll ends every session this browser has, the hub's and each
+// center's (session_<slug>), and clears the place: signing out of one is
+// signing out.
+func (a *App) denmaLogoutAll(c echo.Context) {
+	d := denmaHub
+	if d == nil {
+		return
+	}
+	secure := c.Scheme() == "https" || c.Request().Header.Get("X-Forwarded-Proto") == "https"
+	for _, ck := range c.Cookies() {
+		schema := ""
+		if ck.Name == "session" {
+			schema = d.baseSchema
+		} else if slug, ok := strings.CutPrefix(ck.Name, "session_"); ok {
+			if ctr := d.get(slug); ctr != nil {
+				schema = ctr.Schema
+			}
+		}
+		if schema == "" {
+			continue
+		}
+		if _, err := d.base.db.Exec(denmaInSchema(`DELETE FROM S.sessions WHERE id = $1`, schema), ck.Value); err != nil {
+			a.log.Printf("denma: error ending a session at sign-out: %v", err)
+		}
+		c.SetCookie(&http.Cookie{Name: ck.Name, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secure})
+	}
+	denmaSetPlace(c, "")
+}
+
+// denmaEndCenterSessions signs a hub user (a superadmin) out of their
+// accounts in the centers, as the hub signs them out everywhere on a new
+// password.
+func (a *App) denmaEndCenterSessions(hubUserID int) {
+	if denmaHub == nil || a.ko.String("denma.center") != "" {
+		return
+	}
+	var accts []struct {
+		Schema string `db:"schema_name"`
+		UserID int    `db:"center_user_id"`
+	}
+	if err := denmaHub.base.db.Select(&accts, `SELECT c.schema_name, s.center_user_id FROM denma.center_superadmins s
+		JOIN denma.centers c ON c.id = s.center_id WHERE s.hub_user_id = $1`, hubUserID); err != nil {
+		a.log.Printf("denma: error finding a superadmin's accounts to sign out: %v", err)
+		return
+	}
+	for _, ac := range accts {
+		if _, err := denmaHub.base.db.Exec(denmaInSchema(`DELETE FROM S.sessions WHERE data->>'user_id' = $1::TEXT`, ac.Schema), ac.UserID); err != nil {
+			a.log.Printf("denma: error signing a superadmin out of a center: %v", err)
+		}
+	}
+}

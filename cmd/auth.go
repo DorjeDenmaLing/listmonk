@@ -175,6 +175,7 @@ func (a *App) Logout(c echo.Context) error {
 	// Delete the session from the DB and cookie.
 	sess := c.Get(auth.SessionKey).(*simplesessions.Session)
 	_ = sess.Destroy()
+	a.denmaLogoutAll(c) // denma: the hub's and every center's (cmd/denma_login.go)
 
 	return c.JSON(http.StatusOK, okResp{true})
 }
@@ -700,6 +701,7 @@ func (a *App) doResetPassword(c echo.Context, token, email string) error {
 	if err := a.core.DeleteUserSessions(user.ID, ""); err != nil {
 		a.log.Printf("error destroying sessions after password reset for user_id=%d: %v", user.ID, err)
 	}
+	a.denmaEndCenterSessions(user.ID) // denma: a superadmin's, in the centers
 
 	// Log the user in directly without forcing a manual login right after password change.
 	if user.TwofaType == models.TwofaTypeTOTP { // denma: not past their two-factor code

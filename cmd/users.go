@@ -376,6 +376,7 @@ func (a *App) UpdateUser(c echo.Context) error {
 		if err := a.core.DeleteUserSessions(id, ""); err != nil {
 			a.log.Printf("error destroying sessions on admin password change for user_id=%d: %v", id, err)
 		}
+		a.denmaEndCenterSessions(id) // denma: a superadmin's, in the centers
 	}
 
 	// Cache the API token for in-memory, off-DB /api/* request auth.
@@ -488,6 +489,7 @@ func (a *App) UpdateUserProfile(c echo.Context) error {
 		if err := a.core.DeleteUserSessions(user.ID, auth.GetSessionID(c)); err != nil {
 			a.log.Printf("error destroying sessions after profile password change for user_id=%d: %v", user.ID, err)
 		}
+		a.denmaEndCenterSessions(user.ID) // denma: a superadmin's, in the centers
 	}
 
 	// Blank out the password hash in the response.
