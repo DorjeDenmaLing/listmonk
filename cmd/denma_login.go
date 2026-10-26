@@ -61,16 +61,22 @@ func (d *denmaCenters) loginRoute(c echo.Context, next echo.HandlerFunc) (bool, 
 	p := req.URL.Path
 	get := req.Method == http.MethodGet || req.Method == http.MethodHead
 
+	slug, rest, _ := strings.Cut(strings.TrimPrefix(p, denmaCenterPath), "/")
+	if !strings.HasPrefix(p, denmaCenterPath) {
+		slug, rest = "", ""
+	}
+
 	switch {
 	case p == denmaLoginPath || strings.HasPrefix(p, denmaLoginPath+"/"):
 		return true, d.toHub(c, next)
+	case req.Method == http.MethodPost && (p == "/admin/forgot" || rest == "admin/forgot"):
+		// listmonk's own form has no limit: it's /login/forgot's, throttled.
+		req.URL.Path, req.URL.RawPath = denmaForgotPath, ""
+		return true, d.toHub(c, next)
 	case get && (p == "/admin/login" || p == "/admin/forgot"):
 		return true, c.Redirect(http.StatusFound, denmaLoginRedirect(p, "", req.URL.Query()))
-	case get && strings.HasPrefix(p, denmaCenterPath):
-		slug, rest, _ := strings.Cut(strings.TrimPrefix(p, denmaCenterPath), "/")
-		if rest == "admin/login" || rest == "admin/forgot" {
-			return true, c.Redirect(http.StatusFound, denmaLoginRedirect("/"+rest, denmaCenterPath+slug, req.URL.Query()))
-		}
+	case get && (rest == "admin/login" || rest == "admin/forgot"):
+		return true, c.Redirect(http.StatusFound, denmaLoginRedirect("/"+rest, denmaCenterPath+slug, req.URL.Query()))
 	}
 	return false, nil
 }
