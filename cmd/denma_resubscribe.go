@@ -299,31 +299,46 @@ func (a *App) denmaResubOptin(c echo.Context, subUUID string, confirm bool) (boo
 		makeMsgTpl(a.i18n.T("public.subConfirmedTitle"), "", a.i18n.Ts("public.subConfirmed")))
 }
 
+// denmaListIDs is lists' IDs.
+func denmaListIDs(lists []models.List) []int {
+	ids := make([]int, len(lists))
+	for i, l := range lists {
+		ids[i] = l.ID
+	}
+	return ids
+}
+
+// denmaResubMore is the lists, besides ids, that confirming a subscriber's
+// re-subscription to ids also subscribes them to: those active automations
+// add them to, that they unsubscribed from (an automation never re-adds
+// someone who unsubscribed, which this confirmation undoes). The page asks
+// them to confirm the center's e-mails, not lists, which are internal.
+func (a *App) denmaResubMore(subID int, ids []int) ([]int, error) {
+	more := []int{}
+	if !denmaAutomationsOn(a) {
+		return more, nil
+	}
+	err := a.db.Select(&more, `SELECT DISTINCT add.list_id FROM denma_automations au
+		JOIN denma_automation_lists t ON t.automation_id = au.id AND t.kind = 'trigger'
+		JOIN denma_automation_lists add ON add.automation_id = au.id AND add.kind = 'add'
+		JOIN subscriber_lists sl ON sl.subscriber_id = $1 AND sl.list_id = add.list_id AND sl.status = 'unsubscribed'
+		WHERE au.active AND au.trigger_type IN ('joins', 'confirms') AND t.list_id = ANY($2) AND NOT (add.list_id = ANY($2))`,
+		subID, pq.Array(ids))
+	return more, err
+}
+
 // denmaResubConfirm takes a subscriber off the blocklist and confirms their
 // subscriptions to lists: each is made unconfirmed, then confirmed, as an
 // opt-in is, so that automations that confirming them sets off run
 // (cmd/denma_automations.go), such as the one moving website signups on. own:
 // they confirmed it themselves (attribs.consent_confirmed_at).
 func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta models.JSON, own bool) error {
-	ids := make([]int, len(lists))
-	for i, l := range lists {
-		ids[i] = l.ID
+	ids := denmaListIDs(lists)
+	more, err := a.denmaResubMore(subID, ids)
+	if err != nil {
+		return err
 	}
-	// The lists those automations add them to, that they unsubscribed from,
-	// too: an automation never re-adds someone who unsubscribed, which this
-	// confirmation undoes.
-	if denmaAutomationsOn(a) {
-		var more []int
-		if err := a.db.Select(&more, `SELECT DISTINCT add.list_id FROM denma_automations au
-			JOIN denma_automation_lists t ON t.automation_id = au.id AND t.kind = 'trigger'
-			JOIN denma_automation_lists add ON add.automation_id = au.id AND add.kind = 'add'
-			JOIN subscriber_lists sl ON sl.subscriber_id = $1 AND sl.list_id = add.list_id AND sl.status = 'unsubscribed'
-			WHERE au.active AND au.trigger_type IN ('joins', 'confirms') AND t.list_id = ANY($2) AND NOT (add.list_id = ANY($2))`,
-			subID, pq.Array(ids)); err != nil {
-			return err
-		}
-		ids = append(ids, more...)
-	}
+	ids = append(ids, more...)
 	if attribs == nil {
 		attribs = models.JSON{}
 	}
@@ -353,9 +368,12 @@ func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta mo
 		WHERE email_hash = (SELECT denma_email_hash(email) FROM subscribers WHERE id = $1)`, subID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE subscribers SET status = 'enabled', updated_at = NOW(),
-		attribs = (CASE WHEN jsonb_typeof(attribs) = 'object' THEN attribs ELSE '{}'::JSONB END) || $2::JSONB
-		WHERE id = $1`, subID, string(ab)); err != nil {
+	// Their first consent (consent_at, consent_source) is kept, if they have
+	// one: resubscribed_at records this one.
+	if _, err := tx.Exec(`UPDATE subscribers s SET status = 'enabled', updated_at = NOW(),
+		attribs = x.b || $2::JSONB || jsonb_strip_nulls(jsonb_build_object('consent_at', x.b->'consent_at', 'consent_source', x.b->'consent_source'))
+		FROM (SELECT CASE WHEN jsonb_typeof(attribs) = 'object' THEN attribs ELSE '{}'::JSONB END AS b FROM subscribers WHERE id = $1) x
+		WHERE s.id = $1`, subID, string(ab)); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`INSERT INTO subscriber_lists (subscriber_id, list_id, status)
