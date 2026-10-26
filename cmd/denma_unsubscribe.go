@@ -48,12 +48,16 @@ func (a *App) denmaUnsubscribe(subUUID, campUUID string, _ bool) error {
 			return fail(err)
 		}
 	}
-	// listmonk's unsubscribe-by-campaign, blocklisting: every list.
+	// listmonk's unsubscribe-by-campaign, blocklisting: every list. Their
+	// other records at a variant of the address (denma_canon_hash: dots,
+	// +tags), the same inbox, too.
 	if _, err := tx.Exec(`WITH sub AS (
-			UPDATE subscribers SET status = 'blocklisted' WHERE uuid = $1 RETURNING id
+			UPDATE subscribers SET status = 'blocklisted' WHERE uuid = $1
+				OR denma_canon_hash(email) = (SELECT denma_canon_hash(email) FROM subscribers WHERE uuid = $1)
+			RETURNING id
 		)
 		UPDATE subscriber_lists SET status = 'unsubscribed', updated_at = NOW()
-		WHERE subscriber_id = (SELECT id FROM sub) AND status != 'unsubscribed'`, subUUID); err != nil {
+		WHERE subscriber_id IN (SELECT id FROM sub) AND status != 'unsubscribed'`, subUUID); err != nil {
 		return fail(err)
 	}
 	if err := tx.Commit(); err != nil {
