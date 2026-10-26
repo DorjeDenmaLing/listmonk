@@ -337,13 +337,18 @@ func TestDenmaSearchErrors(t *testing.T) {
 	}
 }
 
-// denmaSearchSQL itself: a mistake is a 400 that starts "Search:", and an
-// empty search is no condition.
+// denmaSearchSQL itself: a mistake is a 400 that starts "Search:", a blank
+// search is no condition, and one with no terms is a mistake.
 func TestDenmaSearchSQL(t *testing.T) {
 	a := &App{}
-	for _, s := range []string{"", "   ", `""`, `" "`} {
+	for _, s := range []string{"", "   "} {
 		if cond, err := a.denmaSearchSQL(denmaSubscribers, auth.User{}, s); cond != "" || err != nil {
 			t.Errorf("%q: %q, %v", s, cond, err)
+		}
+	}
+	for _, s := range []string{`""`, `" "`, `"" ""`} {
+		if _, err := a.denmaSearchSQL(denmaSubscribers, auth.User{}, s); err == nil {
+			t.Errorf("%q: no error", s)
 		}
 	}
 	_, err := a.denmaSearchSQL(denmaCampaigns, auth.User{}, "status:sent")

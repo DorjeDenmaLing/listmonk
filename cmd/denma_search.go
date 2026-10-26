@@ -131,14 +131,18 @@ func (a *App) denmaCampaignDeletes(user auth.User, ids *[]int, query *string) er
 	return nil
 }
 
-// denmaSearchSQL is a search's SQL condition ("" for an empty search), or a
-// 400 error saying what's wrong with it.
+// denmaSearchSQL is a search's SQL condition ("" for a blank search), or a
+// 400 error saying what's wrong with it. One that isn't blank but has no
+// terms (`""`) is a mistake: as no condition, a bulk action would take everyone.
 func (a *App) denmaSearchSQL(kind denmaKind, user auth.User, search string) (string, error) {
 	if strings.ContainsRune(search, 0) || !utf8.ValidString(search) {
 		return "", echo.NewHTTPError(http.StatusBadRequest, "Search: it has characters that aren't text")
 	}
 	toks := denmaLex(search)
 	if len(toks) == 0 {
+		if strings.TrimSpace(search) != "" {
+			return "", echo.NewHTTPError(http.StatusBadRequest, "Search: it has nothing to search for")
+		}
 		return "", nil
 	}
 	p := &denmaParser{a: a, kind: kind, user: user, toks: toks}
