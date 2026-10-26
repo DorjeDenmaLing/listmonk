@@ -389,9 +389,23 @@ func TestDenmaLinkHosts(t *testing.T) {
 		`see https://user@Evil.Example:8080/x`:                   "evil.example:8080",
 		`<p>Use https if you can.</p>`:                           "",
 		`<a href="/relative">x</a>`:                              "",
+		"<a href=\"ht\ntps://evil.example\">":                    "evil.example",
+		"<a href=\"https:/\t/evil.example\">":                    "evil.example",
+		"<a href=\"https://good.example\n.evil.example/\">":      "good.example.evil.example",
+		"<p>See https://good.example\nThanks</p>":                "good.example",
 	} {
 		if got := strings.Join(denmaTextLinkHosts(in), ","); got != want {
 			t.Errorf("%s: %q, want %q", in, got, want)
+		}
+	}
+	// A value that's one address loses its tabs and newlines in an href.
+	for in, want := range map[string]string{
+		"ht\ntps://evil.example":              "evil.example",
+		"https://good.example\n.evil.example": "good.example,good.example.evil.example",
+		"Order 12\nhttps://good.example/x":   "good.example",
+	} {
+		if got := strings.Join(denmaLinkHosts(in), ","); got != want {
+			t.Errorf("value %q: %q, want %q", in, got, want)
 		}
 	}
 	for name, bad := range map[string]bool{"Ana Silva": false, "Dr. J.R. Smith": false, "Visit www.evil.example": true, "https://evil.example": true} {

@@ -1363,8 +1363,18 @@ var reDenmaLink = regexp.MustCompile(`(?i)\bhttps?:[/\\]*([^/\\\s"'<>()\[\]{}^|?
 // reDenmaCSSEscape is a CSS escape: a backslash and up to 6 hex digits.
 var reDenmaCSSEscape = regexp.MustCompile(`\\([0-9a-fA-F]{1,6})\s?`)
 
+// reDenmaAttrValue is a quoted attribute value or a CSS url(), where
+// browsers drop a link's tabs and newlines (ht\ntps://evil.example).
+var reDenmaAttrValue = regexp.MustCompile(`=\s*"[^"]*"|=\s*'[^']*'|(?i)url\([^)]*\)`)
+
+// denmaDropTabNL is text without tabs and newlines.
+func denmaDropTabNL(s string) string {
+	return strings.NewReplacer("\t", "", "\r", "", "\n", "").Replace(s)
+}
+
 // denmaLinkText decodes what could hide a link from reDenmaLink: HTML
-// entities (twice encoded too) and CSS escapes.
+// entities (twice encoded too), CSS escapes, and tabs and newlines in
+// attribute values.
 func denmaLinkText(s string) string {
 	for i := 0; i < 3 && strings.ContainsAny(s, "&\\"); i++ {
 		d := html.UnescapeString(s)
@@ -1380,7 +1390,7 @@ func denmaLinkText(s string) string {
 		}
 		s = d
 	}
-	return s
+	return reDenmaAttrValue.ReplaceAllStringFunc(s, denmaDropTabNL)
 }
 
 // denmaTextLinkHosts returns the hosts of the links in a text.
@@ -1474,6 +1484,11 @@ func denmaLinkHosts(values ...any) []string {
 		switch t := v.(type) {
 		case string:
 			out = append(out, denmaTextLinkHosts(t)...)
+			// A value that's one address may go in an href, where its tabs
+			// and newlines are dropped.
+			if u := strings.TrimSpace(denmaDropTabNL(t)); u != strings.TrimSpace(t) && !strings.ContainsAny(u, " ") {
+				out = append(out, denmaTextLinkHosts(u)...)
+			}
 		case map[string]any:
 			for _, x := range t {
 				walk(x)
@@ -1576,7 +1591,16 @@ func denmaCheckCampaignLinks(slug string, m models.Message) error {
 	if allowed == nil {
 		return nil
 	}
-	if err := denmaCheckRendered(allowed, m.Campaign.TemplateBody, m.Subject, string(m.Body), string(m.AltBody)); err != nil {
+	// Where its tracked links go, which the template's logic can make
+	// ({{ TrackLink (print "ht" "tps://...") . }}): the e-mail has only ours.
+	var dests []string
+	if ctr := denmaHub.get(slug); ctr != nil {
+		var err error
+		if dests, err = denmaTrackedURLs(ctr, string(m.Body), string(m.AltBody)); err != nil {
+			return err
+		}
+	}
+	if err := denmaCheckRendered(allowed, m.Campaign.TemplateBody, append([]string{m.Subject, string(m.Body), string(m.AltBody)}, dests...)...); err != nil {
 		var he *echo.HTTPError
 		if errors.As(err, &he) {
 			return fmt.Errorf("not sent: %v", he.Message)
@@ -1584,4 +1608,48 @@ func denmaCheckCampaignLinks(slug string, m models.Message) error {
 		return err
 	}
 	return nil
+}
+
+// reDenmaTrackedLink is a tracked link's UUID in an e-mail (LinkTrackURL:
+// .../link/<link>/<campaign>/<subscriber>).
+var reDenmaTrackedLink = regexp.MustCompile(`/link/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/`)
+
+// denmaTrackedURLCache is tracked links' destinations, by center and link
+// UUID (a link's never changes).
+var denmaTrackedURLCache sync.Map
+
+// denmaTrackedURLs is where the tracked links in texts go, in center ctr,
+// without tabs and newlines (which a browser drops when it follows one).
+func denmaTrackedURLs(ctr *denmaCenter, texts ...string) ([]string, error) {
+	var out, missing []string
+	seen := map[string]bool{}
+	for _, t := range texts {
+		for _, m := range reDenmaTrackedLink.FindAllStringSubmatch(t, -1) {
+			id := strings.ToLower(m[1])
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			if u, ok := denmaTrackedURLCache.Load(ctr.Slug + "/" + id); ok {
+				out = append(out, u.(string))
+			} else {
+				missing = append(missing, id)
+			}
+		}
+	}
+	if len(missing) > 0 {
+		var links []struct {
+			UUID string `db:"uuid"`
+			URL  string `db:"url"`
+		}
+		if err := ctr.app.db.Select(&links, `SELECT uuid::TEXT AS uuid, url FROM links WHERE uuid = ANY($1::UUID[])`, pq.Array(missing)); err != nil {
+			return nil, err
+		}
+		for _, l := range links {
+			u := denmaDropTabNL(l.URL)
+			denmaTrackedURLCache.Store(ctr.Slug+"/"+l.UUID, u)
+			out = append(out, u)
+		}
+	}
+	return out, nil
 }
