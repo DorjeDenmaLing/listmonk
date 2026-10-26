@@ -421,8 +421,19 @@ func (a *App) DenmaResubscribe(c echo.Context) error {
 	if err := u.HasListPerm(auth.PermTypeManage, req.ListIDs...); err != nil {
 		return err
 	}
+	if err := a.denmaNoAPIList(req.ListIDs); err != nil { // cmd/denma_listmove.go
+		return err
+	}
+	// Someone they may not manage is answered as someone not there.
 	sub, err := a.core.GetSubscriber(0, "", req.Email)
+	if err == nil {
+		err = a.hasSubPerm(u, auth.PermTypeManage, []int{sub.ID})
+	}
 	if err != nil {
+		var he *echo.HTTPError
+		if errors.As(err, &he) && he.Code < 500 { // listmonk's not found is a 400
+			return echo.NewHTTPError(http.StatusNotFound, "There's no subscriber with that address on your lists.")
+		}
 		return err
 	}
 	status, err := a.denmaResubscribe(sub, req.ListIDs, nil)
