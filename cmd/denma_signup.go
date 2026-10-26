@@ -1325,7 +1325,18 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			now = ok
 		}
 		if !now {
+			claim, ok, err := a.signupConsentClaim(h)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			}
+			if !ok {
+				outcome = denmaSignupConfirmationNotSent
+				return done("the day's e-mails asking for consent are used up")
+			}
 			status, err := a.denmaResubscribe(sub, listIDs, nil)
+			if err != nil {
+				a.denmaConsentUnclaim(claim)
+			}
 			var he *echo.HTTPError
 			switch {
 			case errors.As(err, &he) && he.Code < 500:
@@ -1390,8 +1401,21 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		outcome = denmaSignupNotSubscribed
 		return done("unsubscribed from the lists, or no consent")
 	case len(unconfirmed) > 0:
-		// The confirmation e-mail, with the opt-in checks (cmd/denma_emailcheck.go).
-		if _, err := a.fnOptinNotify(sub, unconfirmed); err != nil {
+		// The confirmation e-mail, with the opt-in checks (cmd/denma_emailcheck.go),
+		// within the day's (cmd/denma_consentcap.go).
+		claim, ok, err := a.signupConsentClaim(h)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		if !ok {
+			outcome = denmaSignupConfirmationNotSent
+			return done("the day's e-mails asking for consent are used up")
+		}
+		n, err := a.fnOptinNotify(sub, unconfirmed)
+		if err != nil || n == 0 {
+			a.denmaConsentUnclaim(claim)
+		}
+		if err != nil {
 			var he *echo.HTTPError
 			if errors.As(err, &he) && he.Code < 500 {
 				outcome = denmaSignupConfirmationNotSent

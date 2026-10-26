@@ -9,6 +9,8 @@ package main
 // the center's admins and the superadmins are told once a day. Sign-ups'
 // own opt-ins aren't counted (they have the per-address limit,
 // cmd/denma_optins.go). MCP keys can't send either (cmd/denma_mcp.go).
+// Server webhooks' have their own cap, denmaServerConsentPerDay: a leaked
+// secret isn't someone asking.
 
 import (
 	"fmt"
@@ -19,7 +21,10 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-const denmaConsentRequestsPerDay = 20
+const (
+	denmaConsentRequestsPerDay = 20  // the admins'
+	denmaServerConsentPerDay   = 100 // the center's Server webhooks' (confirmations, re-subscription e-mails)
+)
 
 // denmaConsentCapSQL makes the count's table, in a center (denmaFeaturesSQL,
 // version 44): one row per e-mail, and one per notice ('notice'). Kept two
@@ -47,7 +52,7 @@ func (a *App) denmaConsentClaim(kind string) (int64, error) {
 	}
 	var used int
 	var told bool
-	if err := tx.QueryRow(`SELECT COUNT(*) FILTER (WHERE kind <> 'notice'), COUNT(*) FILTER (WHERE kind = 'notice') > 0
+	if err := tx.QueryRow(`SELECT COUNT(*) FILTER (WHERE kind IN ('optin', 'resubscribe')), COUNT(*) FILTER (WHERE kind = 'notice') > 0
 		FROM denma_consent_requests WHERE created_at > NOW() - INTERVAL '24 hours'`).Scan(&used, &told); err != nil {
 		return 0, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -65,6 +70,36 @@ func (a *App) denmaConsentClaim(kind string) (int64, error) {
 		return 0, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return id, tx.Commit()
+}
+
+// signupConsentClaim takes one of the day's e-mails asking for consent that
+// the center's Server webhooks send, returning its row to give back if none
+// is sent (denmaConsentUnclaim), or false past the cap, when the admins are
+// told (once a day for the webhook).
+func (a *App) signupConsentClaim(h denmaSignupHook) (int64, bool, error) {
+	tx, err := a.db.Beginx()
+	if err != nil {
+		return 0, false, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(current_schema() || '/denma_consent_requests'))`); err != nil {
+		return 0, false, err
+	}
+	var used int
+	if err := tx.Get(&used, `SELECT COUNT(*) FROM denma_consent_requests WHERE kind = 'server' AND created_at > NOW() - INTERVAL '24 hours'`); err != nil {
+		return 0, false, err
+	}
+	if used >= denmaServerConsentPerDay {
+		a.signupAlert(h, "consent", fmt.Sprintf("sent %d e-mails asking for consent in a day", denmaServerConsentPerDay),
+			fmt.Sprintf("The center's Server webhooks sent %d confirmation or re-subscription e-mails in the last 24 hours, the most they can; people they sign up since aren't sent one. "+
+				"If the system using this webhook shouldn't sign up that many people who need to confirm, its secret may have leaked: a superadmin can give it a new one.", denmaServerConsentPerDay))
+		return 0, false, nil
+	}
+	var id int64
+	if err := tx.Get(&id, `INSERT INTO denma_consent_requests (kind) VALUES ('server') RETURNING id`); err != nil {
+		return 0, false, err
+	}
+	return id, true, tx.Commit()
 }
 
 // denmaConsentUnclaim gives back a claim whose e-mail wasn't sent.
