@@ -152,7 +152,7 @@
 											{{- if $d.Can "campaigns:manage" "campaigns:manage_all" }}
 												<a href="{{ URI "/admin/campaigns/new" }}?list_id={{ .ID }}" role="menuitem" class="button ghost" data-testid="btn-campaign">{{ Icon "send" }} {{ $.L.T "campaigns.newCampaign" }}</a>
 											{{- end }}
-											{{- if and (eq .Optin "double") ($d.Can "campaigns:manage" "campaigns:manage_all") }}
+											{{- if and false (eq .Optin "double") ($d.Can "campaigns:manage" "campaigns:manage_all") }}{{/* denma: no opt-in campaigns (cmd/denma_optincampaigns.go) */}}
 												<button type="button" role="menuitem" class="ghost send-optin" data-testid="btn-send-optin-campaign" :disabled="isLoading('lists')" @click.prevent="onCreateOptinCampaign({{ .ID }}, {{ ToJSON .Name }})">
 													{{ Icon "send" }} {{ $.L.T "lists.sendOptinCampaign" }}
 												</button>

@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 42
+const denmaFeaturesVersion = 43
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -227,6 +227,16 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		}
 		if n > 0 {
 			lo.Printf("denma: center %s: %d templates and campaigns link its own uploads instead of the hub's address", c.Slug, n)
+		}
+	}
+	// Version 43: no opt-in campaigns (cmd/denma_optincampaigns.go).
+	if ver < 43 {
+		res, err := tx.Exec(denmaCancelOptinCampaignsSQL)
+		if err != nil {
+			return fmt.Errorf("cancelling opt-in campaigns: %v", err)
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			lo.Printf("denma: center %s: %d opt-in campaigns cancelled", c.Slug, n)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)

@@ -442,6 +442,9 @@ func sanitizeDenmaSQL(q string) string {
 // tags: regular campaigns only, by users with access to all lists. Called by
 // CreateCampaign and UpdateCampaign.
 func (a *App) denmaCheckCampaign(o *campReq, c echo.Context) error {
+	if err := denmaNoOptinCampaign(o.Type); err != nil { // cmd/denma_optincampaigns.go
+		return err
+	}
 	o.PreviewText = strings.TrimSpace(o.PreviewText)
 	if utf8.RuneCountInString(o.PreviewText) > denmaPreviewTextMax {
 		return echo.NewHTTPError(http.StatusBadRequest,
@@ -455,9 +458,6 @@ func (a *App) denmaCheckCampaign(o *campReq, c echo.Context) error {
 	o.SubscriberTags = denmaNormTags(o.SubscriberTags)
 	if len(o.SubscriberTags) == 0 {
 		return nil
-	}
-	if o.Type == models.CampaignTypeOptin {
-		return echo.NewHTTPError(http.StatusBadRequest, "Opt-in campaigns go to lists only, not tags.")
 	}
 	if u := auth.GetUser(c); !denmaAllLists(&u) {
 		return echo.NewHTTPError(http.StatusForbidden, "Sending to tags needs access to all lists.")

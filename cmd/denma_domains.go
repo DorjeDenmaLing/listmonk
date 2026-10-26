@@ -1712,6 +1712,9 @@ func (a *App) denmaCheckCampaignStart(id int, status string) error {
 	if status != models.CampaignStatusRunning && status != models.CampaignStatusScheduled {
 		return nil
 	}
+	if err := a.denmaCheckOptinStart(id); err != nil { // cmd/denma_optincampaigns.go
+		return err
+	}
 	if err := a.denmaCheckRecipients(id); err != nil {
 		return err
 	}
