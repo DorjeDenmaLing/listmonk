@@ -26,7 +26,8 @@ package main
 // Lists have no tags: the admin doesn't offer them (the list form, the Lists
 // page, list search), and the database keeps none but the API's own api-send
 // (denma_keep_api_list_tag, cmd/denma_noconsent.go), which features version
-// 34 left as the only one.
+// 34 left as the only one. An API campaign's list can't be moved to or from,
+// nor added to (denmaNoAPIList).
 
 import (
 	"net/http"
@@ -76,9 +77,26 @@ WHERE sl.list_id = ` + from + `::INT AND sl.subscriber_id IN (SELECT id FROM sub
 // its %query% placeholder, so a quiet add can't be made.
 var denmaQuietOff sync.Once
 
+// denmaNoAPIList refuses an API campaign's list among listIDs: its people
+// were added without consent, and it goes with its campaign.
+func (a *App) denmaNoAPIList(listIDs []int) error {
+	var n int
+	if err := a.db.Get(&n, `SELECT COUNT(*) FROM lists WHERE id = ANY($1) AND '`+denmaAPIListTag+`' = ANY(COALESCE(tags, '{}'))`,
+		pq.Array(listIDs)); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if n > 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "An API campaign's list can't be used here: it's the campaign's own, and goes with it. Choose other lists.")
+	}
+	return nil
+}
+
 // denmaAddSubscriptions is listmonk's AddSubscriptions (Manage lists -> Add),
 // without the lists' automations unless run is nil or true.
 func (a *App) denmaAddSubscriptions(subIDs, listIDs []int, status string, run *bool) error {
+	if err := a.denmaNoAPIList(listIDs); err != nil {
+		return err
+	}
 	if run == nil || *run {
 		return a.core.AddSubscriptions(subIDs, listIDs, status)
 	}
@@ -108,6 +126,9 @@ func (a *App) denmaAddSubscriptions(subIDs, listIDs []int, status string, run *b
 // the lists' automations unless run is nil or true: the subscribers' query
 // sets denma.quiet_joins before anyone is added.
 func (a *App) denmaAddSubscriptionsByQuery(search, query string, sourceListIDs, targetListIDs []int, status, subStatus string, run *bool) error {
+	if err := a.denmaNoAPIList(targetListIDs); err != nil {
+		return err
+	}
 	tpl := a.queries.AddSubscribersToListsByQuery
 	if run == nil || *run || !strings.Contains(tpl, "%query%") {
 		if run != nil && !*run {
@@ -159,6 +180,9 @@ func (a *App) DenmaMoveSubscribers(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Error moving the subscribers.")
 	} else if n != 2 {
 		return echo.NewHTTPError(http.StatusBadRequest, "That list doesn't exist.")
+	}
+	if err := a.denmaNoAPIList([]int{req.FromListID, req.ToListID}); err != nil {
+		return err
 	}
 
 	if len(req.SubscriberIDs) > 0 {
