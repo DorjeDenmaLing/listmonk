@@ -287,6 +287,10 @@ func (o *Auth) ExchangeOIDCToken(code, nonce string) (string, OIDCclaim, error) 
 // instead on the same key.
 func (o *Auth) Middleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
+		if denmaSetUser(c) { // denma: an MCP key's user (internal/auth/denma.go)
+			return next(c)
+		}
+
 		// It's an `Authorization` header request.
 		hdr := strings.TrimSpace(c.Request().Header.Get("Authorization"))
 

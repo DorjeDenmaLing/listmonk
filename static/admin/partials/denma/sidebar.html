@@ -7,10 +7,10 @@
 	permissions are kept; Media and Analytics keep their page IDs.
 
 	In the hub (superadmins): Dashboard, Centers, People, Sending domains,
-	Analytics, Activity, Media (its own, for its branding),
+	Analytics, Activity, MCP (cmd/denma_mcp.go), Media (its own, for its branding),
 	Users, Settings and System. In a center: listmonk's items and ours; its settings are the
 	hub's, and it has Activity (its own log) and Config, with General (its own
-	details) and Webhooks (cmd/denma_center.go). Superadmins go back to the hub with the top
+	details), Webhooks, API and MCP (cmd/denma_center.go). Superadmins go back to the hub with the top
 	bar's button.
 
 	On phones it's the menu under the top bar's menu button, with Refresh and
@@ -44,6 +44,9 @@
 		</li>
 		<li>
 			<a href="{{ URI "/admin/activity" }}" {{ IsNav $p "denma.activity" }} data-cy="activity">{{ template "denma-icon" "history" }}<span>Activity</span></a>
+		</li>
+		<li>
+			<a href="{{ URI "/admin/mcp" }}" {{ IsNav $p "denma.mcp" }} data-cy="mcp">{{ template "denma-icon" "robot-outline" }}<span>MCP</span></a>
 		</li>
 		<li>
 			<a href="{{ URI "/admin/campaigns/media" }}" {{ IsNav $p "campaigns.media" }} data-cy="media">{{ template "denma-icon" "image-outline" }}<span>{{ .L.T "menu.media" }}</span></a>
@@ -176,6 +179,7 @@
 					<li><a href="{{ URI "/admin/center" }}" {{ IsNav $p "config.general" }} data-cy="center">{{ template "denma-icon" "cog-outline" }}<span>General</span></a></li>
 					<li><a href="{{ URI "/admin/center/webhooks" }}" {{ IsNav $p "config.webhooks" }} data-cy="webhooks">{{ template "denma-icon" "newspaper-variant-outline" }}<span>Webhooks</span></a></li>
 					<li><a href="{{ URI "/admin/center/api" }}" {{ IsNav $p "config.api" }} data-cy="api">{{ template "denma-icon" "api" }}<span>API</span></a></li>
+					<li><a href="{{ URI "/admin/center/mcp" }}" {{ IsNav $p "config.mcp" }} data-cy="mcp">{{ template "denma-icon" "robot-outline" }}<span>MCP</span></a></li>
 				</ul>
 			</details>
 		</li>

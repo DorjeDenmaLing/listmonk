@@ -257,6 +257,10 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 			if done, err := d.loginRoute(c, next); done {
 				return err
 			}
+			// Claude's MCP server, with a key (cmd/denma_mcp.go).
+			if done, err := d.mcpRoute(c); done {
+				return err
+			}
 			p := c.Request().URL.Path
 			if !strings.HasPrefix(p, denmaCenterPath) {
 				// The hub has no subscribers of its own: of listmonk's public
@@ -522,7 +526,10 @@ func denmaInitRegistry(db *sqlx.DB) error {
 	if err := denmaInitPendingBounces(db); err != nil { // cmd/denma_bounces.go
 		return err
 	}
-	return denmaInitPeople(db) // cmd/denma_people.go
+	if err := denmaInitPeople(db); err != nil { // cmd/denma_people.go
+		return err
+	}
+	return denmaInitMCP(db) // cmd/denma_mcp.go
 }
 
 // denmaSeedCenters registers centers listed as "slug:Name,slug2:Name 2" if

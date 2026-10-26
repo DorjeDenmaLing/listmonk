@@ -267,6 +267,14 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 	details := map[string]any{}
 	if u, ok := c.Get(auth.UserHTTPCtxKey).(auth.User); ok && u.ID > 0 {
 		uid, username, name, role = &u.ID, u.Username, u.Name, u.UserRole.ID
+		// Through an MCP key (cmd/denma_mcp.go): which, and for whom on claude.ai.
+		if m, ok := denmaMCPOf(c); ok {
+			details["via"] = fmt.Sprintf("MCP key %q", m.KeyName)
+			details["mcp_key_id"] = m.KeyID
+			if m.Super {
+				role = auth.SuperAdminRoleID
+			}
+		}
 	} else if k := apiKeyOf(c); k.ID > 0 {
 		// The API: the key and what it did (apiLog), not the body.
 		name = fmt.Sprintf("API key %q", k.Name)

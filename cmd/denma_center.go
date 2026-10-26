@@ -79,6 +79,7 @@ func initDenmaCenterHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/center"), a.ViewDenmaCenter)
 	g.GET(path.Join(uriAdmin, "/center/webhooks"), a.ViewDenmaWebhooks)
 	initDenmaAPIAdminHandlers(g, a) // cmd/denma_api.go
+	initDenmaMCPAdminHandlers(g, a) // cmd/denma_mcp.go
 }
 
 func initDenmaCenterAPIHandlers(g *echo.Group, a *App) {

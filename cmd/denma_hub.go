@@ -68,6 +68,7 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	initDenmaResubscribeHandlers(g, a) // cmd/denma_resubscribe.go
 	initDenmaSignupAPIHandlers(g, a)   // cmd/denma_signup.go
 	initDenmaAPIKeyHandlers(g, a)      // cmd/denma_api.go
+	initDenmaMCPKeyHandlers(g, a)      // cmd/denma_mcp.go
 	g.GET("/api/denma/audit", a.DenmaGetAudit)
 	initDenmaMaintenanceHandlers(g, a) // cmd/denma_maintenance.go
 }

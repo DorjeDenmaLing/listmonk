@@ -1,0 +1,171 @@
+{{ define "admin-denma-mcp" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+
+{{/* denma: a center's Config -> MCP page: the keys Claude uses to work in
+	the center as one of its users (cmd/denma_mcp.go), saved as they're
+	changed. */}}
+<script nonce="{{ .CSPNonce }}">
+	window._denmaMCPKeys = {{ ToJSON $d.Keys }};
+	window._denmaMCPUsers = {{ ToJSON $d.Users }};
+	window._denmaMCPGroups = {{ ToJSON $d.Groups }};
+	window._denmaMCPMine = {{ ToJSON $d.Mine }};
+	window._denmaMCPMe = {{ $d.Profile.ID }};
+</script>
+<section class="denma-signup denma-api denma-mcp" x-data="denmaMCPKeys" x-cloak data-testid="mcp-keys">
+	<header class="row page-header">
+		<div class="col-8">
+			<h1 class="page-title">MCP</h1>
+		</div>
+		<div class="col-4 hstack justify-end">
+			<button type="button" data-variant="primary" @click="onAdd" :disabled="!users.length" data-testid="btn-add-mcp-key">{{ Icon "plus" }} Add key</button>
+		</div>
+	</header>
+
+	<div class="page-content content vstack gap-6">
+		<fieldset class="card vstack gap-4">
+			<legend>Keys</legend>
+			<p class="text-light text-8">For Claude (claude.ai, the Claude apps and Claude Code), through the listmonk MCP server. Each key belongs to one of the center's users: Claude works as them, and can do only what both the key's permissions and their role allow. What it changes is in the <a href="{{ URI "/admin/activity" }}">Activity</a> log under their name, "via MCP key …", as if they'd done it, and the center's rules apply as they do in the admin: nobody who unsubscribed is re-subscribed, and nothing is sent without the center's postal address. Give a key only what its user wants Claude for; a key that only reads is the safest.</p>
+			<p class="text-light text-8">Unless <em>Claude may see personal data</em> is ticked, Claude sees stand-ins for subscribers' addresses, names and attributes, and can't export them. A key <em>usable from claude.ai</em> works for its user when they sign in to the center's Claude connector with Google, with the e-mail address they sign in here with{{ if not $d.Connector }}, once a superadmin has set the connector up in the hub{{ end }}. Otherwise it's for Claude Code: its user gives it to their own Claude. If a key may have leaked, delete it or make a new one.</p>
+
+			<template x-if="!keys.length">
+				<p class="text-light" data-testid="no-mcp-keys">No keys yet.</p>
+			</template>
+			<template x-if="keys.length">
+				<div class="table-wrapper">
+					<table>
+						<thead>
+							<tr><th>Name</th><th>User</th><th>Can</th><th>Requests</th><th></th></tr>
+						</thead>
+						<tbody>
+							<template x-for="k in keys" :key="k.id">
+								<tr data-testid="mcp-key-row" :data-id="k.id">
+									<td data-label="Name">
+										<span x-text="k.name"></span>
+										<div class="text-light text-8"><code x-text="`lmm_…${k.key_hint}`"></code></div>
+										<div class="text-light text-8" x-text="madeText(k)" data-testid="mcp-key-made"></div>
+									</td>
+									<td data-label="User">
+										<span x-text="userText(k)" data-testid="mcp-key-user"></span>
+										<template x-if="k.hub"><div class="text-light text-8">A superadmin's account</div></template>
+									</td>
+									<td data-label="Can">
+										<div class="text-8" x-text="permsText(k)" data-testid="mcp-key-perms"></div>
+										<div class="text-light text-8" x-text="seesText(k)" data-testid="mcp-key-sees"></div>
+										<template x-if="k.lacks.length">
+											<div class="text-8 text-danger" x-text="`Their role doesn't give ${k.lacks.join(', ')} now: the key can't do that.`" data-testid="mcp-key-lacks"></div>
+										</template>
+									</td>
+									<td data-label="Requests">
+										<span x-text="k.uses.toLocaleString()"></span>
+										<div class="text-light text-8" x-text="k.last_used_at ? `Last ${ago(k.last_used_at)}` : 'Not used yet'"></div>
+									</td>
+									<td>
+										<template x-if="k.editable">
+											<div class="hstack gap-1 justify-end denma-signup-actions">
+												<button type="button" class="outline small" @click="onEdit(k)" data-testid="btn-edit-mcp-key">{{ Icon "edit-2" }} Edit</button>
+												<button type="button" class="outline small" @click="onNewKey(k)" data-testid="btn-new-mcp-key">{{ Icon "refresh-cw" }} New key</button>
+												<button type="button" class="outline small" data-variant="danger" @click="onDelete(k)" aria-label="Delete" data-testid="btn-delete-mcp-key">{{ Icon "trash-2" }}</button>
+											</div>
+										</template>
+									</td>
+								</tr>
+							</template>
+						</tbody>
+					</table>
+				</div>
+			</template>
+		</fieldset>
+
+		<fieldset class="card vstack gap-3" data-testid="mcp-using">
+			<legend>Using a key</legend>
+			<div class="vstack gap-3 denma-signup-help">
+				<p><strong>Claude Code:</strong> add the listmonk MCP server with the key (the server's address is in its README, or ask a superadmin):</p>
+				<pre><code>claude mcp add --transport http listmonk-{{ $d.CenterSlug }} &lt;the MCP server's address&gt; \
+  --header "Authorization: Bearer lmm_…"</code></pre>
+				<p><strong>claude.ai and the Claude apps:</strong> tick <em>usable from claude.ai</em> on the user's key (one per user), then they connect the listmonk connector under Customize &rarr; Connectors and sign in with Google as the address they use here.</p>
+				<p class="text-light text-8">The MCP server reaches the center at <code>{{ $d.MCPURL }}</code>. Each key makes at most {{ $d.PerMinute }} requests a minute. Keys, secrets, settings, profiles and two-factor sign-in can't be changed with a key: they're done here.</p>
+			</div>
+		</fieldset>
+	</div>
+
+	{{/* A key's settings. */}}
+	<dialog x-ref="keyDialog">
+		<form @submit.prevent="onSubmit">
+			<div class="dialog-card content">
+				<header class="dialog-head"><h4 class="dialog-title" x-text="edit.id ? 'Edit key' : 'Add key'"></h4></header>
+				<section class="dialog-body vstack gap-3">
+					<label data-field>
+						Name
+						<input x-model="edit.name" x-ref="keyName" maxlength="200" required placeholder="Jane's Claude" data-testid="mcp-key-name" />
+					</label>
+					<label data-field>
+						User
+						<select x-model.number="edit.user_id" :disabled="edit.id > 0" required data-testid="mcp-key-user-select">
+							<template x-for="u in users" :key="u.id">
+								<option :value="u.id" x-text="optionText(u)" :selected="u.id === edit.user_id"></option>
+							</template>
+						</select>
+						<small data-hint>Claude works as them, and can do no more than their role allows. It's in the Activity log under their name.</small>
+					</label>
+					<fieldset data-field>
+						<legend>What it can do</legend>
+						<div class="hstack gap-2">
+							<button type="button" class="outline small" @click="pickReading" data-testid="btn-mcp-read-only">Read only</button>
+							<button type="button" class="outline small" @click="pickAll" data-testid="btn-mcp-all">All the user can do</button>
+							<button type="button" class="outline small" @click="edit.permissions = []">None</button>
+						</div>
+						<template x-for="g in groups" :key="g.group">
+							<div class="vstack gap-1">
+								<strong class="text-8" x-text="g.group"></strong>
+								<template x-for="p in g.permissions" :key="p">
+									<label class="hstack gap-2">
+										<input type="checkbox" :value="p" x-model="edit.permissions" :disabled="!givable(p)" :data-testid="`mcp-perm-${p}`" />
+										<code x-text="p"></code>
+										<small class="text-light" x-text="permNote(p)"></small>
+									</label>
+								</template>
+							</div>
+						</template>
+						<small data-hint>Only what the user wants Claude for. Sending (campaigns:send, tx:send) and deleting are the riskiest; Claude asks before it changes anything, but the key is what limits it.</small>
+					</fieldset>
+					<label class="hstack gap-2"><input type="checkbox" x-model="edit.personal_data" data-testid="mcp-key-personal" /> Claude may see personal data</label>
+					<small data-hint>Subscribers' addresses, names and attributes, and exports of them. Unticked, Claude sees stand-ins (the same one for the same address), which is enough to count, compare and follow someone through, and can still be given an address to add or look up. The stand-ins are made by the MCP server, not by listmonk: someone using the key directly, not through the server, gets the real data, so keep such a key to those who may see it.</small>
+					<label class="hstack gap-2"><input type="checkbox" x-model="edit.connector" data-testid="mcp-key-connector" /> Usable from claude.ai</label>
+					<small data-hint>For the user signed in to the listmonk connector on claude.ai or the Claude apps with Google, as the address they use here. One such key per user. Once the key is ticked, its user's Claude can use it at their next sign-in to the connector, without their saying so: tick it only for someone who wants it.</small>
+					<label data-field>
+						Expires (optional)
+						<input type="date" x-model="edit.expires_on" :min="tomorrow()" data-testid="mcp-key-expires" />
+						<small data-hint>It stops working at the end of this day (UTC). Empty: it doesn't expire.</small>
+					</label>
+				</section>
+				<footer class="dialog-foot hstack gap-3 justify-end">
+					<button type="button" class="outline" @click="$refs.keyDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+					<button type="submit" data-variant="primary" data-testid="btn-save-mcp-key" :disabled="!canSave() || isLoading('mcp')" :aria-busy="isLoading('mcp')">Save</button>
+				</footer>
+			</div>
+		</form>
+	</dialog>
+
+	{{/* A new key, shown once. */}}
+	<dialog x-ref="newKeyDialog" @close="newKey = ''">
+		<div class="dialog-card content">
+			<header class="dialog-head"><h4 class="dialog-title">The key</h4></header>
+			<section class="dialog-body vstack gap-3">
+				<p>Give it to its user now: it isn't shown again. If it's lost, make a new one.</p>
+				<div class="hstack gap-2">
+					<input type="text" readonly class="denma-signup-url" :value="newKey" @focus="$event.target.select()" aria-label="The key" data-testid="new-mcp-key" />
+					<button type="button" class="outline small" @click="copy(newKey)" aria-label="Copy the key">{{ Icon "copy" }}</button>
+				</div>
+			</section>
+			<footer class="dialog-foot hstack gap-3 justify-end">
+				<button type="button" data-variant="primary" @click="$refs.newKeyDialog.close()">Done</button>
+			</footer>
+		</div>
+	</dialog>
+</section>
+
+<script type="module" src="{{ URI "/admin/static/js/views/denma-mcp.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

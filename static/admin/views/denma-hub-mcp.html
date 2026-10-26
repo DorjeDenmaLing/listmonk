@@ -1,0 +1,96 @@
+{{ define "admin-denma-hub-mcp" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+
+{{/* denma: the hub's MCP page: the connector secret the hosted MCP server
+	uses for people signed in to claude.ai, and every center's MCP keys
+	(cmd/denma_mcp.go). */}}
+<script nonce="{{ .CSPNonce }}">
+	window._denmaMCPConnector = {{ ToJSON $d.Connector }};
+</script>
+<section class="denma-signup denma-api denma-mcp" x-data="denmaMCPHub" x-cloak data-testid="hub-mcp">
+	<header class="page-header hstack justify-between">
+		<h1 class="page-title">MCP</h1>
+	</header>
+
+	<div class="page-content content vstack gap-6">
+		<p class="text-light">Claude (claude.ai, the Claude apps and Claude Code) works in a center through the listmonk MCP server, with a key a center's admins make on its Config &rarr; MCP page for one of its users. The MCP server reaches listmonk at <code>{{ $d.MCPURL }}</code>.</p>
+
+		<fieldset class="card vstack gap-3" data-testid="mcp-connector">
+			<legend>The claude.ai connector</legend>
+			<p class="text-light text-8">The hosted MCP server's secret, in its settings as <code>LM_CONNECTOR_SECRET</code>. With it, the MCP server acts for someone who signed in to it with Google, with their own key in the center they ask about, if that key is ticked <em>usable from claude.ai</em> and the address they signed in with is theirs here. It can't do anything without such a key. If it may have leaked, make a new one (the old one stops working at once) or delete it.</p>
+			<template x-if="connector">
+				<div class="vstack gap-1">
+					<span><code x-text="`lmc_…${connector.secret_hint}`"></code></span>
+					<span class="text-light text-8" x-text="connectorText()" data-testid="mcp-connector-made"></span>
+				</div>
+			</template>
+			<template x-if="!connector">
+				<p class="text-light" data-testid="no-mcp-connector">No connector secret: claude.ai can't be used, Claude Code's keys can.</p>
+			</template>
+			<template x-if="connector">
+				<div class="vstack gap-1">
+					<label data-field>
+						<span class="label">Only from</span>
+						<textarea rows="2" x-model="from" placeholder="203.0.113.4&#10;mcp.example.org" data-testid="mcp-connector-from"></textarea>
+						<small data-hint>The addresses, networks or host names the hosted MCP server calls listmonk from, one a line. Empty: anywhere, so whoever has the secret can act as anyone with a key usable from claude.ai. A request from elsewhere is refused.</small>
+					</label>
+					<div><button type="button" class="outline small" @click="onSaveFrom" :aria-busy="isLoading('connector')" data-testid="btn-mcp-connector-from">{{ Icon "check-circle" }} Save</button></div>
+					<p class="text-light text-8">Make a new secret now and then (and when someone who knew it leaves): the old one stops working at once.</p>
+				</div>
+			</template>
+			<div class="hstack gap-2">
+				<button type="button" class="outline small" @click="onNewSecret" :aria-busy="isLoading('connector')" data-testid="btn-mcp-connector">{{ Icon "refresh-cw" }} <span x-text="connector ? 'New secret' : 'Make the secret'"></span></button>
+				<template x-if="connector">
+					<button type="button" class="outline small" data-variant="danger" @click="onDelete" data-testid="btn-mcp-connector-delete">{{ Icon "trash-2" }} Delete</button>
+				</template>
+			</div>
+		</fieldset>
+
+		<fieldset class="card vstack gap-3" data-testid="mcp-all-keys">
+			<legend>Every center's keys ({{ len $d.Keys }})</legend>
+			{{- if $d.Keys }}
+			<div class="table-wrapper">
+				<table>
+					<thead><tr><th>Center</th><th>Key</th><th>User</th><th>Can</th><th>Requests</th></tr></thead>
+					<tbody>
+						{{- range $d.Keys }}
+						<tr data-testid="hub-mcp-key-row">
+							<td data-label="Center">{{ .Center }}</td>
+							<td data-label="Key">{{ .Name }}<div class="text-light text-8">Made by {{ .CreatedBy }}{{ if .ExpiresAt }}; expires {{ .ExpiresAt.Format "2006-01-02" }}{{ end }}</div></td>
+							<td data-label="User">{{ if .User }}{{ .User }}{{ else }}<span class="text-light">Not in the center now</span>{{ end }}</td>
+							<td data-label="Can"><span class="text-8">{{ len .Permissions }} permission{{ if ne (len .Permissions) 1 }}s{{ end }}</span><div class="text-light text-8">{{ if .PersonalData }}Sees personal data{{ else }}Stand-ins for personal data{{ end }}{{ if .Connector }}; usable from claude.ai{{ end }}</div></td>
+							<td data-label="Requests">{{ .Uses }}{{ if .LastUsedAt }}<div class="text-light text-8">Last {{ .LastUsedAt.Format "2006-01-02 15:04 MST" }}</div>{{ end }}</td>
+						</tr>
+						{{- end }}
+					</tbody>
+				</table>
+			</div>
+			{{- else }}
+			<p class="text-light">No center has an MCP key yet.</p>
+			{{- end }}
+		</fieldset>
+	</div>
+
+	{{/* The new secret, shown once. */}}
+	<dialog x-ref="secretDialog" @close="secret = ''">
+		<div class="dialog-card content">
+			<header class="dialog-head"><h4 class="dialog-title">The connector secret</h4></header>
+			<section class="dialog-body vstack gap-3">
+				<p>Put it in the MCP server's settings (<code>LM_CONNECTOR_SECRET</code> in <code>/lm-mcp/settings</code>) now: it isn't shown again.</p>
+				<div class="hstack gap-2">
+					<input type="text" readonly class="denma-signup-url" :value="secret" @focus="$event.target.select()" aria-label="The secret" data-testid="new-mcp-connector" />
+					<button type="button" class="outline small" @click="copy(secret)" aria-label="Copy the secret">{{ Icon "copy" }}</button>
+				</div>
+			</section>
+			<footer class="dialog-foot hstack gap-3 justify-end">
+				<button type="button" data-variant="primary" @click="$refs.secretDialog.close()">Done</button>
+			</footer>
+		</div>
+	</dialog>
+</section>
+
+<script type="module" src="{{ URI "/admin/static/js/views/denma-mcp.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}
