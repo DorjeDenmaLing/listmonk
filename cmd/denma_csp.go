@@ -95,8 +95,18 @@ const denmaSandboxPolicy = "sandbox allow-forms allow-popups allow-popups-to-esc
 // reDenmaContentPath matches the paths, under the hub's or a center's root,
 // that show campaign, automation or template HTML: the admin's previews, view
 // in browser (campaigns', and automations', cmd/denma_automations.go), and the
-// public archive.
-var reDenmaContentPath = regexp.MustCompile(`^/(api/campaigns/\d+/(preview|preview/archive|text)|api/templates/(\d+/)?preview|campaign/[^/]+/[^/]+|automation/[^/]+/[^/]+|archive|archive\.xml|archive/.+)$`)
+// public archive. Any ID segment, not only digits: one the route takes in
+// another form ("+5") must not escape it.
+var reDenmaContentPath = regexp.MustCompile(`^/(api/campaigns/[^/]+/(preview|preview/archive|text)|api/templates/([^/]+/)?preview|campaign/[^/]+/[^/]+|automation/[^/]+/[^/]+|archive|archive\.xml|archive/.+)$`)
+
+// denmaDigits is a route's :id if it's digits only, else "" (strconv.Atoi
+// takes "+5", which the paths above wouldn't match).
+func denmaDigits(s string) string {
+	if strings.Trim(s, "0123456789") != "" {
+		return ""
+	}
+	return s
+}
 
 // denmaSandbox sandboxes the response to a request for p (under app's root)
 // if it shows content: a content path, or one of app's uploads, which may be

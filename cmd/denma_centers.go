@@ -313,7 +313,10 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 			// (cmd/denma_place.go).
 			if c.Request().Method == http.MethodGet && (rest == "admin" || strings.HasPrefix(rest, "admin/")) {
 				denmaSetPlace(c, slug)
-				to := "/" + rest
+				to := path.Clean("/" + rest) // and still under /admin: no "admin/../api/..."
+				if to != "/admin" && !strings.HasPrefix(to, "/admin/") {
+					to = "/admin"
+				}
 				if q := c.Request().URL.RawQuery; q != "" {
 					to += "?" + q
 				}

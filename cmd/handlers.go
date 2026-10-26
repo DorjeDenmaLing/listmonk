@@ -421,7 +421,7 @@ func (a *App) hasUUID(next echo.HandlerFunc, params ...string) echo.HandlerFunc 
 // hasID middleware validates the :id param in the URL and sets its int value in the context.
 func hasID(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		id, _ := strconv.Atoi(c.Param("id"))
+		id, _ := strconv.Atoi(denmaDigits(c.Param("id"))) // denma: digits only (cmd/denma_csp.go)
 		if id < 1 || id > 1<<31-1 { // denma: none past the database's integers
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid ID")
 		}
