@@ -428,6 +428,16 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 	// Who to send to.
 	res := denmaAPIMessageResult{Sent: []string{}, Skipped: []denmaAPISkip{}}
 	skip := denmaEmailSkip(a.ko)
+	// Each address given, of the key's daily limit, before anyone's added.
+	named := map[string]bool{}
+	for _, to := range r.To {
+		if email, err := a.importer.SanitizeEmail(strings.TrimSpace(to)); err == nil {
+			named[strings.ToLower(email)] = true
+		}
+	}
+	if err := a.apiLimitClaim(c, denmaAPIUseNamed, "addresses", len(named)); err != nil {
+		return err
+	}
 	var subs []models.Subscriber
 	seen := map[string]bool{}
 	for _, to := range r.To {
@@ -761,19 +771,29 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 		name = "API campaign, " + time.Now().UTC().Format("2006-01-02 15:04 UTC")
 	}
 
+	// A campaign, of the key's daily limit, drafts too.
+	if err := a.apiLimitClaim(c, denmaAPIUseCampaign, "campaigns", 1); err != nil {
+		return err
+	}
+	keep := false
+	defer func() {
+		if !keep {
+			a.apiUnclaim(k.ID, denmaAPIUseCampaign, 1)
+		}
+	}()
+
 	// Its list, and its recipients on it.
 	listID, err := a.apiNewCampaignList("API: "+name,
 		fmt.Sprintf("The recipients of a campaign sent through the API (key %q). Deleted %d days after the campaign is done.", k.Name, denmaAPIListKeepDays))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	keep := false
 	defer func() {
 		if !keep {
 			_, _ = a.db.Exec(`DELETE FROM lists WHERE id = $1`, listID)
 		}
 	}()
-	skipped, err := a.apiAddRecipients(k.ID, listID, r.Recipients)
+	skipped, err := a.apiAddRecipients(c, listID, r.Recipients)
 	if err != nil {
 		return err
 	}
@@ -891,7 +911,8 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 // (denmaAPIRecipientData); existing subscribers keep theirs, and their name
 // unless it's a stand-in, which the name given replaces as the campaign
 // starts (denma_api_campaign_contacts), not for a draft never sent.
-func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]denmaAPISkip, error) {
+func (a *App) apiAddRecipients(c echo.Context, listID int, in []denmaAPIRecipient) ([]denmaAPISkip, error) {
+	keyID := apiKeyOf(c).ID
 	skipped := []denmaAPISkip{}
 	var emails, names, firsts, lasts, attribs []string
 	seen := map[string]bool{}
@@ -933,6 +954,16 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 	if len(emails) == 0 {
 		return skipped, nil
 	}
+	// Each address given, of the key's daily limit, before anyone's added.
+	if err := a.apiLimitClaim(c, denmaAPIUseNamed, "addresses", len(emails)); err != nil {
+		return nil, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			a.apiUnclaim(keyID, denmaAPIUseNamed, len(emails))
+		}
+	}()
 
 	fail := func(err error) ([]denmaAPISkip, error) {
 		a.log.Printf("denma: error adding an API campaign's recipients: %v", err)
@@ -989,6 +1020,7 @@ func (a *App) apiAddRecipients(keyID, listID int, in []denmaAPIRecipient) ([]den
 	if err := tx.Commit(); err != nil {
 		return fail(err)
 	}
+	committed = true
 	return skipped, nil
 }
 
@@ -1230,7 +1262,7 @@ func (a *App) DenmaAPIAddRecipients(c echo.Context) error {
 	if x.State != "draft" || !x.ListID.Valid {
 		return echo.NewHTTPError(http.StatusConflict, "The campaign has started; recipients can only be added before.")
 	}
-	skipped, err := a.apiAddRecipients(apiKeyOf(c).ID, int(x.ListID.Int64), r.Recipients)
+	skipped, err := a.apiAddRecipients(c, int(x.ListID.Int64), r.Recipients)
 	if err != nil {
 		return err
 	}

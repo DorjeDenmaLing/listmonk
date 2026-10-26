@@ -1090,7 +1090,36 @@ func (a *App) apiUnclaim(keyID int, kind string, n int) {
 	}
 }
 
-const denmaAPIUseSend = "send" // e-mails, against the key's daily limit
+const (
+	denmaAPIUseSend     = "send"     // e-mails, against the key's daily limit
+	denmaAPIUseNamed    = "named"    // addresses given (to send to, or a campaign's), each added if new
+	denmaAPIUseCampaign = "campaign" // campaigns made, drafts too
+)
+
+// apiLimitClaim claims n of a key's addresses or campaigns a day (as many as
+// its daily limit of e-mails), before anyone's added: a leaked key can't
+// fill the center with people or drafts. Past it, 429, and the admins are
+// told. Every address given counts, new or not, so the answer doesn't say
+// which the center has.
+func (a *App) apiLimitClaim(c echo.Context, kind, what string, n int) error {
+	if n <= 0 {
+		return nil
+	}
+	k := apiKeyOf(c)
+	ok, used, err := a.apiClaim(k.ID, kind, n, k.DailyLimit)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if ok {
+		return nil
+	}
+	a.apiAlert(k.ID, k.Name, kind, fmt.Sprintf("reached its daily limit of %d %s", k.DailyLimit, what),
+		fmt.Sprintf("It gave %d more after %d in the last 24 hours, and was refused: a key gives at most as many addresses, and makes at most as many campaigns, as its daily limit of e-mails. "+
+			"If that's more than the system using it should, the key may have leaked: delete it as leaked, which cancels its campaigns too. If it isn't, raise its daily limit.", n, used))
+	return echo.NewHTTPError(http.StatusTooManyRequests, fmt.Sprintf(
+		"This key's daily limit of %d %s leaves room for %d more now (%d in the last 24 hours), not %d. Try again later, or ask the center's admins to raise the key's limit.",
+		k.DailyLimit, what, max(k.DailyLimit-used, 0), used, n))
+}
 
 // apiSendClaim claims n e-mails of the key's daily limit, or answers 429 and
 // alerts the admins.
