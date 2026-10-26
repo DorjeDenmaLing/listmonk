@@ -137,7 +137,8 @@
 										<td class="align-right" data-label="People" x-text="denmaN(t.rows)"></td>
 										<td class="align-right" data-label="Already in the center" x-text="denmaN(t.existing)"></td>
 										<td data-label="The center has it">
-											<template x-if="t.exists"><span>Yes</span></template>
+											<template x-if="t.exists && !t.as"><span>Yes</span></template>
+											<template x-if="t.as"><span data-testid="tag-as">Yes, as <span class="denma-tag" x-text="t.as"></span></span></template>
 											<template x-if="!t.exists && denmaPrev.can_add_tags">
 												<label><input type="checkbox" x-model="denmaAddTags[t.tag]" data-testid="add-tag" /> No, add it</label>
 											</template>

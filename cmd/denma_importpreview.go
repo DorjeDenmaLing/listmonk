@@ -10,7 +10,8 @@ package main
 //   - the people: new to the center, already in it, already on each list,
 //     and those blocklisted, by why (unsubscribed, complained, bounced,
 //     blocklisted by an admin) and what the import does with them;
-//   - the tags: each with how many have it, and whether the center has it.
+//   - the tags: each with how many have it, and whether the center has it
+//     (or it's another name for one of its tags, given as that tag).
 //     The page offers to add the ones it doesn't, as Subscribers -> Tags
 //     does (POST /api/denma/tags), before the upload; the import itself
 //     still leaves out tags the center doesn't have (cmd/denma_tags.go).
@@ -140,6 +141,7 @@ type denmaImportTag struct {
 	Rows     int    `json:"rows"`     // addresses given it
 	Existing int    `json:"existing"` // of them, already in the center
 	Exists   bool   `json:"exists"`   // the center has the tag
+	As       string `json:"as"`       // the tag it's another name for (cmd/denma_tagaliases.go)
 }
 
 // denmaImportAddr is an address in the file, as the center has it.
@@ -483,16 +485,25 @@ func (a *App) denmaImportCenter(p *denmaImportPreview, addrs []string, entries m
 		for i, t := range p.Tags {
 			names[i] = t.Tag
 		}
-		var have []string
-		if err := a.db.Select(&have, `SELECT tag FROM denma_tags WHERE tag = ANY($1)`, pq.Array(names)); err != nil {
+		var have []struct {
+			Name string `db:"name"`
+			Tag  string `db:"tag"`
+		}
+		if err := a.db.Select(&have, `SELECT tag AS name, tag FROM denma_tags WHERE tag = ANY($1)
+			UNION ALL SELECT alias, tag FROM denma_tag_aliases WHERE alias = ANY($1) AND alias NOT IN (SELECT tag FROM denma_tags)`,
+			pq.Array(names)); err != nil {
 			return err
 		}
-		has := map[string]bool{}
+		has := map[string]string{}
 		for _, t := range have {
-			has[t] = true
+			has[t.Name] = t.Tag
 		}
 		for i := range p.Tags {
-			p.Tags[i].Exists, p.Tags[i].Existing = has[p.Tags[i].Tag], existing[p.Tags[i].Tag]
+			t := &p.Tags[i]
+			t.Exists, t.Existing = has[t.Tag] != "", existing[t.Tag]
+			if has[t.Tag] != t.Tag {
+				t.As = has[t.Tag]
+			}
 		}
 	}
 

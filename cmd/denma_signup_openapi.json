@@ -79,7 +79,7 @@
           "entry_id": {"type": "string", "description": "Kept with the consent record."},
           "page_url": {"type": "string", "description": "Kept with the consent record."},
           "attribs": {"type": "object", "description": "Attributes for someone new, up to 10,000 bytes. Each can also be its own field, `attribs.<name>` or `attribs[<name>]`, as form builders send them."},
-          "tags": {"description": "Tags for someone new, of those the webhook may give: a list, or separated by commas.", "oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}]},
+          "tags": {"description": "Tags for someone new, of those the webhook may give: a list, or separated by commas. A tag's other names (Subscribers -> Tags) give the tag.", "oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}]},
           "next": {"type": "string", "description": "For a plain form in a browser: the page to go to, if it's one of the center's trusted addresses."},
           "nonce": {"type": "string", "description": "listmonk's form's hidden field: a bot fills it, and the sign-up is dropped."}
         }
@@ -96,7 +96,7 @@
           "lists": {"type": "array", "items": {"type": "integer"}, "description": "The IDs of the lists to add them to, of the webhook's; else all of them."},
           "confirmed": {"type": "boolean", "description": "They've agreed to be subscribed already: subscribed at once, double opt-in lists too, and again if they had unsubscribed (with a consent from after it). Needs `attribs.consents`."},
           "attribs": {"type": "object", "description": "Added to theirs, never replacing a value they have. Up to 10,000 bytes. With `\"confirmed\": true`, `consents` is needed: a list of `{\"at\": \"<when they agreed, RFC 3339>\", \"source\": \"<how>\"}` (and anything else to keep with it)."},
-          "tags": {"type": "array", "items": {"type": "string"}, "maxItems": 20, "description": "Added to theirs: the webhook's request tags, and, if it may create tags, those it created and ones new to the center (at most 50 a day); others are left out."}
+          "tags": {"type": "array", "items": {"type": "string"}, "maxItems": 20, "description": "Added to theirs: the webhook's request tags, and, if it may create tags, those it created and ones new to the center (at most 50 a day); others are left out. A tag's other names (Subscribers -> Tags) give the tag."}
         }
       },
       "ServerResult": {

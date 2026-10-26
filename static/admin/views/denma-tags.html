@@ -30,7 +30,12 @@
 				<tbody>
 					{{- range $i, $t := $d.Tags }}
 					<tr data-testid="tag-row" data-tag="{{ $t.Tag }}">
-						<td><span class="denma-tag">{{ $t.Tag }}</span></td>
+						<td>
+							<span class="denma-tag">{{ $t.Tag }}</span>
+							{{- if $t.Aliases }}
+							<small class="denma-tag-aliases" data-testid="tag-aliases">also {{ range $j, $n := $t.Aliases }}{{ if $j }}, {{ end }}{{ $n }}{{ end }}</small>
+							{{- end }}
+						</td>
 						<td class="align-right" data-label="Subscribers">
 							<a href="{{ URI "/admin/subscribers" }}?search={{ printf "tag:%q" $t.Tag | urlquery }}" data-testid="tag-count">{{ FormatNumber $t.Subscribers }}</a>
 						</td>
@@ -41,6 +46,7 @@
 								<button popovertarget="tag-actions-{{ $i }}" type="button" class="ghost more icon" aria-label="More">{{ Icon "more-vertical" }}</button>
 								<menu popover id="tag-actions-{{ $i }}">
 									<button type="button" role="menuitem" class="ghost" data-testid="btn-rename" @click.prevent="onRename({{ ToJSON $t.Tag }})">{{ Icon "edit-2" }} Rename</button>
+									<button type="button" role="menuitem" class="ghost" data-testid="btn-aliases" @click.prevent="onAliases({{ ToJSON $t.Tag }}, {{ ToJSON $t.Aliases }})">{{ Icon "tag" }} Other names</button>
 									<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-delete" @click.prevent="onDelete({{ ToJSON $t.Tag }}, {{ $t.Subscribers }})">{{ Icon "trash-2" }} Delete</button>
 								</menu>
 							</ot-dropdown>
@@ -96,6 +102,25 @@
 				<footer class="dialog-foot hstack gap-3 justify-end">
 					<button type="button" class="outline" @click="$refs.renameDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
 					<button type="submit" data-variant="primary" data-testid="btn-rename-save" :disabled="!rename.to.trim()">Rename</button>
+				</footer>
+			</div>
+		</form>
+	</dialog>
+
+	<dialog x-ref="aliasesDialog">
+		<form @submit.prevent="onSubmitAliases">
+			<div class="dialog-card content">
+				<header class="dialog-head"><h4 class="dialog-title">Other names for <span x-text="aliases.tag"></span></h4></header>
+				<section class="dialog-body">
+					<label data-field>
+						Other names
+						<input x-model="aliases.names" x-ref="aliasNames" maxlength="2100" placeholder="on-land, onland" data-testid="aliases-names" />
+						<small data-hint>Separated by commas. A sign-up, import or other system that gives one of these gives this tag instead, so a system that names it its own way (Retreat Guru's <em>on-land</em> for <em>on land</em>) still tags people with it. None can be another tag's name.</small>
+					</label>
+				</section>
+				<footer class="dialog-foot hstack gap-3 justify-end">
+					<button type="button" class="outline" @click="$refs.aliasesDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+					<button type="submit" data-variant="primary" data-testid="btn-aliases-save">Save</button>
 				</footer>
 			</div>
 		</form>

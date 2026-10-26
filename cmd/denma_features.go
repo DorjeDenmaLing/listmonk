@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 46
+const denmaFeaturesVersion = 47
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -731,7 +731,8 @@ CREATE TRIGGER denma_mark_imported_subscription
 -- admin, the API, an import); a string is split at commas and |. An import
 -- keeps the tags a subscriber has and adds its own. A subscriber can only
 -- have the center's tags (denma_tags, added under Subscribers -> Tags);
--- others, say from an import, are left out.
+-- one given by another of its names is given as the tag (denma_tag_aliases,
+-- cmd/denma_tagaliases.go); others, say from an import, are left out.
 CREATE OR REPLACE FUNCTION denma_norm_tags(t JSONB) RETURNS JSONB
 LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$
     SELECT COALESCE(jsonb_agg(DISTINCT x ORDER BY x), '[]'::JSONB) FROM (
@@ -748,11 +749,13 @@ $$;
 CREATE TABLE IF NOT EXISTS denma_tags (
     tag        TEXT PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
--- (The tags subscribers had before there was a list of them.)
+);` + denmaTagAliasesSQL + `
+-- (The tags subscribers had before there was a list of them; never a tag's
+-- other name.)
 INSERT INTO denma_tags (tag) SELECT DISTINCT t FROM subscribers,
     jsonb_array_elements_text(denma_norm_tags(attribs->'tags')) t
     WHERE jsonb_typeof(attribs) = 'object' AND attribs ? 'tags'
+        AND NOT EXISTS (SELECT 1 FROM denma_tag_aliases a WHERE a.alias = t)
     ON CONFLICT DO NOTHING;
 
 CREATE OR REPLACE FUNCTION denma_subscriber_tags() RETURNS trigger
@@ -778,8 +781,11 @@ BEGIN
     ELSE
         tags := denma_norm_tags(NEW.attribs->'tags');
     END IF;
-    SELECT COALESCE(jsonb_agg(t ORDER BY t), '[]'::JSONB) INTO tags
-        FROM jsonb_array_elements_text(tags) t WHERE EXISTS (SELECT 1 FROM denma_tags d WHERE d.tag = t);
+    SELECT COALESCE(jsonb_agg(DISTINCT x ORDER BY x), '[]'::JSONB) INTO tags FROM (
+        SELECT CASE WHEN EXISTS (SELECT 1 FROM denma_tags d WHERE d.tag = t) THEN t
+            ELSE (SELECT a.tag FROM denma_tag_aliases a WHERE a.alias = t) END AS x
+        FROM jsonb_array_elements_text(tags) t
+    ) m WHERE x IS NOT NULL;
     IF tags = '[]'::JSONB THEN
         NEW.attribs := NEW.attribs - 'tags';
     ELSE
@@ -797,7 +803,8 @@ UPDATE subscribers SET attribs = attribs WHERE jsonb_typeof(attribs) = 'object' 
 
 -- The tags a campaign is sent to, besides its lists.
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';
-INSERT INTO denma_tags (tag) SELECT DISTINCT unnest(denma_tags) FROM campaigns ON CONFLICT DO NOTHING;
+INSERT INTO denma_tags (tag) SELECT DISTINCT t FROM campaigns, unnest(denma_tags) t
+    WHERE NOT EXISTS (SELECT 1 FROM denma_tag_aliases a WHERE a.alias = t) ON CONFLICT DO NOTHING;
 ` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaOptinTokenSQL + denmaNamesSQL + denmaCampaignStatsSQL + denmaMessagesSQL + denmaConsentCapSQL
 
 // denmaVisualTemplate is the center's default visual template's ID (0 for

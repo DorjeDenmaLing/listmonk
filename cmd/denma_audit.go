@@ -808,6 +808,17 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 			who = fmt.Sprintf("%d subscribers", len(ids))
 		}
 		return fmt.Sprintf(verb+" %s", strings.Join(tags, ", "), who)
+	case "PUT /api/denma/tags/aliases": // cmd/denma_tagaliases.go
+		names := []string{}
+		if ns, ok := b["aliases"].([]any); ok {
+			for _, n := range ns {
+				names = append(names, fmt.Sprint(n))
+			}
+		}
+		if len(names) == 0 {
+			return fmt.Sprintf("Removed the tag %q's other names", str("tag"))
+		}
+		return fmt.Sprintf("Set the tag %q's other names to %s", str("tag"), strings.Join(names, ", "))
 	}
 	if strings.HasPrefix(route, "/api/maintenance/") {
 		return "Ran maintenance: " + strings.TrimPrefix(route, "/api/maintenance/") + " " + target

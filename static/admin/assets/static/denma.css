@@ -2112,6 +2112,11 @@ section.analytics {
   background: var(--muted, rgba(127, 127, 127, 0.12));
   white-space: nowrap;
 }
+.denma-tag-aliases {
+  display: block;
+  color: var(--muted-foreground);
+  margin-top: var(--space-1);
+}
 
 /* A campaign's failed sends, on its page (partials/denma/failures.html). */
 .denma-failures {

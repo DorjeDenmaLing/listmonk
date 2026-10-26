@@ -24,6 +24,7 @@ package main
 // anyone in the center, sending to tags needs access to all lists.
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"path"
@@ -122,13 +123,16 @@ type denmaTagCount struct {
 	Tag         string `db:"tag" json:"tag"`
 	Subscribers int    `db:"subscribers" json:"subscribers"`
 	Active      int    `db:"active" json:"active"`
+	// Its other names (cmd/denma_tagaliases.go).
+	Aliases pq.StringArray `db:"aliases" json:"aliases"`
 }
 
 // denmaTags returns the center's tags, by name.
 func (a *App) denmaTags() ([]denmaTagCount, error) {
 	out := []denmaTagCount{}
 	err := a.db.Select(&out, `SELECT t.tag, COUNT(subscribers.id) AS subscribers,
-		COUNT(subscribers.id) FILTER (WHERE `+denmaTagActiveSQL+`) AS active
+		COUNT(subscribers.id) FILTER (WHERE `+denmaTagActiveSQL+`) AS active,
+		ARRAY(SELECT alias FROM denma_tag_aliases a WHERE a.tag = t.tag ORDER BY alias) AS aliases
 		FROM denma_tags t LEFT JOIN subscribers ON jsonb_typeof(subscribers.attribs->'tags') = 'array' AND subscribers.attribs->'tags' ? t.tag
 		GROUP BY t.tag ORDER BY t.tag`)
 	return out, err
@@ -155,10 +159,14 @@ func (a *App) denmaUnknownTags(tags []string) error {
 }
 
 // denmaCheckSubscriberTags checks that a subscriber's attributes (as sent to
-// the API) only have the center's tags. Called by CreateSubscriber,
-// UpdateSubscriber and PatchSubscriber.
+// the API) only have the center's tags, or their other names. Called by
+// CreateSubscriber, UpdateSubscriber and PatchSubscriber.
 func (a *App) denmaCheckSubscriberTags(attribs map[string]any) error {
-	tags := denmaAttribTags(attribs)
+	tags, err := a.denmaResolveTags(denmaAttribTags(attribs))
+	if err != nil {
+		a.log.Printf("denma: error checking tags: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "Error checking the tags.")
+	}
 	if len(tags) == 0 {
 		return nil
 	}
@@ -196,6 +204,7 @@ func initDenmaTagAPIHandlers(g *echo.Group, a *App) {
 	g.POST("/api/denma/tags", pm(a.DenmaAddTag, "subscribers:manage"))
 	g.PUT("/api/denma/tags", pm(a.DenmaChangeTag, "subscribers:manage"))
 	g.PUT("/api/denma/tags/subscribers", pm(a.DenmaTagSubscribers, "subscribers:manage"))
+	g.PUT("/api/denma/tags/aliases", pm(a.DenmaSetTagAliases, "subscribers:manage"))
 }
 
 type denmaTagsView struct {
@@ -248,7 +257,26 @@ func (a *App) DenmaAddTag(c echo.Context) error {
 	if len(tag) != 1 {
 		return echo.NewHTTPError(http.StatusBadRequest, "Enter one tag, without commas, of up to 100 characters.")
 	}
-	res, err := a.db.Exec(`INSERT INTO denma_tags (tag) VALUES ($1) ON CONFLICT DO NOTHING`, tag[0])
+	tx, err := a.db.Beginx()
+	if err != nil {
+		a.log.Printf("denma: error adding the tag %q: %v", tag[0], err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "Error adding the tag.")
+	}
+	defer tx.Rollback()
+	var of string
+	var res sql.Result
+	if err = denmaLockTags(tx); err == nil {
+		of, err = a.denmaAliasOf(tx, tag[0])
+	}
+	if err == nil && of != "" {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("%s is another name for the tag %s. Remove it from its other names first.", tag[0], of))
+	}
+	if err == nil {
+		res, err = tx.Exec(`INSERT INTO denma_tags (tag) VALUES ($1) ON CONFLICT DO NOTHING`, tag[0])
+	}
+	if err == nil {
+		err = tx.Commit()
+	}
 	if err != nil {
 		a.log.Printf("denma: error adding the tag %q: %v", tag[0], err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "Error adding the tag.")
@@ -298,14 +326,33 @@ func (a *App) DenmaChangeTag(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	// The center's tags first: the trigger keeps subscribers to them.
-	res, err := tx.Exec(`DELETE FROM denma_tags WHERE tag = $1`, from[0])
+	// The center's tags first: the trigger keeps subscribers to them. The new
+	// name is added before the old goes, so that its other names follow it
+	// (cmd/denma_tagaliases.go); one of them can be the new name.
+	var res sql.Result
+	err = denmaLockTags(tx)
+	if err == nil && len(to) == 1 {
+		var of string
+		_, err = tx.Exec(`DELETE FROM denma_tag_aliases WHERE alias = $1 AND tag = $2`, to[0], from[0])
+		if err == nil {
+			of, err = a.denmaAliasOf(tx, to[0])
+		}
+		if err == nil && of != "" {
+			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("%s is another name for the tag %s. Remove it from its other names first.", to[0], of))
+		}
+		if err == nil {
+			_, err = tx.Exec(`INSERT INTO denma_tags (tag) VALUES ($1) ON CONFLICT DO NOTHING`, to[0])
+		}
+		if err == nil {
+			_, err = tx.Exec(`UPDATE denma_tag_aliases SET tag = $2 WHERE tag = $1`, from[0], to[0])
+		}
+	}
+	if err == nil {
+		res, err = tx.Exec(`DELETE FROM denma_tags WHERE tag = $1`, from[0])
+	}
 	if err == nil {
 		if n, _ := res.RowsAffected(); n == 0 {
 			return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("There's no tag %s.", from[0]))
-		}
-		if len(to) == 1 {
-			_, err = tx.Exec(`INSERT INTO denma_tags (tag) VALUES ($1) ON CONFLICT DO NOTHING`, to[0])
 		}
 	}
 	// When subscribers got it (cmd/denma_automations.go) goes with the new

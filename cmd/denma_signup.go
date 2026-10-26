@@ -858,8 +858,14 @@ func (a *App) DenmaSignup(c echo.Context) error {
 		r.Attribs = map[string]any{}
 		dropped = append(dropped, fmt.Sprintf("attribs (over %d bytes)", denmaAPIMaxAttribs))
 	}
+	// Tags given by another name are the tag (cmd/denma_tagaliases.go).
+	given, err := a.denmaResolveTags(r.Tags)
+	if err != nil {
+		a.log.Printf("denma: error reading sign-up webhook %d's tags: %v", h.ID, err)
+		return reply(http.StatusInternalServerError, a.i18n.T("public.errorProcessingRequest"))
+	}
 	tags := []string{}
-	for _, t := range r.Tags {
+	for _, t := range given {
 		if slices.Contains(h.RequestTags, t) {
 			tags = append(tags, t)
 		} else {
@@ -1201,9 +1207,14 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(`"tags" can have at most %d tags.`, denmaAPIMaxTags))
 	}
 	// Its request tags, and if it may create tags, new ones and those it
-	// created: never another of the center's.
+	// created: never another of the center's. Tags given by another name
+	// are the tag (cmd/denma_tagaliases.go).
+	given, err := a.denmaResolveTags(r.Tags)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
 	var tags, left, newTags []string
-	for _, t := range denmaNormTags(r.Tags) {
+	for _, t := range given {
 		switch {
 		case slices.Contains(h.RequestTags, t):
 			tags = append(tags, t)
