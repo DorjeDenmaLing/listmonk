@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 45
+const denmaFeaturesVersion = 46
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -244,6 +244,13 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 45 {
 		if err := denmaCryptoFuncs(tx); err != nil {
 			return err
+		}
+	}
+	// Version 46: which Server webhook created each tag, from the activity
+	// log, so it can still give them (cmd/denma_signup.go).
+	if ver < 46 {
+		if _, err := tx.Exec(denmaTagHooksSQL, c.Slug); err != nil {
+			return fmt.Errorf("finding the tags webhooks created: %v", err)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)

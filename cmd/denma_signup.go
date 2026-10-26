@@ -71,6 +71,7 @@ const (
 	denmaSignupMaxPerHour      = 200     // the most it can be given
 	denmaSignupServerPerMinute = 600     // a Server webhook's requests a minute
 	denmaSignupResubPerDay     = 10      // people Server webhooks re-subscribe at once in a center, in 24 hours
+	denmaSignupTagsPerDay      = 50      // tags a Server webhook creates, in 24 hours
 	denmaSignupMaxHooks        = 20      // webhooks a center can have
 	denmaSignupMaxLists        = 20      // lists a webhook can have
 	denmaSignupMaxTags         = 20      // tags a webhook can have, of each kind
@@ -151,6 +152,17 @@ func (a *App) denmaKeepCenterAttribs(id int, attribs *models.JSON) error {
 // don't work, by client address.
 var denmaSignupBadSecrets = newDenmaThrottle(20, 15*time.Minute)
 
+// denmaTagHooksSQL records the webhook that created each tag, from the
+// activity log's "tags added to the center" (features version 46).
+const denmaTagHooksSQL = `
+UPDATE denma_tags t SET hook_id = x.hook_id FROM (
+    SELECT DISTINCT ON (tag) tag, (a.details->>'hook_id')::INT AS hook_id
+    FROM denma.audit_log a, jsonb_array_elements_text(a.details->'result') r,
+        regexp_split_to_table(substr(r, length('tags added to the center: ') + 1), ', ') tag
+    WHERE a.center = $1 AND a.action = 'Signed someone up' AND a.details ? 'hook_id' AND r LIKE 'tags added to the center: %'
+    ORDER BY tag, a.id
+) x WHERE t.tag = x.tag AND t.hook_id IS NULL`
+
 // denmaSignupSQL makes the webhooks' tables, in a center (denmaFeaturesSQL).
 const denmaSignupSQL = `
 CREATE TABLE IF NOT EXISTS denma_signup_hooks (
@@ -191,6 +203,8 @@ ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS old_token_hash TEXT NULL;                 -- server: the secret replaced
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS old_token_until TIMESTAMP WITH TIME ZONE NULL;
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS last_ip TEXT NOT NULL DEFAULT '';
+-- The Server webhook that created a tag, for denmaSignupTagsPerDay.
+ALTER TABLE denma_tags ADD COLUMN IF NOT EXISTS hook_id INTEGER NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS denma_signup_hooks_old_hash ON denma_signup_hooks (old_token_hash) WHERE old_token_hash IS NOT NULL;
 -- The last alert about each webhook, by kind (signupAlert).
 CREATE TABLE IF NOT EXISTS denma_signup_alerts (
@@ -1186,13 +1200,43 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	if len(r.Tags) > denmaAPIMaxTags {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(`"tags" can have at most %d tags.`, denmaAPIMaxTags))
 	}
-	var tags, left []string
+	// Its request tags, and if it may create tags, new ones and those it
+	// created: never another of the center's.
+	var tags, left, newTags []string
 	for _, t := range denmaNormTags(r.Tags) {
-		if h.CreateTags || slices.Contains(h.RequestTags, t) {
+		switch {
+		case slices.Contains(h.RequestTags, t):
 			tags = append(tags, t)
-		} else {
+		case h.CreateTags:
+			newTags = append(newTags, t)
+		default:
 			left = append(left, t)
 		}
+	}
+	if len(newTags) > 0 {
+		var have []struct {
+			Tag  string `db:"tag"`
+			Mine bool   `db:"mine"`
+		}
+		if err := a.db.Select(&have, `SELECT tag, hook_id IS NOT DISTINCT FROM $2 AS mine FROM denma_tags WHERE tag = ANY($1)`, pq.Array(newTags), h.ID); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		mine := map[string]bool{}
+		for _, x := range have {
+			mine[x.Tag] = x.Mine
+		}
+		newTags = slices.DeleteFunc(newTags, func(t string) bool {
+			m, ok := mine[t]
+			switch {
+			case !ok:
+				return false
+			case m:
+				tags = append(tags, t)
+			default:
+				left = append(left, t)
+			}
+			return true
+		})
 	}
 	if len(left) > 0 {
 		a.signupLog(c, "tags it can't give left out: %s", strings.Join(left, ", "))
@@ -1212,15 +1256,18 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	// New tags are added once the request is valid, before anything about
 	// the person, so that tags_created says nothing about them.
 	created := []string{}
-	if h.CreateTags && len(tags) > 0 {
-		if err := a.db.Select(&created, `INSERT INTO denma_tags (tag) SELECT UNNEST($1::TEXT[])
-			ON CONFLICT DO NOTHING RETURNING tag`, pq.Array(tags)); err != nil {
+	if len(newTags) > 0 {
+		if created, err = a.signupNewTags(h, newTags); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 		sort.Strings(created)
 		if len(created) > 0 {
 			a.signupLog(c, "tags added to the center: %s", strings.Join(created, ", "))
 		}
+		if len(created) < len(newTags) {
+			a.signupLog(c, "%d new tags not added (the day's limit, or made meanwhile)", len(newTags)-len(created))
+		}
+		tags = append(tags, created...)
 	}
 
 	if r.Attribs == nil {
@@ -1475,6 +1522,42 @@ func (a *App) signupResubClaim(hookID int) (bool, error) {
 		return false, err
 	}
 	return true, tx.Commit()
+}
+
+// signupNewTags adds tags new to the center for a Server webhook, at most
+// denmaSignupTagsPerDay a day for it, returning those added; past that the
+// admins are told.
+func (a *App) signupNewTags(h denmaSignupHook, want []string) ([]string, error) {
+	tx, err := a.db.Beginx()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(current_schema() || '/denma_tags/' || $1))`, strconv.Itoa(h.ID)); err != nil {
+		return nil, err
+	}
+	var used int
+	if err := tx.Get(&used, `SELECT COUNT(*) FROM denma_tags WHERE hook_id = $1 AND created_at > NOW() - INTERVAL '24 hours'`, h.ID); err != nil {
+		return nil, err
+	}
+	full := used+len(want) > denmaSignupTagsPerDay
+	want = want[:max(min(len(want), denmaSignupTagsPerDay-used), 0)]
+	created := []string{}
+	if len(want) > 0 {
+		if err := tx.Select(&created, `INSERT INTO denma_tags (tag, hook_id) SELECT UNNEST($1::TEXT[]), $2
+			ON CONFLICT DO NOTHING RETURNING tag`, pq.Array(want), h.ID); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	if full {
+		a.signupAlert(h, "tags", fmt.Sprintf("created %d tags in a day", denmaSignupTagsPerDay),
+			fmt.Sprintf("A Server webhook allowed to create tags makes at most %d new tags in 24 hours; the new tags its requests give since are left out. "+
+				"If its system shouldn't make that many, its secret may have leaked: a superadmin can give it a new one, or stop it creating tags.", denmaSignupTagsPerDay))
+	}
+	return created, nil
 }
 
 // denmaConsentSkew is how far in the future a consent's time may be (the

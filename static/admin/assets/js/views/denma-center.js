@@ -129,10 +129,11 @@ function denmaSignupHooks() {
     },
 
     requestTagsText(h) {
+      const given = h.request_tags.join(', ');
       if (h.create_tags) {
-        return 'A request may give any tag';
+        return given ? `A request may give ${given}, and new tags` : 'A request may give new tags';
       }
-      return `A request may give ${h.request_tags.join(', ')}${h.kind === 'form' ? ' (to someone new)' : ''}`;
+      return `A request may give ${given}${h.kind === 'form' ? ' (to someone new)' : ''}`;
     },
 
     canChange(h) {
