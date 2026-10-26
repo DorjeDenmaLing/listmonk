@@ -49,10 +49,18 @@ func denmaAdminCSP(c echo.Context) string {
 
 // denmaPublicCSP adds a public page's policy and returns its nonce, for its
 // inline <script>s. It's added, so that a sandboxed page keeps its sandbox.
+// Its forms post only here and it frames only the captcha (no sign-in
+// lookalike, no framed admin), but a sandboxed page keeps its forms.
 func denmaPublicCSP(c echo.Context) string {
 	nonce := denmaNonce()
-	c.Response().Header().Add("Content-Security-Policy", "script-src 'self' 'nonce-"+nonce+"' https://hcaptcha.com https://*.hcaptcha.com; "+
-		"worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
+	h := c.Response().Header()
+	forms := "; form-action 'self'"
+	if strings.Contains(h.Get("Content-Security-Policy"), "sandbox") {
+		forms = ""
+	}
+	h.Add("Content-Security-Policy", "script-src 'self' 'nonce-"+nonce+"' https://hcaptcha.com https://*.hcaptcha.com; "+
+		"worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; "+
+		"frame-src https://hcaptcha.com https://*.hcaptcha.com"+forms)
 	return nonce
 }
 
