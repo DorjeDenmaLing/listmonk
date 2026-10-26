@@ -335,15 +335,29 @@ func (a *App) denmaCheckListRole(c echo.Context, id int, lists []auth.ListPermis
 }
 
 // denmaCheckDeleteRole checks that c's user may delete the role with this ID,
-// a user or list role: one with no more than they have.
+// a user or list role: one with no more than they have, and no list role
+// someone has (their account would be deleted with it: ON DELETE CASCADE).
 func (a *App) denmaCheckDeleteRole(c echo.Context, id int) error {
-	if !denmaBound(auth.GetUser(c)) {
-		return nil
+	if denmaBound(auth.GetUser(c)) {
+		var err error
+		if _, lerr := a.denmaListRole(id); lerr == nil {
+			err = a.denmaCheckListRole(c, id, nil)
+		} else {
+			err = a.denmaCheckRole(c, id, nil)
+		}
+		if err != nil {
+			return err
+		}
 	}
-	if _, err := a.denmaListRole(id); err == nil {
-		return a.denmaCheckListRole(c, id, nil)
+	var held int
+	if err := a.db.Get(&held, `SELECT COUNT(*) FROM users WHERE list_role_id = $1`, id); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	return a.denmaCheckRole(c, id, nil)
+	if held > 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(
+			"%d users have this list role. Give them another, or none, before deleting it.", held))
+	}
+	return nil
 }
 
 // denmaRoleForm fits the user role form to c's user: a role with more than
