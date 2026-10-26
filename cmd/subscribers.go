@@ -723,7 +723,7 @@ func (a *App) SubscriberSendOptin(c echo.Context) error {
 	}
 
 	// Trigger the opt-in confirmation e-mail hook.
-	if _, err := a.fnOptinNotify(out, nil); err != nil {
+	if _, err := a.denmaAdminOptin(out); err != nil { // denma: within the admins' daily cap (cmd/denma_consentcap.go)
 		if he, ok := err.(*echo.HTTPError); ok { // denma: why it wasn't sent (cmd/denma_emailcheck.go)
 			return he
 		}

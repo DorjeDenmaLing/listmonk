@@ -434,6 +434,15 @@ func denmaAddAPITpls(n *notifs.Notifs) error {
 {{ template "footer" }}`); err != nil {
 		return err
 	}
+	// The admins' e-mails asking for consent (cmd/denma_consentcap.go).
+	if _, err := n.Tpls.New("denma-consent-alert").Parse(`{{ template "header" . }}
+<h2>E-mails asking for consent</h2>
+<p>{{ index . "Center" }}'s admins {{ index . "What" }}.</p>
+<p>{{ index . "Detail" }}</p>
+<p><a href="{{ index . "URL" }}" class="button">Open the activity log</a></p>
+{{ template "footer" }}`); err != nil {
+		return err
+	}
 	// A sign-up webhook's (cmd/denma_signup.go).
 	if _, err := n.Tpls.New("denma-signup-alert").Parse(`{{ template "header" . }}
 <h2>Sign-up webhook "{{ index . "Hook" }}"</h2>
@@ -492,6 +501,9 @@ func (a *App) apiCleanUp() {
 	}
 	if _, err := a.db.Exec(`DELETE FROM denma_resub_usage WHERE created_at < NOW() - INTERVAL '2 days'`); err != nil { // cmd/denma_signup.go
 		a.log.Printf("denma: error deleting old re-subscription counts: %v", err)
+	}
+	if _, err := a.db.Exec(`DELETE FROM denma_consent_requests WHERE created_at < NOW() - INTERVAL '2 days'`); err != nil { // cmd/denma_consentcap.go
+		a.log.Printf("denma: error deleting old consent e-mail counts: %v", err)
 	}
 	if _, err := a.db.Exec(`DELETE FROM denma_api_usage WHERE created_at < NOW() - INTERVAL '2 days'`); err != nil {
 		a.log.Printf("denma: error deleting old API key use: %v", err)

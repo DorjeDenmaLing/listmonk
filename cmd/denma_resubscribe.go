@@ -454,7 +454,16 @@ func (a *App) DenmaResubscribe(c echo.Context) error {
 		}
 		return err
 	}
+	// Within the admins' daily cap (cmd/denma_consentcap.go), given back if
+	// nothing is sent.
+	claim, err := a.denmaConsentClaim("resubscribe")
+	if err != nil {
+		return err
+	}
 	status, err := a.denmaResubscribe(sub, req.ListIDs, nil)
+	if err != nil || status != denmaResubSent {
+		a.denmaConsentUnclaim(claim)
+	}
 	if err != nil {
 		var he *echo.HTTPError
 		if errors.As(err, &he) {
