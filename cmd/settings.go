@@ -160,6 +160,9 @@ func (a *App) UpdateSettings(c echo.Context) error {
 	if err := denmaCheckDailySettings(&set); err != nil { // denma: cmd/denma_daily.go
 		return err
 	}
+	if err := a.denmaCheckNoOIDC(&set); err != nil { // denma: cmd/denma_login.go
+		return err
+	}
 
 	// Get the existing settings.
 	cur, err := a.core.GetSettings()

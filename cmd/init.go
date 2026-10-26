@@ -475,6 +475,7 @@ func initSettings(query string, db *sqlx.DB, ko *koanf.Koanf) {
 	if err := ko.Load(confmap.Provider(out, "."), nil); err != nil {
 		lo.Fatalf("error parsing settings from DB: %v", err)
 	}
+	denmaNoOIDC(ko) // denma: cmd/denma_login.go
 }
 
 func initUrlConfig(ko *koanf.Koanf) *UrlConfig {

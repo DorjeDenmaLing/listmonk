@@ -31,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/knadh/koanf/v2"
 	"github.com/knadh/listmonk/internal/i18n"
 	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/internal/tmptokens"
@@ -572,4 +573,21 @@ func (a *App) denmaEndCenterSessions(hubUserID int) {
 			a.log.Printf("denma: error signing a superadmin out of a center: %v", err)
 		}
 	}
+}
+
+// denmaNoOIDC keeps OIDC sign-in off in multi-center mode: it would sign
+// people in past /login, its throttle and two-factor sign-in, and make users
+// with a role ID that means something else in each center.
+func denmaNoOIDC(ko *koanf.Koanf) {
+	if ko.Bool("denma.multi_center") || ko.String("denma.center") != "" {
+		_ = ko.Set("security.oidc.enabled", false)
+	}
+}
+
+// denmaCheckNoOIDC refuses settings that turn OIDC sign-in on (denmaNoOIDC).
+func (a *App) denmaCheckNoOIDC(set *models.Settings) error {
+	if set.OIDC.Enabled && (a.ko.Bool("denma.multi_center") || a.ko.String("denma.center") != "") {
+		return echo.NewHTTPError(http.StatusBadRequest, "OIDC sign-in can't be turned on: everyone signs in at /login.")
+	}
+	return nil
 }
