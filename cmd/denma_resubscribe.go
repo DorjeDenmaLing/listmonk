@@ -76,6 +76,25 @@ CREATE TABLE IF NOT EXISTS denma_resub_sent (
     email_hash TEXT PRIMARY KEY,
     sent_at    TIMESTAMP WITH TIME ZONE NOT NULL
 );
+-- When each subscriber was last blocklisted (since features version 46): a
+-- Server webhook's consent must be newer than an admin's blocklisting.
+CREATE TABLE IF NOT EXISTS denma_blocklisted_at (
+    subscriber_id INTEGER PRIMARY KEY REFERENCES subscribers(id) ON DELETE CASCADE,
+    at            TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+CREATE OR REPLACE FUNCTION denma_note_blocklisted() RETURNS TRIGGER
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+BEGIN
+    INSERT INTO denma_blocklisted_at (subscriber_id) VALUES (NEW.id)
+        ON CONFLICT (subscriber_id) DO UPDATE SET at = NOW();
+    RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS denma_note_blocklisted ON subscribers;
+CREATE TRIGGER denma_note_blocklisted AFTER INSERT ON subscribers
+    FOR EACH ROW WHEN (NEW.status = 'blocklisted') EXECUTE FUNCTION denma_note_blocklisted();
+DROP TRIGGER IF EXISTS denma_note_blocklisted_update ON subscribers;
+CREATE TRIGGER denma_note_blocklisted_update AFTER UPDATE OF status ON subscribers
+    FOR EACH ROW WHEN (NEW.status = 'blocklisted' AND OLD.status IS DISTINCT FROM NEW.status) EXECUTE FUNCTION denma_note_blocklisted();
 `
 
 // denmaResubscribe starts a blocklisted subscriber's re-subscription to

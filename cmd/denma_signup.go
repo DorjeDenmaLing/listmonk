@@ -1319,6 +1319,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	// Blocklisted: a complaint, a bounce, or a consent from before they
 	// unsubscribed.
 	blocked := sub.Status == models.SubscriberStatusBlockListed
+	vouched := r.Confirmed // their consent re-subscribes them at once
 	if blocked {
 		why, err := a.denmaResubRefused(sub)
 		if err != nil {
@@ -1337,6 +1338,18 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			if optedOut.Valid && !consentAt.After(optedOut.Time) {
 				outcome = denmaSignupNotSubscribed
 				return done("consent from before they unsubscribed")
+			}
+			// An admin blocklisted them: consent from since then, or they
+			// confirm it themselves.
+			if !optedOut.Valid {
+				var at sql.NullTime
+				if err := a.db.Get(&at, `SELECT MAX(at) FROM denma_blocklisted_at WHERE subscriber_id = $1`, sub.ID); err != nil {
+					return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+				}
+				if !at.Valid || !consentAt.After(at.Time) {
+					vouched = false
+					a.signupLog(c, "consent from before an admin blocklisted them: they're asked to confirm")
+				}
 			}
 		}
 	}
@@ -1358,7 +1371,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	// Unsubscribed from the center: re-subscribed now, or on confirming.
 	if blocked {
 		now := false
-		if r.Confirmed {
+		if vouched {
 			ok, err := a.signupResubClaim(h.ID)
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
