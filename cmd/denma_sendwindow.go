@@ -105,6 +105,7 @@ func denmaWindowOf(slug string) *atomic.Pointer[denmaSendWindow] {
 // denmaWindowFrom reads a center's hours from its settings.
 func denmaWindowFrom(ko *koanf.Koanf) *denmaSendWindow {
 	w := denmaSendWindowDefault
+	w.Days = slices.Clone(w.Days) // Unmarshal writes into the slice it has
 	if ko.Exists("denma.send_window") {
 		_ = ko.Unmarshal("denma.send_window", &w)
 	}
