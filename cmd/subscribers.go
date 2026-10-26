@@ -878,6 +878,9 @@ func (a *App) DeleteSubscribers(c echo.Context) error {
 	if err := a.hasSubPerm(user, auth.PermTypeManage, ids); err != nil {
 		return err
 	}
+	if err := a.denmaNoBlocklistedDelete(ids, nil, nil); err != nil { // denma: cmd/denma_bulkfilter.go
+		return err
+	}
 
 	// Delete the subscribers from the DB.
 	if err := a.core.DeleteSubscribers(ids, nil); err != nil {
@@ -922,6 +925,9 @@ func (a *App) DeleteSubscribersByQuery(c echo.Context) error {
 
 	// Filter list IDs against the current user's permitted lists.
 	listIDs := user.GetPermittedListIDs(auth.PermTypeManage, req.ListIDs)
+	if err := a.denmaNoBlocklistedDelete(nil, &req, listIDs); err != nil { // denma: cmd/denma_bulkfilter.go
+		return err
+	}
 
 	// Delete the subscribers from the DB.
 	if err := a.core.DeleteSubscribersByQuery(req.Search, req.Query, listIDs, req.SubscriptionStatus); err != nil {
