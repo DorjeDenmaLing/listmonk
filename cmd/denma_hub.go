@@ -58,11 +58,12 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	initDenmaCenterAPIHandlers(g, a)
 	initDenmaAutomationAPIHandlers(g, a)
 	initDenmaSearchAPIHandlers(g, a)
-	initDenmaTagAPIHandlers(g, a)   // cmd/denma_tags.go
-	initDenmaImportHandlers(g, a)   // cmd/denma_importpreview.go
-	initDenmaListMoveHandlers(g, a) // cmd/denma_listmove.go
-	initDenmaRetryHandlers(g, a)    // cmd/denma_retries.go
-	initDenmaStartHandlers(g, a)    // cmd/denma_start.go
+	initDenmaTagAPIHandlers(g, a)      // cmd/denma_tags.go
+	initDenmaMediaFolderHandlers(g, a) // cmd/denma_mediafolders.go
+	initDenmaImportHandlers(g, a)      // cmd/denma_importpreview.go
+	initDenmaListMoveHandlers(g, a)    // cmd/denma_listmove.go
+	initDenmaRetryHandlers(g, a)       // cmd/denma_retries.go
+	initDenmaStartHandlers(g, a)       // cmd/denma_start.go
 	initDenmaPeopleAPIHandlers(g, a)
 	initDenmaDomainAPIHandlers(g, a)   // cmd/denma_domains.go
 	initDenmaResubscribeHandlers(g, a) // cmd/denma_resubscribe.go

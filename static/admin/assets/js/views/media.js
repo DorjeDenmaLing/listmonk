@@ -5,9 +5,11 @@ import {
   i18n,
 } from '../main.js';
 import * as u from '../utils.js';
+import { denmaMedia, denmaToFolder } from '../denma-media.js'; // denma: folders and the preview
 
 function component(mode) {
   return {
+    ...denmaMedia(mode), // denma: denma-media.js
     files: [],
     isUploading: false,
     isPicker: mode === 'picker',
@@ -40,11 +42,13 @@ function component(mode) {
             const out = await resp.json().catch(() => ({}));
             throw new Error(out.message || resp.statusText);
           }
+          return resp.json().then((out) => out.data && out.data.id).catch(() => null); // denma: its ID, for its folder
         }).catch((err) => {
           u.toast(`${file.name}: ${err.message}`, 'danger');
         });
       }));
 
+      await denmaToFolder(results); // denma: into the folder shown (denma-media.js)
       this.isUploading = false;
       u.reload({ message: i18n.ts('globals.messages.done') });
       return results;

@@ -1,0 +1,111 @@
+{{/*
+	denma: Media's folders and preview (cmd/denma_mediafolders.go,
+	assets/js/denma-media.js), hooked into listmonk's gallery
+	(partials/media-gallery.html). Takes Root, Mode (manage or picker) and
+	CanManage.
+*/}}
+
+{{/* The folders: all files, each folder, those in none; on the Media page,
+     a new folder, the one shown renamed or deleted, and files dragged onto
+     a folder (or "Not in a folder") moved there. */}}
+{{ define "denma-media-folders" -}}
+{{- $root := .Root -}}
+{{- $d := $root.Data -}}
+{{- $f := $d.Denma -}}
+{{- $manage := and .CanManage (eq .Mode "manage") -}}
+{{- $base := URI "/admin/campaigns/media" -}}{{ if eq .Mode "picker" }}{{ $base = print $base "/fragment" }}{{ end }}
+<script nonce="{{ $root.CSPNonce }}">window._denmaMedia = {{ ToJSON (dict "files" $d.Media "folders" $f.Folders "folder_of" $f.FolderOf "folder" $f.Folder "manage" $manage) }};</script>
+<nav class="denma-media-folders" aria-label="Folders" data-testid="media-folders">
+	<a href="{{ $base }}" {{ if eq $f.Folder "" }}aria-current="page"{{ end }}>{{ Icon "image" }} All media <span>{{ $f.All }}</span></a>
+	{{- range $f.Folders }}
+	<a href="{{ $base }}?folder={{ .ID }}" {{ if eq $f.Folder (print .ID) }}aria-current="page"{{ end }} data-folder="{{ .ID }}" {{ if $manage }}@dragover="denmaDragOver($event, {{ .ID }})" @dragleave="denmaDragLeave($event)" @drop.prevent="denmaDrop($event, {{ .ID }})"{{ end }}>{{ Icon "folder-outline" "denma-icons.svg" }} {{ .Name }} <span>{{ .Count }}</span></a>
+	{{- end }}
+	<a href="{{ $base }}?folder=none" {{ if eq $f.Folder "none" }}aria-current="page"{{ end }} data-folder="0" {{ if $manage }}@dragover="denmaDragOver($event, 0)" @dragleave="denmaDragLeave($event)" @drop.prevent="denmaDrop($event, 0)"{{ end }}>Not in a folder <span>{{ $f.None }}</span></a>
+	{{- if $manage }}
+	<button type="button" class="ghost small" @click="denmaFolderDialog()" data-testid="btn-new-folder">{{ Icon "folder-plus-outline" "denma-icons.svg" }} New folder</button>
+	{{- if $f.FolderName }}
+	<span class="denma-media-folder-actions">
+		<button type="button" class="ghost small" @click="denmaFolderDialog({{ $f.Folder }}, {{ ToJSON $f.FolderName }})" data-testid="btn-rename-folder">{{ Icon "edit-2" }} Rename</button>
+		<button type="button" class="ghost small" data-variant="danger" @click="denmaDeleteFolder({{ $f.Folder }}, {{ ToJSON $f.FolderName }})" data-testid="btn-delete-folder">{{ Icon "trash-2" }} Delete folder</button>
+	</span>
+	{{- end }}
+	{{- end }}
+</nav>
+
+{{- if $manage }}
+<dialog x-ref="denmaFolderDialog">
+	<form @submit.prevent="denmaSaveFolder()">
+		<div class="dialog-card content">
+			<header class="dialog-head"><h4 class="dialog-title" x-text="folderEdit.id ? 'Rename folder' : 'New folder'"></h4></header>
+			<section class="dialog-body">
+				<label data-field>
+					Name
+					<input x-model="folderEdit.name" maxlength="60" required autocomplete="off" data-testid="folder-name" />
+					<small data-hint>Folders only organize the library: files keep their addresses, so e-mails already sent still show them.</small>
+				</label>
+			</section>
+			<footer class="dialog-foot hstack gap-3 justify-end">
+				<button type="button" class="outline" @click="$refs.denmaFolderDialog.close()">{{ $root.L.T "globals.buttons.cancel" }}</button>
+				<button type="submit" data-variant="primary" data-testid="btn-save-folder" :disabled="!folderEdit.name.trim() || folderEdit.busy" :aria-busy="folderEdit.busy">{{ $root.L.T "globals.buttons.save" }}</button>
+			</footer>
+		</div>
+	</form>
+</dialog>
+{{- end }}
+{{- end }}
+
+{{/* A file, larger, with its details, the files before and after it on the
+     page, and moving it, opening it and deleting it. */}}
+{{ define "denma-media-preview" -}}
+{{- $root := .Root -}}
+<dialog x-ref="denmaPreview" class="denma-media-preview" @keydown.left.prevent="denmaStep(-1)" @keydown.right.prevent="denmaStep(1)" @close="denmaPreviewClosed()" data-testid="media-preview">
+	<template x-if="shown">
+		<div class="dialog-card content">
+			<header class="dialog-head hstack justify-between">
+				<h4 class="dialog-title denma-break" x-text="shown.filename"></h4>
+				<span class="text-light text-8" x-text="`${shownIndex + 1} of ${denmaFiles.length}`"></span>
+			</header>
+			<section class="dialog-body denma-media-preview-body">
+				<button type="button" class="ghost icon denma-media-step" aria-label="Previous" title="Previous (←)" :disabled="shownIndex === 0" @click="denmaStep(-1)" data-testid="btn-prev">{{ Icon "chevron-left" }}</button>
+				<div class="denma-media-preview-view">
+					<template x-if="denmaIsImage(shown)">
+						<img :src="shown.url" :alt="shown.filename" @load="denmaMeasure($event.target)" />
+					</template>
+					<template x-if="!denmaIsImage(shown)">
+						<span class="denma-media-preview-ext" x-text="denmaExt(shown.filename)"></span>
+					</template>
+				</div>
+				<button type="button" class="ghost icon denma-media-step" aria-label="Next" title="Next (→)" :disabled="shownIndex === denmaFiles.length - 1" @click="denmaStep(1)" data-testid="btn-next">{{ Icon "chevron-right" }}</button>
+			</section>
+			<dl class="denma-media-details" data-testid="media-details">
+				<template x-if="shownInfo.dims"><div><dt>Dimensions</dt><dd x-text="shownInfo.dims"></dd></div></template>
+				<template x-if="shownInfo.size"><div><dt>Size</dt><dd x-text="shownInfo.size"></dd></div></template>
+				<div><dt>Uploaded</dt><dd x-text="niceDate(shown.created_at)"></dd></div>
+				<div><dt>Type</dt><dd x-text="shown.content_type"></dd></div>
+			</dl>
+			<footer class="dialog-foot hstack gap-3 justify-between denma-media-preview-foot">
+				{{- if .CanManage }}
+				<label class="hstack gap-2">
+					<span class="text-8">Folder</span>
+					<select :value="denmaFolderOf(shown.id)" @change="denmaMove(shown.id, $event.target.value)" data-testid="preview-folder">
+						<option value="0">Not in a folder</option>
+						<template x-for="f in denmaFolders" :key="f.id">
+							<option :value="f.id" x-text="f.name" :selected="denmaFolderOf(shown.id) == f.id"></option>
+						</template>
+					</select>
+				</label>
+				{{- else }}
+				<span class="text-8" x-text="denmaFolderName(shown.id)"></span>
+				{{- end }}
+				<span class="hstack gap-3">
+					<a :href="shown.url" target="_blank" rel="noopener noreferrer" class="button outline small" data-testid="btn-open">{{ Icon "open-in-new" "denma-icons.svg" }} Open in a new tab</a>
+					{{- if .CanManage }}
+					<button type="button" class="outline small" data-variant="danger" @click="onDelete(shown.id, shown.filename)" data-testid="btn-preview-delete">{{ Icon "trash-2" }} {{ $root.L.T "globals.buttons.delete" }}</button>
+					{{- end }}
+					<button type="button" class="small" @click="$refs.denmaPreview.close()">{{ $root.L.T "globals.buttons.close" }}</button>
+				</span>
+			</footer>
+		</div>
+	</template>
+</dialog>
+{{- end }}

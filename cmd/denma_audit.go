@@ -808,6 +808,21 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 			who = fmt.Sprintf("%d subscribers", len(ids))
 		}
 		return fmt.Sprintf(verb+" %s", strings.Join(tags, ", "), who)
+	case "POST /api/denma/media/folders": // cmd/denma_mediafolders.go
+		return fmt.Sprintf("Added the media folder %q", str("name"))
+	case "PUT /api/denma/media/folders/:id":
+		return fmt.Sprintf("Renamed media folder %s to %q", target, str("name"))
+	case "DELETE /api/denma/media/folders/:id":
+		return "Deleted media folder " + target
+	case "PUT /api/denma/media/folder":
+		n := 0
+		if ids, ok := b["ids"].([]any); ok {
+			n = len(ids)
+		}
+		if f, _ := b["folder_id"].(float64); f > 0 {
+			return fmt.Sprintf("Moved %d media %s to folder %v", n, plural(n, "file", "files"), f)
+		}
+		return fmt.Sprintf("Took %d media %s out of their folder", n, plural(n, "file", "files"))
 	case "PUT /api/denma/tags/aliases": // cmd/denma_tagaliases.go
 		names := []string{}
 		if ns, ok := b["aliases"].([]any); ok {

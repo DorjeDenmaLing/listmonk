@@ -50,6 +50,7 @@
 			{{- end }}
 		</div>
 	</header>
+	{{ template "denma-media-folders" dict "Root" $root "Mode" $mode "CanManage" $canManage }}{{/* denma: folders, partials/denma/media-folders.html */}}
 
 	<div class="card page-content">
 		{{- if $d.Media }}
@@ -66,5 +67,6 @@
 
 		{{- template "pagination" $d.Page.Pagination }}
 	</div>
+	{{- if not $picker }}{{ template "denma-media-preview" dict "Root" $root "CanManage" $canManage }}{{ end }}{{/* denma: the preview, partials/denma/media-folders.html */}}
 </section>
 {{- end }}

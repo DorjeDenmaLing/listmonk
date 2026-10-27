@@ -2450,3 +2450,149 @@ section.templates .editor-body:has(> visual-editor) {
     width: auto;
   }
 }
+
+/* Media's folders and preview (partials/denma/media-folders.html). */
+.denma-media-folders {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+
+  > a {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: var(--text-8);
+    color: var(--foreground);
+    text-decoration: none;
+    background: var(--card);
+
+    span {
+      color: var(--muted-foreground);
+    }
+
+    &:hover {
+      border-color: var(--primary);
+    }
+
+    &[aria-current="page"] {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: color-mix(in srgb, var(--primary) 10%, var(--card));
+    }
+
+    .icon {
+      width: 1em;
+      height: 1em;
+    }
+  }
+
+  .denma-media-folder-actions {
+    display: inline-flex;
+    gap: var(--space-1);
+    margin-inline-start: auto;
+  }
+}
+
+/* The preview fits the window on a desktop: the image shrinks, nothing
+   scrolls. Head, details and footer take about 260px. */
+dialog.denma-media-preview {
+  width: min(960px, calc(100vw - 2 * var(--space-4)));
+  max-width: none;
+  max-height: calc(100dvh - 2 * var(--space-4));
+
+  .dialog-card {
+    width: 100%;
+    max-width: none;
+  }
+
+  .denma-media-preview-body {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding-block-end: 0;
+  }
+
+  .denma-media-preview-view {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+    border-radius: var(--radius-medium);
+    background:
+      repeating-conic-gradient(var(--faint) 0 25%, transparent 0 50%) 0 0 / 16px 16px;
+
+    img {
+      display: block;
+      max-width: 100%;
+      max-height: max(160px, calc(100dvh - 2 * var(--space-4) - 260px));
+      object-fit: contain;
+    }
+  }
+
+  .denma-media-preview-ext {
+    font-size: var(--text-4, 2rem);
+    font-weight: 600;
+    color: var(--muted-foreground);
+  }
+
+  .denma-media-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-6);
+    margin: 0;
+    padding: var(--space-3) var(--space-4) 0;
+    font-size: var(--text-8);
+
+    dt {
+      color: var(--muted-foreground);
+    }
+
+    dd {
+      margin: 0;
+    }
+  }
+
+  .denma-media-preview-foot {
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    padding-inline: var(--space-4);
+
+    label {
+      margin: 0;
+    }
+
+    select {
+      width: auto;
+    }
+  }
+}
+
+@media (min-width: 701px) {
+  dialog.denma-media-preview {
+    overflow: hidden;
+  }
+}
+
+/* A folder a file is dragged over. */
+.denma-media-folders a.denma-drop {
+  outline: 2px dashed var(--primary);
+  outline-offset: 2px;
+}
+
+body.denma-media-dragging .denma-media-folders a[data-folder] {
+  outline: 1px dashed var(--border);
+}
+
+@media (max-width: 700px) {
+  dialog.denma-media-preview .denma-media-step {
+    display: none;
+  }
+}

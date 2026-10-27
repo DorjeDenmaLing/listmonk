@@ -30,6 +30,7 @@ type mediaView struct {
 	Media    []media.Media
 	Provider string
 	Page     models.PageProps
+	Denma    denmaMediaView // denma: folders (cmd/denma_mediafolders.go)
 }
 
 // ViewMedia renders the HTML gallery view for uploaded media.
@@ -44,6 +45,9 @@ func (a *App) ViewMedia(c echo.Context) error {
 		Media:     res,
 		Provider:  a.cfg.MediaUpload.Provider,
 		Page:      props,
+	}
+	if data.Denma, err = a.denmaMediaFolders(c, res); err != nil { // denma: folders (cmd/denma_mediafolders.go)
+		return err
 	}
 
 	return c.Render(http.StatusOK, "admin-media", data)
@@ -62,14 +66,18 @@ func (a *App) ViewMediaFragment(c echo.Context) error {
 		Provider:  a.cfg.MediaUpload.Provider,
 		Page:      props,
 	}
+	if data.Denma, err = a.denmaMediaFolders(c, res); err != nil { // denma: folders (cmd/denma_mediafolders.go)
+		return err
+	}
 
 	return c.Render(http.StatusOK, "admin-media-fragment", data)
 }
 
 // mediaQueryDefaults is the allow list of filter query params.
 var mediaQueryDefaults = map[string]string{
-	"page":  "",
-	"query": "",
+	"page":   "",
+	"query":  "",
+	"folder": "", // denma: cmd/denma_mediafolders.go
 }
 
 // getMedia queries paginated media items from the DB.
@@ -78,7 +86,7 @@ func (a *App) getMedia(c echo.Context) ([]media.Media, models.PageProps, error) 
 
 	pg := a.pg.NewFromURL(q)
 	pg.Limit = 100
-	res, total, err := a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, q.Get("query"), pg.Offset, pg.Limit)
+	res, total, err := a.denmaQueryMedia(q.Get("folder"), q.Get("query"), pg.Offset, pg.Limit) // denma: in a folder (cmd/denma_mediafolders.go)
 	if err != nil {
 		return nil, models.PageProps{}, err
 	}
@@ -213,7 +221,7 @@ func (a *App) GetAllMedia(c echo.Context) error {
 		pg = a.pg.NewFromURL(c.Request().URL.Query())
 	)
 	// Fetch the media items from the DB.
-	res, total, err := a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, query, pg.Offset, pg.Limit)
+	res, total, err := a.denmaQueryMedia(c.FormValue("folder"), query, pg.Offset, pg.Limit) // denma: in a folder (cmd/denma_mediafolders.go)
 	if err != nil {
 		return err
 	}

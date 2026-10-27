@@ -26,7 +26,7 @@
 {{- $canManage := .CanManage -}}
 {{- $m := .Media -}}
 <figure class="card">
-	<a class="thumb" href="{{ $m.URL }}" {{ if $picker }}@click.prevent="onPick({{ ToJSON $m }})"{{ else }}target="_blank" rel="noopener noreferrer"{{ end }} title="{{ $m.Filename }}">
+	<a class="thumb" href="{{ $m.URL }}" {{ if $picker }}@click.prevent="onPick({{ ToJSON $m }})"{{ else }}target="_blank" rel="noopener noreferrer" @click="denmaPreview($event, {{ $m.ID }})" @dragstart="denmaDrag($event, {{ $m.ID }})"{{ end }} title="{{ $m.Filename }}">{{/* denma: a click previews it, dragging it moves it to a folder (denma-media.js) */}}
 		{{- if $m.ThumbURL.Valid }}
 			<img src="{{ $m.ThumbURL.String }}" alt="{{ $m.Filename }}" />
 		{{- else }}
