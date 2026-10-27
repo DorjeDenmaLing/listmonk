@@ -1244,6 +1244,48 @@ section.templates {
     }
 }
 
+/* denma: the template editor's top row (partials/denma/template-head.html). */
+#app[data-sidebar-layout] > main:has(.denma-template-head) {
+    padding-block-start: var(--space-3);
+}
+
+.card:has(> .denma-template-head) {
+    padding-block-start: var(--space-3);
+}
+
+.denma-template-head {
+    align-items: flex-end;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+
+    .denma-template-name,
+    .denma-template-type {
+        flex: 1 1 16rem;
+        margin-block-end: 0;
+        width: auto;
+    }
+
+    .denma-template-type {
+        flex: 0 1 14rem;
+    }
+
+    .back {
+        align-items: center;
+        display: inline-flex;
+        height: 2.5rem;
+
+        .icon {
+            font-size: var(--text-1);
+            margin: 0;
+        }
+    }
+
+    .badge {
+        align-self: center;
+    }
+}
+
 /* Analytics */
 section.analytics {
     .chart-box,

@@ -1,0 +1,28 @@
+{{/*
+	denma: the template editor's top row, in place of its page header: back,
+	the name, Save and Preview, so Save is beside the editor, not under it.
+*/}}
+{{ define "denma-template-head" -}}
+{{- $r := .Root -}}
+<div class="denma-template-head">
+	<a href="{{ URI "/admin/templates" }}" class="back" aria-label="{{ $r.L.T "globals.buttons.back" }}">{{ Icon "chevron-left" }}</a>
+	<input name="name" class="denma-template-name" maxlength="200" autofocus required x-model="form.name" placeholder="{{ $r.L.T "globals.fields.name" }}" aria-label="{{ $r.L.T "globals.fields.name" }}" />
+	{{- if and (not .IsNew) .T.IsDefault }}{{ Badge ($r.L.T "templates.default") "enum" }}{{ end }}
+	{{- if .IsNew }}
+		<select name="type" class="denma-template-type" x-model="form.type" aria-label="{{ $r.L.T "globals.fields.type" }}">
+			<option value="campaign">{{ $r.L.Tc "templates.typeCampaignHTML" 1 }}</option>
+			<option value="campaign_visual">{{ $r.L.Tc "templates.typeCampaignVisual" 1 }}</option>
+			<option value="tx">{{ $r.L.Tc "templates.typeTransactional" 1 }}</option>
+			{{- if DenmaInCenter }}
+			<option value="design">Design (e-mails and pages)</option>
+			{{- end }}
+		</select>
+	{{- end }}
+	<div class="hstack gap-3">
+		{{- if .CanManage }}
+			<button type="submit" data-variant="primary" data-testid="btn-save" :disabled="isLoading('templates')" :aria-busy="isLoading('templates')" aria-keyshortcuts="Control+S">{{ Icon "save" }} {{ $r.L.T "globals.buttons.save" }}</button>
+		{{- end }}
+		<button type="button" class="outline" data-testid="btn-preview" @click="onPreviewBody" aria-keyshortcuts="F9">{{ Icon "eye" }} {{ $r.L.T "templates.preview" }}</button>
+	</div>
+</div>
+{{- end }}
