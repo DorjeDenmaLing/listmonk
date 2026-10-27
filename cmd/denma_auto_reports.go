@@ -85,7 +85,7 @@ func denmaAutoLastSentSQL(sub string) string {
 		return `(SELECT g.` + col + ` FROM denma_automation_log g JOIN subscribers s ON s.id = g.subscriber_id
         WHERE g.automation_id = au.id AND ` + sub + ` AND g.status IN ('sent', 'uncertain') ORDER BY g.at DESC LIMIT 1)`
 	}
-	return last("step") + ", " + last("at")
+	return last("step") + " AS step, " + last("at") + " AS sent_at"
 }
 
 // denmaAutoUnsubSQL counts an opt-out for the automation whose e-mail it

@@ -40,7 +40,7 @@ type campaignAnalyticsView struct {
 		Clicks  int
 		Bounces int
 	}
-	Data analyticsData
+	Data  analyticsData
 	Denma denmaExplore // denma: the automations chosen (cmd/denma_auto_reports.go)
 }
 

@@ -482,9 +482,14 @@ func denmaStartAutomations(a *App) {
 		a.log.Printf("denma: error checking the automation tables: %v", err)
 		return
 	}
-	if _, err := a.db.Exec(denmaAutoTables); err != nil {
+	// A center reloading makes them while its old app's job may be using
+	// them: their ALTERs and indexes lock even when there's nothing to do, so
+	// a deadlock is tried again. Tables made before are enough to run.
+	if err := denmaRetryDeadlock(func() error { _, err := a.db.Exec(denmaAutoTables); return err }); err != nil {
 		a.log.Printf("denma: error making the automation tables: %v", err)
-		return
+		if !exists {
+			return
+		}
 	}
 	if !exists {
 		// New permissions: the roles that can manage campaigns get them.
@@ -507,6 +512,20 @@ func denmaStartAutomations(a *App) {
 		return
 	}
 	a.crons.Start()
+}
+
+// denmaRetryDeadlock runs fn, again (up to 5 times, a little later each
+// time) while Postgres says it deadlocked.
+func denmaRetryDeadlock(fn func() error) error {
+	var err error
+	for i := range 5 {
+		var pqErr *pq.Error
+		if err = fn(); err == nil || !errors.As(err, &pqErr) || pqErr.Code != "40P01" {
+			return err
+		}
+		time.Sleep(time.Duration(i+1) * 200 * time.Millisecond)
+	}
+	return err
 }
 
 // denmaDefaultAutomation gives a new center (db, its schema) its website
@@ -1014,12 +1033,12 @@ var reDenmaTrackLink = regexp.MustCompile(`(https?://[\p{L}\p{N}_\-\.~!#$&'()*+,
 // with auto.Subject its subject) to a subscriber.
 func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate, s models.Subscriber) (models.Message, error) {
 	var (
-		root      = strings.TrimSuffix(a.urlCfg.RootURL, "/")
-		unsubURL  = fmt.Sprintf(a.urlCfg.UnsubURL, auto.UUID, s.UUID)
-		optinURL  = fmt.Sprintf(a.urlCfg.OptinURL, s.UUID, "")
-		viewURL   = fmt.Sprintf("%s/automation/%s/%s", root, auto.UUID, s.UUID)
-		funcs     = template.FuncMap{}
-		withURL   = func(u string) func(...any) string { return func(...any) string { return u } }
+		root     = strings.TrimSuffix(a.urlCfg.RootURL, "/")
+		unsubURL = fmt.Sprintf(a.urlCfg.UnsubURL, auto.UUID, s.UUID)
+		optinURL = fmt.Sprintf(a.urlCfg.OptinURL, s.UUID, "")
+		viewURL  = fmt.Sprintf("%s/automation/%s/%s", root, auto.UUID, s.UUID)
+		funcs    = template.FuncMap{}
+		withURL  = func(u string) func(...any) string { return func(...any) string { return u } }
 	)
 	if step > 1 {
 		viewURL += "?step=" + strconv.Itoa(step)
