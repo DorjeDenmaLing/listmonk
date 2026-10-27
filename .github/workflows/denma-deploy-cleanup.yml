@@ -1,0 +1,42 @@
+name: Clean up after a deploy
+
+on:
+  workflow_run:
+    workflows: [Deploy to production]
+    types: [completed]
+
+permissions:
+  actions: write
+  deployments: write
+
+concurrency:
+  group: deploy-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      FINISHED: ${{ github.event.workflow_run.updated_at }}
+    steps:
+      - name: Delete the deploys' runs and deployment records
+        run: |
+          set -eu
+          runs() {
+            gh api --paginate "repos/$REPO/actions/workflows/$1/runs?status=completed" --jq '.workflow_runs[].id'
+          }
+          for id in $(runs denma-deploy.yml); do
+            gh api -X DELETE "repos/$REPO/actions/runs/$id" --silent
+          done
+          for id in $(gh api --paginate "repos/$REPO/deployments?environment=production" \
+              --jq ".[] | select(.created_at <= \"$FINISHED\") | .id"); do
+            gh api -X POST "repos/$REPO/deployments/$id/statuses" -f state=inactive --silent
+            gh api -X DELETE "repos/$REPO/deployments/$id" --silent
+          done
+          for id in $(runs denma-deploy-cleanup.yml); do
+            gh api -X DELETE "repos/$REPO/actions/runs/$id" --silent
+          done
+          echo Done.
