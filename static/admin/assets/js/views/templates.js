@@ -59,7 +59,7 @@ function templatesView() {
         return;
       }
       await api('templates', `/templates/${id}/default`, 'PUT');
-      u.reload({ message: i18n.ts('globals.messages.created', { name }) });
+      u.reload({ message: i18n.ts('globals.messages.updated', { name }) }); // denma: not "created"
     },
 
     async onDelete(id, name) {

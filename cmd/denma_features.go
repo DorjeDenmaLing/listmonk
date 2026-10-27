@@ -49,6 +49,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
@@ -56,6 +57,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/listmonk/models"
+	"github.com/labstack/echo/v4"
 	"github.com/lib/pq"
 )
 
@@ -825,9 +827,39 @@ INSERT INTO denma_tags (tag) SELECT DISTINCT t FROM campaigns, unnest(denma_tags
 ` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaOptinTokenSQL + denmaNamesSQL + denmaCampaignStatsSQL + denmaMessagesSQL + denmaConsentCapSQL
 
 // denmaVisualTemplate is the center's default visual template's ID (0 for
-// none).
+// none), from the database: Templates -> Set default changes it without
+// reloading the center.
 func (a *App) denmaVisualTemplate() int {
-	return a.ko.Int("denma.visual_template")
+	var id int
+	_ = a.db.Get(&id, `SELECT COALESCE((SELECT (value #>> '{}')::INT FROM settings WHERE key = 'denma.visual_template'), 0)`)
+	return id
+}
+
+// denmaTemplateType is template id's type ("" if there's none).
+func (a *App) denmaTemplateType(id int) string {
+	var typ string
+	_ = a.db.Get(&typ, `SELECT COALESCE((SELECT type::TEXT FROM templates WHERE id = $1), '')`, id)
+	return typ
+}
+
+// denmaSetVisualDefault makes visual template id (of type typ) the center's
+// default visual template (Templates -> Set default), answering with the
+// templates. Only campaign templates (listmonk's) and visual ones can be a
+// default: listmonk's query, given another, would leave no default at all.
+func (a *App) denmaSetVisualDefault(c echo.Context, id int, typ string) error {
+	switch {
+	case typ == "":
+		return echo.NewHTTPError(http.StatusNotFound, "There's no such template.")
+	case typ != models.TemplateTypeCampaignVisual:
+		return echo.NewHTTPError(http.StatusBadRequest, "Only a campaign template (HTML) or a visual one can be a default.")
+	case !a.denmaInCenter():
+		return echo.NewHTTPError(http.StatusBadRequest, "Visual templates are for centers.")
+	}
+	if _, err := a.db.Exec(`INSERT INTO settings (key, value) VALUES ('denma.visual_template', $1::TEXT::JSONB)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`, strconv.Itoa(id)); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return a.GetTemplates(c)
 }
 
 // denmaAddVisualDefault makes listmonk's sample visual template the center's
@@ -907,11 +939,5 @@ func (a *App) denmaCheckFeatures(f *denmaCenterForm) error {
 	}
 	f.UTMDomains = domains
 
-	if f.VisualTemplate != 0 {
-		var n int
-		if err := a.db.Get(&n, `SELECT COUNT(*) FROM templates WHERE id = $1 AND type = 'campaign_visual'`, f.VisualTemplate); err != nil || n == 0 {
-			return fmt.Errorf("the default visual template doesn't exist")
-		}
-	}
 	return nil
 }

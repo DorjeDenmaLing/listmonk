@@ -175,16 +175,10 @@
 				<span><input type="checkbox" role="switch" x-model="form.plain_text_auto" data-testid="plain-text-auto" /> Make the plain-text version automatically</span>
 				<small data-hint>For e-mail apps that don't show HTML: made from the e-mail (with its template) each time a campaign is saved. A campaign can still have it written by hand.</small>
 			</label>
-			<label data-field>
-				Default visual template
-				<select x-model.number="form.visual_template" data-testid="visual-template">
-					<option value="0">None (new campaigns are rich text)</option>
-					{{- range $d.VisualTemplates }}
-					<option value="{{ .ID }}">{{ .Name }}</option>
-					{{- end }}
-				</select>
-				<small data-hint>New campaigns are Visual and start from this template. It can't be deleted while it's the default.</small>
-			</label>
+			<div data-field data-testid="visual-template">
+				Default visual template: <strong>{{ or $d.VisualTemplate "none" }}</strong>
+				<small data-hint>New campaigns are Visual and start from it; it can't be deleted while it's the default. Change it on <a href="{{ URI "/admin/templates" }}">Campaigns &rarr; Templates</a>: Set default, in a visual template's menu.</small>
+			</div>
 			<label data-field>
 				Add UTM tags to links to
 				<textarea rows="3" x-model="utm" placeholder="example.org" data-testid="utm-domains"></textarea>

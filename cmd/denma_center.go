@@ -29,7 +29,7 @@ var denmaCenterFields = []string{
 	"app.site_name", "app.logo_url", "app.favicon_url", "app.lang",
 	"app.from_email", "app.notify_emails",
 	// The features (cmd/denma_features.go).
-	"denma.unsubscribe_everywhere", "denma.plain_text_auto", "denma.utm_domains", "denma.visual_template",
+	"denma.unsubscribe_everywhere", "denma.plain_text_auto", "denma.utm_domains",
 	"denma.daily_cap",                     // superadmins only (cmd/denma_daily.go)
 	"denma.reply_to",                      // cmd/denma_reply_to.go
 	"denma.timezone", "denma.send_window", // cmd/denma_sendwindow.go
@@ -100,7 +100,6 @@ type denmaCenterForm struct {
 	UnsubscribeEverywhere bool     `json:"unsubscribe_everywhere"`
 	PlainTextAuto         bool     `json:"plain_text_auto"`
 	UTMDomains            []string `json:"utm_domains"`
-	VisualTemplate        int      `json:"visual_template"`
 
 	DailyCap int `json:"daily_cap"` // superadmins only (cmd/denma_daily.go)
 
@@ -116,8 +115,7 @@ var denmaFormKeys = map[string]string{
 	"site_name": "app.site_name", "logo_url": "app.logo_url", "favicon_url": "app.favicon_url",
 	"lang": "app.lang", "from_email": "app.from_email", "notify_emails": "app.notify_emails",
 	"unsubscribe_everywhere": "denma.unsubscribe_everywhere", "plain_text_auto": "denma.plain_text_auto",
-	"utm_domains": "denma.utm_domains", "visual_template": "denma.visual_template",
-	"daily_cap": "denma.daily_cap", "reply_to": "denma.reply_to",
+	"utm_domains": "denma.utm_domains", "daily_cap": "denma.daily_cap", "reply_to": "denma.reply_to",
 	"time_zone": "denma.timezone", "send_window": "denma.send_window", "postal_address": "denma.postal_address",
 	"website": "denma.website", "contact_email": "denma.contact_email",
 }
@@ -139,9 +137,9 @@ type denmaCenterView struct {
 	// Its templates that lack some of the footer (cmd/denma_footer.go).
 	FooterTemplates []denmaFooterTemplate
 
-	// For the features' choices.
-	VisualTemplates []denmaOption
-	Design          int // the center's design (cmd/denma_design.go)
+	// The default visual template's name, and the center's design (cmd/denma_design.go).
+	VisualTemplate string
+	Design         int
 }
 
 // denmaWebhooksView is Config -> Webhooks: the sign-up webhooks
@@ -231,9 +229,8 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	view := denmaCenterView{adminView: v, Form: form, Address: a.urlCfg.RootURL, Langs: langs,
-		Super:           v.Profile.UserRole.ID == auth.SuperAdminRoleID,
-		VisualTemplates: []denmaOption{}, Design: a.denmaDefaultDesignID()}
-	if err := a.db.Select(&view.VisualTemplates, `SELECT id, name, '' AS optin FROM templates WHERE type = 'campaign_visual' ORDER BY name`); err != nil {
+		Super: v.Profile.UserRole.ID == auth.SuperAdminRoleID, Design: a.denmaDefaultDesignID()}
+	if err := a.db.Get(&view.VisualTemplate, `SELECT COALESCE((SELECT name FROM templates WHERE id = $1 AND type = 'campaign_visual'), '')`, a.denmaVisualTemplate()); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	if view.Domains, err = a.denmaCenterDomains(); err != nil {

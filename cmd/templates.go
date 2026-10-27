@@ -274,6 +274,9 @@ func (a *App) UpdateTemplate(c echo.Context) error {
 func (a *App) TemplateSetDefault(c echo.Context) error {
 	// Update the template in the DB.
 	id := getID(c)
+	if typ := a.denmaTemplateType(id); typ != models.TemplateTypeCampaign { // denma: a visual one becomes the default visual template; no other type can (cmd/denma_features.go)
+		return a.denmaSetVisualDefault(c, id, typ)
+	}
 	if err := a.core.SetDefaultTemplate(id); err != nil {
 		return err
 	}

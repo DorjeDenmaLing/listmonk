@@ -80,7 +80,7 @@
 											{{- if ne .ID $d.DenmaOwnDesign }}{{/* denma: the center's design can't be copied (cmd/denma_design.go) */}}
 											<button type="button" role="menuitem" class="ghost" data-testid="btn-clone" @click.prevent="onClone({{ .ID }}, {{ ToJSON .Name }})">{{ Icon "copy" }} {{ $.L.T "globals.buttons.clone" }}</button>
 											{{- end }}
-											{{- if and (not .IsDefault) (eq .Type "campaign") }}
+											{{- if or (and (not .IsDefault) (eq .Type "campaign")) (and (eq .Type "campaign_visual") (ne .ID $d.DenmaVisual)) }}{{/* denma: a visual one, the default visual template (cmd/denma_features.go) */}}
 												<button type="button" role="menuitem" class="ghost" data-testid="btn-set-default" :disabled="isLoading('templates')" @click.prevent="onSetDefault({{ .ID }}, {{ ToJSON .Name }})">{{ Icon "check-circle" }} {{ $.L.T "templates.makeDefault" }}</button>
 											{{- end }}
 											{{- if and (not .IsDefault) (ne .ID $d.DenmaVisual) (ne .ID $d.DenmaOwnDesign) }}{{/* denma: nor the default visual template, nor the design (cmd/denma_design.go) */}}
