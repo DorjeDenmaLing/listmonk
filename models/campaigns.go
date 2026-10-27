@@ -273,7 +273,7 @@ func (c *Campaign) CompileTemplate(f template.FuncMap) error {
 	}
 	c.Tpl = out
 
-	if b := DenmaTrackText(c.AltBody.String); hasTplExpr(b) { // denma: denma_tracklinks.go
+	if b := DenmaAltText(c.AltBody.String); hasTplExpr(b) { // denma: denma_tracklinks.go, denma_address.go
 		for _, r := range regTplFuncs {
 			b = r.regExp.ReplaceAllString(b, r.replace)
 		}

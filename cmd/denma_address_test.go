@@ -26,8 +26,8 @@ func TestDenmaCheckAddressInput(t *testing.T) {
 			t.Errorf("denmaCheckAddressInput(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	if got := denmaAddressLine("1 Main St\nHalifax NS"); got != "1 Main St, Halifax NS" {
-		t.Errorf("denmaAddressLine = %q", got)
+	if got := denmaAddressHTML("1 Main St & Co\nHalifax NS"); got != "1 Main St &amp; Co<br>Halifax NS" {
+		t.Errorf("denmaAddressHTML = %q", got)
 	}
 }
 

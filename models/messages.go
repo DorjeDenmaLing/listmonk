@@ -91,7 +91,7 @@ func (m *TxMessage) Render(sub Subscriber, tpl *Template, funcs txttpl.FuncMap) 
 
 	// Render alt body if it has any templating strings.
 	if m.AltBody != "" && hasTplExpr(m.AltBody) {
-		t, err := txttpl.New(BaseTpl).Funcs(funcs).Parse(m.AltBody)
+		t, err := txttpl.New(BaseTpl).Funcs(funcs).Parse(DenmaAddressText(m.AltBody)) // denma: denma_address.go
 		if err != nil {
 			return fmt.Errorf("error compiling alt body: %v", err)
 		}

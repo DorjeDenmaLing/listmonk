@@ -5,8 +5,10 @@ package main
 // the sender's mailing address in every commercial e-mail, so no campaign or
 // automation e-mail goes without it:
 //
-//   - {{ CenterAddress }} puts it in an e-mail or design (on one line), in
-//     every template, campaign and automation e-mail.
+//   - {{ CenterAddress }} puts it in an e-mail or design, a line for each of
+//     its lines, in every template, campaign and automation e-mail; a
+//     campaign's plain text gets its lines as text ({{ CenterAddressText }},
+//     models/denma_address.go).
 //   - A campaign doesn't start, nor is scheduled, nor sends a test, and an
 //     automation isn't saved, turned on or run, unless the center has an
 //     address and its e-mail shows it (as rendered: the tag, or the address
@@ -77,8 +79,11 @@ func denmaSetAddress(slug, addr string) {
 func denmaAddressFuncs(funcs template.FuncMap, ko *koanf.Koanf) {
 	slug := ko.String("denma.center")
 	denmaSetAddress(slug, ko.String("denma.postal_address"))
-	funcs["CenterAddress"] = func() string {
-		return denmaAddressLine(denmaAddress(slug))
+	funcs["CenterAddress"] = func() template.HTML {
+		return denmaAddressHTML(denmaAddress(slug))
+	}
+	funcs["CenterAddressText"] = func() string {
+		return denmaAddress(slug)
 	}
 }
 
@@ -109,9 +114,13 @@ func denmaCheckAddressInput(s string) (string, error) {
 	return s, nil
 }
 
-// denmaAddressLine is an address on one line, as e-mails show it.
-func denmaAddressLine(addr string) string {
-	return strings.ReplaceAll(addr, "\n", ", ")
+// denmaAddressHTML is an address as e-mails show it, its lines apart.
+func denmaAddressHTML(addr string) template.HTML {
+	lines := strings.Split(addr, "\n")
+	for i, l := range lines {
+		lines[i] = html.EscapeString(l)
+	}
+	return template.HTML(strings.Join(lines, "<br>"))
 }
 
 var (
