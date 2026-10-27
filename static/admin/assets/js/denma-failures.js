@@ -8,6 +8,9 @@ export function denmaFailures() {
   return {
     async denmaResend(id, num) {
       const who = `${num} ${num === 1 ? 'person' : 'people'}`;
+      if (!(await this.denmaUnsavedFirst('resending'))) {
+        return;
+      }
       if (!(await u.confirm(`Send this campaign again to the ${who} it couldn't send to? No one else gets it.`))) {
         return;
       }

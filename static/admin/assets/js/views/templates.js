@@ -6,6 +6,7 @@ import {
 } from '../main.js';
 import * as u from '../utils.js';
 import { denmaTemplateTags } from '../denma-template-tags.js'; // denma: the tags a template can use
+import { denmaUnsaved } from '../denma-unsaved.js'; // denma: asks before leaving unsaved
 
 // previewMixin provides the shared state + handlers for the template-preview dialog.
 function previewMixin() {
@@ -78,6 +79,7 @@ function templateForm(tpl, isNew) {
   return {
     ...previewMixin(),
     ...denmaTemplateTags(window._denmaContact), // denma
+    ...denmaUnsaved({ save() { return this.isNew ? this.createTemplate() : this.updateTemplate(); } }), // denma
     isNew,
 
     form: {
@@ -105,6 +107,7 @@ function templateForm(tpl, isNew) {
     // denma: a new design starts from the center's layout; another type
     // starts empty again (cmd/denma_design.go).
     init() {
+      this.denmaUnsavedInit(); // denma: denma-unsaved.js
       this.$watch('form.type', (type, prev) => {
         const start = window._denmaNewDesign;
         if (!this.isNew || !start) {
@@ -140,12 +143,13 @@ function templateForm(tpl, isNew) {
 
     async createTemplate() {
       const data = await api('templates', '/templates', 'POST', this._payload());
-      u.redirect(`${urls.admin}/templates`, { message: i18n.ts('globals.messages.created', { name: data.name }) });
+      u.redirect(`${urls.admin}/templates/${data.id}`, { message: i18n.ts('globals.messages.created', { name: data.name }) }); // denma: on to its editor
     },
 
     async updateTemplate() {
       const data = await api('templates', `/templates/${this.form.id}`, 'PUT', this._payload());
-      u.reload({ message: i18n.ts('globals.messages.updated', { name: data.name }) });
+      u.toast(i18n.ts('globals.messages.updated', { name: data.name })); // denma: saved without reloading
+      this.denmaSaved(); // denma: denma-unsaved.js
     },
   };
 }

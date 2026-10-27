@@ -12,6 +12,7 @@ import { denmaPlainText } from '../denma-campaign.js'; // denma: automatic plain
 import { denmaTagAutocomplete } from '../denma-tags-ui.js'; // denma: subscriber tags
 import { denmaFailures } from '../denma-failures.js'; // denma: failed sends
 import { denmaStartConfirm } from '../denma-start.js'; // denma: the start confirmation
+import { denmaUnsaved } from '../denma-unsaved.js'; // denma: asks before leaving unsaved
 
 // Media tag for <ot-taginput> attachments.
 class MediaTag {
@@ -50,6 +51,7 @@ function component(camp, sel) {
     denmaTagAutocomplete, // denma
     ...denmaFailures(), // denma
     ...denmaStartConfirm(), // denma
+    ...denmaUnsaved({ skip: ['testEmails', 'status', 'uuid'], save() { return this.isNew ? this.onCreate() : (this.canEdit ? this.onSave() : this.onSaveArchive()); } }), // denma
     isNew,
     activeTab: 'campaign',
     contentReady: false,
@@ -130,6 +132,7 @@ function component(camp, sel) {
           this.onPickMedia(e.data.media);
         }
       });
+      this.denmaUnsavedInit(); // denma: denma-unsaved.js
     },
 
     // ===============
@@ -313,6 +316,7 @@ function component(camp, sel) {
       this._saved = true;
       this.form.archive_slug = d.archive_slug || this.form.archive_slug;
       u.toast(i18n.ts('globals.messages.updated', { name: d.name }));
+      this.denmaSaved(); // denma: denma-unsaved.js
     },
 
     // Global Ctrl/Cmd+S handler.
@@ -350,7 +354,7 @@ function component(camp, sel) {
     },
 
     async onUnschedule() {
-      if (!(await u.confirm())) {
+      if (!(await this.denmaUnsavedFirst('unscheduling', () => u.confirm()))) { // denma: denma-unsaved.js
         return;
       }
 
@@ -389,6 +393,7 @@ function component(camp, sel) {
       this.form.archive_slug = d.archive_slug || this.form.archive_slug;
 
       u.toast(i18n.t('globals.messages.done'));
+      this.denmaSaved(); // denma: denma-unsaved.js
     },
 
     // ===============

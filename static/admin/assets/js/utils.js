@@ -186,6 +186,7 @@ export function reload(toast) {
     sessionStorage.setItem('reload-toast', JSON.stringify(toast));
   }
 
+  window.denmaLeaving = true; // denma: denma-unsaved.js doesn't ask
   window.location.reload();
 }
 
@@ -196,6 +197,7 @@ export function redirect(url, toast) {
     sessionStorage.setItem('reload-toast', JSON.stringify(toast));
   }
 
+  window.denmaLeaving = true; // denma: denma-unsaved.js doesn't ask
   window.location.href = url;
 }
 
