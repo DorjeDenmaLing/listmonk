@@ -971,8 +971,9 @@ type denmaAutoTemplate struct {
 	Attachments []models.Attachment
 }
 
-// autoTemplate gets a template; for e-mail (inline), with its media inlined as
-// listmonk does for transactional ones.
+// autoTemplate gets a template, a visual one: transactional ones can't have
+// the footer's links (cmd/denma_footer.go). For e-mail (inline), with its media
+// inlined as listmonk does for transactional ones.
 func (a *App) autoTemplate(id int, inline bool) (denmaAutoTemplate, error) {
 	var t struct {
 		Type string `db:"type"`
@@ -984,8 +985,8 @@ func (a *App) autoTemplate(id int, inline bool) (denmaAutoTemplate, error) {
 		}
 		return denmaAutoTemplate{}, err
 	}
-	if t.Type != models.TemplateTypeTx && t.Type != models.TemplateTypeCampaignVisual {
-		return denmaAutoTemplate{}, errors.New("Choose a transactional or visual template.")
+	if t.Type != models.TemplateTypeCampaignVisual {
+		return denmaAutoTemplate{}, errors.New("Choose a visual template: an automation's e-mail needs the unsubscribe and view-in-browser links, which transactional templates can't have.")
 	}
 	if !inline {
 		return denmaAutoTemplate{Body: t.Body}, nil
@@ -1052,7 +1053,7 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 	subject := strings.TrimSpace(b.String())
 	b.Reset()
 
-	body, err := template.New(models.BaseTpl).Funcs(funcs).Parse(models.DenmaTrackHTML(reDenmaTrackLink.ReplaceAllString(tpl.Body, "$1")))
+	body, err := template.New(models.BaseTpl).Funcs(funcs).Parse(models.DenmaTrackHTML(models.DenmaFooter(reDenmaTrackLink.ReplaceAllString(tpl.Body, "$1"))))
 	if err != nil {
 		return models.Message{}, fmt.Errorf("error in the template: %v", err)
 	}
@@ -1251,7 +1252,7 @@ func (a *App) ViewDenmaAutomation(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	if err := a.db.Select(&out.Templates, `SELECT id, name, type::TEXT, '' AS optin, subject FROM templates
-		WHERE type IN ('tx', 'campaign_visual') ORDER BY name`); err != nil {
+		WHERE type = 'campaign_visual' ORDER BY name`); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	// The latest campaigns (and the automation's, if it's older).
@@ -1404,13 +1405,16 @@ func (a *App) validateAutomation(c echo.Context, f *denmaAutoForm) error {
 	// The template, and that it renders.
 	tpl, err := a.autoTemplate(f.TemplateID, false)
 	if err != nil {
-		return bad("Choose a template: a transactional or visual one.")
+		return bad("Choose a template: a visual one.")
 	}
 	msg, err := a.autoMessage(denmaAutomation{UUID: dummyUUID, Name: f.Name, Subject: f.Subject}, 1, tpl, denmaAutoSample)
 	if err != nil {
 		return bad(err.Error())
 	}
-	if err := a.denmaCheckMessage(msg.Body); err != nil { // its postal address and images (cmd/denma_address.go)
+	if err := a.denmaCheckLinks(tpl.Body); err != nil { // its footer (cmd/denma_footer.go)
+		return bad(err.Error())
+	}
+	if err := a.denmaCheckMessage(msg.Body); err != nil { // its center's details and images
 		return bad(err.Error())
 	}
 	return a.validateAutoSteps(f) // its follow-ups (cmd/denma_auto_series.go)
@@ -1856,14 +1860,15 @@ func denmaDays(n int) string {
 	return strconv.Itoa(n) + " days"
 }
 
-// autoContent checks each of an automation's e-mails, rendered for a sample
-// subscriber: that it shows the center's postal address and, with images,
-// has no image missing from its Media (cmd/denma_address.go).
+// autoContent checks each of an automation's e-mails: that its template has
+// the footer's links and, rendered for a sample subscriber, shows the center's
+// details (cmd/denma_footer.go) and, with images, has no image missing from
+// its Media.
 func (a *App) autoContent(auto denmaAutomation, images bool) error {
 	if !auto.SendEmail {
 		return nil
 	}
-	check := a.denmaCheckAddress
+	check := a.denmaCheckFooter
 	if images {
 		check = a.denmaCheckMessage
 	}
@@ -1878,9 +1883,12 @@ func (a *App) autoContent(auto denmaAutomation, images bool) error {
 		}
 		au := auto
 		au.Subject = subject
-		msg, err := a.autoMessage(au, n, tpl, denmaAutoSample)
+		err = a.denmaCheckLinks(tpl.Body)
 		if err == nil {
-			err = check(msg.Body)
+			var msg models.Message
+			if msg, err = a.autoMessage(au, n, tpl, denmaAutoSample); err == nil {
+				err = check(msg.Body)
+			}
 		}
 		if err != nil && n > 1 {
 			return fmt.Errorf("E-mail %d: %v", n, err)

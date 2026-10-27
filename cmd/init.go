@@ -670,7 +670,7 @@ func initCampaignManager(msgrs []manager.Messenger, q *models.Queries, u *UrlCon
 		ScanInterval:          time.Second * 5,
 		ScanCampaigns:         !ko.Bool("passive"),
 	}, newManagerStore(q, co, md), i, lo)
-	denmaAddressFuncs(mgr.GenericTemplateFuncs(), ko) // denma: {{ CenterAddress }} (cmd/denma_address.go)
+	denmaFooterFuncs(mgr.GenericTemplateFuncs(), ko) // denma: {{ CenterAddress }}, {{ CenterFooter }}... (cmd/denma_footer.go)
 
 	// Attach all messengers to the campaign manager.
 	for _, m := range msgrs {

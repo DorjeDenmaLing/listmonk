@@ -1,9 +1,9 @@
-{{- /* denma: a center without a postal address (cmd/denma_address.go), on
-   every admin page. */ -}}
+{{- /* denma: a center without its postal address, website or contact e-mail
+   (cmd/denma_footer.go), on every admin page. */ -}}
 {{ define "denma-address-notice" -}}
-{{- if DenmaNoAddress }}
+{{- if DenmaNoContact }}
 <div role="alert" data-variant="danger" class="hstack justify-between gap-4 mb-8" data-testid="no-address">
-	<span>{{ Icon "alert-triangle" }} The center has no postal address yet, so it can't send campaigns or automation e-mails: Canada's anti-spam law (CASL) requires it in every one.</span>
+	<span>{{ Icon "alert-triangle" }} The center's postal address, website or contact e-mail isn't set yet, so it can't send campaigns or automation e-mails: every one shows them (Canada's anti-spam law, CASL, requires the address and a way to get in touch).</span>
 	{{- if .Data.Can "center:manage" }}
 	<a href="{{ URI "/admin/center" }}" class="button small" data-variant="secondary">Config</a>
 	{{- end }}

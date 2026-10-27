@@ -385,6 +385,8 @@ type denmaNewCenter struct {
 	Slug          string `json:"slug"`
 	FromEmail     string `json:"from_email"`
 	PostalAddress string `json:"postal_address"` // cmd/denma_address.go
+	Website       string `json:"website"`        // cmd/denma_footer.go
+	ContactEmail  string `json:"contact_email"`
 	AdminName     string `json:"admin_name"`
 	AdminUsername string `json:"admin_username"`
 	AdminEmail    string `json:"admin_email"`
@@ -421,6 +423,12 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 	if req.PostalAddress, err = denmaCheckAddressInput(req.PostalAddress); err != nil { // cmd/denma_address.go
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
+	if req.Website, err = denmaCheckWebsiteInput(req.Website); err != nil { // cmd/denma_footer.go
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if req.ContactEmail, err = denmaCheckContactEmailInput(req.ContactEmail); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 	if _, err := mail.ParseAddress(req.FromEmail); err != nil || len(req.FromEmail) > 300 {
 		return echo.NewHTTPError(http.StatusBadRequest, `Enter the center's sender, as name@example.org or "Name" <name@example.org>.`)
 	}
@@ -455,6 +463,8 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 		"app.from_email":       req.FromEmail,
 		"app.notify_emails":    []string{adminEmail},
 		"denma.postal_address": req.PostalAddress,
+		"denma.website":        req.Website,
+		"denma.contact_email":  req.ContactEmail,
 	}
 
 	lo.Printf("denma: creating center %s (%s)", ctr.Slug, ctr.Name)
@@ -600,13 +610,20 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 	funcs["DenmaMessageDays"] = func() int {
 		return denmaMessageDays
 	}
-	// DenmaNoAddress reports whether the page's center has no postal address
-	// (cmd/denma_address.go).
-	funcs["DenmaNoAddress"] = func() bool {
+	// DenmaNoContact reports whether the page's center lacks its postal
+	// address, website or contact e-mail (cmd/denma_footer.go).
+	funcs["DenmaNoContact"] = func() bool {
 		if denmaHub == nil || u.RootPath == denmaHub.current().urlCfg.RootPath {
 			return false
 		}
-		return denmaAddress(path.Base(u.RootPath)) == ""
+		return !denmaContactOf(path.Base(u.RootPath)).complete()
+	}
+	// DenmaContact is the page's center's details, for the template editor.
+	funcs["DenmaContact"] = func() denmaContact {
+		if denmaHub == nil || u.RootPath == denmaHub.current().urlCfg.RootPath {
+			return denmaContact{}
+		}
+		return denmaContactOf(path.Base(u.RootPath))
 	}
 	// DenmaSourceURL is the fork's source (cmd/denma_system.go).
 	funcs["DenmaSourceURL"] = func() string {

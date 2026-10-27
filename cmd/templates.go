@@ -80,7 +80,7 @@ func (a *App) ViewNewTemplate(c echo.Context) error {
 	data := templateView{
 		adminView: newAdminView(c, a.i18n.T("templates.newTemplate")+" / "+a.i18n.T("globals.terms.templates"), "", "campaigns.templates"),
 		IsNew:     true,
-		Template:  models.Template{Type: models.TemplateTypeCampaign},
+		Template:  models.Template{Type: models.TemplateTypeCampaignVisual}, // denma: a new template is visual
 	}
 	if a.denmaInCenter() { // denma: a new design starts from the center's layout (cmd/denma_design.go)
 		data.DenmaNewDesign = a.denmaNewDesign()

@@ -38,6 +38,7 @@
 					</template>
 				</div>
 
+				{{ template "denma-template-tags" . }}{{/* denma: the tags it can use, the required ones marked */}}
 				<p class="text-light mt-2">
 					<template x-if="form.type === 'campaign'">
 						<span>{{ .L.Ts "templates.placeholderHelp" "placeholder" "{{ template \"content\" . }}" }}</span>

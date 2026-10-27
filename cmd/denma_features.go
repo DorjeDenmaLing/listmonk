@@ -62,7 +62,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 47
+const denmaFeaturesVersion = 48
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -77,6 +77,8 @@ var denmaFeatureDefaults = map[string]any{
 	"denma.timezone":               "", // cmd/denma_sendwindow.go
 	"denma.send_window":            denmaSendWindowDefault,
 	"denma.postal_address":         "", // cmd/denma_address.go
+	"denma.website":                "", // cmd/denma_footer.go
+	"denma.contact_email":          "",
 }
 
 // features installs the features' triggers in a center (db, its schema)
@@ -251,6 +253,17 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 46 {
 		if _, err := tx.Exec(denmaTagHooksSQL, c.Slug); err != nil {
 			return fmt.Errorf("finding the tags webhooks created: %v", err)
+		}
+	}
+	// Version 48: the stock templates' footers and the default design show
+	// the center's website and contact e-mail (cmd/denma_footer.go).
+	if ver < 48 {
+		n, err := denmaAddContactToTemplates(tx)
+		if err != nil {
+			return fmt.Errorf("adding the website and contact e-mail to the templates: %v", err)
+		}
+		if n > 0 {
+			lo.Printf("denma: center %s: %d of its templates show its website and contact e-mail", c.Slug, n)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)

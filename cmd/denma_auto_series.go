@@ -175,13 +175,16 @@ func (a *App) validateAutoSteps(f *denmaAutoForm) error {
 		}
 		tpl, err := a.autoTemplate(s.TemplateID, false)
 		if err != nil {
-			return bad(fmt.Sprintf("Choose e-mail %d's template: a transactional or visual one.", n))
+			return bad(fmt.Sprintf("Choose e-mail %d's template: a visual one.", n))
 		}
 		msg, err := a.autoMessage(denmaAutomation{UUID: dummyUUID, Name: f.Name, Subject: s.Subject}, n, tpl, denmaAutoSample)
 		if err != nil {
 			return bad(fmt.Sprintf("E-mail %d: %v", n, err))
 		}
-		if err := a.denmaCheckMessage(msg.Body); err != nil { // cmd/denma_address.go
+		if err := a.denmaCheckLinks(tpl.Body); err != nil { // cmd/denma_footer.go
+			return bad(fmt.Sprintf("E-mail %d: %v", n, err))
+		}
+		if err := a.denmaCheckMessage(msg.Body); err != nil {
 			return bad(fmt.Sprintf("E-mail %d: %v", n, err))
 		}
 	}

@@ -107,8 +107,8 @@ func (m denmaCountedMessenger) Push(msg models.Message) error {
 	if err := denmaCheckCampaignLinks(m.slug, msg); err != nil { // cmd/denma_api_send.go
 		return err
 	}
-	if m.Name() == emailMsgr && denmaIsMarketing(msg) { // the center's postal address (cmd/denma_address.go)
-		if err := denmaAddressCheck(m.slug, msg.Body); err != nil {
+	if m.Name() == emailMsgr && denmaIsMarketing(msg) { // the center's details (cmd/denma_footer.go)
+		if err := denmaFooterCheck(m.slug, msg.Body); err != nil {
 			return err
 		}
 	}

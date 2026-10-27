@@ -234,7 +234,7 @@ func (c *Campaign) CompileTemplate(f template.FuncMap) error {
 	if body == "" || c.ContentType == CampaignContentTypeVisual {
 		body = `{{ template "content" . }}`
 	}
-	body = DenmaTrackHTML(body) // denma: denma_tracklinks.go
+	body = c.DenmaTemplateHTML(body) // denma: denma_tracklinks.go, denma_footer.go
 
 	for _, r := range regTplFuncs {
 		body = r.regExp.ReplaceAllString(body, r.replace)
@@ -255,7 +255,7 @@ func (c *Campaign) CompileTemplate(f template.FuncMap) error {
 	} else {
 		body = c.Body
 	}
-	body = c.denmaTrackBody(body) // denma: denma_tracklinks.go
+	body = c.denmaContent(body) // denma: denma_tracklinks.go, denma_footer.go
 
 	// Compile the campaign message.
 	for _, r := range regTplFuncs {

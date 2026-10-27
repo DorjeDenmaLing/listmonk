@@ -34,7 +34,8 @@ var denmaCenterFields = []string{
 	"denma.daily_cap",                     // superadmins only (cmd/denma_daily.go)
 	"denma.reply_to",                      // cmd/denma_reply_to.go
 	"denma.timezone", "denma.send_window", // cmd/denma_sendwindow.go
-	"denma.postal_address", // cmd/denma_address.go
+	"denma.postal_address",                 // cmd/denma_address.go
+	"denma.website", "denma.contact_email", // cmd/denma_footer.go
 }
 
 // denmaPermissions adds ours to listmonk's permissions (permissions.json), so
@@ -109,6 +110,8 @@ type denmaCenterForm struct {
 	SendWindow denmaSendWindow `json:"send_window"` // its sending hours
 
 	PostalAddress string `json:"postal_address"` // cmd/denma_address.go
+	Website       string `json:"website"`        // cmd/denma_footer.go
+	ContactEmail  string `json:"contact_email"`
 }
 
 var denmaFormKeys = map[string]string{
@@ -118,6 +121,7 @@ var denmaFormKeys = map[string]string{
 	"utm_domains": "denma.utm_domains", "visual_template": "denma.visual_template",
 	"design_template": "denma.design_template", "daily_cap": "denma.daily_cap", "reply_to": "denma.reply_to",
 	"time_zone": "denma.timezone", "send_window": "denma.send_window", "postal_address": "denma.postal_address",
+	"website": "denma.website", "contact_email": "denma.contact_email",
 }
 
 type denmaCenterView struct {
@@ -134,8 +138,8 @@ type denmaCenterView struct {
 
 	Sending denmaCapStatus // against its daily cap (cmd/denma_daily.go)
 
-	// Its templates that don't show its postal address (cmd/denma_address.go).
-	NoAddressTemplates []string
+	// Its templates that lack some of the footer (cmd/denma_footer.go).
+	FooterTemplates []denmaFooterTemplate
 
 	// For the features' choices.
 	VisualTemplates []denmaOption
@@ -242,7 +246,7 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 	}
 	view.DomainsOn = denmaDomainsOn()
 	view.Sending = a.denmaCapStatus()
-	view.NoAddressTemplates = a.denmaAddressTemplateNames()
+	view.FooterTemplates = a.denmaFooterTemplates()
 	return c.Render(http.StatusOK, "admin-denma-center", view)
 }
 
@@ -289,6 +293,12 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	}
 	var err error
 	if f.PostalAddress, err = denmaCheckAddressInput(f.PostalAddress); err != nil { // cmd/denma_address.go
+		return bad(err.Error())
+	}
+	if f.Website, err = denmaCheckWebsiteInput(f.Website); err != nil { // cmd/denma_footer.go
+		return bad(err.Error())
+	}
+	if f.ContactEmail, err = denmaCheckContactEmailInput(f.ContactEmail); err != nil {
 		return bad(err.Error())
 	}
 	if _, err := mail.ParseAddress(f.FromEmail); err != nil {
@@ -381,11 +391,11 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 		c.SetLimit(f.DailyCap, 0)
 	}
 	// And the sending hours (cmd/denma_sendwindow.go), and the postal
-	// address (cmd/denma_address.go).
+	// address, website and contact e-mail (cmd/denma_footer.go).
 	if slug := a.ko.String("denma.center"); slug != "" {
 		w := f.SendWindow
 		denmaWindowOf(slug).Store(&w)
-		denmaSetAddress(slug, f.PostalAddress)
+		denmaSetContact(slug, denmaContact{Address: f.PostalAddress, Website: f.Website, Email: f.ContactEmail})
 	}
 
 	// The hub's list shows the registry's name for centers that aren't running.

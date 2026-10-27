@@ -5,6 +5,7 @@ import {
   i18n,
 } from '../main.js';
 import * as u from '../utils.js';
+import { denmaTemplateTags } from '../denma-template-tags.js'; // denma: the tags a template can use
 
 // previewMixin provides the shared state + handlers for the template-preview dialog.
 function previewMixin() {
@@ -76,6 +77,7 @@ function templateForm(tpl, isNew) {
 
   return {
     ...previewMixin(),
+    ...denmaTemplateTags(window._denmaContact), // denma
     isNew,
 
     form: {

@@ -1,0 +1,27 @@
+{{- /* denma: the tags a template can use, under the template editor, with
+   those every campaign and automation e-mail must have marked
+   (cmd/denma_footer.go; assets/js/denma-template-tags.js). */ -}}
+{{ define "denma-template-tags" -}}
+<script nonce="{{ .CSPNonce }}">window._denmaContact = {{ ToJSON DenmaContact }};</script>
+<details class="denma-template-tags" data-testid="template-tags">
+	<summary><span class="denma-tags-title">
+		Template tags
+		<template x-if="denmaTagsMissing() > 0">
+			<span class="badge small" data-variant="danger" data-testid="template-tags-missing" x-text="denmaTagsMissing() + ' required ' + (denmaTagsMissing() === 1 ? 'tag' : 'tags') + ' missing'"></span>
+		</template>
+		<template x-if="denmaTagsRequired() && denmaTagsMissing() === 0">
+			<span class="badge small" data-variant="success">Has every required tag</span>
+		</template>
+	</span></summary>
+	<p class="text-light">Click a tag to copy it. <span x-show="denmaTagsRequired()">Every campaign and automation e-mail must have the ones marked Required, so a template without them isn't saved.</span> Every link in a campaign is tracked automatically.</p>
+	<ul>
+		<template x-for="row in denmaTagRows()" :key="row.tag">
+			<li>
+				<button type="button" class="denma-tag-copy" :title="'Copy ' + row.tag" @click="copyToClipboard(row.tag)"><code x-text="row.tag"></code></button>
+				<template x-if="row.badge"><span class="badge small" :data-variant="row.badge.variant || null" x-text="row.badge.text"></span></template>
+				<span class="denma-tag-what" x-text="row.what"></span>
+			</li>
+		</template>
+	</ul>
+</details>
+{{- end }}

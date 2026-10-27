@@ -31,9 +31,24 @@
 			<label data-field data-testid="center-postal-address">
 				Postal address
 				<textarea name="postal_address" rows="3" maxlength="500" required x-model="form.postal_address" placeholder="1234 Main Street&#10;Halifax NS  B3H 1A1&#10;Canada" data-testid="postal-address"></textarea>
-				<small data-hint>The center's mailing address. Canada's anti-spam law (CASL) requires it in every campaign and automation e-mail, so none is sent without it. <code>{{ "{{ CenterAddress }}" }}</code> puts it in a template, on one line; the templates the center started with and its design show it.
-				{{- with $d.NoAddressTemplates }} <span class="text-danger" data-testid="no-address-templates">These templates don't show it yet, so campaigns using them can't be sent: {{ range $i, $n := . }}{{ if $i }}, {{ end }}{{ $n }}{{ end }}.</span>{{ end }}</small>
+				<small data-hint>The center's mailing address. Canada's anti-spam law (CASL) requires it in every campaign and automation e-mail, so none is sent without it. <code>{{ "{{ CenterAddress }}" }}</code> puts it in a template, a line for each of its lines.</small>
 			</label>
+			{{/* cmd/denma_footer.go */}}
+			<label data-field>
+				Website
+				<input name="website" maxlength="200" required x-model="form.website" placeholder="example.org" data-testid="website" />
+				<small data-hint>Shown in every campaign and automation e-mail, as a way to get in touch: <code>{{ "{{ CenterWebsite }}" }}</code>.</small>
+			</label>
+			<label data-field>
+				Contact e-mail
+				<input name="contact_email" type="email" maxlength="200" required x-model="form.contact_email" placeholder="programs@example.org" data-testid="contact-email" />
+				<small data-hint>Shown in every campaign and automation e-mail, for people to write to: <code>{{ "{{ CenterEmail }}" }}</code>.</small>
+			</label>
+			<div data-field data-testid="center-footer">
+				<span class="denma-static-label">E-mail footer</span>
+				<small data-hint>Every campaign and automation e-mail must have an unsubscribe link (<code>{{ "{{ UnsubscribeURL }}" }}</code>), a view-in-browser link (<code>{{ "{{ MessageURL }}" }}</code>), and the postal address, website and contact e-mail above (their tags, or written in). <code>{{ "{{ CenterFooter }}" }}</code> gives both links; a template without them all isn't saved. The templates the center started with and its design show them.
+				{{- with $d.FooterTemplates }} <span class="text-danger" data-testid="footer-templates">These templates lack some, so campaigns using them can't be sent: {{ range $i, $t := . }}{{ if $i }}; {{ end }}{{ $t.Name }} ({{ $t.Missing }}){{ end }}.</span>{{ end }}</small>
+			</div>
 			<div data-field>
 				<span class="denma-static-label">Address</span>
 				<span class="denma-static" data-testid="center-address">{{ $d.Address }}</span>

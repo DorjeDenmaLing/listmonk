@@ -8,7 +8,6 @@
 {{/* denma: an automation, or a new one (cmd/denma_automations.go). */}}
 <script nonce="{{ .CSPNonce }}">
 	window._denmaAutomation = {{ ToJSON $a }};
-	window._denmaAutoTemplates = {{ ToJSON $d.Templates }};
 	window._lists = {{ ToJSON $d.Lists }};
 </script>
 <form class="denma-automation" x-data="denmaAutomation" @submit.prevent="onSubmit" x-cloak>
@@ -173,16 +172,16 @@
 					<div data-field>
 						<label for="auto-template">Template</label>
 						<div class="hstack gap-3 denma-auto-template">
-							<select id="auto-template" name="template_id" required x-model.number="form.template_id" @change="onTemplate" data-testid="select-template">
+							<select id="auto-template" name="template_id" required x-model.number="form.template_id" data-testid="select-template">
 								<option value="0" disabled>Choose a template…</option>
 								{{- range $d.Templates }}
-								<option value="{{ .ID }}">{{ .Name }} ({{ if eq .Type "tx" }}transactional{{ else }}visual{{ end }})</option>
+								<option value="{{ .ID }}">{{ .Name }}</option>
 								{{- end }}
 							</select>
 							<a :href="form.template_id ? `{{ URI "/admin/templates" }}/${form.template_id}` : null" x-show="form.template_id" target="_blank" class="button ghost small text-nowrap">{{ Icon "edit-2" }} Edit</a>
 							<a href="{{ URI "/admin/templates/new" }}" target="_blank" class="button ghost small text-nowrap">{{ Icon "plus" }} New template</a>
 						</div>
-						<small data-hint>The whole e-mail. Make one in Templates, as Visual (drag and drop) or Transactional (HTML). <code>{{ "{{ .Subscriber.FirstName }}" }}</code> puts in their first name; <code>{{ "{{ UnsubscribeURL }}" }}</code> is the link to unsubscribe. Imported subscribers aren't sent it.</small>
+						<small data-hint>The whole e-mail: a visual template, made in Templates. Like every campaign's, it must have the footer (Templates lists its tags). <code>{{ "{{ .Subscriber.FirstName }}" }}</code> puts in their first name. Imported subscribers aren't sent it.</small>
 					</div>
 					<label data-field>
 						Subject
@@ -227,10 +226,10 @@
 								</div>
 								<label data-field>
 									Template
-									<select required x-model.number="s.template_id" @change="onStepTemplate(s)" data-testid="select-step-template">
+									<select required x-model.number="s.template_id" data-testid="select-step-template">
 										<option value="0" disabled>Choose a template…</option>
 										{{- range $d.Templates }}
-										<option value="{{ .ID }}">{{ .Name }} ({{ if eq .Type "tx" }}transactional{{ else }}visual{{ end }})</option>
+										<option value="{{ .ID }}">{{ .Name }}</option>
 										{{- end }}
 									</select>
 								</label>

@@ -2,24 +2,17 @@ package main
 
 // denma: each center's postal address (Config -> General, denma.postal_address;
 // asked for when a center is made). Canada's anti-spam law (CASL) requires
-// the sender's mailing address in every commercial e-mail, so no campaign or
-// automation e-mail goes without it:
+// the sender's mailing address in every commercial e-mail, so it's part of
+// the footer every campaign and automation e-mail must have
+// (cmd/denma_footer.go, which checks it):
 //
 //   - {{ CenterAddress }} puts it in an e-mail or design, a line for each of
-//     its lines, in every template, campaign and automation e-mail; a
-//     campaign's plain text gets its lines as text ({{ CenterAddressText }},
+//     its lines; a plain text gets its lines as text ({{ CenterAddressText }},
 //     models/denma_address.go).
-//   - A campaign doesn't start, nor is scheduled, nor sends a test, and an
-//     automation isn't saved, turned on or run, unless the center has an
-//     address and its e-mail shows it (as rendered: the tag, or the address
-//     written in). Each campaign and automation e-mail is checked again as
-//     it's sent (denmaCountedMessenger, cmd/denma_daily.go), and refused
-//     without it.
 //   - The templates a center starts with show it in their footer, as does its
 //     design, which frames its opt-in confirmations and public pages
 //     (features version 39 added it to the stock ones centers had).
 //
-// Transactional e-mails (receipts, password resets) and notices don't need it.
 // A save applies at once, as the sending hours do.
 
 import (
@@ -30,62 +23,12 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"sync"
-	"sync/atomic"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/knadh/koanf/v2"
 	"github.com/labstack/echo/v4"
 )
 
 const denmaAddressTag = "{{ CenterAddress }}"
-
-var (
-	errDenmaNoAddress      = errors.New("Enter the center's postal address on Config → General first. Canada's anti-spam law (CASL) requires it in every campaign and automation e-mail, so none is sent without it.")
-	errDenmaAddressMissing = errors.New("The e-mail doesn't show the center's postal address, which Canada's anti-spam law (CASL) requires in every campaign and automation e-mail. Put " +
-		denmaAddressTag + " in its footer: in its template (Campaigns → Templates), or in a visual campaign's own.")
-)
-
-// denmaAddresses holds each center's address (by slug), changed at once on
-// a save.
-var denmaAddresses sync.Map // slug -> *atomic.Pointer[string]
-
-func denmaAddressOf(slug string) *atomic.Pointer[string] {
-	p, _ := denmaAddresses.LoadOrStore(slug, &atomic.Pointer[string]{})
-	return p.(*atomic.Pointer[string])
-}
-
-// denmaAddress is a center's address, "" for none (or the hub).
-func denmaAddress(slug string) string {
-	if slug == "" {
-		return ""
-	}
-	if s := denmaAddressOf(slug).Load(); s != nil {
-		return *s
-	}
-	return ""
-}
-
-// denmaSetAddress sets a center's address.
-func denmaSetAddress(slug, addr string) {
-	if slug != "" {
-		denmaAddressOf(slug).Store(&addr)
-	}
-}
-
-// denmaAddressFuncs sets a center's address from its settings (ko) and adds
-// CenterAddress to its e-mails' template functions (the campaign manager's,
-// which campaigns, automations, transactional templates and the design use).
-func denmaAddressFuncs(funcs template.FuncMap, ko *koanf.Koanf) {
-	slug := ko.String("denma.center")
-	denmaSetAddress(slug, ko.String("denma.postal_address"))
-	funcs["CenterAddress"] = func() template.HTML {
-		return denmaAddressHTML(denmaAddress(slug))
-	}
-	funcs["CenterAddressText"] = func() string {
-		return denmaAddress(slug)
-	}
-}
 
 // denmaTidyAddress is an address as entered, each line trimmed, without
 // empty ones.
@@ -137,54 +80,25 @@ func denmaPlainWords(s string, isHTML bool) string {
 	return strings.Join(strings.Fields(strings.ToLower(reDenmaPunct.ReplaceAllString(s, " "))), " ")
 }
 
-// denmaShowsAddress reports whether an e-mail's body (HTML or plain text)
-// shows the address.
-func denmaShowsAddress(body []byte, addr string) bool {
-	want := denmaPlainWords(addr, false)
-	return want != "" && strings.Contains(denmaPlainWords(string(body), true), want)
-}
-
-// denmaAddressCheck refuses an e-mail of a center (slug; none for the hub)
-// that doesn't show its address, or that it hasn't one.
-func denmaAddressCheck(slug string, body []byte) error {
-	if slug == "" {
-		return nil
-	}
-	addr := denmaAddress(slug)
-	if addr == "" {
-		return errDenmaNoAddress
-	}
-	if !denmaShowsAddress(body, addr) {
-		return errDenmaAddressMissing
-	}
-	return nil
-}
-
-// denmaCheckAddress refuses an e-mail (its body as sent) of a's center that
-// doesn't show the center's address.
-func (a *App) denmaCheckAddress(body []byte) error {
-	if !a.ko.Bool("denma.multi_center") {
-		return nil
-	}
-	return denmaAddressCheck(a.ko.String("denma.center"), body)
-}
-
 // denmaCheckMessage refuses a campaign's or automation's e-mail (its body as
-// rendered) that doesn't show the center's address, or has images no longer
-// in its Media (cmd/denma_images.go).
+// rendered) that doesn't show the center's details (cmd/denma_footer.go), or
+// has images no longer in its Media (cmd/denma_images.go).
 func (a *App) denmaCheckMessage(body []byte) error {
-	if err := a.denmaCheckAddress(body); err != nil {
+	if err := a.denmaCheckFooter(body); err != nil {
 		return err
 	}
 	return a.denmaCheckImages(body)
 }
 
 // denmaCheckContent refuses to start or schedule a campaign whose e-mail
-// fails denmaCheckMessage. Called by denmaCheckCampaignStart.
+// hasn't the footer's links or fails denmaCheckMessage. Called by denmaCheckCampaignStart.
 func (a *App) denmaCheckContent(id int) error {
 	camp, err := a.core.GetCampaignForPreview(id, 0)
 	if err != nil {
 		return err
+	}
+	if err := a.denmaCheckLinks(denmaCampaignSource(&camp)); err != nil { // cmd/denma_footer.go
+		return denmaBadRequest(err)
 	}
 	camp.UUID = dummySubscriber.UUID // no views or clicks are recorded
 	if err := camp.CompileTemplate(a.manager.TemplateFuncs(&camp)); err != nil {
@@ -219,24 +133,39 @@ func denmaWithAddress(body string) (string, bool) {
 // and to its default design, if it's the stock layout. Returns how many it
 // changed.
 func denmaAddAddressToTemplates(tx *sqlx.Tx) (int, error) {
+	n, err := denmaEditStockFooters(tx, denmaAddressAnchor, denmaWithAddress)
+	if err != nil {
+		return n, err
+	}
+	ok, err := denmaAddAddressToDesign(tx)
+	if ok {
+		n++
+	}
+	return n, err
+}
+
+// denmaEditStockFooters changes the footer of the center's campaign and
+// visual templates that have anchor (their source too) with edit, which says
+// whether it changed one. Returns how many it changed.
+func denmaEditStockFooters(tx *sqlx.Tx, anchor string, edit func(string) (string, bool)) (int, error) {
 	var tpls []struct {
 		ID     int     `db:"id"`
 		Body   string  `db:"body"`
 		Source *string `db:"body_source"`
 	}
 	if err := tx.Select(&tpls, `SELECT id, body, body_source FROM templates WHERE type IN ('campaign', 'campaign_visual')
-		AND strpos(body, 'CenterAddress') = 0 AND strpos(body, $1) > 0`, denmaAddressAnchor); err != nil {
+		AND strpos(body, $1) > 0`, anchor); err != nil {
 		return 0, err
 	}
 	n := 0
 	for _, t := range tpls {
-		body, ok := denmaWithAddress(t.Body)
+		body, ok := edit(t.Body)
 		if !ok {
 			continue
 		}
 		src := t.Source
 		if src != nil && *src != "" {
-			s, err := denmaSourceWithAddress(*src)
+			s, err := denmaEditSource(*src, edit)
 			if err != nil {
 				continue // not the visual editor's, left as it is
 			}
@@ -247,16 +176,12 @@ func denmaAddAddressToTemplates(tx *sqlx.Tx) (int, error) {
 		}
 		n++
 	}
-	ok, err := denmaAddAddressToDesign(tx)
-	if ok {
-		n++
-	}
-	return n, err
+	return n, nil
 }
 
-// denmaSourceWithAddress is a visual template's source with the address
-// after the "View in browser" link of its text or HTML block.
-func denmaSourceWithAddress(src string) (string, error) {
+// denmaEditSource is a visual template's source with its first text or HTML
+// block that edit changes changed.
+func denmaEditSource(src string, edit func(string) (string, bool)) (string, error) {
 	var blocks map[string]map[string]any
 	if err := json.Unmarshal([]byte(src), &blocks); err != nil {
 		return "", err
@@ -266,7 +191,7 @@ func denmaSourceWithAddress(src string) (string, error) {
 		props, _ := data["props"].(map[string]any)
 		for _, k := range []string{"text", "contents"} {
 			if s, ok := props[k].(string); ok {
-				if out, ok := denmaWithAddress(s); ok {
+				if out, ok := edit(s); ok {
 					props[k] = out
 					out, err := json.Marshal(blocks)
 					return string(out), err
@@ -325,27 +250,4 @@ func denmaAddAddressToDesign(tx *sqlx.Tx) (bool, error) {
 	body := strings.TrimSuffix(t.Body, denmaDesignEnd) + denmaDesignAddrHTML + denmaDesignEnd
 	_, err = tx.Exec(`UPDATE templates SET body = $2, body_source = $3, updated_at = NOW() WHERE id = $1`, t.ID, body, string(b))
 	return err == nil, err
-}
-
-// denmaAddressTemplateNames is the center's templates whose e-mails don't
-// show its address (as campaigns and automations would send them), for the
-// Config page.
-func (a *App) denmaAddressTemplateNames() []string {
-	var tpls []struct {
-		Name string `db:"name"`
-		Body string `db:"body"`
-	}
-	if err := a.db.Select(&tpls, `SELECT name, body FROM templates WHERE type IN ('campaign', 'campaign_visual')
-		AND strpos(body, 'CenterAddress') = 0 ORDER BY name`); err != nil {
-		a.log.Printf("denma: error reading the templates: %v", err)
-	}
-	// Those with the address written in show it too.
-	addr := denmaPlainWords(denmaAddress(a.ko.String("denma.center")), false)
-	out := []string{}
-	for _, t := range tpls {
-		if addr == "" || !strings.Contains(denmaPlainWords(t.Body, true), addr) {
-			out = append(out, t.Name)
-		}
-	}
-	return out
 }

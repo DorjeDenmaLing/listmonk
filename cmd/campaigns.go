@@ -842,7 +842,7 @@ func (a *App) sendTestMessage(sub models.Subscriber, camp *models.Campaign) erro
 		a.log.Printf("error rendering message: %v", err)
 		return echo.NewHTTPError(http.StatusNotFound, a.i18n.Ts("templates.errorRendering", "error", err.Error()))
 	}
-	if err := a.denmaCheckMessage(msg.Body()); err != nil { // denma: its postal address and images (cmd/denma_address.go)
+	if err := a.denmaCheckSample(camp, msg.Body()); err != nil { // denma: its footer and images (cmd/denma_footer.go)
 		return err
 	}
 

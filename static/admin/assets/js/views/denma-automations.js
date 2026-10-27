@@ -56,7 +56,6 @@ function waitUnit(mins) {
 // An automation's page.
 function denmaAutomation() {
   const a = window._denmaAutomation || {};
-  const templates = window._denmaAutoTemplates || [];
   const mins = a.delay_minutes || 0;
   let unit = 'now';
   if (mins) {
@@ -106,14 +105,6 @@ function denmaAutomation() {
       this.testStep = Math.min(this.testStep, this.steps.length + 1);
     },
 
-    // A follow-up's transactional template has a subject; use it if there's none yet.
-    onStepTemplate(s) {
-      const t = templates.find((x) => x.id === s.template_id);
-      if (t && t.type === 'tx' && !s.subject.trim()) {
-        s.subject = t.subject;
-      }
-    },
-
     data() {
       const delay = this.unit === 'now' ? 0 : Math.round((Number(this.wait) || 0) * UNITS[this.unit]);
       const {
@@ -161,14 +152,6 @@ function denmaAutomation() {
     onTrigger() {
       const optin = this.form.trigger_type === 'confirms' ? 'double' : 'single';
       this.form.lists = this.form.lists.filter((l) => !l.optin || l.optin === optin);
-    },
-
-    // A transactional template has a subject; use it if there's none yet.
-    onTemplate() {
-      const t = templates.find((x) => x.id === this.form.template_id);
-      if (t && t.type === 'tx' && !this.form.subject.trim()) {
-        this.form.subject = t.subject;
-      }
     },
 
     // False, with a message, if a typed-in name isn't a list.

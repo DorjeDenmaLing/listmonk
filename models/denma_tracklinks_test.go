@@ -55,6 +55,7 @@ func TestDenmaTrackCompile(t *testing.T) {
 	f := template.FuncMap{
 		"TrackLink":      func(u string, _ any) string { return "https://t.org/" + strings.ReplaceAll(u, "https://", "") },
 		"UnsubscribeURL": func(_ any) string { return "https://u.org" },
+		"TrackView":      func(_ any) template.HTML { return "<img>" },
 	}
 	if err := c.CompileTemplate(f); err != nil {
 		t.Fatal(err)
@@ -63,7 +64,7 @@ func TestDenmaTrackCompile(t *testing.T) {
 	if err := c.Tpl.ExecuteTemplate(&b, BaseTpl, nil); err != nil {
 		t.Fatal(err)
 	}
-	want := `<p><a href="https://t.org/center.org">Site</a></p><a href="https://t.org/x.org/?a=1&amp;b=2">Read</a><a href="https://u.org">Unsubscribe</a>`
+	want := `<p><a href="https://t.org/center.org">Site</a></p><a href="https://t.org/x.org/?a=1&amp;b=2">Read</a><a href="https://u.org">Unsubscribe</a><img>`
 	if b.String() != want {
 		t.Errorf("html:\n got %s\nwant %s", b.String(), want)
 	}
