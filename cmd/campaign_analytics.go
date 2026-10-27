@@ -41,6 +41,7 @@ type campaignAnalyticsView struct {
 		Bounces int
 	}
 	Data analyticsData
+	Denma denmaExplore // denma: the automations chosen (cmd/denma_auto_reports.go)
 }
 
 // ViewCampaignAnalytics renders the HTML view for campaign analytics.
@@ -73,7 +74,7 @@ func (a *App) ViewCampaignAnalytics(c echo.Context) error {
 	}
 
 	data := campaignAnalyticsView{
-		adminView:          newAdminView(c, a.i18n.T("analytics.title"), "", "campaigns.analytics"),
+		adminView:          newAdminView(c, "Explore", "", "analytics.explore"), // denma: Analytics -> Explore (cmd/denma_analytics.go)
 		Campaigns:          campaigns,
 		FromInput:          from.Format("2006-01-02T15:04"),
 		ToInput:            to.Format("2006-01-02T15:04"),
@@ -119,6 +120,9 @@ func (a *App) ViewCampaignAnalytics(c echo.Context) error {
 		data.Counts.Bounces = sumAnalyticsCounts(bounces)
 	}
 
+	if err := a.denmaExploreAutomations(c, &data, from, to); err != nil { // denma: cmd/denma_auto_reports.go
+		return err
+	}
 	return c.Render(http.StatusOK, "admin-campaign-analytics", data)
 }
 

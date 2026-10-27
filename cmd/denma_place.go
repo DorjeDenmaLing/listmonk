@@ -77,11 +77,12 @@ func denmaAdminRequest(p string) bool {
 // denmaHubOnlyPath reports whether an admin path is the hub's alone, which
 // centers don't have: it's the hub's wherever the admin is.
 func denmaHubOnlyPath(p string) bool {
-	if denmaCenterSettingsPath(p) {
+	// The hub's Analytics; a center's pages are under it (cmd/denma_analytics.go).
+	if denmaCenterSettingsPath(p) || p == "/admin/analytics" {
 		return true
 	}
 	for _, pre := range []string{
-		"/admin/hub", "/admin/centers", "/admin/people", "/admin/domains", "/admin/analytics", "/admin/system", "/admin/mcp",
+		"/admin/hub", "/admin/centers", "/admin/people", "/admin/domains", "/admin/system", "/admin/mcp",
 		"/api/denma/centers", "/api/denma/people", "/api/denma/domains", "/api/denma/hub", "/api/denma/mcp",
 	} {
 		if p == pre || strings.HasPrefix(p, pre+"/") {

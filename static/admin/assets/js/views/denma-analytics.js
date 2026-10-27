@@ -1,12 +1,15 @@
-// DDL: three sections above listmonk's own charts on Campaigns -> Analytics
-// (partials/denma/analytics.html), for the dashboard's date range:
-//   Campaign reports   each campaign sent in the period, with unique opens and
-//                      clicks, click-to-open, unsubscribes, bounces and
-//                      complaints (cmd/denma_campaign_stats.go)
-//   Audience growth    subscribers gained and lost, with a chart
-//   Mailbox providers  open and click rates per provider, to spot one sending
-//                      the newsletter to spam (its rate drops while the others
-//                      hold)
+// DDL: the sections of a center's Analytics pages (partials/denma/analytics.html,
+// cmd/denma_analytics.go), for the dashboard's date range:
+//   Campaign reports    each campaign sent in the period, with unique opens and
+//                       clicks, click-to-open, unsubscribes, bounces and
+//                       complaints (cmd/denma_campaign_stats.go)
+//   Automation reports  the same for automations' e-mails sent in the period,
+//                       with a row per e-mail of a series
+//                       (cmd/denma_auto_reports.go)
+//   Audience growth     subscribers gained and lost, with a chart
+//   Mailbox providers   open and click rates per provider, to spot one sending
+//                       the newsletter to spam (its rate drops while the
+//                       others hold)
 // Ported from the production admin add-on (listmonk-js/admin-custom.js).
 import Alpine from 'alpinejs';
 import { urls } from '../main.js';
@@ -27,6 +30,16 @@ const analyticsURL = (c) => {
   return `${urls.admin}/campaigns/analytics?id=${encodeURIComponent(c.id)}&from=${day(from)}&to=${day(to)}`;
 };
 const campaignName = (c) => c.name || c.subject || 'Untitled';
+
+// An automation's page, and its figures on Explore from the period's start
+// to tomorrow (opens and clicks come after the e-mails).
+const automationURL = (id) => `${urls.admin}/automations/${encodeURIComponent(id)}`;
+const exploreURL = (id, p) => {
+  const day = (d) => `${s.isoDay(d)}T00:00`;
+  return `${urls.admin}/campaigns/analytics?auto=${encodeURIComponent(id)}&from=${day(p.cur.start)}&to=${day(s.addDays(new Date(), 1))}`;
+};
+// The automation to show first (?id=, from its page).
+const focusID = () => parseInt(new URLSearchParams(window.location.search).get('id'), 10) || 0;
 
 // ---- Audience growth ----
 
@@ -95,6 +108,8 @@ function component(opts) {
     show: opts,
 
     reports: { rows: [], total: null, note: '', busy: true },
+    autos: { rows: [], total: null, note: '', busy: true },
+    focused: false,
     growth: { cells: s.growthPlaceholders(), note: '', busy: true },
     providers: { rows: [], all: null, note: 'Loading…', busy: true },
     seq: 0,
@@ -142,6 +157,11 @@ function component(opts) {
           return Promise.all([c, s.perCampaign('views', ids, from), s.perCampaign('clicks', ids, from),
             s.campaignOutcomes(s.startedIn(c, p.cur).map((x) => x.id))]);
         }), ([c, opens, clicks, outcomes]) => this.renderReports(c, p, opens, clicks, outcomes), 'campaign reports');
+      }
+
+      if (this.show.automations) {
+        const q = `from=${encodeURIComponent(p.cur.start.toISOString())}&to=${encodeURIComponent(p.cur.end.toISOString())}`;
+        run('autos', () => s.getJSON(`/denma/stats/automations?${q}`), (d) => this.renderAutomations(p, d), 'automation reports');
       }
 
       if (this.show.growth) {
@@ -216,6 +236,81 @@ function component(opts) {
       } : null;
       const early = since && list.some((c) => !counted(c));
       this.reports.note = list.length ? 'Opens, clicks, unsubscribes and complaints are shares of delivered emails; opens and clicks count unique people per campaign. Click-to-open is the people who clicked, as a share of those who opened.' : '';
+    },
+
+    // ---- Automation reports ----
+
+    // Each automation that sent in the period, its total and, for a series,
+    // a row per e-mail; rates are shares of the people reached, opens and
+    // clicks unique people (with individual tracking; else every one, as
+    // shares of the e-mails delivered).
+    renderAutomations(p, d) {
+      const ind = d.individual_tracking;
+      const off = d.tracking_disabled;
+      const metric = (count, of, digits, shown = true) => (shown ? { pct: pct(count, of, digits), n: count.toLocaleString() } : null);
+      const complaints = (n, of) => (n > 0 ? metric(n, of, 2) : { pct: '0', n: '' });
+      const figures = (r) => {
+        const bounces = Math.min(r.bounces, r.sent);
+        const delivered = r.sent - bounces;
+        const opened = ind ? r.opened : r.opens;
+        const clicked = ind ? r.clicked : r.clicks;
+        const of = ind ? Math.max(r.people - bounces, 0) : delivered;
+        return {
+          step: r.step,
+          subject: r.subject,
+          sent: r.sent.toLocaleString(),
+          people: r.people.toLocaleString(),
+          delivered: pct(delivered, r.sent, 1),
+          open: metric(opened, of, 1, !off),
+          click: metric(clicked, of, 2, !off),
+          cto: !off && opened > 0 ? pct(clicked, opened, 1) : '—',
+          unsub: metric(r.unsubscribes, r.people, 2),
+          bounces: bounces.toLocaleString(),
+          complaint: complaints(r.complaints, r.people),
+        };
+      };
+
+      const groups = new Map();
+      (d.results || []).forEach((r) => {
+        if (!groups.has(r.automation_id)) groups.set(r.automation_id, { id: r.automation_id, name: r.name, total: null, steps: [] });
+        const g = groups.get(r.automation_id);
+        if (r.step === 0) g.total = r;
+        else g.steps.push(r);
+      });
+      const focus = focusID();
+      const list = [...groups.values()].filter((g) => g.total && g.total.sent > 0).sort((a, b) => b.total.sent - a.total.sent);
+      const tot = { sent: 0, people: 0, opened: 0, clicked: 0, opens: 0, clicks: 0, unsubscribes: 0, bounces: 0, complaints: 0 };
+      this.autos.rows = list.map((g) => {
+        Object.keys(tot).forEach((k) => { tot[k] += g.total[k]; });
+        const steps = g.steps.filter((r) => r.sent > 0);
+        return {
+          id: g.id,
+          name: g.name || 'Untitled',
+          url: exploreURL(g.id, p),
+          autoUrl: automationURL(g.id),
+          focus: g.id === focus,
+          rows: [figures(g.total), ...(steps.length > 1 || (steps.length && steps[0].step > 1) ? steps.map(figures) : [])],
+        };
+      });
+      this.autos.total = list.length ? { count: list.length, ...figures({ step: 0, ...tot }) } : null;
+
+      const since = (k) => d.since && d.since[k] && new Date(d.since[k]) > p.cur.start ? s.fmtDate(new Date(d.since[k])) : null;
+      const notes = [];
+      if (list.length) {
+        notes.push(ind
+          ? 'For the e-mails sent in this period: opens and clicks are the people who opened or clicked them, once each, and with unsubscribes and complaints, shares of the people they were sent to.'
+          : "Individual tracking is off, so opens and clicks aren't tied to people: they're every open and click in this period, as shares of the e-mails delivered.");
+        if (off) notes.push('Tracking is off, so there are no opens or clicks.');
+        if (since('views')) notes.push(`Opens are counted from ${since('views')}.`);
+        if (since('unsubs') || since('bounces')) notes.push(`Unsubscribes and bounces are counted from ${since('unsubs') || since('bounces')}.`);
+        if (this.autos.rows.some((g) => g.rows.length > 1)) notes.push('A series has a row for each of its e-mails under its total. Clicks from before e-mails were told apart count only in the total.');
+      }
+      this.autos.note = notes.join(' ');
+
+      if (focus && !this.focused) {
+        this.focused = true;
+        this.$nextTick(() => document.getElementById(`automation-${focus}`)?.scrollIntoView({ block: 'center' }));
+      }
     },
 
     // ---- Audience growth ----

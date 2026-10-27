@@ -42,10 +42,16 @@ func (a *App) denmaUnsubscribe(subUUID, campUUID string, _ bool) error {
 	if err != nil {
 		return fail(err)
 	}
-	// A new opt-out counts for the campaign it came from (cmd/denma_campaign_stats.go).
+	// A new opt-out counts for the campaign it came from (cmd/denma_campaign_stats.go),
+	// or the automation (cmd/denma_auto_reports.go).
 	if n, _ := res.RowsAffected(); n > 0 && campUUID != "" {
 		if _, err := tx.Exec(denmaCampaignUnsubSQL, campUUID); err != nil {
 			return fail(err)
+		}
+		if denmaAutomationsOn(a) {
+			if _, err := tx.Exec(denmaAutoUnsubSQL, campUUID, subUUID); err != nil {
+				return fail(err)
+			}
 		}
 	}
 	// listmonk's unsubscribe-by-campaign, blocklisting: every list. Their

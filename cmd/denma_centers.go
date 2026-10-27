@@ -473,6 +473,7 @@ func denmaCenterContent(p string) bool {
 	for _, pre := range []string{
 		"/admin/lists", "/admin/subscribers", "/admin/campaigns", "/admin/templates",
 		"/admin/calendar", "/admin/automations", "/admin/center",
+		"/admin/analytics/audience", "/admin/analytics/campaigns", "/admin/analytics/automations",
 		"/api/lists", "/api/subscribers", "/api/campaigns", "/api/templates",
 		"/api/import", "/api/bounces", "/api/tx", "/api/public", "/api/dashboard",
 		"/api/denma/automations", "/api/denma/center", "/api/denma/search", "/api/denma/stats", "/api/denma/tags",

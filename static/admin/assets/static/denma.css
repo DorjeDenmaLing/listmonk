@@ -698,6 +698,20 @@ section.analytics {
         }
     }
 
+    /* Automation reports: a series' e-mails under its total, and the one
+       its page linked to. */
+    tr.denma-step {
+        font-size: var(--text-8);
+
+        > td:first-child {
+            padding-inline-start: var(--space-6);
+        }
+    }
+
+    tbody.denma-focus > tr {
+        background: var(--faint);
+    }
+
     .denma-chart-wrap {
         margin-top: var(--space-5);
         transition: opacity 0.15s;

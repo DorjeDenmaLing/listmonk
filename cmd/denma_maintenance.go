@@ -150,16 +150,12 @@ func (a *App) DenmaGCSubscriptions(c echo.Context) error {
 }
 
 // DenmaGCCampaignAnalytics deletes campaign views and/or clicks older than a
-// date.
+// date, and automations' (cmd/denma_auto_reports.go): in a center or a single
+// install, or the hub's centers.
 func (a *App) DenmaGCCampaignAnalytics(c echo.Context) error {
 	ctrs, err := a.denmaMaintainIn(c)
-	switch {
-	case err != nil:
+	if err != nil {
 		return err
-	case ctrs == nil:
-		return a.GCCampaignAnalytics(c)
-	case len(ctrs) == 1:
-		return ctrs[0].app.GCCampaignAnalytics(c)
 	}
 	t, err := time.Parse(time.RFC3339, c.FormValue("before_date"))
 	if err != nil {
@@ -169,25 +165,38 @@ func (a *App) DenmaGCCampaignAnalytics(c echo.Context) error {
 	if typ != "all" && typ != "views" && typ != "clicks" {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))
 	}
-	if _, err := denmaEachCenter(ctrs, func(app *App) (int, error) {
-		if typ != "clicks" {
-			if err := app.core.DeleteCampaignViews(t); err != nil {
-				return 0, err
-			}
-		}
-		if typ != "views" {
-			if err := app.core.DeleteCampaignLinkClicks(t); err != nil {
-				return 0, err
-			}
-			if _, err := app.db.Exec(`DELETE FROM denma_automation_clicks WHERE created_at < $1`, t); err != nil { // cmd/denma_automations.go
-				return 0, err
-			}
-		}
-		return 0, nil
-	}); err != nil {
+	gc := func(app *App) (int, error) { return 0, app.denmaGCAnalytics(typ, t) }
+	if ctrs == nil {
+		_, err = gc(a)
+	} else {
+		_, err = denmaEachCenter(ctrs, gc)
+	}
+	if err != nil {
 		return err
 	}
 	return c.JSON(http.StatusOK, okResp{true})
+}
+
+// denmaGCAnalytics deletes the app's views and/or clicks (typ: all, views,
+// clicks) older than t, campaigns' and automations'.
+func (a *App) denmaGCAnalytics(typ string, t time.Time) error {
+	if typ != "clicks" {
+		if err := a.core.DeleteCampaignViews(t); err != nil {
+			return err
+		}
+		if _, err := a.db.Exec(`DELETE FROM denma_automation_views WHERE created_at < $1`, t); err != nil { // cmd/denma_auto_reports.go
+			return err
+		}
+	}
+	if typ != "views" {
+		if err := a.core.DeleteCampaignLinkClicks(t); err != nil {
+			return err
+		}
+		if _, err := a.db.Exec(`DELETE FROM denma_automation_clicks WHERE created_at < $1`, t); err != nil { // cmd/denma_automations.go
+			return err
+		}
+	}
+	return nil
 }
 
 // DenmaExportCampaignAnalytics streams campaign views or clicks since a date

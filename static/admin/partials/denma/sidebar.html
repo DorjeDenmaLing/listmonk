@@ -88,7 +88,7 @@
 
 		{{- if Can $u "campaigns:get" "campaigns:get_all" "campaigns:manage" "campaigns:manage_all" "templates:get" }}{{/* Media and Analytics are their own items */}}
 		<li>
-			<details {{ if not (has $p (list "campaigns.media" "campaigns.analytics")) }}{{ ExpandNav $p "campaigns" }}{{ end }} name="sidebar-nav" data-cy="campaigns">
+			<details {{ if ne $p "campaigns.media" }}{{ ExpandNav $p "campaigns" }}{{ end }} name="sidebar-nav" data-cy="campaigns">
 				<summary>{{ template "denma-icon" "rocket-launch-outline" }}<span>{{ .L.T "globals.terms.campaigns" }}</span></summary>
 				<ul>
 					{{- if Can $u "campaigns:get" "campaigns:get_all" }}
@@ -120,9 +120,25 @@
 			<a href="{{ URI "/admin/campaigns/media" }}" {{ IsNav $p "campaigns.media" }} data-cy="media">{{ template "denma-icon" "image-outline" }}<span>{{ .L.T "menu.media" }}</span></a>
 		</li>
 		{{- end }}
-		{{- if Can $u "campaigns:get_analytics" }}
+		{{- if Can $u "campaigns:get_analytics" }}{{/* its pages: cmd/denma_analytics.go */}}
+		{{- $subs := Can $u "subscribers:get" "subscribers:get_all" }}
+		{{- $camps := Can $u "campaigns:get" "campaigns:get_all" }}
 		<li>
-			<a href="{{ URI "/admin/campaigns/analytics" }}" {{ IsNav $p "campaigns.analytics" }} data-cy="analytics">{{ template "denma-icon" "chart-bar" }}<span>{{ .L.T "globals.terms.analytics" }}</span></a>
+			<details {{ ExpandNav $p "analytics" }} name="sidebar-nav" data-cy="analytics">
+				<summary>{{ template "denma-icon" "chart-bar" }}<span>{{ .L.T "globals.terms.analytics" }}</span></summary>
+				<ul>
+					{{- if and $subs (or $camps (Can $u "bounces:get")) }}
+					<li><a href="{{ URI "/admin/analytics/audience" }}" {{ IsNav $p "analytics.audience" }} data-cy="analytics-audience">{{ template "denma-icon" "account-multiple" }}<span>Audience</span></a></li>
+					{{- end }}
+					{{- if $camps }}
+					<li><a href="{{ URI "/admin/analytics/campaigns" }}" {{ IsNav $p "analytics.campaigns" }} data-cy="analytics-campaigns">{{ template "denma-icon" "rocket-launch-outline" }}<span>{{ .L.T "globals.terms.campaigns" }}</span></a></li>
+					{{- end }}
+					{{- if Can $u "automations:get" }}
+					<li><a href="{{ URI "/admin/analytics/automations" }}" {{ IsNav $p "analytics.automations" }} data-cy="analytics-automations">{{ template "denma-icon" "email-outline" }}<span>Automations</span></a></li>
+					{{- end }}
+					<li><a href="{{ URI "/admin/campaigns/analytics" }}" {{ IsNav $p "analytics.explore" }} data-cy="analytics-explore">{{ template "denma-icon" "chart-bar" }}<span>Explore</span></a></li>
+				</ul>
+			</details>
 		</li>
 		{{- end }}
 		{{- end }}

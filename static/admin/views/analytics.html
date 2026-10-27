@@ -5,27 +5,27 @@
 <script nonce="{{ .CSPNonce }}">
 	window._selectedCampaigns = {{ ToJSON $d.Campaigns }};
 	window._analytics = {{ if $d.HasData }}{{ ToJSON $d.Data }}{{ else }}null{{ end }};
+	window._denmaExplore = {{ ToJSON $d.Denma }};{{/* denma: the automations chosen, cmd/denma_auto_reports.go */}}
 </script>
 
 <section class="analytics">
 	<header class="page-header">
-		<h1 class="page-title">{{ .L.T "analytics.title" }}</h1>
+		<h1 class="page-title">Explore</h1>{{/* denma: Analytics -> Explore (cmd/denma_analytics.go) */}}
 	</header>
 
 	<div class="vstack gap-6">
-		{{ template "denma-analytics" . }}{{/* denma: reports, growth, providers, partials/denma/analytics.html */}}
 		<form method="get" action="{{ URI "/admin/campaigns/analytics" }}" class="card" x-data="analyticsForm()" @submit="submitting = true">
 			<div class="row">
 				<div class="col-5">
 					<label data-field>
-						{{ .L.T "globals.terms.campaigns" }}
+						{{ if $d.Can "automations:get" }}Campaigns and automations{{ else }}{{ .L.T "globals.terms.campaigns" }}{{ end }}{{/* denma: automations too */}}
 						<ot-taginput x-model="campaigns">
 							<input list="analytics-campaigns" placeholder="{{ .L.T "globals.terms.campaigns" }}" @input="onQuery($el)" @pointerdown="onQuery($el)" @focus="onQuery($el)" />
 							<datalist id="analytics-campaigns"></datalist>
 						</ot-taginput>
 					</label>
 					<template x-for="c in campaigns" :key="c.id">
-						<input type="hidden" name="id" :value="c.id" />
+						<input type="hidden" :name="c.denmaAuto ? 'auto' : 'id'" :value="c.id" />{{/* denma: an automation's is auto */}}
 					</template>
 				</div>
 

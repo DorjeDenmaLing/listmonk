@@ -29,6 +29,7 @@ func initDenmaAdminHandlers(g *echo.Group, a *App) {
 	initDenmaPeopleHandlers(g, a) // cmd/denma_people.go
 	initDenmaCenterHandlers(g, a)
 	initDenmaAutomationHandlers(g, a)
+	initDenmaAnalyticsHandlers(g, a) // cmd/denma_analytics.go
 	initDenmaTagHandlers(g, a)
 }
 

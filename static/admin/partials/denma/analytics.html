@@ -1,19 +1,21 @@
 {{/*
-	denma: "Campaign reports", "Audience growth" and "Mailbox providers" above
-	listmonk's own charts on Campaigns -> Analytics, included in
-	views/analytics.html (assets/js/views/denma-analytics.js). They share the
-	dashboard's date range. Each section shows only to users with the
+	denma: the sections of a center's Analytics pages (views/denma-analytics.html,
+	cmd/denma_analytics.go; assets/js/views/denma-analytics.js): Audience's
+	"Audience growth" and "Mailbox providers", Campaigns' "Campaign reports",
+	Automations' "Automation reports". They share the dashboard's date range,
+	each page with its controls. Each section shows only to users with the
 	permissions its figures need.
 */}}
 {{ define "denma-analytics" }}
 {{- $d := .Data -}}
 {{- $camps := $d.Can "campaigns:get" "campaigns:get_all" -}}
 {{- $subs := $d.Can "subscribers:get" "subscribers:get_all" -}}
-{{- $reports := $camps -}}
-{{- $growth := and $subs ($d.Can "bounces:get") -}}
-{{- $providers := and $camps $subs -}}
-{{- if or $reports $growth $providers }}
-<div class="vstack gap-6 denma-dash" x-data="denmaAnalytics({ reports: {{ $reports }}, growth: {{ $growth }}, providers: {{ $providers }} })">
+{{- $reports := and (eq $d.Page "campaigns") $camps -}}
+{{- $growth := and (eq $d.Page "audience") $subs ($d.Can "bounces:get") -}}
+{{- $providers := and (eq $d.Page "audience") $camps $subs -}}
+{{- $autos := and (eq $d.Page "automations") ($d.Can "automations:get") -}}
+{{- if or $reports $growth $providers $autos }}
+<div class="vstack gap-6 denma-dash" x-data="denmaAnalytics({ reports: {{ $reports }}, growth: {{ $growth }}, providers: {{ $providers }}, automations: {{ $autos }} })">
 	{{- if $reports }}
 	<article class="card denma-stats">
 		<header class="denma-stat-head">
@@ -66,6 +68,71 @@
 		</div>
 		<p class="text-light" x-show="!reports.busy && !reports.rows.length">No campaigns were sent in this period.</p>
 		<p class="denma-stat-note" x-text="reports.note"></p>
+	</article>
+	{{- end }}
+
+	{{- if $autos }}
+	<article class="card denma-stats denma-auto-reports">
+		<header class="denma-stat-head">
+			<h2>Automation reports</h2>
+			{{ template "denma-range-controls" }}
+		</header>
+		<div class="table-wrapper denma-table" :class="{ 'is-busy': autos.busy }" x-show="autos.rows.length">
+			<table>
+				<thead>
+					<tr>
+						<th>Automation</th><th class="num"><abbr title="E-mails sent in this period">Sent</abbr></th>
+						<th class="num"><abbr title="The people they were sent to">People</abbr></th><th class="num">Delivered</th>
+						<th class="num">Opens</th><th class="num">Clicks</th>
+						<th class="num"><abbr title="The people who clicked, as a share of those who opened">Click-to-open</abbr></th>
+						<th class="num"><abbr title="People who unsubscribed from this automation's e-mail">Unsubscribes</abbr></th>
+						<th class="num"><abbr title="Hard and soft bounces">Bounces</abbr></th>
+						<th class="num"><abbr title="People who marked it as spam. Amazon SES reviews an account at 0.1%.">Complaints</abbr></th>
+					</tr>
+				</thead>
+				<template x-for="g in autos.rows" :key="g.id">
+					<tbody :id="`automation-${g.id}`" :class="{ 'denma-focus': g.focus }">
+						<template x-for="r in g.rows" :key="r.step">
+							<tr :class="{ 'denma-step': r.step > 0 }" :data-step="r.step">
+								<td class="denma-break">
+									<template x-if="r.step === 0">
+										<span><a :href="g.url" x-text="g.name"></a> <a class="denma-sub" :href="g.autoUrl">automation</a></span>
+									</template>
+									<template x-if="r.step > 0">
+										<span><span class="denma-sub" x-text="`E-mail ${r.step}`"></span> <span x-text="r.subject"></span></span>
+									</template>
+								</td>
+								<td class="num" x-text="r.sent"></td>
+								<td class="num" x-text="r.people"></td>
+								<td class="num" x-text="r.delivered"></td>
+								{{ template "denma-rate-cell" "r.open" }}
+								{{ template "denma-rate-cell" "r.click" }}
+								<td class="num" x-text="r.cto"></td>
+								{{ template "denma-rate-cell" "r.unsub" }}
+								<td class="num" x-text="r.bounces"></td>
+								{{ template "denma-rate-cell" "r.complaint" }}
+							</tr>
+						</template>
+					</tbody>
+				</template>
+				<tfoot x-show="autos.total">
+					<tr>
+						<th x-text="autos.total && `Total (${autos.total.count})`"></th>
+						<th class="num" x-text="autos.total && autos.total.sent"></th>
+						<th class="num" x-text="autos.total && autos.total.people"></th>
+						<th class="num" x-text="autos.total && autos.total.delivered"></th>
+						{{ template "denma-rate-cell" "autos.total && autos.total.open" }}
+						{{ template "denma-rate-cell" "autos.total && autos.total.click" }}
+						<th class="num" x-text="autos.total && autos.total.cto"></th>
+						{{ template "denma-rate-cell" "autos.total && autos.total.unsub" }}
+						<th class="num" x-text="autos.total && autos.total.bounces"></th>
+						{{ template "denma-rate-cell" "autos.total && autos.total.complaint" }}
+					</tr>
+				</tfoot>
+			</table>
+		</div>
+		<p class="text-light" x-show="!autos.busy && !autos.rows.length">No automation e-mails were sent in this period.</p>
+		<p class="denma-stat-note" x-text="autos.note"></p>
 	</article>
 	{{- end }}
 

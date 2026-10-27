@@ -41,7 +41,8 @@ package main
 // Its e-mails' unsubscribe links take the automation's UUID in place of a
 // campaign's (public.go calls denmaUnsubscribe). Their "view in browser" link
 // is /automation/<uuid>/<subscriber>. Their links are tracked through
-// /automation/link/... (denma_automation_clicks).
+// /automation/link/... (denma_automation_clicks), and their opens by a pixel
+// (cmd/denma_auto_reports.go).
 //
 // Every new center starts with one (denmaDefaultAutomation): website signups,
 // on a double opt-in list, move on to its newsletter once they've confirmed.
@@ -278,7 +279,9 @@ DO $$ BEGIN
 END $$;
 
 -- Only if they've had no other e-mail from the center in this many days (0: off).
-ALTER TABLE denma_automations ADD COLUMN IF NOT EXISTS quiet_days INTEGER NOT NULL DEFAULT 0;` + denmaAutoSeriesSQL // follow-ups and history (cmd/denma_auto_series.go)
+ALTER TABLE denma_automations ADD COLUMN IF NOT EXISTS quiet_days INTEGER NOT NULL DEFAULT 0;` +
+	denmaAutoSeriesSQL + // follow-ups and history (cmd/denma_auto_series.go)
+	denmaAutoReportsSQL // opens, unsubscribes and bounces (cmd/denma_auto_reports.go)
 
 // denmaAutoRunnableSQL is whether automation a can run: what it sends has
 // its templates.
@@ -1017,16 +1020,16 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 		viewURL   = fmt.Sprintf("%s/automation/%s/%s", root, auto.UUID, s.UUID)
 		funcs     = template.FuncMap{}
 		withURL   = func(u string) func(...any) string { return func(...any) string { return u } }
-		emptyHTML = func(...any) template.HTML { return "" }
 	)
 	if step > 1 {
 		viewURL += "?step=" + strconv.Itoa(step)
 	}
 	maps.Copy(funcs, a.manager.GenericTemplateFuncs())
-	// Campaign templates' functions; links are tracked, opens aren't.
+	// Campaign templates' functions; links and opens are tracked
+	// (cmd/denma_auto_reports.go).
 	maps.Copy(funcs, template.FuncMap{
-		"TrackLink":      func(u string, _ ...any) string { return a.autoTrackLink(u, auto.UUID, s.UUID) },
-		"TrackView":      emptyHTML,
+		"TrackLink":      func(u string, _ ...any) string { return a.autoTrackLink(u, auto.UUID, s.UUID, step) },
+		"TrackView":      func(...any) template.HTML { return template.HTML(a.denmaAutoTrackView(auto.UUID, s.UUID, step)) },
 		"UnsubscribeURL": withURL(unsubURL),
 		"ManageURL":      withURL(unsubURL + "?manage=true"),
 		"OptinURL":       withURL(optinURL),
@@ -1053,7 +1056,7 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 	subject := strings.TrimSpace(b.String())
 	b.Reset()
 
-	body, err := template.New(models.BaseTpl).Funcs(funcs).Parse(models.DenmaTrackHTML(models.DenmaFooter(reDenmaTrackLink.ReplaceAllString(tpl.Body, "$1"))))
+	body, err := template.New(models.BaseTpl).Funcs(funcs).Parse(models.DenmaTrackHTML(models.DenmaWithTrackView(models.DenmaFooter(reDenmaTrackLink.ReplaceAllString(tpl.Body, "$1")))))
 	if err != nil {
 		return models.Message{}, fmt.Errorf("error in the template: %v", err)
 	}
@@ -1077,6 +1080,8 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 		Headers:     textproto.MIMEHeader{},
 	}
 	msg.Headers.Set(models.EmailHeaderSubscriberUUID, s.UUID)
+	// Bounces give it back, to count for the automation (cmd/denma_auto_reports.go).
+	msg.Headers.Set(models.EmailHeaderCampaignUUID, auto.UUID)
 	denmaSentAs(&msg, auto.ID, step) // for the record of sent e-mails (cmd/denma_messages.go)
 	if a.cfg.Privacy.UnsubHeader {
 		msg.Headers.Set("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
@@ -1088,9 +1093,9 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 // denmaAutoLinks caches links' UUIDs (center, then URL).
 var denmaAutoLinks sync.Map
 
-// autoTrackLink is a link's tracked address, /automation/link/..., or the
-// link itself with tracking off.
-func (a *App) autoTrackLink(u, autoUUID, subUUID string) string {
+// autoTrackLink is a link's tracked address in an automation's e-mail (its
+// step), /automation/link/..., or the link itself with tracking off.
+func (a *App) autoTrackLink(u, autoUUID, subUUID string, step int) string {
 	if a.cfg.Privacy.DisableTracking {
 		return u
 	}
@@ -1108,12 +1113,17 @@ func (a *App) autoTrackLink(u, autoUUID, subUUID string) string {
 		linkUUID = out
 		denmaAutoLinks.Store(key, out)
 	}
-	return fmt.Sprintf("%s/automation/link/%s/%s/%s", strings.TrimSuffix(a.urlCfg.RootURL, "/"), linkUUID, autoUUID, subUUID)
+	out := fmt.Sprintf("%s/automation/link/%s/%s/%s", strings.TrimSuffix(a.urlCfg.RootURL, "/"), linkUUID, autoUUID, subUUID)
+	if step > 1 {
+		out += "?step=" + strconv.Itoa(step)
+	}
+	return out
 }
 
 // DenmaAutomationLink records a click on an automation e-mail's link and
 // redirects to it: a link of an automation that sends e-mail, and that ran for
 // the subscriber (anyone, with individual tracking off). Anything else is 404.
+// Its step is kept if it's one of the automation's e-mails.
 func (a *App) DenmaAutomationLink(c echo.Context) error {
 	var l struct {
 		ID     int    `db:"id"`
@@ -1128,8 +1138,9 @@ func (a *App) DenmaAutomationLink(c echo.Context) error {
 		return c.Render(http.StatusNotFound, tplMessage,
 			makeMsgTpl(a.i18n.T("public.notFoundTitle"), "", a.i18n.T("public.invalidLink")))
 	}
-	if _, err := a.db.Exec(`INSERT INTO denma_automation_clicks (automation_id, link_id, subscriber_id)
-		VALUES ($1, $2, (SELECT id FROM subscribers WHERE uuid = $3))`, l.AutoID, l.ID, c.Param("subUUID")); err != nil {
+	if _, err := a.db.Exec(`INSERT INTO denma_automation_clicks (automation_id, link_id, subscriber_id, step)
+		SELECT au.id, $2, (SELECT id FROM subscribers WHERE uuid = $3), CASE WHEN `+denmaAutoStepOK("$4")+` THEN $4 END
+		FROM denma_automations au WHERE au.id = $1`, l.AutoID, l.ID, c.Param("subUUID"), denmaAutoStepParam(c)); err != nil {
 		a.log.Printf("denma: error recording an automation's click: %v", err)
 	}
 	return c.Redirect(http.StatusTemporaryRedirect, l.URL)
@@ -1151,6 +1162,7 @@ func initDenmaAutomationAPIHandlers(g *echo.Group, a *App) {
 	g.PUT("/api/denma/automations/:id", a.auth.Perm(hasID(a.DenmaSaveAutomation), denmaAutoManage))
 	g.PUT("/api/denma/automations/:id/status", a.auth.Perm(hasID(a.DenmaSetAutomationStatus), denmaAutoManage))
 	g.DELETE("/api/denma/automations/:id", a.auth.Perm(hasID(a.DenmaDeleteAutomation), denmaAutoManage))
+	g.GET("/api/denma/stats/automations", a.auth.Perm(a.DenmaAutomationReports, denmaAutoGet)) // cmd/denma_auto_reports.go
 }
 
 // initDenmaPublicHandlers registers the public pages (handlers.go).
@@ -1159,6 +1171,7 @@ func initDenmaPublicHandlers(g *echo.Group, a *App) {
 	initDenmaAPIPublicHandlers(g, a)    // cmd/denma_api_send.go
 	if denmaAutomationsOn(a) {
 		g.GET("/automation/:autoUUID/:subUUID", noIndex(a.hasUUID(a.ViewDenmaAutomationMessage, "autoUUID", "subUUID")))
+		g.GET("/automation/:autoUUID/:subUUID/px.png", noIndex(a.hasUUID(a.DenmaAutomationView, "autoUUID", "subUUID"))) // cmd/denma_auto_reports.go
 		g.GET("/automation/link/:linkUUID/:autoUUID/:subUUID", noIndex(a.hasUUID(a.DenmaAutomationLink, "linkUUID", "autoUUID", "subUUID")))
 	}
 }

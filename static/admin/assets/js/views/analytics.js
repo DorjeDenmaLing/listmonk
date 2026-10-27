@@ -4,6 +4,7 @@ import Chart from 'chart.js/auto';
 import { api } from '../main.js';
 import { denmaReplaceOptions } from '../denma-datalist.js'; // denma: a steady campaigns list
 import { denmaRenderCharts } from '../denma-campaign-charts.js'; // denma: readable, themed charts
+import { denmaAutoOptions, denmaChosenAutos } from '../denma-explore.js'; // denma: automations too
 
 const chartColorRed = '#ee7d5b';
 const chartColors = [
@@ -128,7 +129,7 @@ function analyticsForm() {
   let queryTimer = null;
 
   return {
-    campaigns: (window._selectedCampaigns || []).map((c) => new CampaignTag(c)),
+    campaigns: (window._selectedCampaigns || []).map((c) => new CampaignTag(c)).concat(denmaChosenAutos()), // denma: automations too
 
     // Set on submit to give feedback during the full-page reload.
     submitting: false,
@@ -138,7 +139,7 @@ function analyticsForm() {
       clearTimeout(queryTimer);
       queryTimer = setTimeout(async () => {
         const ti = el.closest('ot-taginput');
-        const chosen = new Set((ti ? ti.value : []).map((c) => c.id));
+        const chosen = new Set((ti ? ti.value : []).filter((c) => !c.denmaAuto).map((c) => c.id)); // denma: campaigns'
         const params = new URLSearchParams({
           query: el.value.trim(),
           order_by: 'created_at',
@@ -155,7 +156,7 @@ function analyticsForm() {
               const o = new Option(`#${c.id}: ${c.name}`);
               o.data = new CampaignTag(c);
               return o;
-            }));
+            }).concat(await denmaAutoOptions(el.value.trim(), ti))); // denma: automations' (denma-explore.js)
         } catch (err) { /* api() shows a toast. */ }
       }, 200);
     },

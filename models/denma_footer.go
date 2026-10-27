@@ -2,8 +2,9 @@ package models
 
 // denma: the footer every campaign and automation e-mail needs
 // (cmd/denma_footer.go). {{ CenterFooter }}, its links, is written out before
-// an e-mail is compiled, and each campaign gets its open-tracking pixel
-// ({{ TrackView }}, nothing when tracking is off) unless it has it.
+// an e-mail is compiled, and each campaign and automation e-mail gets its
+// open-tracking pixel ({{ TrackView }}, nothing when tracking is off) unless
+// it has it.
 
 import (
 	"regexp"
@@ -45,10 +46,20 @@ func (c *Campaign) denmaContent(body string) string {
 	return c.denmaTrackBody(DenmaFooter(body))
 }
 
-// denmaWithTrackView is a campaign's template with the tracking pixel before
-// its </body> (or at its end), unless it or the campaign has it.
+// denmaWithTrackView is a campaign's template with the tracking pixel,
+// unless it or the campaign has it.
 func (c *Campaign) denmaWithTrackView(body string) string {
-	if reDenmaTrackView.MatchString(body) || reDenmaTrackView.MatchString(c.Body) {
+	if reDenmaTrackView.MatchString(c.Body) {
+		return body
+	}
+	return DenmaWithTrackView(body)
+}
+
+// DenmaWithTrackView is an e-mail's HTML (a campaign's template, an
+// automation's) with the tracking pixel before its </body> (or at its end),
+// unless it has it.
+func DenmaWithTrackView(body string) string {
+	if reDenmaTrackView.MatchString(body) {
 		return body
 	}
 	const px = `{{ TrackView }}`

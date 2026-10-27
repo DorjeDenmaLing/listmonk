@@ -1,10 +1,10 @@
-// denma: Campaigns -> Analytics' views, clicks and bounces charts, in place
+// denma: Analytics -> Explore's views, clicks and bounces charts, in place
 // of listmonk's (views/analytics.js, one hook; links are a table,
 // partials/denma/analytics.html): bars per day or hour from zero, with every
 // day or hour of the range on the axis, dates as the server buckets them, the
 // admin's theme colours (redrawn when the theme changes), and a legend and
-// the totals donut only for more than one campaign. With campaigns chosen,
-// the page opens at them.
+// the totals donut only for more than one campaign or automation. Automations
+// chosen (denma-explore.js) are drawn as campaigns are.
 import Chart from 'chart.js/auto';
 
 const SERIES = 8;
@@ -99,7 +99,11 @@ function draw(canvas, cfg) {
   if (canvas) charts.push(new Chart(canvas, cfg));
 }
 
-// Bars of one figure per bucket, stacked by campaign, and its totals donut.
+// A row's campaign or automation, as the series' keys.
+const rowKey = (r) => (r.automation_id ? `a${r.automation_id}` : `c${r.campaign_id}`);
+
+// Bars of one figure per bucket, stacked by campaign or automation (camps:
+// { key, label }), and its totals donut.
 function renderCounts(key, camps, rows, b, c) {
   const canvas = document.getElementById(`chart-${key}`);
   if (!canvas) return;
@@ -111,10 +115,10 @@ function renderCounts(key, camps, rows, b, c) {
     const data = new Array(b.keys.length).fill(0);
     rows.forEach((r) => {
       const i = index.get(b.floor(Date.parse(r.timestamp)));
-      if (r.campaign_id === cm.id && i !== undefined) data[i] += r.count;
+      if (rowKey(r) === cm.key && i !== undefined) data[i] += r.count;
     });
     return {
-      label: `#${cm.id}: ${cm.name}`,
+      label: cm.label,
       data,
       backgroundColor: c.series[n % SERIES],
       borderRadius: 2,
@@ -203,35 +207,20 @@ function render(d) {
   const c = themeColors();
   Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
   Chart.defaults.color = c.muted;
-  const camps = d.campaigns || [];
-  const b = bucketing(d);
-  renderCounts('views', camps, d.views || [], b, c);
-  renderCounts('clicks', camps, d.clicks || [], b, c);
-  renderCounts('bounces', camps, d.bounces || [], b, c);
-}
-
-// Scrolls to the campaigns form, and keeps it there while the sections above
-// load, until the reader scrolls or clicks.
-function scrollToCampaigns() {
-  const target = document.querySelector('section.analytics form.card');
-  if (!target) return;
-  const above = document.querySelector('section.analytics .denma-dash');
-  const go = () => target.scrollIntoView({ block: 'start' });
-  const ro = new ResizeObserver(go);
-  const stop = () => {
-    ro.disconnect();
-    ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach((ev) => window.removeEventListener(ev, stop));
-  };
-  ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach((ev) => window.addEventListener(ev, stop, { passive: true }));
-  if (above) ro.observe(above);
-  go();
-  setTimeout(stop, 5000);
+  const a = window._denmaExplore || {};
+  const camps = (d.campaigns || []).map((cm) => ({ key: `c${cm.id}`, label: `#${cm.id}: ${cm.name}` }))
+    .concat((a.automations || []).map((au) => ({ key: `a${au.id}`, label: `Automation: ${au.name}` })));
+  const all = {};
+  ['views', 'clicks', 'bounces'].forEach((k) => { all[k] = [...(d[k] || []), ...(a[k] || [])]; });
+  const b = bucketing(all);
+  renderCounts('views', camps, all.views, b, c);
+  renderCounts('clicks', camps, all.clicks, b, c);
+  renderCounts('bounces', camps, all.bounces, b, c);
 }
 
 // Draws the charts; returns true, so listmonk's aren't drawn.
 export function denmaRenderCharts(d) {
   render(d);
-  scrollToCampaigns();
   // The theme: the system's, or the admin's switch (main.js sets color-scheme).
   const redraw = () => requestAnimationFrame(() => render(d));
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw);

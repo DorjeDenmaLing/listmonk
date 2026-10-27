@@ -55,7 +55,7 @@ import (
 func denmaBounceCB(own func(models.Bounce) error, ko *koanf.Koanf, db *sqlx.DB) func(models.Bounce) error {
 	webhooks.DenmaSESTopicAllowed = func(arn string) bool { return denmaSESTopicAllowed(ko, arn) }
 	if !ko.Bool("denma.multi_center") {
-		return own
+		return func(b models.Bounce) error { return denmaRecordBounce(db, b, own) } // cmd/denma_auto_reports.go
 	}
 	return func(b models.Bounce) error {
 		denmaBouncesKeeping.Add(1)
@@ -229,7 +229,7 @@ func (d *denmaCenters) recordIn(slug string, b models.Bounce) error {
 			return err
 		}
 	}
-	err := ctr.app.core.RecordBounce(b)
+	err := denmaRecordBounce(ctr.app.db, b, ctr.app.core.RecordBounce) // and its automation's (cmd/denma_auto_reports.go)
 	var httpErr *echo.HTTPError
 	if errors.As(err, &httpErr) {
 		lo.Printf("denma: %s bounce for %s in center %s not recorded: %v", b.Type, b.Email, slug, err)
