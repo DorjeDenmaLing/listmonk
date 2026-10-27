@@ -30,7 +30,6 @@ var denmaCenterFields = []string{
 	"app.from_email", "app.notify_emails",
 	// The features (cmd/denma_features.go).
 	"denma.unsubscribe_everywhere", "denma.plain_text_auto", "denma.utm_domains", "denma.visual_template",
-	"denma.design_template",               // cmd/denma_design.go
 	"denma.daily_cap",                     // superadmins only (cmd/denma_daily.go)
 	"denma.reply_to",                      // cmd/denma_reply_to.go
 	"denma.timezone", "denma.send_window", // cmd/denma_sendwindow.go
@@ -102,7 +101,6 @@ type denmaCenterForm struct {
 	PlainTextAuto         bool     `json:"plain_text_auto"`
 	UTMDomains            []string `json:"utm_domains"`
 	VisualTemplate        int      `json:"visual_template"`
-	DesignTemplate        int      `json:"design_template"` // cmd/denma_design.go
 
 	DailyCap int `json:"daily_cap"` // superadmins only (cmd/denma_daily.go)
 
@@ -119,7 +117,7 @@ var denmaFormKeys = map[string]string{
 	"lang": "app.lang", "from_email": "app.from_email", "notify_emails": "app.notify_emails",
 	"unsubscribe_everywhere": "denma.unsubscribe_everywhere", "plain_text_auto": "denma.plain_text_auto",
 	"utm_domains": "denma.utm_domains", "visual_template": "denma.visual_template",
-	"design_template": "denma.design_template", "daily_cap": "denma.daily_cap", "reply_to": "denma.reply_to",
+	"daily_cap": "denma.daily_cap", "reply_to": "denma.reply_to",
 	"time_zone": "denma.timezone", "send_window": "denma.send_window", "postal_address": "denma.postal_address",
 	"website": "denma.website", "contact_email": "denma.contact_email",
 }
@@ -143,7 +141,7 @@ type denmaCenterView struct {
 
 	// For the features' choices.
 	VisualTemplates []denmaOption
-	Designs         []denmaOption // cmd/denma_design.go
+	Design          int // the center's design (cmd/denma_design.go)
 }
 
 // denmaWebhooksView is Config -> Webhooks: the sign-up webhooks
@@ -234,11 +232,8 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 	}
 	view := denmaCenterView{adminView: v, Form: form, Address: a.urlCfg.RootURL, Langs: langs,
 		Super:           v.Profile.UserRole.ID == auth.SuperAdminRoleID,
-		VisualTemplates: []denmaOption{}, Designs: []denmaOption{}}
+		VisualTemplates: []denmaOption{}, Design: a.denmaDefaultDesignID()}
 	if err := a.db.Select(&view.VisualTemplates, `SELECT id, name, '' AS optin FROM templates WHERE type = 'campaign_visual' ORDER BY name`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
-	if err := a.db.Select(&view.Designs, `SELECT id, name, '' AS optin FROM templates WHERE type = 'design' ORDER BY name`); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	if view.Domains, err = a.denmaCenterDomains(); err != nil {

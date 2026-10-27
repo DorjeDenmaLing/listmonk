@@ -83,7 +83,7 @@
 											{{- if and (not .IsDefault) (eq .Type "campaign") }}
 												<button type="button" role="menuitem" class="ghost" data-testid="btn-set-default" :disabled="isLoading('templates')" @click.prevent="onSetDefault({{ .ID }}, {{ ToJSON .Name }})">{{ Icon "check-circle" }} {{ $.L.T "templates.makeDefault" }}</button>
 											{{- end }}
-											{{- if and (not .IsDefault) (ne .ID $d.DenmaVisual) (ne .ID $d.DenmaDesign) (ne .ID $d.DenmaOwnDesign) }}{{/* denma: nor the default visual template, nor the designs (cmd/denma_design.go) */}}
+											{{- if and (not .IsDefault) (ne .ID $d.DenmaVisual) (ne .ID $d.DenmaOwnDesign) }}{{/* denma: nor the default visual template, nor the design (cmd/denma_design.go) */}}
 												<hr />
 												<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-delete" :disabled="isLoading('templates')" @click.prevent="onDelete({{ .ID }}, {{ ToJSON .Name }})">{{ Icon "trash-2" }} {{ $.L.T "globals.buttons.delete" }}</button>
 											{{- end }}

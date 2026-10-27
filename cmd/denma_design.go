@@ -1,10 +1,10 @@
 package main
 
-// denma: a center's design for its automatic e-mails and public pages
-// (denma.design_template, on its Config page): one of its design templates
-// (type "design", made with the visual editor; denmaTemplateTypeDesign),
-// with an HTML block holding the content's place, where each e-mail's or
-// page's own content goes:
+// denma: a center's design for its automatic e-mails and public pages: its
+// one design template, "Center design (e-mails and pages)" (type "design",
+// edited with the visual editor; denmaTemplateTypeDesign), with an HTML block
+// holding the content's place, where each e-mail's or page's own content
+// goes:
 //
 //	<div data-content>(Page content will appear here)</div>
 //
@@ -14,13 +14,14 @@ package main
 // public pages (unsubscribe, opt-in, the messages, the subscription form, the
 // archive) keep their wording, framed by it: the e-mail and page templates'
 // "header" and "footer", which every one of them starts and ends with, become
-// the design's top and bottom. Without one, they look as listmonk's.
+// the design's top and bottom. A center has no other design: one is enough,
+// and the design shown is always the one being edited.
 //
-// The design is rendered when the center loads (saving the Config page, or
-// the template, reloads it), with no subscriber or campaign, so campaign-only
-// links ({{ UnsubscribeURL }}, {{ MessageURL }}, ...) and subscriber or
-// campaign fields are refused, on the Config page and when the template is
-// saved. A design that stops working is left out (the log says why).
+// The design is rendered when the center loads (saving the template reloads
+// it), with no subscriber or campaign, so campaign-only links
+// ({{ UnsubscribeURL }}, {{ MessageURL }}, ...) and subscriber or campaign
+// fields are refused when it's saved. A design that stops working is left out
+// (the log says why).
 
 import (
 	"database/sql"
@@ -43,9 +44,9 @@ import (
 )
 
 // denmaTemplateTypeDesign is a design's template type, added to listmonk's
-// (template_type) in every center (cmd/denma_features.go). Designs are made
-// and edited with the visual editor, like visual campaign templates, and
-// aren't campaign templates: campaigns and automations don't list them.
+// (template_type) in every center (cmd/denma_features.go). The center's
+// design is edited with the visual editor, like visual campaign templates, and
+// isn't a campaign template: campaigns and automations don't list it.
 const denmaTemplateTypeDesign = "design"
 
 // denmaDesign is a design, rendered and split at the content's place.
@@ -165,10 +166,10 @@ func (a *App) denmaPreviewDesign(body string) ([]byte, error) {
 	return []byte(d.head + d.body + d.marker + d.bottom), nil
 }
 
-// loadDenmaDesign renders a center's design (ko's denma.design_template)
+// loadDenmaDesign renders a center's design (ko's denma.default_design)
 // when it loads, or returns nil: none, or one that doesn't work (logged).
 func loadDenmaDesign(db *sqlx.DB, ko *koanf.Koanf, mgr *manager.Manager, lo *log.Logger) *denmaDesign {
-	id := ko.Int("denma.design_template")
+	id := ko.Int("denma.default_design")
 	if id == 0 || ko.String("denma.center") == "" {
 		return nil
 	}
@@ -237,12 +238,12 @@ html, body { background: none; }
 
 // denmaIsDesign reports whether template id is the center's design.
 func (a *App) denmaIsDesign(id int) bool {
-	return id != 0 && a.denmaInCenter() && a.ko.Int("denma.design_template") == id
+	return id != 0 && a.denmaInCenter() && a.ko.Int("denma.default_design") == id
 }
 
 // Every center has a design of its own, "Center design (e-mails and pages)"
-// (denma.default_design), made when it first loads (cmd/denma_features.go)
-// and its design unless another is chosen: listmonk's public pages' look, as
+// (denma.default_design), made when it first loads (cmd/denma_features.go):
+// listmonk's public pages' look, as
 // production's (a white card with a thin border on light grey, the center's
 // logo above a line), as a visual template the center can edit. It can't be
 // deleted or copied: its content's place carries data-default-design, which
@@ -263,8 +264,7 @@ func denmaDefaultDesign(logo, name string) (body, source string) {
 	return denmaDesignLayout(logo, name, denmaDefaultDesignMarker)
 }
 
-// denmaDesignLayout is the default design's layout with this content place
-// (a new design starts from it, with denmaDesignMarker).
+// denmaDesignLayout is the default design's layout with this content place.
 func denmaDesignLayout(logo, name, marker string) (body, source string) {
 	const (
 		img  = "block-denma-design-logo"
@@ -316,8 +316,8 @@ func denmaDesignLogo(logoURL, rootURL string) string {
 	return strings.TrimSuffix(rootURL, "/") + "/public/static/logo.svg"
 }
 
-// denmaAddDefaultDesign makes a center's default design (in tx, its schema)
-// if it has none, and makes it the center's design if none is chosen.
+// denmaAddDefaultDesign makes a center's design (in tx, its schema) if it
+// has none.
 func denmaAddDefaultDesign(tx *sqlx.Tx) error {
 	var id int
 	if err := tx.Get(&id, `SELECT COALESCE((SELECT t.id FROM settings s JOIN templates t ON t.id = (s.value #>> '{}')::INT
@@ -337,11 +337,8 @@ func denmaAddDefaultDesign(tx *sqlx.Tx) error {
 			return err
 		}
 	}
-	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.default_design', $1::TEXT::JSONB)
-		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, strconv.Itoa(id)); err != nil {
-		return err
-	}
-	_, err := tx.Exec(`UPDATE settings SET value = $1::TEXT::JSONB WHERE key = 'denma.design_template' AND COALESCE((value #>> '{}')::INT, 0) = 0`, strconv.Itoa(id))
+	_, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.default_design', $1::TEXT::JSONB)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, strconv.Itoa(id))
 	return err
 }
 
@@ -355,8 +352,9 @@ func (a *App) denmaDefaultDesignID() int {
 
 // denmaCheckTemplate refuses a template (id, or 0 for a new one) that would
 // copy the default design, a change to the default design that drops what
-// makes it one, and a design that couldn't be used; and designs outside
-// centers; and campaign templates without the footer (cmd/denma_footer.go).
+// makes it one, and a design that couldn't be used; any other design, and
+// designs outside centers; and campaign templates without the footer
+// (cmd/denma_footer.go).
 func (a *App) denmaCheckTemplate(id int, o models.Template) error {
 	if err := a.denmaCheckTemplateFooter(o); err != nil { // cmd/denma_footer.go
 		return err
@@ -365,10 +363,13 @@ func (a *App) denmaCheckTemplate(id int, o models.Template) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "Designs are for centers.")
 	}
 	def := a.denmaDefaultDesignID()
+	if o.Type == denmaTemplateTypeDesign && id != def {
+		return echo.NewHTTPError(http.StatusBadRequest, "A center has one design, \""+denmaDefaultDesignName+"\": edit that one (Campaigns → Templates).")
+	}
 	has := reDenmaDefaultDesign.MatchString(o.Body)
 	switch {
 	case def != 0 && id != def && has:
-		return echo.NewHTTPError(http.StatusBadRequest, "The center's design can't be copied. Make a new design for another.")
+		return echo.NewHTTPError(http.StatusBadRequest, "The center's design can't be copied.")
 	case def != 0 && id == def && !has:
 		return echo.NewHTTPError(http.StatusBadRequest, "Keep the HTML block with "+denmaDefaultDesignMarker+" in the center's design: it's where each e-mail's or page's text goes.")
 	}
@@ -378,13 +379,6 @@ func (a *App) denmaCheckTemplate(id int, o models.Template) error {
 		}
 	}
 	return nil
-}
-
-// denmaNewDesign is a new design's start: the default design's layout, with
-// the center's logo and name.
-func (a *App) denmaNewDesign() map[string]string {
-	body, src := denmaDesignLayout(denmaDesignLogo(a.ko.String("app.logo_url"), a.urlCfg.RootURL), a.ko.String("app.site_name"), denmaDesignMarker)
-	return map[string]string{"body": body, "body_source": src}
 }
 
 // denmaDesignLogoChanged puts a center's new logo in its default design, in

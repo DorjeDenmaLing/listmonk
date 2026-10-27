@@ -104,23 +104,8 @@ function templateForm(tpl, isNew) {
       this.onSubmit();
     },
 
-    // denma: a new design starts from the center's layout; another type
-    // starts empty again (cmd/denma_design.go).
     init() {
       this.denmaUnsavedInit(); // denma: denma-unsaved.js
-      this.$watch('form.type', (type, prev) => {
-        const start = window._denmaNewDesign;
-        if (!this.isNew || !start) {
-          return;
-        }
-        if (type === 'design') {
-          this.form.body = start.body;
-          this.form.body_source = start.body_source;
-        } else if (prev === 'design') {
-          this.form.body = '';
-          this.form.body_source = null;
-        }
-      });
     },
 
     onSubmit() {

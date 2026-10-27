@@ -38,8 +38,7 @@ type templatesView struct {
 	Templates      []models.Template
 	Type           string
 	DenmaVisual    int // denma: the default visual template (cmd/denma_features.go)
-	DenmaDesign    int // denma: the design for e-mails and pages, and the center's own (cmd/denma_design.go)
-	DenmaOwnDesign int
+	DenmaOwnDesign int // denma: the center's design (cmd/denma_design.go)
 }
 
 // templateView is the admin page view for creating/editing a single template.
@@ -48,8 +47,6 @@ type templateView struct {
 
 	IsNew    bool
 	Template models.Template
-
-	DenmaNewDesign map[string]string // denma: a new design's start (cmd/denma_design.go)
 }
 
 // ViewTemplates renders the HTML list view for templates.
@@ -66,9 +63,8 @@ func (a *App) ViewTemplates(c echo.Context) error {
 		Templates: out,
 		Type:      typ,
 
-		// denma: the default visual template (cmd/denma_features.go) and the designs (cmd/denma_design.go)
+		// denma: the default visual template (cmd/denma_features.go) and the design (cmd/denma_design.go)
 		DenmaVisual:    a.denmaVisualTemplate(),
-		DenmaDesign:    a.ko.Int("denma.design_template"),
 		DenmaOwnDesign: a.denmaDefaultDesignID(),
 	}
 
@@ -81,9 +77,6 @@ func (a *App) ViewNewTemplate(c echo.Context) error {
 		adminView: newAdminView(c, a.i18n.T("templates.newTemplate")+" / "+a.i18n.T("globals.terms.templates"), "", "campaigns.templates"),
 		IsNew:     true,
 		Template:  models.Template{Type: models.TemplateTypeCampaignVisual}, // denma: a new template is visual
-	}
-	if a.denmaInCenter() { // denma: a new design starts from the center's layout (cmd/denma_design.go)
-		data.DenmaNewDesign = a.denmaNewDesign()
 	}
 
 	return c.Render(http.StatusOK, "admin-template", data)

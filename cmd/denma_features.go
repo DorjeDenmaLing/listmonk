@@ -25,8 +25,7 @@ package main
 //     the setting.
 //   - A default visual template (denma.visual_template): new campaigns are
 //     Visual and start from it, and it can't be deleted (as listmonk's default
-//     template), nor can the design for e-mails and pages
-//     (denma.design_template) or the center's own (denma.default_design,
+//     template), nor can the center's design (denma.default_design,
 //     cmd/denma_design.go). Every center has a default visual template:
 //     listmonk's sample one, unless it chose another (denmaAddVisualDefault).
 //   - Imports are marked (always): subscribers an import adds get
@@ -62,7 +61,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 48
+const denmaFeaturesVersion = 49
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -71,7 +70,6 @@ var denmaFeatureDefaults = map[string]any{
 	"denma.plain_text_auto":        true,
 	"denma.utm_domains":            []string{},
 	"denma.visual_template":        0,
-	"denma.design_template":        0,  // cmd/denma_design.go
 	"denma.daily_cap":              0,  // cmd/denma_daily.go
 	"denma.reply_to":               "", // cmd/denma_reply_to.go
 	"denma.timezone":               "", // cmd/denma_sendwindow.go
@@ -264,6 +262,13 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		}
 		if n > 0 {
 			lo.Printf("denma: center %s: %d of its templates show its website and contact e-mail", c.Slug, n)
+		}
+	}
+	// Version 49: a center has one design, its own (cmd/denma_design.go);
+	// the setting that chose another, or none, goes.
+	if ver < 49 {
+		if _, err := tx.Exec(`DELETE FROM settings WHERE key = 'denma.design_template'`); err != nil {
+			return fmt.Errorf("removing the design setting: %v", err)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)
@@ -652,7 +657,6 @@ CREATE OR REPLACE FUNCTION denma_protect_visual_template() RETURNS trigger
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     IF OLD.id IN (coalesce((denma_setting('denma.visual_template') #>> '{}')::INT, 0),
-                  coalesce((denma_setting('denma.design_template') #>> '{}')::INT, 0),
                   coalesce((denma_setting('denma.default_design') #>> '{}')::INT, 0)) THEN
         RETURN NULL;  -- skipped; listmonk reports it as for its default template
     END IF;
@@ -907,15 +911,6 @@ func (a *App) denmaCheckFeatures(f *denmaCenterForm) error {
 		var n int
 		if err := a.db.Get(&n, `SELECT COUNT(*) FROM templates WHERE id = $1 AND type = 'campaign_visual'`, f.VisualTemplate); err != nil || n == 0 {
 			return fmt.Errorf("the default visual template doesn't exist")
-		}
-	}
-	if f.DesignTemplate != 0 { // cmd/denma_design.go
-		body, err := denmaDesignBody(a.db, f.DesignTemplate)
-		if err != nil {
-			return err
-		}
-		if _, err := renderDenmaDesign(body, a.manager.GenericTemplateFuncs(), a.ko); err != nil {
-			return err
 		}
 	}
 	return nil
