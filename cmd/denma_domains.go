@@ -1724,6 +1724,9 @@ func (a *App) denmaCheckCampaignStart(id int, status string) error {
 	if err := a.denmaCheckAPILists(id); err != nil {
 		return err
 	}
+	if err := a.denmaCheckAPIPaused(id); err != nil { // cmd/denma_api.go
+		return err
+	}
 	if a.denmaCenterOf() != nil && denmaDomainsOn() {
 		camp, err := a.core.GetCampaign(id, "", "")
 		if err != nil {

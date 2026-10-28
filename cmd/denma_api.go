@@ -1202,6 +1202,30 @@ func (a *App) apiCanSend() error {
 	return nil
 }
 
+// denmaCheckAPIPaused refuses to start or resume an API campaign while the
+// API's sending is paused (on the Campaigns page too): it resumes with it.
+func (a *App) denmaCheckAPIPaused(id int) error {
+	var api bool
+	if err := a.db.Get(&api, `SELECT EXISTS (SELECT 1 FROM denma_api_campaigns WHERE campaign_id = $1)`, id); err != nil {
+		var pe *pq.Error
+		if errors.As(err, &pe) && pe.Code == "42P01" {
+			return nil // no API here (undefined table)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if !api {
+		return nil
+	}
+	if err := a.apiCanSend(); err != nil {
+		var he *echo.HTTPError
+		if errors.As(err, &he) && he.Code == http.StatusServiceUnavailable {
+			he.Code = http.StatusBadRequest
+		}
+		return err
+	}
+	return nil
+}
+
 // DenmaResumeAPI resumes the API's sending after a pause; superadmins only.
 // Its campaigns paused with it are resumed too.
 func (a *App) DenmaResumeAPI(c echo.Context) error {
