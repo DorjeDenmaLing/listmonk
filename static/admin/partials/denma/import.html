@@ -62,6 +62,7 @@
 										<td data-label="Attributes">
 											<code class="denma-import-attribs" x-show="denmaAttribsText(r.attribs)" x-text="denmaAttribsText(r.attribs)"></code>
 											<template x-if="r.dropped.length"><small class="text-light"> Left out: <span x-text="r.dropped.join(', ')"></span></small></template>
+											<template x-if="r.consent"><small class="text-light" data-testid="preview-row-consent"> Consent: <span x-text="r.consent"></span></small></template>
 										</td>
 										<td>
 											<span class="badge" x-show="r.blocked" data-variant="danger">Blocklisted</span>
@@ -111,6 +112,24 @@
 						</div>
 					</template>
 					<small class="text-light">After the import, addresses whose domain can't receive mail are blocklisted too; the import's log says how many.</small>
+				</div>
+			</template>
+
+			{{/* The consent records kept (cmd/denma_imports.go). */}}
+			<template x-if="denmaPrev.consent">
+				<div data-testid="preview-consent">
+					<h5>Consent records</h5>
+					<p><span data-testid="preview-consent-kept" x-text="denmaN(denmaPrev.consent.kept)"></span> keep their consent record from the file.</p>
+					<template x-if="denmaPrev.consent.left_out.length">
+						<div>
+							<p>Not kept, though imported:</p>
+							<ul data-testid="preview-consent-left">
+								<template x-for="l in denmaPrev.consent.left_out" :key="l.why">
+									<li><span x-text="denmaN(l.rows)"></span>: <span x-text="l.why"></span></li>
+								</template>
+							</ul>
+						</div>
+					</template>
 				</div>
 			</template>
 
@@ -174,6 +193,10 @@
 			<input type="checkbox" role="switch" x-model="form.denmaRunAutos" data-testid="import-automations" /> Start automations for these people
 			<small data-hint x-text="denmaAutosHint()"></small>
 		</label>
+		<label data-field>
+			<input type="checkbox" role="switch" x-model="form.denmaKeepConsent" data-testid="import-consent" /> Keep the consent dates in the file
+			<small data-hint>Rows whose attributes give <code>consent_at</code> (when they agreed, like 2019-03-04 15:22:10) and <code>consent_source</code> (how) keep them as their consent record, noted as from this import. Rows without are still imported.</small>
+		</label>
 	</div>
 </template>
 {{- end }}
@@ -182,4 +205,20 @@
 {{ define "denma-import-help" -}}
 <h6>Tags</h6>
 <p class="text-light">Give tags in the attributes, as a list: <code>"{""tags"": [""volunteer"", ""donor""]}"</code>. A tag the center doesn't have is left out, unless you choose to add it in the preview.</p>
+<h6>Consent records</h6>
+<p class="text-light">With "Keep the consent dates in the file", give when and how each person agreed in the attributes: <code>"{""consent_at"": ""2019-03-04 15:22:10"", ""consent_source"": ""Mailchimp sign-up form""}"</code>. A date without a time zone is read as UTC. Other columns, like Mailchimp's <code>OPTIN_TIME</code>, aren't read.</p>
+{{- end }}
+
+
+{{/* A subscriber's page: where their consent record came from, if an import
+   gave it (cmd/denma_imports.go). */}}
+{{ define "denma-consent-import" -}}
+{{- with . }}
+<div class="page-content content" data-testid="consent-import">
+	<p class="denma-note" role="note">{{ Icon "info" }}
+		<span><strong>Consent:</strong> {{ .At.Format "2 January 2006" }}, {{ .Source }}.
+		Imported from {{ .File }}{{ if .Username }} by {{ .Username }}{{ end }} on {{ .ImportedAt.Format "2 January 2006" }}.</span>
+	</p>
+</div>
+{{- end }}
 {{- end }}

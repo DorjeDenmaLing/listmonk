@@ -30,6 +30,7 @@ func TestDenmaReservedAttrib(t *testing.T) {
 		{map[string]any{"auto_blocklist_reason": "x"}, true, "auto_blocklist_reason"},
 		{map[string]any{"denma_api": 1}, false, "denma_api"},
 		{map[string]any{"imported_at": "x"}, false, "imported_at"},
+		{map[string]any{"consent_import": 1}, true, "consent_import"},
 		{map[string]any{"zz": 1, "resubscribed_at": "x", "consent_source": "y"}, false, "consent_source"}, // the first by name
 	} {
 		if got := denmaReservedAttrib(c.attribs, c.consents); got != c.want {

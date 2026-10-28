@@ -45,6 +45,7 @@
 		</p>
 	</div>
 	{{- end }}
+	{{- template "denma-consent-import" $d.DenmaConsentImport }}{{/* denma: cmd/denma_imports.go */}}
 	{{- with $d.DenmaOptOut }}{{/* denma: cmd/denma_optouts.go */}}
 	<div class="page-content content denma-optout" x-data="denmaOptOut" data-testid="optout">
 		<p class="denma-note" role="note">{{ Icon "info" }}

@@ -18,6 +18,7 @@ export function denmaImportPreview() {
 
     denmaInitPreview() {
       this.form.denmaRunAutos = false;
+      this.form.denmaKeepConsent = false;
       this.$watch('form', () => {
         clearTimeout(this.denmaPrevTimer);
         this.denmaPrevTimer = setTimeout(() => this.denmaPreview(), 300);
@@ -31,7 +32,7 @@ export function denmaImportPreview() {
         return '';
       }
       return JSON.stringify([f.file.name, f.file.size, f.file.lastModified, f.mode, f.subStatus, f.delim,
-        f.lists.map((l) => l.id).sort(), f.overwriteUserInfo, f.overwriteSubStatus, f.denmaRunAutos]);
+        f.lists.map((l) => l.id).sort(), f.overwriteUserInfo, f.overwriteSubStatus, f.denmaRunAutos, f.denmaKeepConsent]);
     },
 
     async denmaPreview() {
@@ -88,7 +89,8 @@ export function denmaImportPreview() {
 
     // The import's own options (cmd/denma_imports.go), in its params.
     denmaImportParams() {
-      return { run_automations: this.form.mode === 'subscribe' && !!this.form.denmaRunAutos };
+      const sub = this.form.mode === 'subscribe';
+      return { run_automations: sub && !!this.form.denmaRunAutos, keep_consent: sub && !!this.form.denmaKeepConsent };
     },
 
     // The automations option's hint, with the automations the preview found.
@@ -151,6 +153,9 @@ export function denmaImportPreview() {
       const dropped = (p.attribs || []).filter((a) => a.dropped).map((a) => a.key);
       if (dropped.length) {
         w.push(`The file gives ${dropped.join(', ')}, which the center keeps itself (its consent record and the like): they're left out.`);
+        if (f.mode === 'subscribe' && dropped.some((k) => k === 'consent_at' || k === 'consent_source')) {
+          w.push('To keep the file\'s consent_at and consent_source as their consent record, turn on "Keep the consent dates in the file".');
+        }
       }
       if (p.no_name) {
         w.push(`${n(p.no_name)} ${p.no_name === 1 ? 'row has' : 'rows have'} no name, so they're named from their address (jane.doe@… becomes Jane Doe).`);

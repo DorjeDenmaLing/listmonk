@@ -93,10 +93,11 @@ type subscriberView struct {
 	TotalViews    int
 	TotalClicks   int
 
-	DenmaOptOut    *denmaOptOut    // denma: cmd/denma_optouts.go
-	DenmaNoConsent *denmaNoConsent // denma: cmd/denma_noconsent.go
-	DenmaRuns      []denmaAutoRun  // denma: the automations that ran for them (cmd/denma_automations.go)
-	DenmaMessages  []denmaMessage  // denma: the e-mails sent to them (cmd/denma_messages.go)
+	DenmaOptOut        *denmaOptOut        // denma: cmd/denma_optouts.go
+	DenmaNoConsent     *denmaNoConsent     // denma: cmd/denma_noconsent.go
+	DenmaConsentImport *denmaConsentImport // denma: cmd/denma_imports.go
+	DenmaRuns          []denmaAutoRun      // denma: the automations that ran for them (cmd/denma_automations.go)
+	DenmaMessages      []denmaMessage      // denma: the e-mails sent to them (cmd/denma_messages.go)
 }
 
 // subCampaignView and subLinkClick are the parsed rows of a subscriber's activity,
@@ -191,8 +192,9 @@ func (a *App) ViewSubscriber(c echo.Context) error {
 		Subscriber: out,
 		AllLists:   allLists,
 	}
-	data.DenmaOptOut = a.denmaOptOutOf(out.Email)       // denma: cmd/denma_optouts.go
-	data.DenmaNoConsent = a.denmaNoConsentOf(out.Email) // denma: cmd/denma_noconsent.go
+	data.DenmaOptOut = a.denmaOptOutOf(out.Email)                 // denma: cmd/denma_optouts.go
+	data.DenmaNoConsent = a.denmaNoConsentOf(out.Email)           // denma: cmd/denma_noconsent.go
+	data.DenmaConsentImport = a.denmaConsentImportOf(out.Attribs) // denma: cmd/denma_imports.go
 
 	return c.Render(http.StatusOK, "admin-subscriber", data)
 }

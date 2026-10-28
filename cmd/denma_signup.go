@@ -81,14 +81,16 @@ const (
 )
 
 // denmaReservedAttribs are attributes the center keeps itself: the consent
-// record and re-subscribing (cmd/denma_resubscribe.go), imports (automations
-// don't e-mail them), and tags (given on their own); and any starting
-// auto_blocklist_ (the domain check, cmd/denma_emailcheck.go) or denma_. No
-// request can give them, but a Server webhook's consents. Admins' changes
+// record and re-subscribing (cmd/denma_resubscribe.go), imports (the mark,
+// and the import a consent came from), and tags (given on their own); and
+// any starting auto_blocklist_ (the domain check, cmd/denma_emailcheck.go)
+// or denma_. No request can give them, but a Server webhook's consents, and
+// an import's consent_at and consent_source when it keeps them
+// (cmd/denma_imports.go). Admins' changes
 // keep a subscriber's (denmaKeepCenterAttribs), as imports do
 // (denma_keep_center_attribs, cmd/denma_features.go).
 var denmaReservedAttribs = []string{"consent_at", "consent_source", "consent_confirmed_at", "consents",
-	"resubscribed_at", "imported_at", "tags"}
+	"resubscribed_at", "imported_at", "consent_import", "tags"}
 
 func denmaIsReservedAttrib(k string) bool {
 	return slices.Contains(denmaReservedAttribs, k) || strings.HasPrefix(k, "auto_blocklist_") || strings.HasPrefix(k, "denma_")

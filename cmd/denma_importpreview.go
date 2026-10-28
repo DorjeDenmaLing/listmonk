@@ -10,8 +10,8 @@ package main
 //   - the people: new to the center, already in it, already on each list,
 //     and those blocklisted, by why (unsubscribed, complained, bounced,
 //     blocklisted by an admin) and what the import does with them;
-//   - the automations its lists and tags would start, if it runs them
-//     (cmd/denma_imports.go);
+//   - the automations its lists and tags would start, if it runs them, and
+//     the consent records it'd keep, if it keeps them (cmd/denma_imports.go);
 //   - the tags: each with how many have it, and whether the center has it
 //     (or it's another name for one of its tags, given as that tag).
 //     The page offers to add the ones it doesn't, as Subscribers -> Tags
@@ -93,7 +93,8 @@ type denmaImportPreview struct {
 	ExistingWithTags int              `json:"existing_with_tags"` // existing subscribers the file gives tags
 	CanAddTags       bool             `json:"can_add_tags"`
 
-	Automations []string `json:"automations"` // the active automations its lists and tags start, if asked (cmd/denma_imports.go)
+	Automations []string             `json:"automations"` // the active automations its lists and tags start, if asked (cmd/denma_imports.go)
+	Consent     *denmaImportConsents `json:"consent"`     // the consent records it keeps, if asked (cmd/denma_imports.go)
 }
 
 type denmaImportProblem struct {
@@ -120,6 +121,9 @@ type denmaImportRow struct {
 	Dropped  []string       `json:"dropped"`
 	Existing bool           `json:"existing"`
 	Blocked  string         `json:"blocked"` // denmaImportBlocked's json name, or ""
+	Consent  string         `json:"consent"` // the consent record kept, or why not (cmd/denma_imports.go)
+
+	consent denmaImportConsentGiven
 }
 
 type denmaImportListInfo struct {
@@ -157,6 +161,8 @@ type denmaImportAddr struct {
 	OptOut sql.NullString `db:"optout"`
 	Shared bool           `db:"shared"`
 	Fenced bool           `db:"fenced"`
+
+	HasConsent bool `db:"has_consent"` // a consent record already
 }
 
 // blocked is why the address is, or will be, blocklisted (or kept off the
@@ -225,6 +231,12 @@ func (a *App) DenmaImportPreview(c echo.Context) error {
 			a.log.Printf("denma: error previewing an import's automations: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "Error checking the file against the center.")
 		}
+		if opt.DenmaConsent {
+			if err := a.denmaImportConsentsPreview(&p, addrs, entries, opt.OverwriteUserInfo); err != nil {
+				a.log.Printf("denma: error previewing an import's consent records: %v", err)
+				return echo.NewHTTPError(http.StatusInternalServerError, "Error checking the file against the center.")
+			}
+		}
 	}
 	return c.JSON(http.StatusOK, okResp{p})
 }
@@ -267,9 +279,13 @@ func denmaImportFile(file *multipart.FileHeader) (string, []byte, error) {
 	return "", nil, errors.New("There's no .csv file in the ZIP file.")
 }
 
-// denmaImportEntry is what the file gives an address.
+// denmaImportEntry is what the file gives an address, and what the center
+// has of it.
 type denmaImportEntry struct {
-	tags []string
+	tags    []string
+	consent denmaImportConsentGiven // its first row's (cmd/denma_imports.go)
+
+	existing, hasConsent bool
 }
 
 // denmaReadImport reads a CSV as the importer's LoadCSV does, and returns
@@ -388,12 +404,13 @@ func denmaReadImport(b []byte, delim rune, validate func(subimporter.SubReq) (su
 			p.Duplicates++
 			e.tags = denmaNormTags(append(e.tags, tags...))
 		} else {
-			entries[sub.Email] = &denmaImportEntry{tags: tags}
+			entries[sub.Email] = &denmaImportEntry{tags: tags, consent: denmaImportConsentOf(attribs)}
 			addrs = append(addrs, sub.Email)
 		}
 
 		if len(p.Sample) < denmaImportSample {
-			row := denmaImportRow{Line: line, Email: sub.Email, Name: sub.Name, First: first, Last: last, Tags: tags, Attribs: map[string]any{}, Dropped: []string{}}
+			row := denmaImportRow{Line: line, Email: sub.Email, Name: sub.Name, First: first, Last: last, Tags: tags, Attribs: map[string]any{}, Dropped: []string{},
+				consent: denmaImportConsentOf(attribs)}
 			for k, v := range attribs {
 				switch {
 				case k == "tags":
@@ -455,6 +472,7 @@ func (a *App) denmaImportCenter(p *denmaImportPreview, addrs []string, entries m
 	}
 	var found []denmaImportAddr
 	if err := a.db.Select(&found, `SELECT f.email, s.id IS NOT NULL AS found, COALESCE(s.status::TEXT, '') AS status,
+		COALESCE(s.attribs->>'consent_at', '') <> '' AS has_consent,
 		COALESCE(jsonb_typeof(s.attribs) = 'object' AND s.attribs ? 'auto_blocklist_reason', false) AS auto,
 		denma_optout_kind(f.email) AS optout, `+shared+` AS shared,
 		EXISTS (SELECT 1 FROM denma_no_consent n WHERE n.email_hash = denma_email_hash(f.email)) AS fenced
@@ -465,6 +483,9 @@ func (a *App) denmaImportCenter(p *denmaImportPreview, addrs []string, entries m
 	byEmail := make(map[string]denmaImportAddr, len(found))
 	for _, d := range found {
 		byEmail[d.Email] = d
+		if e := entries[d.Email]; e != nil {
+			e.existing, e.hasConsent = d.Found, d.HasConsent
+		}
 		if d.Found {
 			p.Existing++
 		} else {

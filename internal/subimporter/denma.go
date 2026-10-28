@@ -41,6 +41,7 @@ func denmaImportNames(sub SubReq, row map[string]string) SubReq {
 // (cmd/denma_imports.go), and its number in denma_imports.
 type DenmaImportOpt struct {
 	DenmaAutomations bool `json:"run_automations"` // its joins and tags start automations
+	DenmaConsent     bool `json:"keep_consent"`    // it keeps the file's consent records
 	DenmaImportID    int  `json:"-"`
 }
 
@@ -62,10 +63,28 @@ func (s *Session) denmaBegin() (*sql.Tx, error) {
 // rows are in and before the import is marked finished: denma checks the
 // imported addresses (cmd/denma_emailcheck.go). since is when it started.
 func (s *Session) denmaAfterImport(since time.Time) {
-	if s.opt.Mode != ModeSubscribe || s.im.opt.AfterImport == nil {
+	if s.opt.Mode != ModeSubscribe {
 		return
 	}
-	s.im.opt.AfterImport(since, s.log)
+	if s.opt.DenmaConsent && s.opt.DenmaImportID > 0 {
+		s.denmaCountConsents()
+	}
+	if s.im.opt.AfterImport != nil {
+		s.im.opt.AfterImport(since, s.log)
+	}
+}
+
+// denmaCountConsents records, and logs, how many consent records the import
+// kept (cmd/denma_imports.go).
+func (s *Session) denmaCountConsents() {
+	var n int
+	if err := s.im.db.QueryRow(`UPDATE denma_imports SET consents = (SELECT COUNT(*) FROM subscribers
+		WHERE jsonb_typeof(attribs) = 'object' AND attribs->>'consent_import' = $1::INT::TEXT) WHERE id = $1 RETURNING consents`,
+		s.opt.DenmaImportID).Scan(&n); err != nil {
+		s.log.Printf("error counting the consent records kept: %v", err)
+		return
+	}
+	s.log.Printf("kept the consent record of %d", n)
 }
 
 // DenmaFail ends a session whose file failed (LoadCSV, or its ZIP), which
