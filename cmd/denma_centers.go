@@ -72,6 +72,10 @@ var denmaCenterOwnSettings = []string{
 	"denma.daily_cap",                      // cmd/denma_daily.go
 	"denma.postal_address",                 // cmd/denma_address.go
 	"denma.website", "denma.contact_email", // cmd/denma_footer.go
+	"denma.unsubscribe_everywhere", "denma.plain_text_auto", "denma.utm_domains", // cmd/denma_features.go
+	"denma.visual_template",               // cmd/denma_features.go
+	"denma.reply_to",                      // cmd/denma_reply_to.go
+	"denma.timezone", "denma.send_window", // cmd/denma_sendwindow.go
 }
 
 // denmaCenterSettingsPath reports whether a path (in a center) is one of the

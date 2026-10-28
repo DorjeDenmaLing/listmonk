@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/knadh/koanf/v2"
@@ -15,5 +16,14 @@ func TestDenmaSessionUser(t *testing.T) {
 	}
 	if u, err := denmaSessionUser(ko, auth.User{Status: auth.UserStatusEnabled, Username: "x"}, nil); err != nil || u.Username != "x" {
 		t.Errorf("an enabled account: %v", err)
+	}
+}
+
+// Every setting on a center's Config page is one of its own, never the hub's.
+func TestDenmaCenterFieldsOwn(t *testing.T) {
+	for _, f := range denmaCenterFields {
+		if !slices.Contains(denmaCenterOwnSettings, f) {
+			t.Errorf("%s is on the Config page but not in denmaCenterOwnSettings", f)
+		}
 	}
 }
