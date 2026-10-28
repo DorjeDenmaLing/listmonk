@@ -1096,6 +1096,10 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 	// Bounces give it back, to count for the automation (cmd/denma_auto_reports.go).
 	msg.Headers.Set(models.EmailHeaderCampaignUUID, auto.UUID)
 	denmaSentAs(&msg, auto.ID, step) // for the record of sent e-mails (cmd/denma_messages.go)
+	// The center's default reply-to (cmd/denma_reply_to.go).
+	if rt := a.denmaReplyTo(); rt != "" {
+		msg.Headers.Set("Reply-To", rt)
+	}
 	if a.cfg.Privacy.UnsubHeader {
 		msg.Headers.Set("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
 		msg.Headers.Set("List-Unsubscribe", `<`+unsubURL+`>`)
