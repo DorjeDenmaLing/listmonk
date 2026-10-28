@@ -256,7 +256,7 @@ func denmaCheckOptin(send func(models.Subscriber, []int) (int, error), db *sqlx.
 			} else if !ok {
 				lo.Printf("denma: not sending %s an opt-in: %d sent in the last %.0f hours", sub.Email, denmaOptinLimit, denmaOptinWindow.Hours())
 				return 0, echo.NewHTTPError(http.StatusTooManyRequests,
-					"A confirmation e-mail was already sent to "+sub.Email+". Check its inbox and spam folder, or try again tomorrow.").SetInternal(errDenmaOptinLimited)
+					"No more confirmation e-mails can be sent to "+sub.Email+" today. Try again tomorrow.").SetInternal(errDenmaOptinLimited)
 			}
 			// Its link's token (cmd/denma_optintoken.go).
 			return denmaWithOptinToken(db, sub, func() (int, error) { return send(sub, listIDs) })
