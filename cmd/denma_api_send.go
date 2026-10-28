@@ -65,7 +65,8 @@ const (
 	denmaAPIDraftDays     = 7  // days a campaign made with "start": false waits to be started
 	denmaAPIMaxTags       = 20 // tags a Server webhook's request adds (cmd/denma_signup.go)
 
-	denmaAPINotSent      = "not sent" // a skip's reason, unless the request's at fault
+	denmaAPINotSent      = "not sent"                  // a skip's reason, unless the request's at fault
+	denmaAPITryLater     = "not sent: try again later" // the server was too busy to take it
 	denmaAPINoRecipients = "No one can be sent this campaign: it has no recipients, or every one was skipped (unsubscribed, bounced, or their domain can't receive mail). Nothing was made or sent."
 )
 
@@ -537,7 +538,7 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 				cc.Release(centerClaim, 1)
 			}
 			denmaDaily.Release(daily, 1)
-			res.Skipped = append(res.Skipped, denmaAPISkip{subs[i].Email, "couldn't be sent: " + err.Error()})
+			res.Skipped = append(res.Skipped, denmaAPISkip{subs[i].Email, denmaAPITryLater})
 			continue
 		}
 		res.Sent = append(res.Sent, subs[i].Email)
