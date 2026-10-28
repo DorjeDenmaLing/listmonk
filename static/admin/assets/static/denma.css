@@ -2419,12 +2419,29 @@ section.templates .editor-body:has(> visual-editor) {
   text-decoration: line-through;
   opacity: 0.7;
 }
+.denma-import-rows > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.denma-import-rows[open] > summary {
+  margin-bottom: var(--space-3);
+}
+.denma-import-rows > .table-wrapper {
+  padding: 0 var(--space-3) var(--space-3);
+}
+.denma-import-sample {
+  width: 100%;
+}
 .denma-import-sample td {
   vertical-align: top;
 }
+/* The attributes get most of the width. */
+.denma-import-sample th:nth-child(6) {
+  width: 50%;
+}
 .denma-import-attribs {
   display: block;
-  max-width: 40ch;
+  min-width: 30ch;
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 0.85em;

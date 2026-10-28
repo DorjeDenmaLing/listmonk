@@ -47,7 +47,8 @@
 			{{/* The first rows, as imported. */}}
 			<template x-if="denmaPrev.sample.length">
 				<div>
-					<h5>The first rows, as they'd be imported</h5>
+					<details class="denma-import-rows" data-testid="preview-rows">
+					<summary>The first rows, as they'd be imported</summary>
 					<div class="table-wrapper">
 						<table class="denma-import-sample" data-testid="preview-sample">
 							<thead><tr><th>Line</th><th>E-mail</th><th>First name</th><th>Last name</th><th>Tags</th><th>Attributes</th><th></th></tr></thead>
@@ -74,6 +75,7 @@
 							</tbody>
 						</table>
 					</div>
+					</details>
 					<template x-if="denmaPrev.attribs.length">
 						<p>
 							Attributes in the file:
