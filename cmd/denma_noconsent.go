@@ -167,6 +167,22 @@ DROP TRIGGER IF EXISTS denma_keep_api_list_tag ON lists;
 CREATE TRIGGER denma_keep_api_list_tag BEFORE INSERT OR UPDATE OF tags ON lists
     FOR EACH ROW EXECUTE FUNCTION denma_keep_api_list_tag();
 UPDATE lists SET tags = '{}' WHERE tags <> '{}' AND NOT ('` + denmaAPIListTag + `' = ANY(tags));
+
+-- Only the API puts people on an API campaign's list: its recipients, as it
+-- adds them (denma.api_recipients). Any other join (an admin's, an
+-- import's, an automation's) is skipped.
+CREATE OR REPLACE FUNCTION denma_keep_api_list_members() RETURNS TRIGGER
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+BEGIN
+    IF COALESCE(current_setting('denma.api_recipients', true), '') <> NEW.list_id::TEXT
+        AND EXISTS (SELECT 1 FROM lists WHERE id = NEW.list_id AND '` + denmaAPIListTag + `' = ANY(COALESCE(tags, '{}'))) THEN
+        RETURN NULL;
+    END IF;
+    RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS denma_keep_api_list_members ON subscriber_lists;
+CREATE TRIGGER denma_keep_api_list_members BEFORE INSERT ON subscriber_lists
+    FOR EACH ROW EXECUTE FUNCTION denma_keep_api_list_members();
 `
 
 // denmaForeignAPIListsSQL finds a campaign's (NEW.id) API campaign lists
