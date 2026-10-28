@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/knadh/koanf/v2"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/labstack/echo/v4"
 )
@@ -91,6 +93,21 @@ func TestDenmaWebhook(t *testing.T) {
 		if got := denmaPublicIP(net.ParseIP(ip)); got != public {
 			t.Errorf("%s: public %v, want %v", ip, got, public)
 		}
+	}
+}
+
+// A webhook to a private address is refused, without saying what it is.
+func TestDenmaWebhookPrivate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	defer srv.Close()
+	a := &App{ko: koanf.New(".")}
+	err := a.postWebhook(srv.URL+"/hook", "whsec_x", nil)
+	if !errors.Is(err, errDenmaPrivateAddr) || strings.Contains(err.Error(), "127.0.0.1") {
+		t.Fatalf("got %v, want %v alone", err, errDenmaPrivateAddr)
+	}
+	_ = a.ko.Set("denma.api_private_webhooks", true)
+	if err := a.postWebhook(srv.URL+"/hook", "whsec_x", nil); err != nil {
+		t.Fatalf("with private webhooks allowed: %v", err)
 	}
 }
 

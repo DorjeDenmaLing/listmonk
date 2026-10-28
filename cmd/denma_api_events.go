@@ -595,6 +595,9 @@ var denmaNotPublic = func() []*net.IPNet {
 	return out
 }()
 
+// errDenmaPrivateAddr refuses a webhook whose address is private or local.
+var errDenmaPrivateAddr = errors.New("its address is a private or local one, which webhooks can't go to")
+
 // denmaWebhookClient sends webhooks, to public addresses only unless
 // private.
 func denmaWebhookClient(private bool) *http.Client {
@@ -606,7 +609,7 @@ func denmaWebhookClient(private bool) *http.Client {
 				return err
 			}
 			if ip := net.ParseIP(host); ip == nil || !denmaPublicIP(ip) {
-				return fmt.Errorf("%s is a private or local address", host)
+				return errDenmaPrivateAddr
 			}
 			return nil
 		}
@@ -648,6 +651,9 @@ func (a *App) postWebhook(to, secret string, events []denmaAPIEvent) error {
 	req.Header.Set("User-Agent", "listmonk-webhooks/1.0")
 	req.Header.Set("X-Listmonk-Signature", denmaWebhookSignature(secret, time.Now().Unix(), body))
 	resp, err := denmaWebhookClient(denmaWebhookPrivate(a)).Do(req)
+	if errors.Is(err, errDenmaPrivateAddr) {
+		return errDenmaPrivateAddr // without what it resolved to
+	}
 	if err != nil {
 		var ue *url.Error
 		if errors.As(err, &ue) {
