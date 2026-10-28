@@ -76,14 +76,26 @@ func (s *store) DenmaRetrySent(campID, subID int) error {
 	return err
 }
 
+// denmaStillSentSQL is whether failed send f's subscriber s would still be
+// sent its campaign: on one of its lists (confirmed, if the list is double
+// opt-in), or with one of its tags and on a list (next-campaign-subscribers).
+const denmaStillSentSQL = `(EXISTS (SELECT 1 FROM campaign_lists cl JOIN lists l ON l.id = cl.list_id
+		JOIN subscriber_lists sl ON sl.list_id = l.id AND sl.subscriber_id = s.id
+		WHERE cl.campaign_id = f.campaign_id AND CASE WHEN l.optin = 'double' THEN sl.status = 'confirmed' ELSE sl.status != 'unsubscribed' END)
+	OR (s.attribs->'tags' ?| (SELECT denma_tags FROM campaigns WHERE id = f.campaign_id) AND EXISTS (
+		SELECT 1 FROM subscriber_lists dsl JOIN lists dl ON dl.id = dsl.list_id WHERE dsl.subscriber_id = s.id
+		AND NOT ('` + denmaAPIListTag + `' = ANY(COALESCE(dl.tags, '{}'))) AND CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status != 'unsubscribed' END)))`
+
 // DenmaRetrySubscribers returns the next batch (after afterID) of a
 // campaign's failed sends to try again: temporary ones, or all of them, that
 // haven't been retried as often as they may be, to subscribers who haven't
-// since been blocklisted (which unsubscribing does). Never the uncertain.
+// since been blocklisted (which unsubscribing does) or taken off its lists.
+// Never the uncertain.
 func (s *store) DenmaRetrySubscribers(campID, afterID, limit int, all bool) ([]models.Subscriber, error) {
 	var out []models.Subscriber
 	err := s.core.DenmaDB().Select(&out, `SELECT s.* FROM denma_send_failures f JOIN subscribers s ON s.id = f.subscriber_id
 		WHERE f.campaign_id = $1 AND s.id > $2 AND ($4 OR f.temporary) AND NOT f.uncertain AND f.retries < $5 AND s.status != 'blocklisted'
+		AND `+denmaStillSentSQL+`
 		ORDER BY s.id LIMIT $3`, campID, afterID, limit, all, len(denmaRetryWaits))
 	if err == nil {
 		err = denmaAPIRecipientData(s.core.DenmaDB(), campID, out) // an API campaign's data (cmd/denma_api_send.go)
@@ -99,7 +111,7 @@ func (s *store) DenmaRetryLater(campID int) (bool, error) {
 	err := s.core.DenmaDB().Get(&at, `UPDATE campaigns SET denma_retry_at = (
 		SELECT MIN(f.failed_at + make_interval(mins => ($2::INT[])[f.retries + 1]))
 		FROM denma_send_failures f JOIN subscribers s ON s.id = f.subscriber_id
-		WHERE f.campaign_id = $1 AND f.temporary AND f.retries < $3 AND s.status != 'blocklisted'
+		WHERE f.campaign_id = $1 AND f.temporary AND f.retries < $3 AND s.status != 'blocklisted' AND `+denmaStillSentSQL+`
 	) WHERE id = $1 RETURNING denma_retry_at`, campID, pq.Array(denmaRetryWaits), len(denmaRetryWaits))
 	return at.Valid, err
 }
@@ -218,13 +230,13 @@ func (a *App) DenmaResendFailures(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "Only a finished campaign can be resent to those it couldn't send to; resuming a paused one tries them again.")
 	}
 	res, err := tx.Exec(`UPDATE denma_send_failures f SET retries = 0, temporary = true, uncertain = false FROM subscribers s
-		WHERE f.campaign_id = $1 AND s.id = f.subscriber_id AND s.status != 'blocklisted'`, id)
+		WHERE f.campaign_id = $1 AND s.id = f.subscriber_id AND s.status != 'blocklisted' AND `+denmaStillSentSQL, id)
 	if err != nil {
 		return a.denmaResendErr(id, err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, "There's no one to resend to: everyone it couldn't send to has since unsubscribed or been blocklisted.")
+		return echo.NewHTTPError(http.StatusBadRequest, "There's no one to resend to: everyone it couldn't send to has since unsubscribed, been blocklisted or left its lists.")
 	}
 	// Running, as a retry run (denma_retry_at set): the campaign manager
 	// picks it up within seconds and sends only to them.
