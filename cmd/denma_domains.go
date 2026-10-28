@@ -888,33 +888,49 @@ func (d *denmaCenters) centerSenders() ([]denmaCenterSender, error) {
 	return out, nil
 }
 
-// denmaDomainCampaign is a center's campaign that's scheduled or sending.
+// denmaDomainCampaign is a center's campaign that's scheduled or sending, or
+// its active automation or API key (What), with its sender.
 type denmaDomainCampaign struct {
 	Center string `db:"center"`
+	What   string `db:"what"`
 	Name   string `db:"name"`
 	From   string `db:"from_email"`
 }
 
-// domainCampaigns are the scheduled and running campaigns sending from a
-// domain, of one center (slug) or all (""): they were checked when they
-// were scheduled or started, not again as they send.
+// domainCampaigns are the scheduled and running campaigns, active
+// automations and API keys sending from a domain, of one center (slug) or
+// all (""): they were checked when they were scheduled, started, turned on
+// or made, not again as they send.
 func (d *denmaCenters) domainCampaigns(dom, slug string) ([]denmaDomainCampaign, error) {
 	var ctrs []struct {
 		Name   string `db:"name"`
 		Schema string `db:"schema_name"`
+		Autos  bool   `db:"autos"`
+		Keys   bool   `db:"keys"`
 	}
-	if err := d.db().Select(&ctrs, `SELECT name, schema_name FROM denma.centers
+	if err := d.db().Select(&ctrs, `SELECT name, schema_name,
+		TO_REGCLASS(QUOTE_IDENT(schema_name) || '.denma_automations') IS NOT NULL AS autos,
+		TO_REGCLASS(QUOTE_IDENT(schema_name) || '.denma_api_keys') IS NOT NULL AS keys
+		FROM denma.centers
 		WHERE ($1 = '' OR slug = $1) AND TO_REGCLASS(QUOTE_IDENT(schema_name) || '.campaigns') IS NOT NULL`, slug); err != nil {
 		return nil, err
 	}
 	if len(ctrs) == 0 {
 		return nil, nil
 	}
-	parts := make([]string, len(ctrs))
-	for i, c := range ctrs {
-		parts[i] = fmt.Sprintf(`SELECT %s AS center, name, from_email FROM %s.campaigns
-			WHERE status IN ('scheduled', 'running') AND from_email ILIKE '%%' || $1 || '%%'`,
-			pq.QuoteLiteral(c.Name), pq.QuoteIdentifier(c.Schema))
+	var parts []string
+	for _, c := range ctrs {
+		ctr, sch := pq.QuoteLiteral(c.Name), pq.QuoteIdentifier(c.Schema)
+		parts = append(parts, fmt.Sprintf(`SELECT %s AS center, 'campaign' AS what, name, from_email FROM %s.campaigns
+			WHERE status IN ('scheduled', 'running') AND from_email ILIKE '%%' || $1 || '%%'`, ctr, sch))
+		if c.Autos {
+			parts = append(parts, fmt.Sprintf(`SELECT %s, 'automation', name, from_email FROM %s.denma_automations
+				WHERE active AND from_email ILIKE '%%' || $1 || '%%'`, ctr, sch))
+		}
+		if c.Keys {
+			parts = append(parts, fmt.Sprintf(`SELECT %s, 'API key', name, sender FROM %s.denma_api_keys
+				WHERE deleted_at IS NULL AND sender ILIKE '%%' || $1 || '%%'`, ctr, sch))
+		}
 	}
 	var rows []denmaDomainCampaign
 	if err := d.db().Select(&rows, strings.Join(parts, " UNION ALL "), dom); err != nil {
@@ -930,7 +946,8 @@ func (d *denmaCenters) domainCampaigns(dom, slug string) ([]denmaDomainCampaign,
 }
 
 // denmaCampaignsOnDomain refuses to take a domain from centers while their
-// campaigns are scheduled or sending from it.
+// campaigns are scheduled or sending from it, or their active automations or
+// API keys send from it.
 func denmaCampaignsOnDomain(camps []denmaDomainCampaign, dom string) error {
 	if len(camps) == 0 {
 		return nil
@@ -941,9 +958,10 @@ func denmaCampaignsOnDomain(camps []denmaDomainCampaign, dom string) error {
 			names = append(names, fmt.Sprintf("and %d more", len(camps)-5))
 			break
 		}
-		names = append(names, fmt.Sprintf("%q (%s)", c.Name, c.Center))
+		names = append(names, fmt.Sprintf("%s %q (%s)", c.What, c.Name, c.Center))
 	}
-	return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Campaigns scheduled or sending from %s: %s. Change their sender, unschedule or pause them, or wait until they've finished, first.", dom, strings.Join(names, ", ")))
+	return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("These send from %s: %s. First change their sender; or unschedule or pause a campaign, "+
+		"or wait until it's finished; turn an automation off; delete an API key.", dom, strings.Join(names, ", ")))
 }
 
 // adoptSenders adds the domains of senders set before (every center's and
@@ -1418,7 +1436,8 @@ func (a *App) DenmaAddDomainCenter(c echo.Context) error {
 }
 
 // DenmaRemoveDomainCenter stops a center sending from a domain, unless its
-// sender, or a campaign scheduled or sending, is on it.
+// sender, a campaign scheduled or sending, an active automation or an API
+// key is on it.
 func (a *App) DenmaRemoveDomainCenter(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -1453,7 +1472,8 @@ func (a *App) DenmaRemoveDomainCenter(c echo.Context) error {
 }
 
 // DenmaDeleteDomain removes a sending domain from the hub, unless a sender
-// (the hub's or a center's), or a campaign scheduled or sending, is on it. It stays in SES: the server's role
+// (the hub's or a center's), a campaign scheduled or sending, an active
+// automation or an API key is on it. It stays in SES: the server's role
 // can't delete identities (a compromised server could stop any domain's
 // mail), so a superadmin deletes it in the SES console.
 func (a *App) DenmaDeleteDomain(c echo.Context) error {
