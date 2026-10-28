@@ -880,8 +880,8 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "This key isn't in use (any more).")
 	}
 	if err == nil {
-		_, err = a.db.Exec(`INSERT INTO denma_api_campaigns (campaign_id, key_id, list_id, idempotency_key, state) VALUES ($1, $2, $3, $4, $5)`,
-			camp.ID, k.ID, listID, idemArg, state)
+		_, err = a.db.Exec(`INSERT INTO denma_api_campaigns (campaign_id, key_id, list_id, idempotency_key, state, claimed) VALUES ($1, $2, $3, $4, $5, $6)`,
+			camp.ID, k.ID, listID, idemArg, state, claimed)
 	}
 	kl.Unlock()
 	if err != nil {
@@ -1158,9 +1158,20 @@ func (a *App) apiStart(id int) {
 			err = fmt.Errorf("%v", he.Message) // without echo's "code=...", for the caller
 		}
 		a.log.Printf("denma: API campaign %d didn't start: %v", id, err)
-		if _, e := a.db.Exec(`UPDATE denma_api_campaigns SET state = 'draft', error = $2 WHERE campaign_id = $1 AND state = 'starting'`,
-			id, err.Error()); e != nil {
+		// A draft again, its claim on the key's daily limit given back: starting
+		// it again claims it again.
+		var back struct {
+			KeyID   sql.NullInt64 `db:"key_id"`
+			Claimed int           `db:"claimed"`
+		}
+		if e := a.db.Get(&back, `UPDATE denma_api_campaigns x SET state = 'draft', error = $2, claimed = 0
+			FROM (SELECT campaign_id, claimed FROM denma_api_campaigns WHERE campaign_id = $1 FOR UPDATE) o
+			WHERE x.campaign_id = o.campaign_id AND x.state = 'starting' RETURNING x.key_id, o.claimed`,
+			id, err.Error()); e != nil && !errors.Is(e, sql.ErrNoRows) {
 			a.log.Printf("denma: error recording API campaign %d's failure: %v", id, e)
+		}
+		if back.KeyID.Valid {
+			a.apiUnclaim(int(back.KeyID.Int64), denmaAPIUseSend, back.Claimed)
 		}
 	}
 	var x struct {
@@ -1324,8 +1335,8 @@ func (a *App) DenmaAPIStartCampaign(c echo.Context) error {
 			return err
 		}
 	}
-	res, err := a.db.Exec(`UPDATE denma_api_campaigns x SET state = 'starting', error = '' FROM campaigns c
-		WHERE c.id = x.campaign_id AND x.campaign_id = $1 AND x.state = 'draft' AND c.status = 'draft'`, id)
+	res, err := a.db.Exec(`UPDATE denma_api_campaigns x SET state = 'starting', error = '', claimed = $2 FROM campaigns c
+		WHERE c.id = x.campaign_id AND x.campaign_id = $1 AND x.state = 'draft' AND c.status = 'draft'`, id, cur.Recipients)
 	if err != nil {
 		a.apiUnclaim(apiKeyOf(c).ID, denmaAPIUseSend, cur.Recipients)
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())

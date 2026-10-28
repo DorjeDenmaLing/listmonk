@@ -122,6 +122,9 @@ CREATE TABLE IF NOT EXISTS denma_api_campaigns (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS denma_api_campaigns_idem ON denma_api_campaigns (key_id, idempotency_key)
     WHERE idempotency_key IS NOT NULL;
+-- What its start claimed of the key's daily limit, given back if it fails
+-- (since features version 55).
+ALTER TABLE denma_api_campaigns ADD COLUMN IF NOT EXISTS claimed INTEGER NOT NULL DEFAULT 0;
 -- Transactional e-mails: one row a request.
 CREATE TABLE IF NOT EXISTS denma_api_messages (
     id              BIGSERIAL PRIMARY KEY,
