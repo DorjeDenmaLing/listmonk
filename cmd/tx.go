@@ -174,7 +174,8 @@ func (a *App) SendTxMessage(c echo.Context) error {
 		}
 		if err := a.manager.PushMessage(msg); err != nil {
 			release() // denma
-			a.log.Printf("error sending message (%s): %v", msg.Subject, err)
+			// denma: logged without its subject.
+			a.log.Printf("error sending message (subscriber %d): %v", msg.Subscriber.ID, err)
 			return err
 		}
 	}

@@ -77,7 +77,7 @@ func (m *Manager) denmaSendMsg(msg models.Message) {
 	}
 	err := m.messengers[msg.Messenger].Push(msg)
 	if err != nil {
-		m.log.Printf("error sending message '%s': %v", msg.Subject, err)
+		m.log.Printf("error sending a message to subscriber %d: %v", msg.Subscriber.ID, err)
 	}
 	d.finish(err)
 }

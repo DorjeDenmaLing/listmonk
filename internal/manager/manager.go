@@ -234,7 +234,7 @@ func (m *Manager) PushMessage(msg models.Message) error {
 	select {
 	case m.msgQ <- msg:
 	case <-t.C:
-		m.log.Printf("message push timed out: '%s'", msg.Subject)
+		m.log.Printf("message push timed out (subscriber %d)", msg.Subscriber.ID) // denma: not its subject
 		return errors.New("message push timed out")
 	}
 
@@ -255,7 +255,7 @@ func (m *Manager) PushCampaignMessage(msg CampaignMessage) error {
 	select {
 	case m.campMsgQ <- msg:
 	case <-t.C:
-		m.log.Printf("message push timed out: '%s'", msg.Subject())
+		m.log.Printf("message push timed out (campaign %d, subscriber %d)", msg.Campaign.ID, msg.Subscriber.ID) // denma: not its subject
 		return errors.New("message push timed out")
 	}
 
