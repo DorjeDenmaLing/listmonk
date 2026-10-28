@@ -124,6 +124,7 @@ func (a *App) ViewForms(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	lists = denmaDoubleOptin(lists) // denma: what a public sign-up joins (cmd/denma_signupanswers.go)
 
 	out := make([]publicListForm, 0, len(lists))
 	for _, l := range lists {

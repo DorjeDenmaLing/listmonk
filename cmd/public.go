@@ -215,6 +215,7 @@ func (a *App) GetPublicLists(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("public.errorFetchingLists"))
 	}
+	lists = denmaDoubleOptin(lists) // denma: what a public sign-up joins (cmd/denma_signupanswers.go)
 
 	type list struct {
 		UUID string `json:"uuid"`
