@@ -154,10 +154,7 @@ SELECT
 		JOIN camp ON camp.id = l.campaign_id AND camp.tracked WHERE l.subscriber_id IS NOT NULL) x) AS clicks,
 	(SELECT COUNT(*) FROM S.campaign_views v JOIN camp ON camp.id = v.campaign_id AND camp.tracked
 		WHERE v.subscriber_id IS NULL) AS unlinked,
-	(SELECT COUNT(DISTINCT sl.subscriber_id) FROM S.subscriber_lists sl
-		WHERE sl.status = 'unsubscribed' AND sl.updated_at >= $1 AND sl.updated_at < $2
-		AND sl.subscriber_id NOT IN (SELECT subscriber_id FROM S.bounces
-			WHERE subscriber_id IS NOT NULL AND created_at >= $1 AND created_at < $2)) AS unsubs,
+	(SELECT COUNT(*) FROM S.denma_optouts WHERE ` + denmaOwnUnsubSQL + ` AND created_at >= $1 AND created_at < $2) AS unsubs,
 	(SELECT COUNT(*) FROM S.bounces WHERE type = 'hard' AND created_at >= $1 AND created_at < $2) AS hard,
 	(SELECT COUNT(*) FROM S.bounces WHERE type = 'soft' AND created_at >= $1 AND created_at < $2) AS soft,
 	(SELECT COUNT(*) FROM S.bounces WHERE type = 'complaint' AND created_at >= $1 AND created_at < $2) AS complaint,

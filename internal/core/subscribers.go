@@ -27,6 +27,7 @@ var (
 		"links":            {},
 		"link_clicks":      {},
 		"bounces":          {},
+		"denma_optouts":    {}, // denma: the Unsubscribed figure (cmd/denma_stats.go)
 	}
 )
 

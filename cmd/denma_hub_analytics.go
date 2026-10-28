@@ -73,8 +73,8 @@ const denmaHubListActive = `NOT ('` + denmaAPIListTag + `' = ANY(COALESCE(l.tags
 
 // Subscribers gained and lost from $1 to $2 (the "new", "unsub" and "removed"
 // figures), by day in time zone $3 and provider. Each counts once: an
-// unsubscribe on the day of the latest in the period, a removal on the day of
-// the first bounce in the period.
+// unsubscribe (their own opt-out) on its day, a removal on the day of the
+// first bounce in the period.
 const denmaGrowthSQL = `WITH bounced AS (
 	SELECT subscriber_id, MIN(created_at) AS at FROM S.bounces
 	WHERE subscriber_id IS NOT NULL AND created_at >= $1 AND created_at < $2 GROUP BY subscriber_id
@@ -83,10 +83,8 @@ const denmaGrowthSQL = `WITH bounced AS (
 	WHERE s.created_at >= $1 AND s.created_at < $2 AND EXISTS (SELECT 1 FROM S.subscriber_lists sl JOIN S.lists l ON l.id = sl.list_id
 		WHERE sl.subscriber_id = s.id AND NOT (l.optin = 'double' AND sl.status = 'unconfirmed') AND ` + denmaHubListActive + `)
 	UNION ALL
-	SELECT 'unsub', sl.subscriber_id, MAX(sl.updated_at) FROM S.subscriber_lists sl
-	WHERE sl.status = 'unsubscribed' AND sl.updated_at >= $1 AND sl.updated_at < $2
-		AND sl.subscriber_id NOT IN (SELECT subscriber_id FROM bounced)
-	GROUP BY sl.subscriber_id
+	SELECT 'unsub', s.id, o.created_at FROM S.denma_optouts o JOIN S.subscribers s ON S.denma_email_hash(s.email) = o.email_hash
+	WHERE o.kind = 'unsubscribed' AND o.source = 'unsubscribe' AND o.created_at >= $1 AND o.created_at < $2
 	UNION ALL
 	SELECT 'removed', b.subscriber_id, b.at FROM bounced b JOIN S.subscribers s ON s.id = b.subscriber_id
 	WHERE s.status = 'blocklisted' OR NOT EXISTS (SELECT 1 FROM S.subscriber_lists sl WHERE sl.subscriber_id = s.id AND sl.status <> 'unsubscribed')

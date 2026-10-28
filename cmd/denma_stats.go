@@ -24,6 +24,10 @@ import (
 const denmaNotPendingSQL = `subscribers.id IN (SELECT sl.subscriber_id FROM subscriber_lists sl JOIN lists l ON l.id = sl.list_id
 	WHERE NOT (l.optin = 'double' AND sl.status = 'unconfirmed'))`
 
+// denmaOwnUnsubSQL is an opt-out (denma_optouts) that's someone's own
+// unsubscribe, not an import's or a complaint.
+const denmaOwnUnsubSQL = `kind = 'unsubscribed' AND source = 'unsubscribe'`
+
 // denmaStatSQL is a figure's SQL condition. from and to bound the period
 // (for new, unsub and removed); campaign is the campaign (for received, opens
 // and clicks).
@@ -59,13 +63,13 @@ func denmaStatSQL(metric string, from, to time.Time, campaign int) (string, erro
 		}
 		return between("subscribers.created_at") + " AND " + denmaNotPendingSQL, nil
 
-	// Unsubscribed in the period, not counting bounce removals.
+	// Unsubscribed themselves in the period: their opt-out
+	// (cmd/denma_optouts.go), not a list row an admin's add or a move made.
 	case "unsub":
 		if err := needPeriod(); err != nil {
 			return "", err
 		}
-		return "subscribers.id IN (SELECT subscriber_id FROM subscriber_lists WHERE status = 'unsubscribed' AND " + between("updated_at") + ")" +
-			" AND subscribers.id NOT IN (SELECT subscriber_id FROM bounces WHERE subscriber_id IS NOT NULL AND " + between("created_at") + ")", nil
+		return "denma_email_hash(subscribers.email) IN (SELECT email_hash FROM denma_optouts WHERE " + denmaOwnUnsubSQL + " AND " + between("created_at") + ")", nil
 
 	// Bounced in the period and, as a result, blocklisted or on no list.
 	case "removed":
