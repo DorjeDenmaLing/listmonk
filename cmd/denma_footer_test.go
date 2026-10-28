@@ -191,6 +191,31 @@ func TestDenmaWithContact(t *testing.T) {
 	}
 }
 
+// An e-mail being sent may show a detail as it was before a change.
+func TestDenmaDetailsMissingSince(t *testing.T) {
+	cur := denmaTestContact
+	old := denmaContact{Address: "1 Old Road\nTatamagouche NS B0K 1V0", Website: "https://old.example.org/", Email: "old@example.org"}
+	now := "<p>1084 Tatamagouche Mountain Road<br>Tatamagouche NS B0K 1V0<br>dorjedenmaling.org · programs@dorjedenmaling.org</p>"
+	was := "<p>1 Old Road<br>Tatamagouche NS B0K 1V0<br>old.example.org · old@example.org</p>"
+	mixed := "<p>1 Old Road<br>Tatamagouche NS B0K 1V0<br>dorjedenmaling.org · programs@dorjedenmaling.org</p>"
+	for _, c := range []struct {
+		body  string
+		prevs []denmaContact
+		want  string
+	}{
+		{now, nil, ""},
+		{was, nil, denmaPartAddress + "|" + denmaPartWebsite + "|" + denmaPartEmail},
+		{was, []denmaContact{old}, ""},
+		{mixed, []denmaContact{old}, ""},
+		{"<p>Hi</p>", []denmaContact{old}, denmaPartAddress + "|" + denmaPartWebsite + "|" + denmaPartEmail},
+		{was, []denmaContact{{}}, denmaPartAddress + "|" + denmaPartWebsite + "|" + denmaPartEmail}, // empty details never count
+	} {
+		if got := strings.Join(denmaDetailsMissingSince(c.body, cur, c.prevs), "|"); got != c.want {
+			t.Errorf("denmaDetailsMissingSince(%q, %d previous) = %q, want %q", c.body, len(c.prevs), got, c.want)
+		}
+	}
+}
+
 // A center's website's host is one of its own link domains.
 func TestDenmaWebsiteHost(t *testing.T) {
 	for site, want := range map[string]string{

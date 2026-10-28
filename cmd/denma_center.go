@@ -373,6 +373,12 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 	}
+	// The details as they were, which e-mails being sent may still show
+	// for a while (cmd/denma_footer.go).
+	newContact := denmaContact{Address: f.PostalAddress, Website: f.Website, Email: f.ContactEmail}
+	if err := denmaKeepPrevContact(tx, denmaContactOf(a.ko.String("denma.center")), newContact); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -387,7 +393,8 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	if slug := a.ko.String("denma.center"); slug != "" {
 		w := f.SendWindow
 		denmaWindowOf(slug).Store(&w)
-		denmaSetContact(slug, denmaContact{Address: f.PostalAddress, Website: f.Website, Email: f.ContactEmail})
+		denmaSetContact(slug, newContact)
+		denmaPrevContacts.Delete(slug)
 	}
 
 	// The hub's list shows the registry's name for centers that aren't running.

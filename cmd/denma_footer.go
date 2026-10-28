@@ -34,6 +34,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/koanf/v2"
@@ -295,6 +296,108 @@ func denmaFooterCheck(slug string, body []byte) error {
 		return denmaFooterError("The e-mail", miss)
 	}
 	return nil
+}
+
+// denmaPrevContactDays is how long a center's e-mails being sent may still
+// show its details as they were before a change on Config: campaigns
+// already running go on, rather than stop at the next e-mail.
+const denmaPrevContactDays = 30
+
+// denmaPrevContactsSQL keeps the details a center had before each change
+// (in denmaFeaturesSQL, version 50).
+const denmaPrevContactsSQL = `
+CREATE TABLE IF NOT EXISTS denma_previous_contacts (
+    id          SERIAL PRIMARY KEY,
+    address     TEXT NOT NULL,
+    website     TEXT NOT NULL,
+    email       TEXT NOT NULL,
+    replaced_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+`
+
+// denmaKeepPrevContact records a center's details as they were (old) when a
+// Config save changes them, and forgets those older than
+// denmaPrevContactDays.
+func denmaKeepPrevContact(tx *sqlx.Tx, old, cur denmaContact) error {
+	if old == cur || old == (denmaContact{}) {
+		return nil
+	}
+	if _, err := tx.Exec(`INSERT INTO denma_previous_contacts (address, website, email) VALUES ($1, $2, $3)`,
+		old.Address, old.Website, old.Email); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`DELETE FROM denma_previous_contacts WHERE replaced_at < NOW() - make_interval(days => $1)`, denmaPrevContactDays)
+	return err
+}
+
+// denmaPrevContacts holds each center's previous details (by slug), read
+// again after a minute or a Config save.
+var denmaPrevContacts sync.Map // slug -> denmaPrevContactsAt
+
+type denmaPrevContactsAt struct {
+	at   time.Time
+	list []denmaContact
+}
+
+// denmaPrevContactsOf is a center's details as they were before its
+// changes of the last denmaPrevContactDays.
+func denmaPrevContactsOf(slug string) []denmaContact {
+	if v, ok := denmaPrevContacts.Load(slug); ok && time.Since(v.(denmaPrevContactsAt).at) < time.Minute {
+		return v.(denmaPrevContactsAt).list
+	}
+	if denmaHub == nil {
+		return nil
+	}
+	ctr := denmaHub.get(slug)
+	if ctr == nil {
+		return nil
+	}
+	list := []denmaContact{}
+	if err := ctr.app.db.Select(&list, `SELECT address, website, email FROM denma_previous_contacts
+		WHERE replaced_at >= NOW() - make_interval(days => $1)`, denmaPrevContactDays); err != nil {
+		ctr.app.log.Printf("denma: error reading the center's previous details: %v", err)
+		return nil
+	}
+	denmaPrevContacts.Store(slug, denmaPrevContactsAt{at: time.Now(), list: list})
+	return list
+}
+
+// denmaFooterCheckSent is denmaFooterCheck for an e-mail as it's sent: a
+// detail it shows as it was before a change of the last
+// denmaPrevContactDays is accepted too. Starting, testing and saving check
+// the details as they are now.
+func denmaFooterCheckSent(slug string, body []byte) error {
+	err := denmaFooterCheck(slug, body)
+	if err == nil || errors.Is(err, errDenmaNoContact) {
+		return err
+	}
+	prevs := denmaPrevContactsOf(slug)
+	if len(prevs) == 0 {
+		return err
+	}
+	if left := denmaDetailsMissingSince(string(body), denmaContactOf(slug), prevs); len(left) > 0 {
+		return denmaFooterError("The e-mail", left)
+	}
+	return nil
+}
+
+// denmaDetailsMissingSince is the details (of cur) an e-mail's HTML doesn't
+// show, as they are or as one of prevs had them.
+func denmaDetailsMissingSince(body string, cur denmaContact, prevs []denmaContact) []string {
+	var left []string
+	for _, part := range denmaDetailsMissing(body, true, cur) {
+		shown := false
+		for _, p := range prevs {
+			if !denmaHas(denmaDetailsMissing(body, true, p), part) {
+				shown = true
+				break
+			}
+		}
+		if !shown {
+			left = append(left, part)
+		}
+	}
+	return left
 }
 
 // denmaCheckFooter refuses an e-mail (its body as sent) of a's center that

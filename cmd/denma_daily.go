@@ -108,7 +108,7 @@ func (m denmaCountedMessenger) Push(msg models.Message) error {
 		return err
 	}
 	if m.Name() == emailMsgr && denmaIsMarketing(msg) { // the center's details (cmd/denma_footer.go)
-		if err := denmaFooterCheck(m.slug, msg.Body); err != nil {
+		if err := denmaFooterCheckSent(m.slug, msg.Body); err != nil {
 			return err
 		}
 	}
