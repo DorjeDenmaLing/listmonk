@@ -71,3 +71,12 @@ func (a *App) denmaUnsubscribe(subUUID, campUUID string, _ bool) error {
 	}
 	return nil
 }
+
+// denmaWipe is the public page's "wipe my data": their opt-out is recorded
+// first, as an unsubscribe's, so that it outlives them; then they're deleted.
+func (a *App) denmaWipe(subUUID string) error {
+	if err := a.denmaUnsubscribe(subUUID, "", false); err != nil {
+		return err
+	}
+	return a.core.DeleteSubscribers(nil, []string{subUUID})
+}

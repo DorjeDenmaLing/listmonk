@@ -787,7 +787,7 @@ func (a *App) WipeSubscriberData(c echo.Context) error {
 	}
 
 	subUUID := c.Param("subUUID")
-	if err := a.core.DeleteSubscribers(nil, []string{subUUID}); err != nil {
+	if err := a.denmaWipe(subUUID); err != nil { // denma: was a.core.DeleteSubscribers (cmd/denma_unsubscribe.go)
 		a.log.Printf("error wiping subscriber data: %s", err)
 		return c.Render(http.StatusInternalServerError, tplMessage,
 			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.Ts("public.errorProcessingRequest")))
