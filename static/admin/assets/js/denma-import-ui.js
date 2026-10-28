@@ -19,6 +19,7 @@ export function denmaImportPreview() {
     denmaInitPreview() {
       this.form.denmaRunAutos = false;
       this.form.denmaKeepConsent = false;
+      this.form.denmaBlockReason = '';
       this.$watch('form', () => {
         clearTimeout(this.denmaPrevTimer);
         this.denmaPrevTimer = setTimeout(() => this.denmaPreview(), 300);
@@ -32,7 +33,7 @@ export function denmaImportPreview() {
         return '';
       }
       return JSON.stringify([f.file.name, f.file.size, f.file.lastModified, f.mode, f.subStatus, f.delim,
-        f.lists.map((l) => l.id).sort(), f.overwriteUserInfo, f.overwriteSubStatus, f.denmaRunAutos, f.denmaKeepConsent]);
+        f.lists.map((l) => l.id).sort(), f.overwriteUserInfo, f.overwriteSubStatus, f.denmaRunAutos, f.denmaKeepConsent, f.denmaBlockReason]);
     },
 
     async denmaPreview() {
@@ -90,7 +91,23 @@ export function denmaImportPreview() {
     // The import's own options (cmd/denma_imports.go), in its params.
     denmaImportParams() {
       const sub = this.form.mode === 'subscribe';
-      return { run_automations: sub && !!this.form.denmaRunAutos, keep_consent: sub && !!this.form.denmaKeepConsent };
+      return {
+        run_automations: sub && !!this.form.denmaRunAutos,
+        keep_consent: sub && !!this.form.denmaKeepConsent,
+        blocklist_reason: sub ? '' : (this.form.denmaBlockReason || ''),
+      };
+    },
+
+    // What a blocklist import's reason does.
+    denmaBlockReasonHint() {
+      switch (this.form.denmaBlockReason) {
+        case 'unsubscribed':
+          return 'Recorded as their own unsubscribe: only they can subscribe again, by signing up and confirming. Dated by unsubscribed_at in the attributes, if given.';
+        case 'bounced':
+          return 'Marked as bounced in this center (not others), as a bounce is: an admin can still enable one on purpose. Dated by bounced_at in the attributes, if given.';
+        default:
+          return 'An admin can enable them again.';
+      }
     },
 
     // The automations option's hint, with the automations the preview found.
@@ -164,7 +181,15 @@ export function denmaImportPreview() {
         w.push(`${n(p.duplicates)} ${p.duplicates === 1 ? 'row repeats' : 'rows repeat'} an earlier row's address: each is imported in turn, so the last one's details win if "Overwrite user info" is on.`);
       }
       if (f.mode === 'blocklist') {
-        w.push('These are blocklisted as an admin\'s blocklisting is: an admin can undo it. It isn\'t recorded as their own unsubscribe.');
+        const d = p.block_dates;
+        const dated = d ? ` ${n(d.dated)} new to the center are dated by their ${d.key}${d.undated ? `, ${n(d.undated)} by today (none given, or not a date like 2019-03-04 15:22:10)` : ''}.` : '';
+        if (f.denmaBlockReason === 'unsubscribed') {
+          w.push(`These are recorded as having unsubscribed themselves: only they can subscribe again, by signing up and confirming.${dated}`);
+        } else if (f.denmaBlockReason === 'bounced') {
+          w.push(`These are marked as bounced in this center only: an admin can still enable one on purpose.${dated}`);
+        } else {
+          w.push('These are blocklisted as an admin\'s blocklisting is: an admin can undo it. It isn\'t recorded as their own unsubscribe.');
+        }
         if (p.existing) {
           w.push(`${n(p.existing)} already in the center are only blocklisted: their names, attributes and tags aren't changed.`);
         }

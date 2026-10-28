@@ -64,7 +64,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 52
+const denmaFeaturesVersion = 53
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -719,7 +719,8 @@ $$;
 -- New subscribers from an import are marked. An import can't give the
 -- center's attributes, and its "overwrite" keeps a subscriber's (an earlier
 -- mark too); but one keeping the file's consent records gives theirs to
--- those without one (cmd/denma_imports.go).
+-- those without one, and one of addresses that bounced marks them so
+-- (cmd/denma_imports.go).
 CREATE OR REPLACE FUNCTION denma_mark_imported_subscriber() RETURNS trigger
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
@@ -728,7 +729,8 @@ BEGIN
     END IF;
     IF TG_OP = 'INSERT' THEN
         NEW.attribs := denma_with_import_mark(denma_keep_center_attribs(NEW.attribs, NULL), NULL)
-            || CASE WHEN denma_import_opt('consent') THEN denma_import_consent(NEW.attribs) ELSE '{}' END;
+            || CASE WHEN denma_import_opt('consent') THEN denma_import_consent(NEW.attribs) ELSE '{}' END
+            || CASE WHEN NEW.status = 'blocklisted' THEN denma_import_bounced(NEW.attribs) ELSE '{}' END;
     ELSE
         NEW.attribs := denma_keep_center_attribs(NEW.attribs, OLD.attribs)
             || CASE WHEN denma_import_opt('consent') AND COALESCE(OLD.attribs->>'consent_at', '') = ''
@@ -837,7 +839,7 @@ UPDATE subscribers SET attribs = attribs WHERE jsonb_typeof(attribs) = 'object' 
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';
 INSERT INTO denma_tags (tag) SELECT DISTINCT t FROM campaigns, unnest(denma_tags) t
     WHERE NOT EXISTS (SELECT 1 FROM denma_tag_aliases a WHERE a.alias = t) ON CONFLICT DO NOTHING;
-` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaOptinTokenSQL + denmaNamesSQL + denmaCampaignStatsSQL + denmaMessagesSQL + denmaConsentCapSQL + denmaPrevContactsSQL
+` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaOptinTokenSQL + denmaNamesSQL + denmaCampaignStatsSQL + denmaMessagesSQL + denmaConsentCapSQL + denmaPrevContactsSQL + denmaImportBlocklistSQL
 
 // denmaVisualTemplate is the center's default visual template's ID (0 for
 // none), from the database: Templates -> Set default changes it without

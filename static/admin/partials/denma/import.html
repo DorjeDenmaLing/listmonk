@@ -187,6 +187,19 @@
 
 {{/* The import's own options (cmd/denma_imports.go), after its lists. */}}
 {{ define "denma-import-options" -}}
+<template x-if="form.mode === 'blocklist'">
+	<div class="denma-import-options">
+		<label data-field>
+			Why they're blocklisted
+			<select x-model="form.denmaBlockReason" data-testid="import-block-reason">
+				<option value="">An admin's choice</option>
+				<option value="unsubscribed">They unsubscribed themselves</option>
+				<option value="bounced">Their address bounced</option>
+			</select>
+			<small data-hint x-text="denmaBlockReasonHint()"></small>
+		</label>
+	</div>
+</template>
 <template x-if="form.mode === 'subscribe'">
 	<div class="denma-import-options">
 		<label data-field>

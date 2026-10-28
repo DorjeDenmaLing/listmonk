@@ -8,6 +8,13 @@ package main
 //     denma_log_join and denma_log_tags (cmd/denma_automations.go) don't log
 //     them. People imported are like anyone else afterwards: what happens
 //     to them later starts automations, e-mails included.
+//   - Why they're blocklisted (blocklist_reason, blocklist mode): an admin's
+//     choice ("", which an admin can undo), "unsubscribed" (an opt-out, as
+//     their own unsubscribe: only they can subscribe again;
+//     cmd/denma_optouts.go), or "bounced" (marked so in this center only,
+//     as a bounce is; an admin can still enable one on purpose). The file's
+//     unsubscribed_at or bounced_at dates it, for people the center didn't
+//     have; otherwise it's the import's day.
 //   - Keep the consent dates in the file (keep_consent): a row whose
 //     attributes give consent_at (a date that reads, not after the import)
 //     and consent_source keeps them as the subscriber's consent record, with
@@ -49,7 +56,8 @@ CREATE TABLE IF NOT EXISTS denma_imports (
     automations BOOLEAN NOT NULL DEFAULT false
 );
 ALTER TABLE denma_imports ADD COLUMN IF NOT EXISTS consent BOOLEAN NOT NULL DEFAULT false,
-    ADD COLUMN IF NOT EXISTS consents INTEGER NOT NULL DEFAULT 0;
+    ADD COLUMN IF NOT EXISTS consents INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS blocklist_reason TEXT NOT NULL DEFAULT '';
 
 -- An option of the import being written (denma.import_id); false outside
 -- one.
@@ -58,6 +66,14 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     SELECT denma_is_import() AND COALESCE((
         SELECT CASE opt WHEN 'automations' THEN i.automations WHEN 'consent' THEN i.consent END
         FROM denma_imports i WHERE i.id = NULLIF(current_setting('denma.import_id', true), '')::INT), false);
+$$;
+
+-- Why the import being written blocklists them: '' (an admin's choice),
+-- 'unsubscribed' or 'bounced'.
+CREATE OR REPLACE FUNCTION denma_import_reason() RETURNS TEXT
+LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
+    SELECT CASE WHEN denma_is_import() THEN COALESCE((SELECT i.blocklist_reason FROM denma_imports i
+        WHERE i.id = NULLIF(current_setting('denma.import_id', true), '')::INT), '') ELSE '' END;
 $$;
 
 -- A date as an import's file gives it (2019-03-04, 2019-03-04 15:22:10,
@@ -96,6 +112,59 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
             'consent_import', current_setting('denma.import_id', true)::INT)
         ELSE '{}'::JSONB END;
 $$;
+
+-- The attributes recording a bounce, for an import of addresses that
+-- bounced, dated by the file's bounced_at (attributes a) if it's good; {}
+-- for another import.
+CREATE OR REPLACE FUNCTION denma_import_bounced(a JSONB) RETURNS JSONB
+LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
+    SELECT CASE WHEN denma_import_reason() = 'bounced' THEN jsonb_build_object(
+            'auto_blocklist_reason', 'bounced before it was imported',
+            'auto_blocklist_time', COALESCE(CASE WHEN jsonb_typeof(a) = 'object' THEN denma_import_consent_at(a->>'bounced_at') END,
+                to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')))
+        ELSE '{}'::JSONB END;
+$$;
+`
+
+// denmaImportBlocklistSQL records why a blocklist import blocklists them (at
+// the end of denmaFeaturesSQL, after the opt-outs): a subscriber the center
+// had is marked bounced, if it isn't already (one it adds is, by
+// denma_mark_imported_subscriber); and someone who unsubscribed gets their
+// opt-out (cmd/denma_optouts.go), dated by the file's unsubscribed_at if
+// it's good, unless they have one.
+const denmaImportBlocklistSQL = `
+CREATE OR REPLACE FUNCTION denma_import_blocklist_status() RETURNS trigger
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+BEGIN
+    IF denma_import_reason() = 'bounced' AND NOT (jsonb_typeof(NEW.attribs) = 'object' AND NEW.attribs ? 'auto_blocklist_reason') THEN
+        NEW.attribs := (CASE WHEN jsonb_typeof(NEW.attribs) = 'object' THEN NEW.attribs ELSE '{}'::JSONB END)
+            || denma_import_bounced(NULL);
+    END IF;
+    RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS denma_import_blocklist_status ON subscribers;
+CREATE TRIGGER denma_import_blocklist_status
+    BEFORE UPDATE OF status ON subscribers
+    FOR EACH ROW WHEN (NEW.status = 'blocklisted') EXECUTE FUNCTION denma_import_blocklist_status();
+
+CREATE OR REPLACE FUNCTION denma_import_optout() RETURNS trigger
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+BEGIN
+    IF denma_import_reason() = 'unsubscribed' THEN
+        INSERT INTO denma_optouts (email_hash, canon_hash, kind, source, created_at)
+        VALUES (denma_email_hash(NEW.email), denma_canon_hash(NEW.email), 'unsubscribed', 'import',
+            COALESCE(CASE WHEN TG_OP = 'INSERT' AND jsonb_typeof(NEW.attribs) = 'object'
+                THEN denma_import_consent_at(NEW.attribs->>'unsubscribed_at')::TIMESTAMPTZ END, NOW()))
+        ON CONFLICT (email_hash) DO NOTHING;
+    END IF;
+    RETURN NULL;
+END;
+$$;
+DROP TRIGGER IF EXISTS denma_import_optout ON subscribers;
+CREATE TRIGGER denma_import_optout
+    AFTER INSERT OR UPDATE OF status ON subscribers
+    FOR EACH ROW WHEN (NEW.status = 'blocklisted') EXECUTE FUNCTION denma_import_optout();
 `
 
 // denmaImportEventsSQL leaves out, once (features version 51), the joins and
@@ -118,6 +187,10 @@ DO $$ BEGIN
     END IF;
 END $$;`
 
+// denmaImportBounced is a blocklist import's reason for addresses that
+// bounced.
+const denmaImportBounced = "bounced"
+
 // denmaImportStart records an import (opt, as POST /api/import/subscribers
 // takes it) in denma_imports, and gives its session the number.
 func (a *App) denmaImportStart(c echo.Context, opt *subimporter.SessionOpt) error {
@@ -126,6 +199,11 @@ func (a *App) denmaImportStart(c echo.Context, opt *subimporter.SessionOpt) erro
 			return echo.NewHTTPError(http.StatusBadRequest, "Consent records are kept only when subscribing.")
 		}
 		opt.DenmaAutomations = false
+	} else if opt.DenmaBlockReason != "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "Why they're blocklisted is for a blocklist import.")
+	}
+	if !slices.Contains([]string{"", denmaOptOutUnsubscribed, denmaImportBounced}, opt.DenmaBlockReason) {
+		return echo.NewHTTPError(http.StatusBadRequest, "Unknown reason for blocklisting.")
 	}
 	if _, ok := denmaMCPOf(c); ok && opt.DenmaConsent {
 		return echo.NewHTTPError(http.StatusForbidden, "An MCP key can't import consent records.")
@@ -135,8 +213,9 @@ func (a *App) denmaImportStart(c echo.Context, opt *subimporter.SessionOpt) erro
 	if user.ID > 0 {
 		uid = &user.ID
 	}
-	if err := a.db.Get(&opt.DenmaImportID, `INSERT INTO denma_imports (user_id, username, file, mode, automations, consent)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`, uid, user.Username, opt.Filename, opt.Mode, opt.DenmaAutomations, opt.DenmaConsent); err != nil {
+	if err := a.db.Get(&opt.DenmaImportID, `INSERT INTO denma_imports (user_id, username, file, mode, automations, consent, blocklist_reason)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, uid, user.Username, opt.Filename, opt.Mode, opt.DenmaAutomations, opt.DenmaConsent,
+		opt.DenmaBlockReason); err != nil {
 		a.log.Printf("denma: error recording an import: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "Error starting the import.")
 	}
@@ -303,4 +382,51 @@ func (a *App) denmaImportConsentsPreview(p *denmaImportPreview, addrs []string, 
 
 func denmaIsImportConsentKey(k string) bool {
 	return k == "consent_at" || k == "consent_source"
+}
+
+// denmaImportDates is how a blocklist import with a reason dates the people
+// the center doesn't have: by the file's date (Key), or the import's day.
+type denmaImportDates struct {
+	Key     string `json:"key"`
+	Dated   int    `json:"dated"`
+	Undated int    `json:"undated"` // no date, or one that isn't good
+}
+
+// denmaImportDateKeys are the attributes dating a blocklist import's
+// reasons.
+var denmaImportDateKeys = map[string]string{denmaOptOutUnsubscribed: "unsubscribed_at", denmaImportBounced: "bounced_at"}
+
+func denmaImportDatesOf(attribs map[string]any) map[string]string {
+	out := map[string]string{}
+	for _, k := range denmaImportDateKeys {
+		if v, ok := attribs[k].(string); ok {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// denmaImportDatesPreview fills in p.BlockDates, as denma_import_optout and
+// denma_import_bounced would date them.
+func (a *App) denmaImportDatesPreview(p *denmaImportPreview, addrs []string, entries map[string]*denmaImportEntry, reason string) error {
+	key := denmaImportDateKeys[reason]
+	vals := []string{}
+	for _, addr := range addrs {
+		if e := entries[addr]; !e.existing && e.dates[key] != "" {
+			vals = append(vals, e.dates[key])
+		}
+	}
+	var good []string
+	if err := a.db.Select(&good, `SELECT v FROM unnest($1::TEXT[]) v WHERE denma_import_consent_at(v) IS NOT NULL`, pq.Array(vals)); err != nil {
+		return err
+	}
+	d := &denmaImportDates{Key: key, Dated: len(good)}
+	for _, addr := range addrs {
+		if !entries[addr].existing {
+			d.Undated++
+		}
+	}
+	d.Undated -= d.Dated
+	p.BlockDates = d
+	return nil
 }

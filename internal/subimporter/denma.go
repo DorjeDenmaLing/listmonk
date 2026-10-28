@@ -40,9 +40,10 @@ func denmaImportNames(sub SubReq, row map[string]string) SubReq {
 // DenmaImportOpt is an import's own options, from the import page
 // (cmd/denma_imports.go), and its number in denma_imports.
 type DenmaImportOpt struct {
-	DenmaAutomations bool `json:"run_automations"` // its joins and tags start automations
-	DenmaConsent     bool `json:"keep_consent"`    // it keeps the file's consent records
-	DenmaImportID    int  `json:"-"`
+	DenmaAutomations bool   `json:"run_automations"`  // its joins and tags start automations
+	DenmaConsent     bool   `json:"keep_consent"`     // it keeps the file's consent records
+	DenmaBlockReason string `json:"blocklist_reason"` // why a blocklist import blocklists them
+	DenmaImportID    int    `json:"-"`
 }
 
 // denmaBegin begins a batch's transaction, with the import's number for the

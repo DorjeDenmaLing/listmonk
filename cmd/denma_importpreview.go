@@ -95,6 +95,7 @@ type denmaImportPreview struct {
 
 	Automations []string             `json:"automations"` // the active automations its lists and tags start, if asked (cmd/denma_imports.go)
 	Consent     *denmaImportConsents `json:"consent"`     // the consent records it keeps, if asked (cmd/denma_imports.go)
+	BlockDates  *denmaImportDates    `json:"block_dates"` // a blocklist import's dates, with a reason (cmd/denma_imports.go)
 }
 
 type denmaImportProblem struct {
@@ -219,6 +220,12 @@ func (a *App) DenmaImportPreview(c echo.Context) error {
 		a.log.Printf("denma: error previewing an import: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "Error checking the file against the center.")
 	}
+	if opt.Mode == subimporter.ModeBlocklist && opt.DenmaBlockReason != "" {
+		if err := a.denmaImportDatesPreview(&p, addrs, entries, opt.DenmaBlockReason); err != nil {
+			a.log.Printf("denma: error previewing an import's dates: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "Error checking the file against the center.")
+		}
+	}
 	if opt.Mode == subimporter.ModeSubscribe {
 		var tags []string
 		for _, t := range p.Tags {
@@ -284,6 +291,7 @@ func denmaImportFile(file *multipart.FileHeader) (string, []byte, error) {
 type denmaImportEntry struct {
 	tags    []string
 	consent denmaImportConsentGiven // its first row's (cmd/denma_imports.go)
+	dates   map[string]string       // its first row's unsubscribed_at and bounced_at (cmd/denma_imports.go)
 
 	existing, hasConsent bool
 }
@@ -404,7 +412,7 @@ func denmaReadImport(b []byte, delim rune, validate func(subimporter.SubReq) (su
 			p.Duplicates++
 			e.tags = denmaNormTags(append(e.tags, tags...))
 		} else {
-			entries[sub.Email] = &denmaImportEntry{tags: tags, consent: denmaImportConsentOf(attribs)}
+			entries[sub.Email] = &denmaImportEntry{tags: tags, consent: denmaImportConsentOf(attribs), dates: denmaImportDatesOf(attribs)}
 			addrs = append(addrs, sub.Email)
 		}
 

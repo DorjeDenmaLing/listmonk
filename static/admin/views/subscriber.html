@@ -55,7 +55,7 @@
 				{{- if .Before }}
 				<strong>Blocklisted before unsubscribes were recorded</strong>, so taken as having unsubscribed.
 				{{- else }}
-				<strong>Unsubscribed</strong> on {{ .CreatedAt.Format "2 January 2006" }}.
+				<strong>Unsubscribed</strong> on {{ .CreatedAt.Format "2 January 2006" }}{{ if eq .Source "import" }}, as an import recorded it{{ end }}.
 				{{- end }}
 				Only they can subscribe again: by signing up again, or by confirming an e-mail sent with the button here. Send it only if they've asked you to.
 			{{- end }}
