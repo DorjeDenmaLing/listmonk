@@ -274,7 +274,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 		emailMsgr = denmaEmailMessenger(msgrs)
 		nf        = initNotifs(fs, i18n, emailMsgr, urlCfg, ko)
 
-		fbOptinNotify = denmaOptinDue(queries, denmaCheckOptin(makeOptinNotifyHook(ko.Bool("privacy.unsubscribe_header"), urlCfg, queries, i18n, nf), db, ko)) // denma: cmd/denma_emailcheck.go
+		fbOptinNotify = denmaOptinQuiet(ko, denmaOptinDue(queries, denmaCheckOptin(makeOptinNotifyHook(ko.Bool("privacy.unsubscribe_header"), urlCfg, queries, i18n, nf), db, ko))) // denma: cmd/denma_emailcheck.go, cmd/denma_consentcap.go
 
 		// Crud core.
 		core = initCore(fbOptinNotify, queries, db, i18n, ko)

@@ -551,6 +551,7 @@ func (a *App) CreateSubscriber(c echo.Context) error {
 	}
 
 	// Insert the subscriber into the DB.
+	defer a.denmaNoOptin(0, req.Email)() // denma: an admin's add sends no opt-in (cmd/denma_consentcap.go)
 	sub, _, err := a.core.InsertSubscriber(req.Subscriber, listIDs, nil, req.PreconfirmSubs, false)
 	if err != nil {
 		return err
@@ -618,6 +619,7 @@ func (a *App) UpdateSubscriber(c echo.Context) error {
 		permittedLists = []int{}
 	}
 
+	defer a.denmaNoOptin(id, "")() // denma: an admin's save sends no opt-in (cmd/denma_consentcap.go)
 	out, _, err := a.core.UpdateSubscriberWithLists(id, req.Subscriber, listIDs, nil, req.PreconfirmSubs, true, false, permittedLists, false)
 	if err != nil {
 		return err
@@ -697,6 +699,7 @@ func (a *App) PatchSubscriber(c echo.Context) error {
 		permittedLists = []int{}
 	}
 
+	defer a.denmaNoOptin(id, "")() // denma: an admin's save sends no opt-in (cmd/denma_consentcap.go)
 	out, _, err := a.core.UpdateSubscriberWithLists(id, req.Subscriber, listIDs, nil, req.PreconfirmSubs, overwriteSubs, false, permittedLists, false)
 	if err != nil {
 		return err

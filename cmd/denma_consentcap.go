@@ -11,15 +11,84 @@ package main
 // cmd/denma_optins.go). MCP keys can't send either (cmd/denma_mcp.go).
 // Server webhooks' have their own cap, denmaServerConsentPerDay: a leaked
 // secret isn't someone asking.
+//
+// An admin's add or save of a subscriber (the admin API, MCP keys too)
+// sends no opt-in, even to a double opt-in list without "preconfirm": they
+// stay unconfirmed, as imports leave them, until an admin sends "Send
+// opt-in e-mail" because they asked (denmaNoOptin).
 
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 
+	"github.com/knadh/koanf/v2"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
 )
+
+// denmaQuietOptins is the subscribers (center and ID, or center and
+// address) an admin's save is being made for, whom listmonk's opt-in hook
+// sends nothing; each with how many saves are under way.
+var denmaQuietOptins = struct {
+	sync.Mutex
+	m map[string]int
+}{m: map[string]int{}}
+
+func denmaQuietKeys(slug string, id int, email string) []string {
+	var keys []string
+	if id > 0 {
+		keys = append(keys, slug+"#"+strconv.Itoa(id))
+	}
+	if email != "" {
+		keys = append(keys, slug+"@"+strings.ToLower(strings.TrimSpace(email)))
+	}
+	return keys
+}
+
+// denmaNoOptin keeps listmonk from sending an opt-in to the subscriber
+// (id, or 0 and their address for a new one) during an admin's save, until
+// the function it returns is called.
+func (a *App) denmaNoOptin(id int, email string) func() {
+	keys := denmaQuietKeys(a.ko.String("denma.center"), id, email)
+	q := &denmaQuietOptins
+	q.Lock()
+	for _, k := range keys {
+		q.m[k]++
+	}
+	q.Unlock()
+	return func() {
+		q.Lock()
+		for _, k := range keys {
+			if q.m[k]--; q.m[k] <= 0 {
+				delete(q.m, k)
+			}
+		}
+		q.Unlock()
+	}
+}
+
+// denmaOptinQuiet wraps listmonk's opt-in hook: nothing is sent to a
+// subscriber an admin's save is being made for (denmaNoOptin). Called by
+// buildApp.
+func denmaOptinQuiet(ko *koanf.Koanf, send func(models.Subscriber, []int) (int, error)) func(models.Subscriber, []int) (int, error) {
+	slug := ko.String("denma.center")
+	return func(sub models.Subscriber, listIDs []int) (int, error) {
+		q := &denmaQuietOptins
+		q.Lock()
+		quiet := false
+		for _, k := range denmaQuietKeys(slug, sub.ID, sub.Email) {
+			quiet = quiet || q.m[k] > 0
+		}
+		q.Unlock()
+		if quiet {
+			return 0, nil
+		}
+		return send(sub, listIDs)
+	}
+}
 
 const (
 	denmaConsentRequestsPerDay = 20  // the admins'
