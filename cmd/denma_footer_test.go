@@ -190,3 +190,17 @@ func TestDenmaWithContact(t *testing.T) {
 		t.Error("the default design doesn't show the website and contact e-mail")
 	}
 }
+
+// A center's website's host is one of its own link domains.
+func TestDenmaWebsiteHost(t *testing.T) {
+	for site, want := range map[string]string{
+		"https://Dorjedenmaling.org/":       "dorjedenmaling.org",
+		"https://www.shambhala.org/halifax": "www.shambhala.org",
+		"":                                  "",
+	} {
+		denmaSetContact("check-website-host", denmaContact{Website: site})
+		if got := denmaWebsiteHost("check-website-host"); got != want {
+			t.Errorf("denmaWebsiteHost(%q) = %q, want %q", site, got, want)
+		}
+	}
+}

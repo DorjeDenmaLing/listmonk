@@ -103,6 +103,17 @@ func denmaFooterFuncs(funcs template.FuncMap, ko *koanf.Koanf) {
 
 var errDenmaFooterOnlyCampaigns = errors.New(denmaFooterTag + " is for campaign and visual templates. Other e-mails can use {{ CenterAddress }}, {{ CenterWebsite }} and {{ CenterEmail }}.")
 
+// denmaWebsiteHost is a center's website's host, lowercase, or "": its
+// e-mails link to it ({{ CenterWebsite }}), so it's one of the center's own
+// link domains (cmd/denma_api_send.go).
+func denmaWebsiteHost(slug string) string {
+	u, err := url.Parse(denmaContactOf(slug).Website)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
+
 // denmaLinkHTML is a link in a footer, in its colour; nothing without text.
 func denmaLinkHTML(href, text string) template.HTML {
 	if text == "" {

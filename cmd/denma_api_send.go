@@ -42,6 +42,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1473,8 +1474,9 @@ func denmaLinkDomainsForm(in []string) ([]string, error) {
 }
 
 // apiOwnLinkDomains are the domains a key's links can always go to: the
-// center's sending domains (or its sender's, if it has none yet), and the
-// app's own (its uploads, archive and tracked links).
+// center's sending domains (or its sender's, if it has none yet), its
+// website (in every campaign's footer), and the app's own (its uploads,
+// archive and tracked links).
 func (a *App) apiOwnLinkDomains() []string {
 	out := []string{}
 	if u, err := url.Parse(a.urlCfg.RootURL); err == nil && u.Hostname() != "" {
@@ -1491,6 +1493,9 @@ func (a *App) apiOwnLinkDomains() []string {
 		if d := denmaSenderDomain(a.cfg.FromEmail); d != "" {
 			out = append(out, strings.ToLower(d))
 		}
+	}
+	if h := denmaWebsiteHost(a.ko.String("denma.center")); h != "" && !slices.Contains(out, h) {
+		out = append(out, h)
 	}
 	return out
 }
@@ -1624,6 +1629,11 @@ func denmaCheckCampaignLinks(slug string, m models.Message) error {
 	allowed := v.([]string)
 	if allowed == nil {
 		return nil
+	}
+	// And the center's website as it is now: the footer links it, and it
+	// may have changed since the campaign started.
+	if h := denmaWebsiteHost(slug); h != "" {
+		allowed = append(slices.Clip(allowed), h)
 	}
 	// Where its tracked links go, which the template's logic can make
 	// ({{ TrackLink (print "ht" "tps://...") . }}): the e-mail has only ours.
