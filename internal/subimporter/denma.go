@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -34,6 +35,27 @@ func denmaImportNames(sub SubReq, row map[string]string) SubReq {
 	}
 	sub.Attribs["denma_first_name"], sub.Attribs["denma_last_name"] = first, last
 	return sub
+}
+
+// DenmaImportOpt is an import's own options, from the import page
+// (cmd/denma_imports.go), and its number in denma_imports.
+type DenmaImportOpt struct {
+	DenmaAutomations bool `json:"run_automations"` // its joins and tags start automations
+	DenmaImportID    int  `json:"-"`
+}
+
+// denmaBegin begins a batch's transaction, with the import's number for the
+// database's triggers (denma.import_id).
+func (s *Session) denmaBegin() (*sql.Tx, error) {
+	tx, err := s.im.db.Begin()
+	if err != nil || s.opt.DenmaImportID == 0 {
+		return tx, err
+	}
+	if _, err := tx.Exec(`SELECT set_config('denma.import_id', $1, true)`, strconv.Itoa(s.opt.DenmaImportID)); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	return tx, nil
 }
 
 // denmaAfterImport runs Options.AfterImport, if set, once a subscribe import's

@@ -166,6 +166,18 @@
 </section>
 {{- end }}
 
+{{/* The import's own options (cmd/denma_imports.go), after its lists. */}}
+{{ define "denma-import-options" -}}
+<template x-if="form.mode === 'subscribe'">
+	<div class="denma-import-options">
+		<label data-field>
+			<input type="checkbox" role="switch" x-model="form.denmaRunAutos" data-testid="import-automations" /> Start automations for these people
+			<small data-hint x-text="denmaAutosHint()"></small>
+		</label>
+	</div>
+</template>
+{{- end }}
+
 {{/* The instructions' note on tags. */}}
 {{ define "denma-import-help" -}}
 <h6>Tags</h6>

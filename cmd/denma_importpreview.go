@@ -10,6 +10,8 @@ package main
 //   - the people: new to the center, already in it, already on each list,
 //     and those blocklisted, by why (unsubscribed, complained, bounced,
 //     blocklisted by an admin) and what the import does with them;
+//   - the automations its lists and tags would start, if it runs them
+//     (cmd/denma_imports.go);
 //   - the tags: each with how many have it, and whether the center has it
 //     (or it's another name for one of its tags, given as that tag).
 //     The page offers to add the ones it doesn't, as Subscribers -> Tags
@@ -90,6 +92,8 @@ type denmaImportPreview struct {
 	Tags             []denmaImportTag `json:"tags"`
 	ExistingWithTags int              `json:"existing_with_tags"` // existing subscribers the file gives tags
 	CanAddTags       bool             `json:"can_add_tags"`
+
+	Automations []string `json:"automations"` // the active automations its lists and tags start, if asked (cmd/denma_imports.go)
 }
 
 type denmaImportProblem struct {
@@ -209,6 +213,19 @@ func (a *App) DenmaImportPreview(c echo.Context) error {
 		a.log.Printf("denma: error previewing an import: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "Error checking the file against the center.")
 	}
+	if opt.Mode == subimporter.ModeSubscribe {
+		var tags []string
+		for _, t := range p.Tags {
+			tags = append(tags, t.Tag)
+			if t.As != "" {
+				tags = append(tags, t.As)
+			}
+		}
+		if p.Automations, err = a.denmaImportAutomations(listIDs, opt.SubStatus, tags); err != nil {
+			a.log.Printf("denma: error previewing an import's automations: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "Error checking the file against the center.")
+		}
+	}
 	return c.JSON(http.StatusOK, okResp{p})
 }
 
@@ -260,7 +277,7 @@ type denmaImportEntry struct {
 // it gives each.
 func denmaReadImport(b []byte, delim rune, validate func(subimporter.SubReq) (subimporter.SubReq, error)) (denmaImportPreview, []string, map[string]*denmaImportEntry) {
 	p := denmaImportPreview{Columns: []string{}, Ignored: []string{}, Problems: []denmaImportProblem{},
-		Attribs: []denmaImportAttrib{}, Sample: []denmaImportRow{}, Lists: []denmaImportListInfo{}, Tags: []denmaImportTag{}}
+		Attribs: []denmaImportAttrib{}, Sample: []denmaImportRow{}, Lists: []denmaImportListInfo{}, Tags: []denmaImportTag{}, Automations: []string{}}
 	rd := csv.NewReader(bytes.NewReader(b))
 	rd.Comma = delim
 

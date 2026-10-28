@@ -29,7 +29,8 @@ package main
 //     cmd/denma_design.go). Every center has a default visual template:
 //     listmonk's sample one, unless it chose another (denmaAddVisualDefault).
 //   - Imports are marked (always): subscribers an import adds get
-//     attribs.imported_at, and automations skip them (cmd/denma_automations.go).
+//     attribs.imported_at, a record; an import starts automations only if
+//     asked (cmd/denma_imports.go).
 //   - Subscriber tags (always, cmd/denma_tags.go): the center's tags
 //     (denma_tags), attribs.tags kept tidy and to those, and a campaign's
 //     tags to send to (campaigns.denma_tags).
@@ -63,7 +64,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 50
+const denmaFeaturesVersion = 51
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.
@@ -271,6 +272,13 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 49 {
 		if _, err := tx.Exec(`DELETE FROM settings WHERE key = 'denma.design_template'`); err != nil {
 			return fmt.Errorf("removing the design setting: %v", err)
+		}
+	}
+	// Version 51: an import's joins and tags start automations only if
+	// asked; those imports logged before are left out (cmd/denma_imports.go).
+	if ver < 51 {
+		if _, err := tx.Exec(denmaImportEventsSQL); err != nil {
+			return fmt.Errorf("leaving out imports' automation events: %v", err)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)
@@ -669,8 +677,8 @@ DROP TRIGGER IF EXISTS denma_protect_visual_template ON templates;
 CREATE TRIGGER denma_protect_visual_template
     BEFORE DELETE ON templates FOR EACH ROW EXECUTE FUNCTION denma_protect_visual_template();
 
--- Imports are marked (attribs.imported_at), so automations skip them. The
--- importer is recognised by its queries (listmonk's upsert-subscriber, and
+-- Imports are marked (attribs.imported_at), a record. The importer is
+-- recognised by its queries (listmonk's upsert-subscriber, and
 -- upsert-blocklist-subscriber for a blocklist import).
 CREATE OR REPLACE FUNCTION denma_is_import() RETURNS BOOLEAN
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
@@ -824,7 +832,7 @@ UPDATE subscribers SET attribs = attribs WHERE jsonb_typeof(attribs) = 'object' 
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';
 INSERT INTO denma_tags (tag) SELECT DISTINCT t FROM campaigns, unnest(denma_tags) t
     WHERE NOT EXISTS (SELECT 1 FROM denma_tag_aliases a WHERE a.alias = t) ON CONFLICT DO NOTHING;
-` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaOptinTokenSQL + denmaNamesSQL + denmaCampaignStatsSQL + denmaMessagesSQL + denmaConsentCapSQL + denmaPrevContactsSQL
+` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaOptinTokenSQL + denmaNamesSQL + denmaCampaignStatsSQL + denmaMessagesSQL + denmaConsentCapSQL + denmaPrevContactsSQL + denmaImportsSQL
 
 // denmaVisualTemplate is the center's default visual template's ID (0 for
 // none), from the database: Templates -> Set default changes it without

@@ -101,6 +101,8 @@ type SessionOpt struct {
 	OverwriteSubStatus bool   `json:"overwrite_subscription_status"`
 	Delim              string `json:"delim"`
 	ListIDs            []int  `json:"lists"`
+
+	DenmaImportOpt // denma: its import's own options (denma.go)
 }
 
 // Status represents statistics from an ongoing import session.
@@ -291,7 +293,7 @@ func (s *Session) Start() {
 	for sub := range s.subQueue {
 		if cur == 0 {
 			// New transaction batch.
-			tx, err = s.im.db.Begin()
+			tx, err = s.denmaBegin() // denma: with its import's options (denma.go)
 			if err != nil {
 				s.log.Printf("error creating DB transaction: %v", err)
 				continue

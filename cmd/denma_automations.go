@@ -11,7 +11,9 @@ package main
 //     opt-in ones), by the link in the confirmation e-mail, or are added
 //     confirmed. Never before: someone waiting to confirm has given no
 //     consent yet.
-//   People added by an import or by hand count too.
+//   People added by hand count too (unless the admin says not to,
+//   cmd/denma_listmove.go), and by an import if it asks
+//   (cmd/denma_imports.go).
 //   - tagged: they get one of its tags (cmd/denma_tags.go).
 //   - opens, clicks: they open its campaign, or click a link in it. Only with
 //     Settings -> Privacy's individual tracking on, which ties them to people.
@@ -26,9 +28,7 @@ package main
 // never re-adds someone who unsubscribed from a list, adds people as
 // confirmed only if they've confirmed a subscription in the center (not an
 // API campaign's list), and removing from a list deletes the subscription (it isn't an
-// unsubscribe, so unsubscribe everywhere doesn't apply). Imported
-// subscribers (attribs.imported_at, cmd/denma_features.go) aren't sent its
-// e-mail, but its other actions apply. Automations that would set each other
+// unsubscribe, so unsubscribe everywhere doesn't apply). Automations that would set each other
 // off in a loop (one adding to a list or tag that sets off another, and back)
 // can't be turned on together.
 //
@@ -199,10 +199,12 @@ DECLARE
     dbl BOOLEAN;
 BEGIN
     SELECT optin = 'double' INTO dbl FROM lists WHERE id = NEW.list_id;
-    -- An admin's add or move without the lists' automations isn't a join (cmd/denma_listmove.go).
+    -- An admin's add or move without the lists' automations isn't a join (cmd/denma_listmove.go),
+    -- nor an import's without them (cmd/denma_imports.go).
     IF ((dbl AND NEW.status = 'confirmed' AND (TG_OP = 'INSERT' OR OLD.status <> 'confirmed'))
         OR (NOT dbl AND NEW.status <> 'unsubscribed' AND (TG_OP = 'INSERT' OR OLD.status = 'unsubscribed')))
-        AND COALESCE(current_setting('denma.quiet_joins', true), '') <> 'on' THEN
+        AND COALESCE(current_setting('denma.quiet_joins', true), '') <> 'on'
+        AND NOT (denma_is_import() AND NOT denma_import_opt('automations')) THEN
         INSERT INTO denma_list_joins (subscriber_id, list_id) VALUES (NEW.subscriber_id, NEW.list_id)
             ON CONFLICT (subscriber_id, list_id) DO UPDATE SET joined_at = NOW();
     END IF;
@@ -251,6 +253,10 @@ BEGIN
         RETURN NULL;
     END IF;
     DELETE FROM denma_tag_log WHERE subscriber_id = NEW.id AND NOT (tag = ANY(now_tags));
+    -- Not an import's tags without its automations (cmd/denma_imports.go).
+    IF denma_is_import() AND NOT denma_import_opt('automations') THEN
+        RETURN NULL;
+    END IF;
     INSERT INTO denma_tag_log (subscriber_id, tag)
         SELECT NEW.id, t FROM unnest(now_tags) t WHERE NOT (t = ANY(had_tags))
         ON CONFLICT DO NOTHING;
@@ -767,7 +773,7 @@ func (a *App) runAutoFirst(auto denmaAutomation, limit int, claim, centerClaim i
 		return 0
 	}
 
-	// Its e-mail, but not to imported subscribers.
+	// Its e-mail.
 	tpl, err := a.autoTemplate(int(auto.TemplateID.Int), true)
 	var subs []models.Subscriber
 	if err == nil {
@@ -783,24 +789,12 @@ func (a *App) runAutoFirst(auto denmaAutomation, limit int, claim, centerClaim i
 		}
 		return did + "; " + s
 	}
-	var send []models.Subscriber
-	var imported, sendIDs []int
-	for _, s := range subs {
-		if _, ok := s.Attribs["imported_at"]; ok {
-			imported = append(imported, s.ID)
-			continue
-		}
-		send, sendIDs = append(send, s), append(sendIDs, s.ID)
+	send := subs
+	sendIDs := make([]int, len(subs))
+	for i, s := range subs {
+		sendIDs[i] = s.ID
 	}
-	a.autoDid(auto.ID, imported, "done", withDid("no e-mail (imported)"))
-	importedNotes := map[int]string{}
-	for _, id := range imported {
-		if n, ok := notes[id]; ok {
-			importedNotes[id] = n
-		}
-	}
-	a.autoNotes(auto.ID, importedNotes)
-	// Nor to those who've had another e-mail from the center lately, if it
+	// Not to those who've had another e-mail from the center lately, if it
 	// says so: theirs is skipped, and their series goes on.
 	if auto.QuietDays > 0 && len(sendIDs) > 0 {
 		var recent []int

@@ -17,6 +17,7 @@ export function denmaImportPreview() {
     denmaAddTags: {}, // tag: true to add it to the center before importing
 
     denmaInitPreview() {
+      this.form.denmaRunAutos = false;
       this.$watch('form', () => {
         clearTimeout(this.denmaPrevTimer);
         this.denmaPrevTimer = setTimeout(() => this.denmaPreview(), 300);
@@ -30,7 +31,7 @@ export function denmaImportPreview() {
         return '';
       }
       return JSON.stringify([f.file.name, f.file.size, f.file.lastModified, f.mode, f.subStatus, f.delim,
-        f.lists.map((l) => l.id).sort(), f.overwriteUserInfo, f.overwriteSubStatus]);
+        f.lists.map((l) => l.id).sort(), f.overwriteUserInfo, f.overwriteSubStatus, f.denmaRunAutos]);
     },
 
     async denmaPreview() {
@@ -53,6 +54,7 @@ export function denmaImportPreview() {
         lists: this.form.lists.map((l) => l.id),
         overwrite_userinfo: this.form.overwriteUserInfo,
         overwrite_subscription_status: this.form.overwriteSubStatus,
+        ...this.denmaImportParams(),
       }));
       params.set('file', this.form.file);
 
@@ -82,6 +84,21 @@ export function denmaImportPreview() {
     denmaPreviewOK() {
       const p = this.denmaPrev;
       return !!p && !p.error && p.valid > 0 && !this.denmaPrevBusy && this.denmaPrevKey === this.denmaKey();
+    },
+
+    // The import's own options (cmd/denma_imports.go), in its params.
+    denmaImportParams() {
+      return { run_automations: this.form.mode === 'subscribe' && !!this.form.denmaRunAutos };
+    },
+
+    // The automations option's hint, with the automations the preview found.
+    denmaAutosHint() {
+      const names = this.denmaPrev && !this.denmaPrev.error ? this.denmaPrev.automations : null;
+      if (names && names.length === 0) {
+        return 'No active automations start for these lists and tags.';
+      }
+      const which = names ? names.join(', ') : 'automations for these lists and tags';
+      return `Off: they're added quietly. On: ${which} start for them, e-mails included.`;
     },
 
     denmaNewTags() {
@@ -147,6 +164,9 @@ export function denmaImportPreview() {
           w.push(`${n(p.existing)} already in the center are only blocklisted: their names, attributes and tags aren't changed.`);
         }
         return w;
+      }
+      if (f.denmaRunAutos && (p.automations || []).length) {
+        w.push(`"Start automations" is on: ${p.automations.join(', ')} start for up to ${n(p.addresses)} people. Their e-mails count towards the daily limit.`);
       }
       if (p.existing_with_tags && !f.overwriteUserInfo) {
         w.push(`${n(p.existing_with_tags)} already in the center have tags in the file, but won't get them: their details aren't changed unless "Overwrite user info" is on.`);

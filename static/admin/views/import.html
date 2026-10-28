@@ -66,6 +66,7 @@
 				<template x-if="form.mode === 'subscribe'">
 					{{ template "list-selector" dict "Root" . "Model" "form.lists" "ListID" "import-lists" "Label" "globals.terms.lists" "Placeholder" "import.listSubHelp" }}
 				</template>
+				{{ template "denma-import-options" . }}{{/* denma: cmd/denma_imports.go */}}
 
 				<div data-field>
 					<ot-upload>

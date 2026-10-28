@@ -109,6 +109,7 @@ function component() {
         lists: this.form.lists.map((l) => l.id),
         overwrite_userinfo: this.form.overwriteUserInfo,
         overwrite_subscription_status: this.form.overwriteSubStatus,
+        ...this.denmaImportParams(), // denma: cmd/denma_imports.go
       }));
       params.set('file', this.form.file);
 

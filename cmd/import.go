@@ -133,6 +133,9 @@ func (a *App) ImportSubscribers(c echo.Context) error {
 
 	// Start the importer session.
 	opt.Filename = file.Filename
+	if err := a.denmaImportStart(c, &opt); err != nil { // denma: its own options, recorded (cmd/denma_imports.go)
+		return err
+	}
 	sess, err := a.importer.NewSession(opt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError,
