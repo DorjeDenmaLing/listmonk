@@ -1329,6 +1329,25 @@ func (a *App) denmaAutoListField(c echo.Context, ids []int) ([]int, error) {
 	return out, nil
 }
 
+// denmaAutoAllLists refuses an automation that tags or campaigns set off, or
+// that changes tags, to a user without access to every list: tags and
+// campaigns reach people on any list, as campaigns to tags do
+// (cmd/denma_tags.go).
+func denmaAutoAllLists(c echo.Context, trigger string, tagActions bool) error {
+	if u := auth.GetUser(c); denmaAllLists(&u) {
+		return nil
+	}
+	switch {
+	case trigger == denmaTrigTagged:
+		return echo.NewHTTPError(http.StatusForbidden, "An automation set off by tags needs access to all lists.")
+	case trigger == denmaTrigOpens || trigger == denmaTrigClicks:
+		return echo.NewHTTPError(http.StatusForbidden, "An automation set off by a campaign needs access to all lists.")
+	case tagActions:
+		return echo.NewHTTPError(http.StatusForbidden, "Adding or removing tags needs access to all lists.")
+	}
+	return nil
+}
+
 // validateAutomation checks and tidies a saved or tested automation.
 func (a *App) validateAutomation(c echo.Context, f *denmaAutoForm) error {
 	bad := func(msg string) error { return echo.NewHTTPError(http.StatusBadRequest, msg) }
@@ -1395,6 +1414,9 @@ func (a *App) validateAutomation(c echo.Context, f *denmaAutoForm) error {
 		f.ListIDs, f.TriggerTags = []int{}, []string{}
 	default:
 		return bad("Choose what sets it off.")
+	}
+	if err := denmaAutoAllLists(c, f.TriggerType, len(f.AddTags)+len(f.RemoveTags) > 0); err != nil {
+		return err
 	}
 	if f.DelayMinutes < 0 || f.DelayMinutes > denmaAutoMaxDelay {
 		return bad("The wait can be up to a year.")
@@ -1670,6 +1692,22 @@ func (a *App) DenmaSetAutomationStatus(c echo.Context) error {
 	if req.Active {
 		if msg := auto.Broken(); msg != "" {
 			return echo.NewHTTPError(http.StatusBadRequest, msg+" Edit it first.")
+		}
+		// The lists and tags it reaches, as saving it checks.
+		u := auth.GetUser(c)
+		var ids []int
+		for _, l := range []pq.Int64Array{auto.ListIDs, auto.AddListIDs, auto.RemoveListIDs} {
+			for _, id := range l {
+				ids = append(ids, int(id))
+			}
+		}
+		if len(ids) > 0 {
+			if err := u.HasListPerm(auth.PermTypeManage, ids...); err != nil {
+				return err
+			}
+		}
+		if err := denmaAutoAllLists(c, auto.TriggerType, len(auto.AddTags)+len(auto.RemoveTags) > 0); err != nil {
+			return err
 		}
 		if err := a.autoContent(auto, true); err != nil { // cmd/denma_address.go
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
