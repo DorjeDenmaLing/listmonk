@@ -1114,6 +1114,18 @@ func denmaAPIRecipientData(db *sqlx.DB, campID int, subs []models.Subscriber) er
 	return nil
 }
 
+// denmaViewRecipientData is a subscriber with an API campaign's attributes
+// for them laid over, for the campaign's "view in browser" page, as its
+// e-mail had them.
+func (a *App) denmaViewRecipientData(campID int, sub models.Subscriber) models.Subscriber {
+	subs := []models.Subscriber{sub}
+	if err := denmaAPIRecipientData(a.db, campID, subs); err != nil {
+		a.log.Printf("denma: error reading API campaign %d's recipient data: %v", campID, err)
+		return sub
+	}
+	return subs[0]
+}
+
 // apiListRecipients is how many on an API campaign's list can be sent it.
 func (a *App) apiListRecipients(listID int) (int, error) {
 	var n int

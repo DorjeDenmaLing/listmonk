@@ -263,6 +263,8 @@ func (a *App) ViewCampaignMessage(c echo.Context) error {
 			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.Ts("public.errorFetchingCampaign")))
 	}
 
+	sub = a.denmaViewRecipientData(camp.ID, sub) // denma: an API campaign's recipient data (cmd/denma_api_send.go)
+
 	// Compile the template.
 	if err := camp.CompileTemplate(a.manager.TemplateFuncs(&camp)); err != nil {
 		a.log.Printf("error compiling template: %v", err)
