@@ -1383,19 +1383,20 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 
 	// Unsubscribed from the center: re-subscribed now, or on confirming.
 	if blocked {
-		now := false
+		now, slot := false, 0
 		if vouched {
-			ok, err := a.signupResubClaim(h.ID)
+			var err error
+			slot, err = a.signupResubClaim(h.ID)
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 			}
-			if !ok {
+			if slot == 0 {
 				a.signupAlert(h, "resub", fmt.Sprintf("re-subscribed %d people in a day", denmaSignupResubPerDay),
 					fmt.Sprintf("Server webhooks re-subscribe people who had unsubscribed, saying they've agreed again. They did that for %d people "+
 						"in this center in the last 24 hours, the most they can; others since are sent the e-mail to confirm it themselves. "+
 						"If its system shouldn't re-subscribe that many, its secret may have leaked: a superadmin can give it a new one.", denmaSignupResubPerDay))
 			}
-			now = ok
+			now = slot > 0
 		}
 		if !now {
 			claim, ok, err := a.signupConsentClaim(h)
@@ -1421,16 +1422,20 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			outcome = denmaSignupConfirmationSent
 			return done(status)
 		}
+		fail := func(err error) error {
+			a.signupResubUnclaim(slot)
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
 		if err := a.db.Select(&resubscribed, `SELECT list_id FROM subscriber_lists
 			WHERE subscriber_id = $1 AND list_id = ANY($2) AND status = 'unsubscribed' ORDER BY list_id`, sub.ID, pq.Array(listIDs)); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return fail(err)
 		}
 		lists, err := a.denmaListsByID(pq.Int64Array(int64s(listIDs)))
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return fail(err)
 		}
 		if err := a.denmaResubConfirm(sub.ID, lists, nil, models.JSON{"resubscribed": true, "via": "sign-up webhook: " + h.Name}, false); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return fail(err)
 		}
 		outcome = denmaSignupResubscribed
 		return done("")
@@ -1526,28 +1531,41 @@ func (a *App) signupVouchedCheck(sub models.Subscriber) string {
 }
 
 // signupResubClaim takes one of the center's denmaSignupResubPerDay
-// re-subscriptions at once, if there's room, for a webhook.
-func (a *App) signupResubClaim(hookID int) (bool, error) {
+// re-subscriptions at once, if there's room, for a webhook: the claim's ID,
+// or 0 if there's none.
+func (a *App) signupResubClaim(hookID int) (int, error) {
 	tx, err := a.db.Beginx()
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	defer tx.Rollback()
 	// One claim at a time in the center.
 	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(current_schema() || '/denma_resub_usage'))`); err != nil {
-		return false, err
+		return 0, err
 	}
 	var used int
 	if err := tx.Get(&used, `SELECT COALESCE(SUM(n), 0)::INT FROM denma_resub_usage WHERE created_at > NOW() - INTERVAL '24 hours'`); err != nil {
-		return false, err
+		return 0, err
 	}
 	if used+1 > denmaSignupResubPerDay {
-		return false, nil
+		return 0, nil
 	}
-	if _, err := tx.Exec(`INSERT INTO denma_resub_usage (hook_id, n) VALUES ($1, 1)`, hookID); err != nil {
-		return false, err
+	var id int
+	if err := tx.Get(&id, `INSERT INTO denma_resub_usage (hook_id, n) VALUES ($1, 1) RETURNING id`, hookID); err != nil {
+		return 0, err
 	}
-	return true, tx.Commit()
+	return id, tx.Commit()
+}
+
+// signupResubUnclaim gives back a re-subscription claimed (signupResubClaim)
+// but not made.
+func (a *App) signupResubUnclaim(id int) {
+	if id == 0 {
+		return
+	}
+	if _, err := a.db.Exec(`DELETE FROM denma_resub_usage WHERE id = $1`, id); err != nil {
+		a.log.Printf("denma: error giving back a re-subscription claim: %v", err)
+	}
 }
 
 // signupNewTags adds tags new to the center for a Server webhook, at most
