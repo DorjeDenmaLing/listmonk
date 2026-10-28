@@ -24,17 +24,13 @@ package main
 
 import (
 	"database/sql"
-	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/subimporter"
-	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
 	"github.com/lib/pq"
 )
@@ -307,33 +303,4 @@ func (a *App) denmaImportConsentsPreview(p *denmaImportPreview, addrs []string, 
 
 func denmaIsImportConsentKey(k string) bool {
 	return k == "consent_at" || k == "consent_source"
-}
-
-// denmaConsentImport is where a subscriber's consent record came from, when
-// an import gave it: their page shows it.
-type denmaConsentImport struct {
-	At         time.Time
-	Source     string
-	File       string    `db:"file"`
-	Username   string    `db:"username"`
-	ImportedAt time.Time `db:"created_at"`
-}
-
-// denmaConsentImportOf returns the import a subscriber's consent record
-// (attribs) came from, or nil.
-func (a *App) denmaConsentImportOf(attribs models.JSON) *denmaConsentImport {
-	id, ok := attribs["consent_import"].(float64)
-	if !ok {
-		return nil
-	}
-	var c denmaConsentImport
-	if err := a.db.Get(&c, `SELECT file, username, created_at FROM denma_imports WHERE id = $1`, int(id)); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			a.log.Printf("denma: error reading a consent record's import: %v", err)
-		}
-		return nil
-	}
-	c.At, _ = time.Parse(time.RFC3339, fmt.Sprint(attribs["consent_at"]))
-	c.Source = fmt.Sprint(attribs["consent_source"])
-	return &c
 }

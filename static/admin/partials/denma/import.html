@@ -208,17 +208,3 @@
 <h6>Consent records</h6>
 <p class="text-light">With "Keep the consent dates in the file", give when and how each person agreed in the attributes: <code>"{""consent_at"": ""2019-03-04 15:22:10"", ""consent_source"": ""Mailchimp sign-up form""}"</code>. A date without a time zone is read as UTC. Other columns, like Mailchimp's <code>OPTIN_TIME</code>, aren't read.</p>
 {{- end }}
-
-
-{{/* A subscriber's page: where their consent record came from, if an import
-   gave it (cmd/denma_imports.go). */}}
-{{ define "denma-consent-import" -}}
-{{- with . }}
-<div class="page-content content" data-testid="consent-import">
-	<p class="denma-note" role="note">{{ Icon "info" }}
-		<span><strong>Consent:</strong> {{ .At.Format "2 January 2006" }}, {{ .Source }}.
-		Imported from {{ .File }}{{ if .Username }} by {{ .Username }}{{ end }} on {{ .ImportedAt.Format "2 January 2006" }}.</span>
-	</p>
-</div>
-{{- end }}
-{{- end }}
