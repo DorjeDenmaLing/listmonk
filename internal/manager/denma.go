@@ -286,7 +286,8 @@ func (p *pipe) denmaStreakLimit() int {
 // notification.
 func (p *pipe) denmaPauseReason() string {
 	if p.denmaStreakHit.Load() {
-		return fmt.Sprintf("%d sends in a row failed: the mail server may be down or refusing mail. Resuming the campaign tries them again first.",
+		return fmt.Sprintf("%d sends in a row failed: the mail server may be down or refusing mail. Resuming the campaign tries again those the server refused; "+
+			"those cut off part-way may have been delivered, and are sent again only by \"Resend to them\" once the campaign has finished.",
 			p.denmaStreakLimit())
 	}
 	return "Too many errors"
