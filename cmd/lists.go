@@ -226,6 +226,9 @@ func (a *App) DeleteList(c echo.Context) error {
 	if err := user.HasListPerm(auth.PermTypeManage, id); err != nil {
 		return err
 	}
+	if err := a.denmaListsInUse([]int{id}); err != nil { // denma: cmd/denma_listdelete.go
+		return err
+	}
 
 	// Delete the list from the DB.
 	// Pass getAll=true since we've already verified permissions above.
@@ -271,6 +274,9 @@ func (a *App) DeleteLists(c echo.Context) error {
 		if err := user.HasListPerm(auth.PermTypeManage, ids...); err != nil {
 			return err
 		}
+		if err := a.denmaListsInUse(ids); err != nil { // denma: cmd/denma_listdelete.go
+			return err
+		}
 
 		// Delete the lists from the DB.
 		// Pass getAll=true since we've already verified permissions above.
@@ -281,6 +287,10 @@ func (a *App) DeleteLists(c echo.Context) error {
 		// For query deletion, get the list IDs the user has manage permission for.
 		hasAllPerm, permittedIDs := user.GetPermittedLists(auth.PermTypeManage)
 		if err := a.denmaListSearch(user, &query, &hasAllPerm, &permittedIDs); err != nil { // denma: cmd/denma_search.go
+			return err
+		}
+		if err := a.denmaListsInUseMatching(query, c.FormValue("type"), c.FormValue("optin"), c.FormValue("status"), // denma: cmd/denma_listdelete.go
+			c.Request().URL.Query()["tag"], hasAllPerm, permittedIDs); err != nil {
 			return err
 		}
 
