@@ -456,6 +456,16 @@ if (k.can.includes('events')) {
       u.toast(leaked ? `Deleted ${name}, and cancelled ${n} of its campaign${n === 1 ? '' : 's'}.` : `Deleted ${name}.`, 'success');
     },
 
+    // Marks a deleted key as leaked, cancelling its campaigns that haven't finished.
+    async onLeaked(k) {
+      if (!(await u.confirm(`Mark ${k.name} as leaked? Its campaigns that haven't finished are cancelled, and if it's restored, it gets a new key.`))) {
+        return;
+      }
+      const res = await api('keys', `/denma/center/api-keys/${k.id}?leaked=true`, 'DELETE');
+      this.keys = await api('keys', '/denma/center/api-keys', 'GET');
+      u.toast(`Cancelled ${res.cancelled} of ${k.name}'s campaign${res.cancelled === 1 ? '' : 's'}.`, 'success');
+    },
+
     async onRestore(k) {
       const msg = k.leaked
         ? `Restore ${k.name}? It gets a new key, shown once: the old one never works again.`

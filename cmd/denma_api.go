@@ -784,19 +784,23 @@ func (a *App) DenmaNewAPIWebhookSecret(c echo.Context) error {
 }
 
 // DenmaDeleteAPIKey deletes a key, restorable for denmaAPIKeepDeletedDays
-// days. With ?leaked=true, its unfinished campaigns are cancelled, under the
-// key's lock, so that a request let in before can't make or start one after.
+// days. With ?leaked=true, its unfinished campaigns are cancelled; a deleted
+// key can be marked leaked afterwards, and a second try cancels what the
+// first left.
 func (a *App) DenmaDeleteAPIKey(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
 	}
 	id, _ := strconv.Atoi(c.Param("id"))
 	leaked := c.QueryParam("leaked") == "true"
+	// Marked under the key's lock, so that a request let in before has made
+	// or started its campaign, and later ones are refused (apiKeyLive).
 	l := a.apiKeyLock(id)
 	l.Lock()
-	defer l.Unlock()
-	res, err := a.db.Exec(`UPDATE denma_api_keys SET deleted_at = NOW(), deleted_by = $2, leaked = $3,
-		old_key_hash = NULL, old_key_until = NULL, updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`, id, denmaAPIWho(c), leaked)
+	res, err := a.db.Exec(`UPDATE denma_api_keys SET deleted_by = CASE WHEN deleted_at IS NULL THEN $2 ELSE deleted_by END,
+		deleted_at = COALESCE(deleted_at, NOW()), leaked = leaked OR $3,
+		old_key_hash = NULL, old_key_until = NULL, updated_at = NOW() WHERE id = $1 AND (deleted_at IS NULL OR $3)`, id, denmaAPIWho(c), leaked)
+	l.Unlock()
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -806,15 +810,16 @@ func (a *App) DenmaDeleteAPIKey(c echo.Context) error {
 	cancelled := 0
 	if leaked {
 		if cancelled, err = a.apiCancelKeyCampaigns(id); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "The key is deleted, but its campaigns couldn't all be cancelled: "+err.Error())
+			return echo.NewHTTPError(http.StatusInternalServerError, "The key is deleted, but its campaigns couldn't all be cancelled: "+err.Error()+" Delete it as leaked again to cancel the rest.")
 		}
 		a.log.Printf("denma: API key %d deleted as leaked; %d of its campaigns cancelled", id, cancelled)
 	}
 	return c.JSON(http.StatusOK, okResp{map[string]any{"cancelled": cancelled}})
 }
 
-// denmaAPIKeyLocks keep deleting a key as leaked apart from its campaigns
-// being made and started (the process is the only one), with apiKeyLive.
+// denmaAPIKeyLocks keep marking a key deleted apart from its campaigns being
+// made and started (the process is the only one), with apiKeyLive. Each is
+// held only for that, never while campaigns are cancelled.
 var denmaAPIKeyLocks [64]sync.Mutex
 
 func (a *App) apiKeyLock(id int) *sync.Mutex {

@@ -84,6 +84,7 @@
 										<template x-if="k.deleted_at">
 											<div class="hstack gap-1 justify-end denma-signup-actions">
 												<button type="button" class="outline small" @click="onRestore(k)" data-testid="btn-restore-key">{{ Icon "rotate-ccw" }} Restore</button>
+												<button type="button" class="outline small" data-variant="danger" @click="onLeaked(k)" data-testid="btn-leaked-key">{{ Icon "trash-2" }} Cancel its campaigns</button>
 											</div>
 										</template>
 										<template x-if="!k.deleted_at">
