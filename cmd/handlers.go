@@ -270,7 +270,7 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		g.DELETE("/api/roles/:id", pm(hasID(a.DeleteRole), "roles:manage"))
 		initDenmaAPIHandlers(g, a) // denma: cmd/denma_hub.go
 
-		if a.cfg.BounceWebhooksEnabled {
+		if a.cfg.BounceWebhooksEnabled && !a.ko.Bool("denma.multi_center") { // denma: not served in multi-center mode (cmd/denma_noapiusers.go)
 			// Private authenticated bounce endpoint.
 			g.POST("/webhooks/bounce", pm(a.BounceWebhook, "webhooks:post_bounce"))
 		}

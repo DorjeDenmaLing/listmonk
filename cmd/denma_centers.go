@@ -488,7 +488,7 @@ func denmaCenterContent(p string) bool {
 		"/api/lists", "/api/subscribers", "/api/campaigns", "/api/templates",
 		"/api/import", "/api/bounces", "/api/tx", "/api/public", "/api/dashboard",
 		"/api/denma/automations", "/api/denma/center", "/api/denma/search", "/api/denma/stats", "/api/denma/tags",
-		"/api/denma/campaigns", "/api/denma/subscribers",
+		"/api/denma/campaigns", "/api/denma/subscribers", "/api/denma/send-hours",
 	} {
 		if p == pre || strings.HasPrefix(p, pre+"/") {
 			return true
