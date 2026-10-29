@@ -13,7 +13,8 @@ package main
 //     adds don't run, wherever center HTML is shown in the admin (the rich
 //     text and visual editors). Alpine still evaluates its own attributes (it
 //     needs 'unsafe-eval'), so the rich text editor's content is x-ignore
-//     (partials/richtext-editor.html).
+//     (partials/richtext-editor.html). They also fetch, post and stream
+//     only from the site (connect-src, form-action).
 //   - Public pages (sign-in, opt-in, unsubscribe...) show the center's
 //     design, so they run only the app's scripts too, with a nonce of their
 //     own (denmaPublicCSP), and the captchas'.
@@ -43,7 +44,7 @@ import (
 func denmaAdminCSP(c echo.Context) string {
 	nonce := denmaNonce()
 	c.Response().Header().Set("Content-Security-Policy", "script-src 'self' 'nonce-"+nonce+"' 'unsafe-eval'; "+
-		"object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
+		"object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'; connect-src 'self'")
 	return nonce
 }
 
