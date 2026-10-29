@@ -44,6 +44,9 @@ export function denmaStartConfirm() {
       const q = new URLSearchParams();
       lists.forEach((l) => q.append('list_id', l.id));
       tags.forEach((t) => q.append('tag', t));
+      if (schedule && c.send_at) {
+        q.append('at', new Date(c.send_at).toISOString());
+      }
       const shown = this.startConfirm;
       api('denma.start', `/denma/campaigns/${c.id}/start-check?${q}`)
         .then((d) => { shown.check = d; })
@@ -69,6 +72,15 @@ export function denmaStartConfirm() {
     denmaStartOverCap() {
       const c = this.startConfirm?.check;
       return c && c.sending.left >= 0 && c.recipients > c.sending.left;
+    },
+
+    // When the center's sending hours hold it back, if they do.
+    denmaStartGoes() {
+      const h = this.startConfirm?.check?.hours;
+      if (!h || !h.goes) {
+        return '';
+      }
+      return new Date(h.goes).toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' });
     },
 
     // The dialog closed: confirmed, or not (Cancel, Esc).

@@ -323,6 +323,7 @@ function denmaAutoSchedule() {
     selected: '',
     days: [],
     later: 0,
+    hours: '', // the center's sending hours, if on
     groups: [],
     open: {},
     canSeePeople: !!window._denmaSchedPeople,
@@ -348,7 +349,7 @@ function denmaAutoSchedule() {
 
     async load() {
       const out = await api('sched', `/denma/automations/schedule?${this.params(this.from ? { from: this.from } : {})}`);
-      Object.assign(this, { days: out.days, later: out.later, today: out.today, from: out.from, to: out.to });
+      Object.assign(this, { days: out.days, later: out.later, hours: out.hours, today: out.today, from: out.from, to: out.to });
       if (!this.selected || this.selected < this.from || this.selected > this.to) {
         this.selected = this.today >= this.from && this.today <= this.to ? this.today : this.from;
       }

@@ -41,11 +41,46 @@ function component() {
     campaigns: null,
     cursor: startOfMonth(new Date()),
     drafts: true,
+    hours: '', // the center's sending hours, if on
     tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
 
     async init() {
       const d = await api('denma-calendar', '/campaigns?per_page=all&no_body=true');
       this.campaigns = ((d && d.results) || []).map((c) => ({ ...c, when: whenOf(c) }));
+      await this.loadHours();
+    },
+
+    // With sending hours on, scheduled campaigns outside them go when they
+    // open, and running ones wait if they're closed now: the scheduled ones
+    // are shown then (cmd/denma_sendwindow_next.go).
+    async loadHours() {
+      const now = new Date();
+      const waiting = this.campaigns.filter((c) => (c.status === 'scheduled' && c.when) || c.status === 'running');
+      if (!waiting.length) {
+        return;
+      }
+      const q = new URLSearchParams();
+      waiting.slice(0, 200).forEach((c) => {
+        q.append('at', (c.status === 'scheduled' && c.when > now ? c.when : now).toISOString());
+      });
+      let h;
+      try {
+        h = await api('denma-calendar', `/denma/send-hours?${q}`);
+      } catch (e) {
+        return;
+      }
+      this.hours = h.on ? h.text : '';
+      waiting.slice(0, 200).forEach((c, i) => {
+        if (!h.goes[i]) {
+          return;
+        }
+        c.goes = new Date(h.goes[i]);
+        if (c.status === 'scheduled') {
+          c.scheduledFor = c.when;
+          c.when = c.goes;
+        }
+      });
+      this.campaigns = [...this.campaigns];
     },
 
     get monthLabel() {
@@ -136,7 +171,17 @@ function component() {
       if (c.subject) tip.push(`Subject: ${c.subject}`);
       if (lists.length) tip.push(`Lists: ${lists.join(', ')}`);
       if (c.status === 'finished' || c.status === 'running') tip.push(`Sent: ${c.sent} of ${c.to_send}`);
+      if (c.goes) tip.push(this.waitNote(c));
       return tip.join('\n');
+    },
+
+    // What the sending hours do to a campaign.
+    waitNote(c) {
+      const goes = `${this.fmtDate(c.goes)}, ${this.fmtTime(c.goes)}`;
+      if (c.status === 'running') {
+        return `Waiting for the sending hours (${this.hours}): goes on ${goes}.`;
+      }
+      return `Scheduled for ${this.fmtDate(c.scheduledFor)}, ${this.fmtTime(c.scheduledFor)}, outside the sending hours (${this.hours}): goes out ${goes}.`;
     },
 
     fmtTime(d) {

@@ -100,6 +100,8 @@
 	</header>
 	<p class="text-light text-8">Who the automations have already run for, and who they're still to run for once their wait is over, per day. Choose a day to see its automations.</p>
 
+	<p class="text-light text-8" x-show="hours" data-testid="sched-hours">Sending hours are on (<span x-text="hours"></span>): e-mails due outside them are shown when they open.</p>
+
 	<div class="denma-sched-chart" x-ref="chart" :aria-busy="isLoading('sched')"></div>
 	<div class="denma-legend">
 		<span><i class="ran"></i>Already ran</span>

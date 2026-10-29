@@ -179,6 +179,12 @@ svg.denma-logo {
         margin-right: var(--space-1);
     }
 
+    .denma-waits .icon {
+        width: 1em;
+        height: 1em;
+        vertical-align: -0.125em;
+    }
+
     .denma-agenda {
         display: none;
 

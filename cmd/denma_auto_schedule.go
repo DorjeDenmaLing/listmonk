@@ -11,7 +11,8 @@ package main
 // is what denmaAutoPendingSQL finds, due when their wait is over (now, if
 // that's passed and they're still waiting: the next run, or a sender's
 // domain SES hasn't verified, or the daily limit), and the follow-ups and
-// e-mails tried again that are waiting (cmd/denma_auto_series.go).
+// e-mails tried again that are waiting (cmd/denma_auto_series.go). Their
+// e-mails go when the center's sending hours open (cmd/denma_sendwindow_next.go).
 // Whether they meet its conditions is checked when it runs. People's
 // addresses are only for users who can see all subscribers.
 
@@ -34,14 +35,17 @@ const (
 
 // denmaAutoDueSQL is what's coming up (cond on a, the automation), with when
 // it's due: when the wait is over, or now if that's passed. A run's next
-// e-mail too.
-func denmaAutoDueSQL(cond string) string {
-	return `SELECT p.automation_id, p.subscriber_id, GREATEST(p.first_at + make_interval(mins => p.delay_minutes), NOW()) AS due
+// e-mail too. An automation that sends e-mail goes when the sending hours
+// w (nil if off) open, if its e-mail is due outside them.
+func denmaAutoDueSQL(cond string, w *denmaSendWindow) string {
+	return `SELECT u.automation_id, u.subscriber_id, CASE WHEN a.send_email THEN ` + w.goesSQL("u.due") + ` ELSE u.due END AS due
+		FROM (SELECT p.automation_id, p.subscriber_id, GREATEST(p.first_at + make_interval(mins => p.delay_minutes), NOW()) AS due
 		FROM (` + denmaAutoPendingSQL(cond) + `) p
 		UNION ALL
 		SELECT d.automation_id, d.subscriber_id, GREATEST(d.next_at, NOW()) AS due
 		FROM denma_automation_sends d JOIN denma_automations a ON a.id = d.automation_id
-		WHERE d.status IN ('waiting', 'retry') AND d.next_at IS NOT NULL AND a.active AND a.send_email AND ` + denmaAutoRunnableSQL + ` AND (` + cond + `)`
+		WHERE d.status IN ('waiting', 'retry') AND d.next_at IS NOT NULL AND a.active AND a.send_email AND ` + denmaAutoRunnableSQL + ` AND (` + cond + `)) u
+		JOIN denma_automations a ON a.id = u.automation_id`
 }
 
 // schedQuery is a schedule request: the viewer's time zone, and an
@@ -135,7 +139,7 @@ func (a *App) DenmaAutoSchedule(c echo.Context) error {
 			GROUP BY 1
 		), up AS (
 			SELECT (due AT TIME ZONE $1)::DATE AS day, COUNT(*) AS upcoming
-			FROM (`+denmaAutoDueSQL(q.cond(4))+`) u
+			FROM (`+denmaAutoDueSQL(q.cond(4), a.denmaHours())+`) u
 			WHERE due >= $2 AND due < $3
 			GROUP BY 1
 		)
@@ -153,13 +157,14 @@ func (a *App) DenmaAutoSchedule(c echo.Context) error {
 	if q.autoID > 0 {
 		laterArgs = append(laterArgs, q.autoID)
 	}
-	if err := a.db.Get(&later, `SELECT COUNT(*) FROM (`+denmaAutoDueSQL(q.cond(2))+`) u WHERE due >= $1`, laterArgs...); err != nil {
+	if err := a.db.Get(&later, `SELECT COUNT(*) FROM (`+denmaAutoDueSQL(q.cond(2), a.denmaHours())+`) u WHERE due >= $1`, laterArgs...); err != nil {
 		a.log.Printf("denma: error getting the automations' schedule: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "Error getting the schedule.")
 	}
 	return c.JSON(http.StatusOK, okResp{map[string]any{
 		"days": days, "later": later, "today": today.Format("2006-01-02"),
 		"from": start.Format("2006-01-02"), "to": end.AddDate(0, 0, -1).Format("2006-01-02"),
+		"hours": a.denmaHoursAt(time.Now()).Text, // the sending hours, if on
 	}})
 }
 
@@ -208,7 +213,7 @@ func (a *App) DenmaAutoScheduleDay(c echo.Context) error {
 			GROUP BY 1
 		), up AS (
 			SELECT automation_id AS id, COUNT(*) AS upcoming, MIN(due) AS next_at
-			FROM (`+denmaAutoDueSQL(q.cond(3))+`) u
+			FROM (`+denmaAutoDueSQL(q.cond(3), a.denmaHours())+`) u
 			WHERE due >= $1 AND due < $2
 			GROUP BY 1
 		)
@@ -284,7 +289,7 @@ func (a *App) DenmaAutoSchedulePeople(c echo.Context) error {
 	var out []denmaSchedPerson
 	if c.QueryParam("kind") == "upcoming" {
 		err = a.db.Select(&out, `SELECT s.id, s.email, s.name, u.due AS at, 'upcoming' AS status, '' AS did, '' AS error, COUNT(*) OVER () AS total
-			FROM (`+denmaAutoDueSQL("a.id = $3")+`) u JOIN subscribers s ON s.id = u.subscriber_id
+			FROM (`+denmaAutoDueSQL("a.id = $3", a.denmaHours())+`) u JOIN subscribers s ON s.id = u.subscriber_id
 			WHERE u.due >= $1 AND u.due < $2
 			ORDER BY u.due, s.id LIMIT $4 OFFSET $5`, args...)
 	} else {

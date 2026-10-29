@@ -45,6 +45,9 @@
 				<template x-if="denmaStartOverCap()">
 					<p class="denma-start-note" data-testid="start-over-cap" x-text="'The center\'s daily cap leaves room for ' + startConfirm.check.sending.left.toLocaleString() + ' more e-mails now; the rest go out as the 24 hours roll on.'"></p>
 				</template>
+				<template x-if="denmaStartGoes()">
+					<p class="denma-start-note" data-testid="start-hours" x-text="'This is outside the center\'s sending hours (' + startConfirm.check.hours.text + '): it waits, and goes out ' + denmaStartGoes() + '.'"></p>
+				</template>
 			</section>
 			<footer class="dialog-foot">
 				<button type="button" class="outline" @click="denmaStartDone(false)" autofocus>Cancel</button>

@@ -30,6 +30,7 @@
 							<a :href="url(c)" class="denma-chip" :class="'status-' + c.status" :title="tip(c)">
 								<span class="denma-time" x-text="fmtTime(c.when)"></span>
 								<span x-text="name(c)"></span>
+								<span class="denma-waits" x-show="c.scheduledFor" title="Waits for the sending hours" aria-label="Waits for the sending hours">{{ Icon "clock" }}</span>
 							</a>
 						</template>
 					</div>
@@ -45,6 +46,7 @@
 						<a :href="url(c)" class="denma-chip" :class="'status-' + c.status" :title="tip(c)">
 							<span class="denma-time" x-text="fmtTime(c.when)"></span>
 							<span x-text="name(c)"></span>
+							<span class="denma-waits" x-show="c.scheduledFor" title="Waits for the sending hours" aria-label="Waits for the sending hours">{{ Icon "clock" }}</span>
 						</a>
 					</template>
 				</div>
@@ -63,6 +65,7 @@
 								<span class="badge small" :class="'status-' + c.status" x-text="statusLabel(c.status)"></span>
 								<span x-text="c.when ? fmtDate(c.when) + ', ' + fmtTime(c.when) : 'No date'"></span>
 							</div>
+							<div class="denma-meta text-light" x-show="c.goes" data-testid="cal-waits" x-text="c.goes ? waitNote(c) : ''"></div>
 						</li>
 					</template>
 				</ul>
@@ -86,6 +89,7 @@
 			</article>
 		</div>
 
+		<p class="text-light text-8" x-show="hours" data-testid="cal-hours">Sending hours are on (<span x-text="hours"></span>): a campaign scheduled outside them waits, and is shown when it goes out.</p>
 		<p class="text-light text-8">Times in <span x-text="tz"></span>.</p>
 	</div>
 </section>

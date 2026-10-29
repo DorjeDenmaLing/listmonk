@@ -3,7 +3,8 @@ package main
 // denma: what starting a campaign means, for the confirmation shown before
 // it's started or scheduled (static/admin/partials/denma/start-confirm.html,
 // assets/js/denma-start.js): how many it goes to, the center's default
-// reply-to (cmd/denma_reply_to.go) and its daily cap (cmd/denma_daily.go).
+// reply-to (cmd/denma_reply_to.go), its daily cap (cmd/denma_daily.go) and its
+// sending hours (cmd/denma_sendwindow_next.go).
 // A draft campaign that would go to no one can't be started or scheduled
 // (denmaCheckRecipients).
 
@@ -11,6 +12,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/labstack/echo/v4"
@@ -20,6 +22,7 @@ import (
 func initDenmaStartHandlers(g *echo.Group, a *App) {
 	pm := a.auth.Perm
 	g.GET("/api/denma/campaigns/:id/start-check", pm(hasID(a.DenmaStartCheck), "campaigns:get_all", "campaigns:get"))
+	g.GET("/api/denma/send-hours", pm(a.DenmaSendHours, "campaigns:get_all", "campaigns:get")) // cmd/denma_sendwindow_next.go
 }
 
 // denmaRecipientsSQL counts a campaign's recipients as next-campaigns
@@ -76,11 +79,18 @@ func (a *App) DenmaStartCheck(c echo.Context) error {
 		return err
 	}
 
+	// When it goes: now, or the time it's scheduled for (at, RFC 3339).
+	at := time.Now()
+	if t, err := time.Parse(time.RFC3339, c.QueryParam("at")); err == nil && t.After(at) {
+		at = t
+	}
+
 	return c.JSON(http.StatusOK, okResp{struct {
 		Recipients int            `json:"recipients"`
 		ReplyTo    string         `json:"reply_to"` // the center's default
 		Sending    denmaCapStatus `json:"sending"`
-	}{count, a.denmaReplyTo(), a.denmaCapStatus()}})
+		Hours      denmaHoursNote `json:"hours"` // the sending hours, and when it goes if outside them
+	}{count, a.denmaReplyTo(), a.denmaCapStatus(), a.denmaHoursAt(at)}})
 }
 
 // denmaRecipients counts campaign id's recipients with the lists and tags
