@@ -1,9 +1,13 @@
 package subimporter
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
@@ -50,6 +54,43 @@ func TestDenmaUTF8(t *testing.T) {
 		out, enc := DenmaUTF8([]byte(c.in))
 		if string(out) != c.want || enc != c.enc {
 			t.Errorf("%s: got %q (%q), want %q (%q)", c.name, out, enc, c.want, c.enc)
+		}
+	}
+}
+
+// DenmaUTF8Reader reads a file as DenmaUTF8 does, in chunks: a rune cut at a
+// chunk's end is whole, and a bad byte anywhere makes it Windows-1252.
+func TestDenmaUTF8Reader(t *testing.T) {
+	long := strings.Repeat("é", 100000) // 200 KB: runes cut by the chunks
+	for _, c := range []struct{ name, in string }{
+		{"UTF-8", "email,name\na@x.org,Hélène\n"},
+		{"UTF-8 with a BOM", "\xef\xbb\xbfemail\na@x.org\n"},
+		{"long UTF-8", "email\n" + long + "\n"},
+		{"long UTF-8, odd start", "e" + long},
+		{"long, bad at the end", long + "\xe9"},
+		{"long, cut at the end", long + "\xc3"},
+		{"Windows-1252", "email,name\na@x.org,H\xe9l\xe8ne \x96 \x80\n"},
+		{"UTF-16 LE", "\xff\xfee\x00,\x00\xe9\x00\n\x00"},
+		{"UTF-16 BE", "\xfe\xff\x00e\x00,\x00\xe9\x00\n"},
+		{"NULs", "email\na@x.org\x00\n"},
+		{"empty", ""},
+		{"one byte", "a"},
+	} {
+		open := func() (io.ReadCloser, error) {
+			return io.NopCloser(iotest.HalfReader(strings.NewReader(c.in))), nil // short reads
+		}
+		r, enc, err := DenmaUTF8Reader(open)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		got, err := io.ReadAll(r)
+		r.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		want, wantEnc := DenmaUTF8([]byte(c.in))
+		if !bytes.Equal(got, want) || enc != wantEnc {
+			t.Errorf("%s: got %d bytes (%q), want %d (%q)", c.name, len(got), enc, len(want), wantEnc)
 		}
 	}
 }

@@ -1,8 +1,10 @@
 // denma: the import's preview (cmd/denma_importpreview.go,
 // partials/denma/import.html): once a file is picked, what it holds and what
 // importing it would do, made again when the file or a setting changes.
-// Upload waits for it, and first adds the tags picked to the center. Spread
-// into the import page's component.
+// Upload waits for it, and first adds the tags picked to the center. The file
+// is sent once: the server keeps it for a few minutes, and a change of
+// settings sends its token only (a request a newer one replaces is cancelled).
+// Spread into the import page's component.
 import { api, urls } from './main.js';
 import * as u from './utils.js';
 
@@ -14,6 +16,9 @@ export function denmaImportPreview() {
     denmaPrevError: '',
     denmaPrevSeq: 0,
     denmaPrevTimer: null,
+    denmaPrevAbort: null, // cancels the request in flight
+    denmaPrevToken: '', // the server's kept copy of the file ...
+    denmaPrevTokenFile: '', // ... and which file it is
     denmaAddTags: {}, // tag: true to add it to the center before importing
 
     denmaInitPreview() {
@@ -42,12 +47,54 @@ export function denmaImportPreview() {
         return;
       }
       const seq = ++this.denmaPrevSeq;
+      if (this.denmaPrevAbort) {
+        this.denmaPrevAbort.abort();
+        this.denmaPrevAbort = null;
+      }
       if (!key || this.form.delim.length !== 1) {
         Object.assign(this, { denmaPrev: null, denmaPrevKey: '', denmaPrevError: '', denmaPrevBusy: false });
         return;
       }
       this.denmaPrevBusy = true;
+      const abort = new AbortController();
+      this.denmaPrevAbort = abort;
 
+      let prev = null;
+      let err = '';
+      try {
+        let resp = await this.denmaPreviewRequest(abort.signal, true);
+        if (resp.status === 410) { // no longer kept: send the file again
+          resp = await this.denmaPreviewRequest(abort.signal, false);
+        }
+        const out = await resp.json().catch(() => ({}));
+        if (resp.ok) {
+          prev = out.data;
+          this.denmaPrevToken = prev.token;
+          this.denmaPrevTokenFile = this.denmaFileKey();
+        } else {
+          err = out.message || resp.statusText;
+        }
+      } catch (e) {
+        if (e.name === 'AbortError') {
+          return; // a later one's on its way
+        }
+        err = e.message;
+      }
+      if (seq !== this.denmaPrevSeq) {
+        return;
+      }
+      Object.assign(this, { denmaPrev: prev, denmaPrevKey: key, denmaPrevError: err, denmaPrevBusy: false });
+    },
+
+    // The file as the server keeps it.
+    denmaFileKey() {
+      const f = this.form.file;
+      return f ? JSON.stringify([f.name, f.size, f.lastModified]) : '';
+    },
+
+    // A preview's request: the settings, and the file's token if the server
+    // has the file (and it's wanted), else the file.
+    denmaPreviewRequest(signal, useToken) {
       const params = new FormData();
       params.set('params', JSON.stringify({
         mode: this.form.mode,
@@ -58,27 +105,14 @@ export function denmaImportPreview() {
         overwrite_subscription_status: this.form.overwriteSubStatus,
         ...this.denmaImportParams(),
       }));
-      params.set('file', this.form.file);
-
-      let prev = null;
-      let err = '';
-      try {
-        const resp = await fetch(`${urls.api}/denma/subscribers/import/preview`, {
-          method: 'POST', body: params, headers: { Accept: 'application/json' },
-        });
-        const out = await resp.json().catch(() => ({}));
-        if (resp.ok) {
-          prev = out.data;
-        } else {
-          err = out.message || resp.statusText;
-        }
-      } catch (e) {
-        err = e.message;
+      if (useToken && this.denmaPrevToken && this.denmaPrevTokenFile === this.denmaFileKey()) {
+        params.set('token', this.denmaPrevToken);
+      } else {
+        params.set('file', this.form.file);
       }
-      if (seq !== this.denmaPrevSeq) {
-        return; // a later one's on its way
-      }
-      Object.assign(this, { denmaPrev: prev, denmaPrevKey: key, denmaPrevError: err, denmaPrevBusy: false });
+      return fetch(`${urls.api}/denma/subscribers/import/preview`, {
+        method: 'POST', body: params, headers: { Accept: 'application/json' }, signal,
+      });
     },
 
     // Whether the preview is of the file and settings as they are, and finds

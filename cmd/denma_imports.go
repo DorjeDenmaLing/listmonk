@@ -219,6 +219,7 @@ func (a *App) denmaImportStart(c echo.Context, opt *subimporter.SessionOpt) erro
 		a.log.Printf("denma: error recording an import: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "Error starting the import.")
 	}
+	denmaKept.drop(denmaKeptKey(a.ko.String("denma.center"), user.ID)) // forget its preview's kept file (cmd/denma_importkeep.go)
 	return nil
 }
 

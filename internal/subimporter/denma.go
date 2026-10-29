@@ -1,8 +1,10 @@
 package subimporter
 
 import (
+	"bufio"
 	"bytes"
 	"database/sql"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -128,6 +130,90 @@ func DenmaUTF8(b []byte) ([]byte, string) {
 		b = bytes.ReplaceAll(b, []byte{0}, nil)
 	}
 	return b, enc
+}
+
+// DenmaUTF8Reader is DenmaUTF8 for a file read as a stream: it gives the file
+// as UTF-8 and the encoding it was read from, or "". open gives the file from
+// its start; a file that may not be UTF-8 is opened twice (once to tell).
+func DenmaUTF8Reader(open func() (io.ReadCloser, error)) (io.ReadCloser, string, error) {
+	rc, err := open()
+	if err != nil {
+		return nil, "", err
+	}
+	br := bufio.NewReaderSize(rc, 64<<10)
+	if head, _ := br.Peek(2); bytes.Equal(head, []byte{0xFF, 0xFE}) || bytes.Equal(head, []byte{0xFE, 0xFF}) {
+		r := unicode.UTF16(unicode.LittleEndian, unicode.ExpectBOM).NewDecoder().Reader(br)
+		return denmaReader{denmaNoNULs{r}, rc}, "UTF-16", nil
+	}
+	valid, err := denmaValidUTF8(br)
+	rc.Close()
+	if err != nil {
+		return nil, "", err
+	}
+	if rc, err = open(); err != nil {
+		return nil, "", err
+	}
+	if valid {
+		return denmaReader{denmaNoNULs{rc}, rc}, "", nil
+	}
+	return denmaReader{denmaNoNULs{charmap.Windows1252.NewDecoder().Reader(rc)}, rc}, "Windows-1252", nil
+}
+
+// denmaValidUTF8 is whether the stream is valid UTF-8, read in chunks.
+func denmaValidUTF8(r io.Reader) (bool, error) {
+	buf := make([]byte, 64<<10)
+	have := 0 // bytes of a rune cut by the last chunk, at the start of buf
+	for {
+		n, err := r.Read(buf[have:])
+		n += have
+		end := n
+		for i := 1; i <= 3 && i <= n; i++ { // leave a cut rune for the next chunk
+			if utf8.RuneStart(buf[n-i]) {
+				if !utf8.FullRune(buf[n-i : n]) {
+					end = n - i
+				}
+				break
+			}
+		}
+		if !utf8.Valid(buf[:end]) {
+			return false, nil
+		}
+		have = copy(buf, buf[end:n])
+		if err == io.EOF {
+			return have == 0, nil
+		}
+		if err != nil {
+			return false, err
+		}
+	}
+}
+
+// denmaReader reads from one reader and closes another.
+type denmaReader struct {
+	io.Reader
+	io.Closer
+}
+
+// denmaNoNULs reads a stream without its NUL characters.
+type denmaNoNULs struct{ r io.Reader }
+
+func (s denmaNoNULs) Read(p []byte) (int, error) {
+	for {
+		n, err := s.r.Read(p)
+		if bytes.IndexByte(p[:n], 0) >= 0 {
+			j := 0
+			for _, b := range p[:n] {
+				if b != 0 {
+					p[j] = b
+					j++
+				}
+			}
+			n = j
+		}
+		if n > 0 || err != nil || len(p) == 0 {
+			return n, err
+		}
+	}
 }
 
 // denmaFileToUTF8 rewrites the CSV at path as UTF-8 (DenmaUTF8), if it isn't.

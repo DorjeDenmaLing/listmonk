@@ -25,14 +25,13 @@ package main
 
 import (
 	"archive/zip"
-	"bytes"
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"regexp"
 	"sort"
@@ -68,7 +67,8 @@ type denmaImportPreview struct {
 	Columns  []string `json:"columns"`  // the importer's columns found
 	Ignored  []string `json:"ignored"`  // the file's other columns
 	Error    string   `json:"error"`    // why it can't be imported at all
-	Encoding string   `json:"encoding"` // what the file was read as if it isn't UTF-8 (subimporter.DenmaUTF8), or ""
+	Encoding string   `json:"encoding"` // what the file was read as if it isn't UTF-8 (subimporter.DenmaUTF8Reader), or ""
+	Token    string   `json:"token"`    // stands for the file, kept for the next preview (cmd/denma_importkeep.go)
 
 	Rows       int `json:"rows"`        // data rows read
 	Valid      int `json:"valid"`       // rows with an address the import takes
@@ -185,33 +185,54 @@ func (d denmaImportAddr) blocked() string {
 }
 
 // DenmaImportPreview reads an import's file and settings (as POST
-// /api/import/subscribers takes them) and says what the import would do.
+// /api/import/subscribers takes them) and says what the import would do. The
+// file is sent once: the answer's token stands for it (cmd/denma_importkeep.go).
 func (a *App) DenmaImportPreview(c echo.Context) error {
+	user := auth.GetUser(c)
+	key := denmaKeptKey(a.ko.String("denma.center"), user.ID)
+	params, f, upload, token, err := a.denmaPreviewForm(c, key)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
 	var opt subimporter.SessionOpt
-	if err := json.Unmarshal([]byte(c.FormValue("params")), &opt); err != nil {
+	if err := json.Unmarshal([]byte(params), &opt); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("import.invalidParams", "error", err.Error()))
 	}
 	if len(opt.Delim) != 1 {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("import.invalidDelim"))
 	}
-	user := auth.GetUser(c)
 	listIDs := user.FilterListsByPerm(auth.PermTypeManage, opt.ListIDs)
 	if opt.Mode == subimporter.ModeBlocklist {
 		listIDs = nil
 	}
 
-	file, err := c.FormFile("file")
+	ctx := c.Request().Context()
+	release, err := denmaPreviewWait(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	info, err := f.Stat()
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("import.invalidFile", "error", err.Error()))
 	}
-	name, b, err := denmaImportFile(file)
+	name, open, err := denmaImportOpen(f, info.Size(), upload)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-
-	b, enc := subimporter.DenmaUTF8(b)
-	p, addrs, entries := denmaReadImport(b, rune(opt.Delim[0]), a.importer.ValidateFields)
-	p.File, p.Encoding = name, enc
+	r, enc, err := subimporter.DenmaUTF8Reader(open)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, denmaImportReadError(name, err))
+	}
+	p, addrs, entries := denmaReadImport(ctx, r, rune(opt.Delim[0]), a.importer.ValidateFields)
+	r.Close()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	p.File, p.Encoding, p.Token = name, enc, token
 	p.CanAddTags = user.HasPerm("subscribers:manage")
 	if p.Error != "" || len(addrs) == 0 {
 		return c.JSON(http.StatusOK, okResp{p})
@@ -248,20 +269,41 @@ func (a *App) DenmaImportPreview(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{p})
 }
 
-// denmaImportFile is the CSV the importer would read: the file, or the first
-// .csv in a ZIP (as ImportSubscribers takes it), and its name.
-func denmaImportFile(file *multipart.FileHeader) (string, []byte, error) {
-	f, err := file.Open()
-	if err != nil {
-		return "", nil, err
+// errDenmaOverLimit is a file in a ZIP that's over denmaMaxBody.
+var errDenmaOverLimit = errors.New("over the limit")
+
+// denmaLimited reads at most n bytes of r, and fails with errDenmaOverLimit
+// if there's more.
+type denmaLimited struct {
+	r io.Reader
+	n int64
+}
+
+func (l *denmaLimited) Read(p []byte) (int, error) {
+	if l.n < 0 {
+		return 0, errDenmaOverLimit
 	}
-	defer f.Close()
-	if strings.HasSuffix(strings.ToLower(file.Filename), ".csv") {
-		b, err := io.ReadAll(io.LimitReader(f, denmaMaxBody))
-		return file.Filename, b, err
+	if int64(len(p)) > l.n+1 {
+		p = p[:l.n+1]
+	}
+	n, err := l.r.Read(p)
+	if l.n -= int64(n); l.n < 0 {
+		return n - 1, errDenmaOverLimit
+	}
+	return n, err
+}
+
+// denmaImportOpen is the CSV the importer would read from the file (size
+// bytes): the file, or the first .csv in a ZIP (as ImportSubscribers takes
+// it). It gives its name, and a way to open it, from its start.
+func denmaImportOpen(f io.ReaderAt, size int64, upload string) (string, func() (io.ReadCloser, error), error) {
+	if strings.HasSuffix(strings.ToLower(upload), ".csv") {
+		return upload, func() (io.ReadCloser, error) {
+			return io.NopCloser(io.LimitReader(io.NewSectionReader(f, 0, size), denmaMaxBody)), nil
+		}, nil
 	}
 
-	z, err := zip.NewReader(f, file.Size)
+	z, err := zip.NewReader(f, size)
 	if err != nil {
 		return "", nil, fmt.Errorf("Error reading the ZIP file: %v", err)
 	}
@@ -269,21 +311,28 @@ func denmaImportFile(file *multipart.FileHeader) (string, []byte, error) {
 		if zf.FileInfo().IsDir() || !strings.HasSuffix(strings.ToLower(zf.FileInfo().Name()), ".csv") {
 			continue
 		}
-		r, err := zf.Open()
-		if err != nil {
-			return "", nil, fmt.Errorf("Error reading %s in the ZIP file: %v", zf.FileInfo().Name(), err)
-		}
-		defer r.Close()
-		b, err := io.ReadAll(io.LimitReader(r, denmaMaxBody+1))
-		if err != nil {
-			return "", nil, fmt.Errorf("Error reading %s in the ZIP file: %v", zf.FileInfo().Name(), err)
-		}
-		if len(b) > denmaMaxBody {
-			return "", nil, fmt.Errorf("%s in the ZIP file is over %d MB.", zf.FileInfo().Name(), denmaMaxBody>>20)
-		}
-		return zf.FileInfo().Name(), b, nil
+		return zf.FileInfo().Name(), func() (io.ReadCloser, error) {
+			r, err := zf.Open()
+			if err != nil {
+				return nil, fmt.Errorf("Error reading %s in the ZIP file: %v", zf.FileInfo().Name(), err)
+			}
+			return denmaLimitedCloser{&denmaLimited{r, denmaMaxBody}, r}, nil
+		}, nil
 	}
 	return "", nil, errors.New("There's no .csv file in the ZIP file.")
+}
+
+type denmaLimitedCloser struct {
+	io.Reader
+	io.Closer
+}
+
+// denmaImportReadError says why a file couldn't be read.
+func denmaImportReadError(name string, err error) string {
+	if errors.Is(err, errDenmaOverLimit) {
+		return fmt.Sprintf("%s in the ZIP file is over %d MB.", name, denmaMaxBody>>20)
+	}
+	return fmt.Sprintf("Error reading %s in the ZIP file: %v", name, err)
 }
 
 // denmaImportEntry is what the file gives an address, and what the center
@@ -299,10 +348,10 @@ type denmaImportEntry struct {
 // denmaReadImport reads a CSV as the importer's LoadCSV does, and returns
 // the preview of the file, the addresses it'd import (in order), and what
 // it gives each.
-func denmaReadImport(b []byte, delim rune, validate func(subimporter.SubReq) (subimporter.SubReq, error)) (denmaImportPreview, []string, map[string]*denmaImportEntry) {
+func denmaReadImport(ctx context.Context, r io.Reader, delim rune, validate func(subimporter.SubReq) (subimporter.SubReq, error)) (denmaImportPreview, []string, map[string]*denmaImportEntry) {
 	p := denmaImportPreview{Columns: []string{}, Ignored: []string{}, Problems: []denmaImportProblem{},
 		Attribs: []denmaImportAttrib{}, Sample: []denmaImportRow{}, Lists: []denmaImportListInfo{}, Tags: []denmaImportTag{}, Automations: []string{}}
-	rd := csv.NewReader(bytes.NewReader(b))
+	rd := csv.NewReader(r)
 	rd.Comma = delim
 
 	hdr, err := rd.Read()
@@ -346,6 +395,9 @@ func denmaReadImport(b []byte, delim rune, validate func(subimporter.SubReq) (su
 		}
 	}
 	for {
+		if p.Rows&1023 == 0 && ctx.Err() != nil {
+			break // the request's gone
+		}
 		rec, err := rd.Read()
 		if err == io.EOF {
 			break
