@@ -892,7 +892,7 @@ func (a *App) processSubForm(c echo.Context) (hasOptin bool, err error) { // den
 	if err := a.denmaSignupDomain(req.Email); err != nil { // denma: cmd/denma_signupanswers.go
 		return false, err
 	}
-	a.denmaNoConsentSignup(req.Email) // denma: their own sign-up (cmd/denma_noconsent.go)
+	a.denmaNoConsentSignup(req.Email, nil, req.FormListUUIDs) // denma: their own sign-up (cmd/denma_noconsent.go)
 
 	// Insert the subscriber into the DB.
 	newSub, hasOptin, err := a.core.InsertSubscriber(models.Subscriber{ // denma: was _

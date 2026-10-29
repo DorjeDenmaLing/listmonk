@@ -20,7 +20,7 @@ package main
 //     unconfirmed, for the confirmation link's life; confirming it on the
 //     opt-in page lifts the fence (denmaNoConsentOptin), and nothing else
 //     confirms it for them. A single opt-in list they sign up to lifts it at
-//     once. So do confirming a re-subscription (cmd/denma_resubscribe.go) and
+//     once (a join to another single opt-in list doesn't). So do confirming a re-subscription (cmd/denma_resubscribe.go) and
 //     a Server webhook vouching for their consent (cmd/denma_signup.go).
 //   - Changing their address keeps the fence (denma_keep_no_consent_email),
 //     and nobody's address can be changed to a fenced one.
@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS denma_no_consent (
     signup_at  TIMESTAMP WITH TIME ZONE NULL,      -- when they last signed up themselves
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
+ALTER TABLE denma_no_consent ADD COLUMN IF NOT EXISTS signup_lists INTEGER[] NULL; -- the lists that sign-up was to
 
 -- A fenced subscriber's subscriptions: skipped, but for the API adding them
 -- to its campaign's list, leaving a list, and their own sign-up. Confirming
@@ -71,10 +72,11 @@ LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
     hash   TEXT;
     signup TIMESTAMP WITH TIME ZONE;
+    slists INTEGER[];
     dbl    BOOLEAN;
     api    BOOLEAN;
 BEGIN
-    SELECT n.email_hash, n.signup_at INTO hash, signup FROM subscribers s
+    SELECT n.email_hash, n.signup_at, n.signup_lists INTO hash, signup, slists FROM subscribers s
         JOIN denma_no_consent n ON n.email_hash = denma_email_hash(s.email) WHERE s.id = NEW.subscriber_id;
     IF hash IS NULL OR NEW.status = 'unsubscribed' OR (TG_OP = 'UPDATE' AND OLD.status = NEW.status) THEN
         RETURN NEW;
@@ -93,7 +95,7 @@ BEGIN
             RETURN NEW;
         END IF;
         -- A single opt-in list they signed up to: their consent.
-        IF NOT dbl AND signup > NOW() - INTERVAL '` + denmaNoConsentSignupSingle + `' THEN
+        IF NOT dbl AND NEW.list_id = ANY(COALESCE(slists, '{}')) AND signup > NOW() - INTERVAL '` + denmaNoConsentSignupSingle + `' THEN
             DELETE FROM denma_no_consent WHERE email_hash = hash;
             RETURN NEW;
         END IF;
@@ -113,8 +115,8 @@ BEGIN
         RETURN NEW;
     END IF;
     IF EXISTS (SELECT 1 FROM denma_no_consent WHERE email_hash = denma_email_hash(OLD.email)) THEN
-        INSERT INTO denma_no_consent (email_hash, key_id, signup_at, created_at)
-            SELECT denma_email_hash(NEW.email), key_id, signup_at, created_at FROM denma_no_consent
+        INSERT INTO denma_no_consent (email_hash, key_id, signup_at, signup_lists, created_at)
+            SELECT denma_email_hash(NEW.email), key_id, signup_at, signup_lists, created_at FROM denma_no_consent
             WHERE email_hash = denma_email_hash(OLD.email)
             ON CONFLICT (email_hash) DO NOTHING;
     ELSIF EXISTS (SELECT 1 FROM denma_no_consent WHERE email_hash = denma_email_hash(NEW.email)) THEN
@@ -237,13 +239,15 @@ func denmaNoConsentAdd(db interface {
 	return err
 }
 
-// denmaNoConsentSignup marks that someone fenced has signed up themselves,
-// before their sign-up adds them to lists. Anyone else is left alone.
-func (a *App) denmaNoConsentSignup(email string) {
+// denmaNoConsentSignup marks that someone fenced has signed up themselves to
+// lists (by ID or UUID), before their sign-up adds them. Anyone else is left alone.
+func (a *App) denmaNoConsentSignup(email string, listIDs []int, listUUIDs []string) {
 	if !a.denmaHasOptOuts() || email == "" {
 		return
 	}
-	if _, err := a.db.Exec(`UPDATE denma_no_consent SET signup_at = NOW() WHERE email_hash = denma_email_hash($1)`, email); err != nil {
+	if _, err := a.db.Exec(`UPDATE denma_no_consent SET signup_at = NOW(),
+		signup_lists = ARRAY(SELECT id FROM lists WHERE id = ANY($2) OR uuid::TEXT = ANY($3))
+		WHERE email_hash = denma_email_hash($1)`, email, pq.Array(listIDs), pq.Array(listUUIDs)); err != nil {
 		a.log.Printf("denma: error recording a sign-up's consent: %v", err)
 	}
 }

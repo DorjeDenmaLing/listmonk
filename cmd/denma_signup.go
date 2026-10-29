@@ -922,7 +922,7 @@ func (a *App) DenmaSignup(c echo.Context) error {
 		logf("refused: the address's domain can't receive e-mail")
 		return reply(http.StatusBadRequest, fmt.Sprint(err.(*echo.HTTPError).Message))
 	}
-	a.denmaNoConsentSignup(email) // their own sign-up (cmd/denma_noconsent.go)
+	a.denmaNoConsentSignup(email, listIDs, nil) // their own sign-up (cmd/denma_noconsent.go)
 	if first != "" || last != "" {
 		attribs = denmaWithNames(attribs, first, last) // a new subscriber's
 	}
@@ -1378,7 +1378,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 	} else {
-		a.denmaNoConsentSignup(email)
+		a.denmaNoConsentSignup(email, listIDs, nil)
 	}
 
 	// Unsubscribed from the center: re-subscribed now, or on confirming.
