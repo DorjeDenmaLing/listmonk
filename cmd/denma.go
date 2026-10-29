@@ -31,6 +31,7 @@ func initDenmaAdminHandlers(g *echo.Group, a *App) {
 	initDenmaAutomationHandlers(g, a)
 	initDenmaAnalyticsHandlers(g, a) // cmd/denma_analytics.go
 	initDenmaTagHandlers(g, a)
+	initDenmaTwofaHandlers(g, a) // cmd/denma_twofa_prompt.go
 }
 
 // ViewDenmaCalendar renders the campaign calendar. Campaigns are loaded by the page

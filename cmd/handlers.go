@@ -66,6 +66,9 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 				if err := denmaViewPerm(c); err != nil { // denma: cmd/denma_viewperms.go
 					return err
 				}
+				if done, err := a.denmaTwofaPrompt(c); done { // denma: a superadmin without two-factor sign-in (cmd/denma_twofa_prompt.go)
+					return err
+				}
 
 				return next(c)
 			}
