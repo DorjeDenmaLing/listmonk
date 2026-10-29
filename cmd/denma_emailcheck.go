@@ -379,7 +379,6 @@ func denmaStartEmailChecks(a *App) {
 		mu      sync.Mutex
 		skip    = denmaEmailSkip(a.ko)
 		checked = map[string]time.Time{} // "id email" -> when
-		applied = map[int]time.Time{}    // subscriber ID -> when the shared blocklist was applied
 	)
 	if _, err := denmaEveryMinute(a, 30, "domain-check", func() {
 		if !mu.TryLock() {
@@ -392,12 +391,7 @@ func denmaStartEmailChecks(a *App) {
 				delete(checked, k)
 			}
 		}
-		for k, at := range applied {
-			if time.Since(at) > 25*time.Hour {
-				delete(applied, k)
-			}
-		}
-		a.applySharedBlocks(applied)
+		a.applySharedBlocks()
 		a.shareHardBounces()
 
 		var subs []struct {

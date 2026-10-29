@@ -145,6 +145,9 @@ BEGIN
         NEW.status := 'blocklisted';
         RETURN NEW;
     END IF;
+    IF TG_OP = 'UPDATE' AND OLD.status <> 'blocklisted' THEN -- a changed address: no word on why
+        RAISE EXCEPTION '% can''t be used as this subscriber''s address.', NEW.email;
+    END IF;
     IF k = 'complained' THEN
         RAISE EXCEPTION '% marked one of this center''s e-mails as spam, so they can''t be subscribed again.', NEW.email;
     END IF;
@@ -245,6 +248,9 @@ func (a *App) denmaCheckOptOut(id int, email, status string) error {
 	}
 	if o == nil || (cur.Status != models.SubscriberStatusBlockListed && !changed) {
 		return nil
+	}
+	if changed && cur.Status != models.SubscriberStatusBlockListed { // a changed address: no word on why
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("%s can't be used as this subscriber's address.", email))
 	}
 	if o.Kind == denmaOptOutComplained {
 		return echo.NewHTTPError(http.StatusBadRequest,

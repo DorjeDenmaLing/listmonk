@@ -20,7 +20,6 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
-	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -100,10 +99,20 @@ func (a *App) shareHardBounces() {
 	}
 }
 
+// denmaSharedAppliedSQL makes the table of subscribers the shared blocklist
+// has been applied to, in a center (denmaFeaturesSQL).
+const denmaSharedAppliedSQL = `
+CREATE TABLE IF NOT EXISTS denma_shared_applied (
+    subscriber_id INTEGER PRIMARY KEY REFERENCES subscribers(id) ON DELETE CASCADE,
+    applied_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+`
+
 // applySharedBlocks blocklists the center's subscribers added in the last
-// day whose address is on the shared blocklist (once each; applied
-// remembers them). Run by the e-mail check job.
-func (a *App) applySharedBlocks(applied map[int]time.Time) {
+// day whose address is on the shared blocklist, once each: denma_shared_applied
+// remembers them, so one an admin enabled since stays enabled. Run by the
+// e-mail check job.
+func (a *App) applySharedBlocks() {
 	if denmaHub == nil {
 		return
 	}
@@ -114,18 +123,20 @@ func (a *App) applySharedBlocks(applied map[int]time.Time) {
 	}
 	if err := a.db.Select(&subs, `SELECT s.id, s.email, g.reason FROM subscribers s
 		JOIN denma.blocked_emails g ON g.email = LOWER(s.email)
-		WHERE s.status <> 'blocklisted' AND s.created_at > NOW() - INTERVAL '1 day'`); err != nil {
+		WHERE s.status <> 'blocklisted' AND s.created_at > NOW() - INTERVAL '1 day'
+			AND NOT EXISTS (SELECT 1 FROM denma_shared_applied x WHERE x.subscriber_id = s.id)`); err != nil {
 		a.log.Printf("denma: error checking new subscribers against the shared blocklist: %v", err)
 		return
 	}
 	for _, s := range subs {
-		if _, ok := applied[s.ID]; ok {
-			continue // unblocked here since; leave it
-		}
-		applied[s.ID] = time.Now()
-		a.log.Printf("denma: blocklisting %s: on the shared blocklist (%s)", s.Email, s.Reason)
+		a.log.Printf("denma: blocklisting subscriber %d: on the shared blocklist (%s)", s.ID, s.Reason)
 		if _, err := a.db.Exec(denmaBlocklistSQL(""), s.Email, denmaReasonAttr(s.Reason)); err != nil {
-			a.log.Printf("denma: error blocklisting %s: %v", s.Email, err)
+			a.log.Printf("denma: error blocklisting subscriber %d: %v", s.ID, err)
+			continue
+		}
+		if _, err := a.db.Exec(`WITH old AS (DELETE FROM denma_shared_applied WHERE applied_at < NOW() - INTERVAL '2 days')
+			INSERT INTO denma_shared_applied (subscriber_id) VALUES ($1) ON CONFLICT DO NOTHING`, s.ID); err != nil {
+			a.log.Printf("denma: error recording subscriber %d's shared blocklisting: %v", s.ID, err)
 		}
 	}
 }
