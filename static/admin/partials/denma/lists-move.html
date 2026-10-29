@@ -17,7 +17,7 @@
 	{{- end }}
 	<hr />
 {{- end }}
-<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-delete" @click.prevent="onDeleteForGood({{ $sub.ID }}, {{ ToJSON $sub.Email }})">{{ Icon "trash-2" }} Delete subscriber</button>
+<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-delete" @click.prevent="onDeleteForGood({{ $sub.ID }}, {{ ToJSON $sub.Email }})">{{ Icon "trash-2" }} Delete contact</button>
 {{- end }}
 
 {{ define "denma-bulk-move-button" -}}

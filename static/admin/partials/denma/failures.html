@@ -32,7 +32,7 @@
 			<summary>Who{{ if gt $f.Total (len $f.Items) }} (the latest {{ len $f.Items }}){{ end }}</summary>
 			<div class="table-wrapper">
 				<table>
-					<thead><tr><th>Subscriber</th><th>Why</th><th class="align-right">Tries</th><th>Last tried</th></tr></thead>
+					<thead><tr><th>Contact</th><th>Why</th><th class="align-right">Tries</th><th>Last tried</th></tr></thead>
 					<tbody>
 						{{- range $f.Items }}
 						<tr data-testid="failure-row">

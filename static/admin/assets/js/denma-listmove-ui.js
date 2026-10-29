@@ -6,7 +6,7 @@
 import { api, urls } from './main.js';
 import * as u from './utils.js';
 
-const subs = (n) => `${n} subscriber${n === 1 ? '' : 's'}`;
+const subs = (n) => `${n} contact${n === 1 ? '' : 's'}`;
 
 // The center's active automations that joining a list starts, fetched once
 // (null for users who can't read them: the option then names none).

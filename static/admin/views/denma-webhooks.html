@@ -95,8 +95,8 @@
 					<li><code>email</code>: the e-mail field (required).</li>
 					<li><code>name</code>, or <code>first_name</code> and <code>last_name</code>: the name fields (optional).</li>
 					<li><code>consent</code>: a consent checkbox, if the form has one. When it's sent, it has to be ticked.</li>
-					<li><code>form_id</code>, <code>entry_id</code>, <code>page_url</code>: optional (the {form_id}, {entry_id} and {embed_url} merge tags). They're kept with the subscriber's consent record.</li>
-					<li><code>attribs.&lt;name&gt;</code>: anything else to keep with someone new, such as <code>attribs.city</code> (optional). An existing subscriber's details aren't changed.</li>
+					<li><code>form_id</code>, <code>entry_id</code>, <code>page_url</code>: optional (the {form_id}, {entry_id} and {embed_url} merge tags). They're kept with the contact's consent record.</li>
+					<li><code>attribs.&lt;name&gt;</code>: anything else to keep with someone new, such as <code>attribs.city</code> (optional). An existing contact's details aren't changed.</li>
 					<li><code>tags</code>: tags for someone new, of those the webhook may give (optional; separated by commas).</li>
 				</ul>
 				<p><strong>Turn on the form's spam protection</strong> (Gravity Forms' Turnstile or reCAPTCHA field). A bot filling the form would make the center send confirmation e-mails to people who didn't ask for them, and spam complaints follow. The webhook only sees the form's server, not the visitor, so it can only limit how many sign-ups it takes an hour; the admins are told when that's reached.</p>

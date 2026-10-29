@@ -98,7 +98,7 @@ export function denmaBulkTags() {
       this.$refs.tagDialog.close();
       const verb = this.tagBulk.action === 'add' ? 'Added' : 'Removed';
       const n = this.tagBulk.num;
-      u.reload({ message: `${verb} ${tags.join(', ')} for ${n} subscriber${n === 1 ? '' : 's'}`, variant: 'success' });
+      u.reload({ message: `${verb} ${tags.join(', ')} for ${n} contact${n === 1 ? '' : 's'}`, variant: 'success' });
     },
   };
 }

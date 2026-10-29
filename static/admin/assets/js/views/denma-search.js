@@ -117,7 +117,7 @@ const FIELDS = {
     choice('type', 'Type', [['public', 'public'], ['private', 'private'], ['temporary', 'temporary']]),
     choice('optin', 'Opt-in', [['single', 'single'], ['double', 'double']]),
     choice('status', 'Status', [['active', 'active'], ['archived', 'archived']]),
-    number('subscribers', 'Subscribers'),
+    number('subscribers', 'Subscribed'),
     did('campaign', 'Campaign', [['did', 'was sent'], ['didnt', "wasn't sent"]], 'campaign'),
     {
       id: 'mailed',
@@ -173,7 +173,7 @@ const HELP = {
       [['tag:volunteer', 'tag:any', 'tag:none'], 'has the tag (Subscribers -> Tags)'],
       [['attr.city=Halifax', 'attr.age>=30', 'has:attr.city'], 'attributes'],
     ],
-    example: ['list:Newsletter -opened>90d -status:blocklisted', "finds Newsletter subscribers who haven't opened anything in 90 days."],
+    example: ['list:Newsletter -opened>90d -status:blocklisted', "finds people on Newsletter who haven't opened anything in 90 days."],
     words: 'names and emails',
   },
   lists: {

@@ -32,7 +32,7 @@ function denmaTags() {
       const { tag, to } = this.rename;
       const data = await api('tags', '/denma/tags', 'PUT', { action: 'rename', tag, to });
       this.$refs.renameDialog.close();
-      u.reload({ message: `Renamed ${tag} for ${data.subscribers} subscriber${data.subscribers === 1 ? '' : 's'}`, variant: 'success' });
+      u.reload({ message: `Renamed ${tag} for ${data.subscribers} contact${data.subscribers === 1 ? '' : 's'}`, variant: 'success' });
     },
 
     onAliases(tag, names) {
@@ -50,7 +50,7 @@ function denmaTags() {
     },
 
     async onDelete(tag, num) {
-      const who = num > 0 ? `${num} subscriber${num === 1 ? '' : 's'} and campaigns not yet sent lose it.` : 'No subscriber has it.';
+      const who = num > 0 ? `${num} contact${num === 1 ? '' : 's'} and campaigns not yet sent lose it.` : 'No contact has it.';
       if (!(await u.confirm(`Delete the tag ${tag}? ${who}`))) {
         return;
       }

@@ -139,7 +139,7 @@
 					<div class="hstack justify-between"><dt>Latest bounce</dt><dd class="text-light">{{ or .BounceLatest "None recorded" }}</dd></div>
 					<div class="hstack justify-between"><dt>Shared blocklist</dt><dd class="text-light">{{ FormatNumber .Blocked }} addresses{{ with .BlockedLast }}, the last added {{ . }}{{ end }}</dd></div>
 				</dl>
-				<p class="text-light text-8 mt-4">Each center checks new subscribers' e-mail domains and sends due automations every minute. Bounces arrive from the mail provider for all centers at the hub; if none have come in a long while, check its bounce notifications.</p>
+				<p class="text-light text-8 mt-4">Each center checks new contacts' e-mail domains and sends due automations every minute. Bounces arrive from the mail provider for all centers at the hub; if none have come in a long while, check its bounce notifications.</p>
 			</article>
 		</div>
 		{{- end }}

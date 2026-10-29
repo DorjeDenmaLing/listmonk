@@ -370,7 +370,7 @@ function component(opts) {
 
       const box = this.$refs.growthChart;
       box.replaceChildren(s.growthChart(bk, box.clientWidth));
-      this.growth.note = `Per ${bk.unit}. Deleted subscribers aren't counted. Hover over a bar for its numbers.`;
+      this.growth.note = `Per ${bk.unit}. Deleted contacts aren't counted. Hover over a bar for its numbers.`;
     },
 
     // ---- Mailbox providers ----

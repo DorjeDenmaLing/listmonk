@@ -103,7 +103,7 @@ function component() {
       if (this.changing) {
         return; // one at a time (cmd/denma_centers.go)
       }
-      if (status === 'disabled' && !(await u.confirm(`Disable ${c.name}? Its admin pages and its subscribers' links stop working until it's enabled again. Its data is kept.`))) {
+      if (status === 'disabled' && !(await u.confirm(`Disable ${c.name}? Its admin pages and the links in its e-mails stop working until it's enabled again. Its data is kept.`))) {
         return;
       }
       this.changing = c.slug;

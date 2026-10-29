@@ -29,7 +29,7 @@
 				<thead>
 					<tr>
 						{{ template "denma-th" dict "Key" "name" "Label" "Center" }}
-						{{ template "denma-th" dict "Key" "subscribers" "Label" "Subscribers" "First" "desc" "Class" "align-right" }}
+						{{ template "denma-th" dict "Key" "subscribers" "Label" "Contacts" "First" "desc" "Class" "align-right" }}
 						{{ template "denma-th" dict "Key" "sends" "Label" "Sent" "First" "desc" "Class" "align-right" "Title" "E-mails sent by campaigns that started in the period" }}
 						{{ template "denma-th" dict "Key" "open" "Label" "Open rate" "First" "desc" "Class" "align-right" }}
 						{{ template "denma-th" dict "Key" "hard" "Label" "Hard bounces" "First" "desc" "Class" "align-right" "Title" "Hard bounces per e-mail sent" }}
@@ -52,7 +52,7 @@
 								<div class="text-light text-8" x-text="c.path"></div>
 								<div class="text-8 text-danger denma-center-error" x-show="c.error" x-text="c.error"></div>
 							</td>
-							<td class="align-right" data-label="Subscribers">
+							<td class="align-right" data-label="Contacts">
 								<span x-text="c.subscribersText"></span>
 								<div class="text-light text-8" x-text="c.newText"></div>
 							</td>
@@ -94,7 +94,7 @@
 			</table>
 		</div>
 		{{ template "denma-pager" }}
-		<p class="denma-stat-note">Sent, open rate, bounces and complaints are for campaigns that started in the period. Opening a center signs you in there as a Super Admin. Mail server settings are the hub's (Settings): every center sends with them. A disabled center keeps its data, but its pages and its subscribers' links stop working until it's enabled.</p>
+		<p class="denma-stat-note">Sent, open rate, bounces and complaints are for campaigns that started in the period. Opening a center signs you in there as a Super Admin. Mail server settings are the hub's (Settings): every center sends with them. A disabled center keeps its data, but its pages and the links in its e-mails stop working until it's enabled.</p>
 	</article>
 </section>
 <script type="module" src="{{ URI "/admin/static/js/views/denma-hub-centers.js" }}?v={{ .AssetVersion }}" defer></script>

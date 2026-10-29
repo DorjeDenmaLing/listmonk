@@ -44,7 +44,7 @@
 			<label data-field>
 				Name
 				<input name="name" maxlength="200" required autofocus x-model="form.name" placeholder="Welcome" />
-				<small data-hint>For you; subscribers don't see it.</small>
+				<small data-hint>For you; contacts don't see it.</small>
 			</label>
 		</fieldset>
 
@@ -270,7 +270,7 @@
 				<label data-field>
 					Send a test to
 					<input type="email" maxlength="200" x-model="testEmail" data-testid="test-email" />
-					<small data-hint>The e-mail, as it is on this page, saved or not. If the address is a subscriber's, it's filled in with theirs. Lists and tags aren't changed.</small>
+					<small data-hint>The e-mail, as it is on this page, saved or not. If the address is a contact's, it's filled in with theirs. Lists and tags aren't changed.</small>
 				</label>
 				<button type="button" data-testid="btn-test" @click="onTest" :aria-busy="isLoading('test')" :disabled="isLoading('test')">{{ Icon "send" }} Send test</button>
 			</div>

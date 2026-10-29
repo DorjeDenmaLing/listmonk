@@ -236,8 +236,8 @@ export function health(v, bands) {
 
 const GROWTH = [
   // [label, current key, previous key, higher is good, description]
-  ['Active subscribers', 'active', null, null, 'Enabled subscribers with at least one list subscription, right now.'],
-  ['New', 'added', 'prevAdded', true, 'Subscribers added in this period (imports count on the day they were imported).'],
+  ['Subscribed', 'active', null, null, 'Enabled contacts with at least one list subscription, right now.'],
+  ['New', 'added', 'prevAdded', true, 'Contacts added in this period (imports count on the day they were imported).'],
   ['Unsubscribed', 'unsub', 'prevUnsub', false, 'People who unsubscribed in this period (not bounce removals).'],
   ['Bounced or complained', 'removed', 'prevRemoved', false, 'People removed after a bounce or spam complaint in this period.'],
   ['Net change', 'net', 'prevNet', true, 'New minus unsubscribed minus bounced or complained.'],
@@ -307,7 +307,7 @@ export function growthChart(bk, width) {
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.setAttribute('class', 'denma-chart');
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', `Subscribers gained and lost per ${bk.unit}`);
+  svg.setAttribute('aria-label', `Contacts gained and lost per ${bk.unit}`);
   const node = (parent, tag, attrs, text) => {
     const e = document.createElementNS(NS, tag);
     Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));

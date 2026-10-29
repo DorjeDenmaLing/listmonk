@@ -156,7 +156,7 @@ function component() {
       const failed = (selected ? [selected] : this.centers).filter((c) => !c.counted).length;
       this.growth.note = `Per ${bk.unit}, compared with the previous ${days} day${days === 1 ? '' : 's'}`
         + `${selected ? '' : `, ${n} center${n === 1 ? '' : 's'} together`}.`
-        + " Deleted subscribers aren't counted. Hover over a bar for its numbers."
+        + " Deleted contacts aren't counted. Hover over a bar for its numbers."
         + (failed ? ` ${failed} center${failed === 1 ? '' : 's'} couldn't be counted (see By center).` : '');
 
       // Mailbox providers.

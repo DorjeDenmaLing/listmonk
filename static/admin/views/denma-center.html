@@ -162,10 +162,10 @@
 
 		{{/* The features (cmd/denma_features.go). */}}
 		<fieldset class="card" data-testid="center-subscribers">
-			<legend>Subscribers</legend>
+			<legend>Unsubscribing</legend>
 			<label data-field>
 				<span><input type="checkbox" role="switch" x-model="form.unsubscribe_everywhere" data-testid="unsubscribe-everywhere"{{ if and $d.Form.UnsubscribeEverywhere (not $d.Super) }} disabled{{ end }} /> Unsubscribing someone from one list here unsubscribes them from all</span>
-				<small data-hint>Subscribers who unsubscribe themselves (the unsubscribe link, or the e-mail app's unsubscribe button) always leave every list and are blocklisted. This does the same when someone is unsubscribed from a list here in the admin, by an import or through the API. Only a superadmin can turn it off.</small>
+				<small data-hint>Contacts who unsubscribe themselves (the unsubscribe link, or the e-mail app's unsubscribe button) always leave every list and are blocklisted. This does the same when someone is unsubscribed from a list here in the admin, by an import or through the API. Only a superadmin can turn it off.</small>
 			</label>
 		</fieldset>
 

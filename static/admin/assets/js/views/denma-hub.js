@@ -17,7 +17,7 @@ const METRICS = [
   ['open', 'Open rate', 'pct1', true, 'Unique people who opened, as a share of delivered emails (per campaign).'],
   ['click', 'Click rate', 'pct2', true, 'Unique people who clicked a link, as a share of delivered emails (per campaign).'],
   ['unsub', 'Unsubscribed rate', 'pct2', false, 'People who unsubscribed in this period (not bounce removals), as a share of delivered emails.'],
-  ['newSubs', 'New subscribers', 'count', true, 'Subscribers added in this period.'],
+  ['newSubs', 'New contacts', 'count', true, 'Contacts added in this period.'],
 ];
 
 const KEYS = ['campaigns', 'sends', 'camp_bounces', 'tracked_delivered', 'opens', 'clicks', 'unlinked', 'unsubs', 'hard', 'soft', 'complaint', 'new_subscribers'];
@@ -127,7 +127,7 @@ function component() {
       const subs = list.reduce((n, c) => n + (c.subscribers || 0), 0);
       const sending = list.filter((c) => c.cur && c.cur.campaigns > 0).length;
       const who = this.selected ? '' : ` from ${sending} of ${plural(list.length, 'center', 'centers')}`;
-      this.note = `${plural(cur.campaigns, 'campaign', 'campaigns')}${who} in this period, compared with the previous ${plural(days, 'day', 'days')}. ${subs.toLocaleString()} subscribers in all.`;
+      this.note = `${plural(cur.campaigns, 'campaign', 'campaigns')}${who} in this period, compared with the previous ${plural(days, 'day', 'days')}. ${subs.toLocaleString()} contacts in all.`;
       const unlinked = total(list, 'cur').unlinked;
       if (unlinked) {
         this.note += ` ${plural(unlinked, "open isn't", "opens aren't")} linked to anyone (people deleted since, or opened while individual tracking was off), so the open rate leaves ${unlinked === 1 ? 'it' : 'them'} out.`;

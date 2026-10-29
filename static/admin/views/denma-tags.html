@@ -22,7 +22,7 @@
 				<thead>
 					<tr>
 						<th>Tag</th>
-						<th class="align-right">Subscribers</th>
+						<th class="align-right" title="Everyone with the tag, subscribed or not">Contacts</th>
 						<th class="align-right" title="Not blocklisted, and subscribed to a list (confirmed, on a double opt-in list)">A campaign reaches</th>
 						<th class="actions align-right"></th>
 					</tr>
@@ -36,7 +36,7 @@
 							<small class="denma-tag-aliases" data-testid="tag-aliases">also {{ range $j, $n := $t.Aliases }}{{ if $j }}, {{ end }}{{ $n }}{{ end }}</small>
 							{{- end }}
 						</td>
-						<td class="align-right" data-label="Subscribers">
+						<td class="align-right" data-label="Contacts">
 							<a href="{{ URI "/admin/subscribers" }}?search={{ printf "tag:%q" $t.Tag | urlquery }}" data-testid="tag-count">{{ FormatNumber $t.Subscribers }}</a>
 						</td>
 						<td class="align-right" data-label="A campaign reaches">{{ FormatNumber $t.Active }}</td>
@@ -77,7 +77,7 @@
 					<label data-field>
 						Name
 						<input x-model="add.tag" x-ref="addTag" maxlength="100" required placeholder="volunteer" data-testid="add-tag" />
-						<small data-hint>Lowercase, like <em>volunteer</em> or <em>retreat-2026</em>. Once added, it can be given to subscribers and picked for campaigns.</small>
+						<small data-hint>Lowercase, like <em>volunteer</em> or <em>retreat-2026</em>. Once added, it can be given to contacts and picked for campaigns.</small>
 					</label>
 				</section>
 				<footer class="dialog-foot hstack gap-3 justify-end">
@@ -96,7 +96,7 @@
 					<label data-field>
 						New name
 						<input x-model="rename.to" maxlength="100" required data-testid="rename-to" />
-						<small data-hint>Every subscriber with the tag gets the new one, and so do campaigns not yet sent. If the new name is already a tag, the two become one.</small>
+						<small data-hint>Every contact with the tag gets the new one, and so do campaigns not yet sent. If the new name is already a tag, the two become one.</small>
 					</label>
 				</section>
 				<footer class="dialog-foot hstack gap-3 justify-end">

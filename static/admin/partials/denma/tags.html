@@ -23,14 +23,14 @@
 <dialog x-ref="tagDialog">
 	<form @submit.prevent="onSubmitTags">
 		<div class="dialog-card content">
-			<header class="dialog-head"><h4 class="dialog-title">Tags for <span x-text="tagBulk.num"></span> <span x-text="tagBulk.num === 1 ? 'subscriber' : 'subscribers'"></span></h4></header>
+			<header class="dialog-head"><h4 class="dialog-title">Tags for <span x-text="tagBulk.num"></span> <span x-text="tagBulk.num === 1 ? 'contact' : 'contacts'"></span></h4></header>
 			<section class="dialog-body">
 				<fieldset class="hstack">
 					<legend>{{ .L.T "settings.bounces.action" }}</legend>
 					<label><input type="radio" name="tag-action" value="add" x-model="tagBulk.action" data-testid="check-tag-add" /> {{ .L.T "globals.buttons.add" }}</label>
 					<label><input type="radio" name="tag-action" value="remove" x-model="tagBulk.action" data-testid="check-tag-remove" /> {{ .L.T "globals.buttons.remove" }}</label>
 				</fieldset>
-				{{ template "denma-tag-picker" dict "Model" "tagBulk.tags" "ID" "bulk-tags" "Label" "Tags" "Hint" "Pick from the center's tags; new ones are added under Subscribers -> Tags. Subscribers don't see them." }}
+				{{ template "denma-tag-picker" dict "Model" "tagBulk.tags" "ID" "bulk-tags" "Label" "Tags" "Hint" "Pick from the center's tags; new ones are added under Subscribers -> Tags. Contacts don't see them." }}
 			</section>
 			<footer class="dialog-foot hstack gap-3 justify-end">
 				<button type="button" class="outline" @click="$refs.tagDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
