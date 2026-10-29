@@ -12,7 +12,7 @@ import (
 const (
 	// maxTries is the maximum number of verification attempts allowed for a token.
 	// After this many failed checks, the token is automatically deleted.
-	maxTries = 15
+	maxTries = 5
 )
 
 // Token represents a temporary token with TTL and arbitrary data.
@@ -86,6 +86,20 @@ func Check(id string) (any, error) {
 	// Update the token with the new count.
 	tokens[id] = token
 
+	return token.Data, nil
+}
+
+// Peek retrieves a token by ID without deleting it or counting a check (denma:
+// for tokens whose ID is itself the secret, and whose use is limited elsewhere).
+func Peek(id string) (any, error) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	token, exists := tokens[id]
+	if !exists || time.Since(token.CreatedAt) > token.TTL {
+		delete(tokens, id)
+		return nil, Err
+	}
 	return token.Data, nil
 }
 

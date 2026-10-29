@@ -168,7 +168,7 @@ func (a *App) loginState(c echo.Context) *denmaLoginState {
 	if err != nil || ck.Value == "" {
 		return nil
 	}
-	v, err := tmptokens.Check(denmaLoginKey(ck.Value))
+	v, err := tmptokens.Peek(denmaLoginKey(ck.Value))
 	if err != nil {
 		return nil
 	}

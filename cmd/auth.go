@@ -469,11 +469,8 @@ func (a *App) doLogin(c echo.Context) error {
 		}
 	}()
 
-	if !strHasLen(username, 3, stdInputMaxLen) {
-		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "username"))
-	}
-	if !strHasLen(password, 8, stdInputMaxLen) {
-		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "password"))
+	if !strHasLen(username, 3, stdInputMaxLen) || !strHasLen(password, 8, stdInputMaxLen) {
+		return echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidLogin")) // denma: as for any wrong sign-in
 	}
 
 	// Log the user in by fetching and verifying credentials from the DB.

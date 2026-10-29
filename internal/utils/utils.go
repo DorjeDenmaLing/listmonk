@@ -74,5 +74,14 @@ func SanitizeURI(u string) string {
 		return "/"
 	}
 
-	return path.Clean(p.Path)
+	// denma: no backslash or control character, which browsers read as a slash or drop.
+	if strings.ContainsFunc(p.Path, func(r rune) bool { return r == '\\' || r < ' ' || r == 0x7f }) {
+		return "/"
+	}
+
+	// denma: always a path from the root.
+	if out := path.Clean(p.Path); strings.HasPrefix(out, "/") {
+		return out
+	}
+	return "/"
 }

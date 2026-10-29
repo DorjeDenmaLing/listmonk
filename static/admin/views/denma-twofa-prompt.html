@@ -1,0 +1,23 @@
+{{ define "admin-denma-twofa-prompt" -}}
+{{ template "admin-header" . }}
+{{/* denma: asks a superadmin to set up two-factor sign-in (cmd/denma_twofa_prompt.go). */}}
+<section class="denma-twofa-prompt">
+	<header class="page-header">
+		<h1 class="page-title">Set up two-factor sign-in</h1>
+	</header>
+
+	<div class="card page-content content">
+		<p>Superadmins can reach every center, so their accounts need more than a password. With two-factor sign-in, signing in also needs a code from an authenticator app on your phone.</p>
+		<p>It takes a minute: open your Profile and turn on Two-factor authentication.</p>
+
+		<form method="post" action="{{ URI "/admin/denma-twofa/later" }}" class="hstack gap-3 mt-5">
+			<input type="hidden" name="next" value="{{ .Data.Next }}" />
+			<a href="{{ URI "/admin/user/profile" }}" class="button" data-variant="primary" data-testid="twofa-setup">Set it up now</a>
+			<button type="submit" class="outline" data-testid="twofa-later">Later</button>
+		</form>
+		<p class="text-light mt-4">Later keeps this page away until you next sign in.</p>
+	</div>
+</section>
+
+{{ template "admin-footer" . -}}
+{{ end }}
