@@ -52,6 +52,9 @@ func (d *denmaCenters) pruneOnce() {
 		}
 		n, _ = res.RowsAffected()
 		messages += n
+		if _, err := a.db.Exec(`DELETE FROM denma_forgotten_sends WHERE sent_at < NOW() - make_interval(days => $1)`, denmaMessageDays); err != nil {
+			a.log.Printf("denma: error deleting old records of deleted subscribers' e-mails: %v", err)
+		}
 	}
 	if sessions > 0 || messages > 0 {
 		lo.Printf("denma: deleted %d expired sessions and %d records of e-mails sent over %d days ago", sessions, messages, denmaMessageDays)

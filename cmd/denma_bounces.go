@@ -18,8 +18,10 @@ package main
 // A hard bounce goes on the shared blocklist whatever happens (the address
 // can't receive mail from any center, cmd/denma_blocklist.go). A complaint
 // for an address in several centers with neither header is recorded in the
-// one that last sent to it (denma_messages); one for an address no center
-// has, or with no e-mail sent to say, can't be placed and is only logged.
+// one that last sent to it (denma_messages), and one for an address no center
+// has in the one that last sent to it before it was deleted
+// (denma_forgotten_sends); with no e-mail recorded to say, it can't be
+// placed and is only logged.
 // A soft bounce that can't be placed is only logged, as it may concern one
 // center's mail only.
 //
@@ -34,6 +36,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -249,6 +253,10 @@ func (d *denmaCenters) recordBounce(b models.Bounce) (string, error) {
 		if slug, err = d.lastSentCenter(slugs, b.Email); err != nil {
 			return "", fmt.Errorf("finding the center that last sent to them: %w", err)
 		}
+	} else if len(slugs) == 0 && b.Type == models.BounceTypeComplaint {
+		if slug, err = d.lastSentCenterDeleted(b.Email); err != nil {
+			return "", fmt.Errorf("finding the center that last sent to them: %w", err)
+		}
 	}
 	if b.Type == models.BounceTypeHard && b.Email != "" {
 		denmaBlockEverywhere(b.Email, "hard bounce", slug) // cmd/denma_blocklist.go
@@ -257,6 +265,8 @@ func (d *denmaCenters) recordBounce(b models.Bounce) (string, error) {
 		return slug, d.recordIn(slug, b)
 	}
 	switch {
+	case len(slugs) == 0 && b.Type == models.BounceTypeComplaint:
+		lo.Printf("denma: complaint for an address which no center has, and none has e-mailed: not recorded")
 	case len(slugs) == 0:
 		lo.Printf("denma: %s bounce for an address which no center has: not recorded", b.Type)
 	case b.Type == models.BounceTypeComplaint:
@@ -285,6 +295,32 @@ func (d *denmaCenters) lastSentCenter(slugs []string, email string) (string, err
 	}
 	var slug string
 	if err := db.Get(&slug, `SELECT slug FROM (`+strings.Join(parts, " UNION ALL ")+`) x WHERE at IS NOT NULL ORDER BY at DESC, slug LIMIT 1`, strings.ToLower(email)); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return slug, nil
+}
+
+// lastSentCenterDeleted returns the center that last e-mailed an address
+// whose subscriber was deleted, by denma_forgotten_sends ("" if none has).
+func (d *denmaCenters) lastSentCenterDeleted(email string) (string, error) {
+	if email == "" {
+		return "", nil
+	}
+	db := d.current().db
+	cs, err := denmaCenterSchemas(db, nil, "denma_forgotten_sends")
+	if err != nil || len(cs) == 0 {
+		return "", err
+	}
+	parts := make([]string, len(cs))
+	for i, c := range cs {
+		parts[i] = fmt.Sprintf(`(SELECT %s AS slug, sent_at FROM %s.denma_forgotten_sends WHERE email_hash = $1)`, pq.QuoteLiteral(c.Slug), pq.QuoteIdentifier(c.Schema))
+	}
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(email))))
+	var slug string
+	if err := db.Get(&slug, `SELECT slug FROM (`+strings.Join(parts, " UNION ALL ")+`) x ORDER BY sent_at DESC, slug LIMIT 1`, hex.EncodeToString(sum[:])); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
 		}

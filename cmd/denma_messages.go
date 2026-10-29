@@ -63,6 +63,25 @@ CREATE TABLE IF NOT EXISTS denma_messages (
 );
 CREATE INDEX IF NOT EXISTS denma_messages_sub ON denma_messages (subscriber_id, sent_at);
 CREATE INDEX IF NOT EXISTS denma_messages_at ON denma_messages (sent_at);
+
+-- When a deleted subscriber's address was last e-mailed, by its hash, for a
+-- complaint that arrives after (cmd/denma_bounces.go).
+CREATE TABLE IF NOT EXISTS denma_forgotten_sends (
+    email_hash TEXT PRIMARY KEY,
+    sent_at    TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE OR REPLACE FUNCTION denma_keep_last_sent() RETURNS TRIGGER
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+BEGIN
+    INSERT INTO denma_forgotten_sends (email_hash, sent_at)
+        SELECT denma_email_hash(OLD.email), MAX(sent_at) FROM denma_messages
+        WHERE subscriber_id = OLD.id AND status IN ('sent', 'uncertain') HAVING MAX(sent_at) IS NOT NULL
+        ON CONFLICT (email_hash) DO UPDATE SET sent_at = GREATEST(denma_forgotten_sends.sent_at, EXCLUDED.sent_at);
+    RETURN OLD;
+END $$;
+DROP TRIGGER IF EXISTS denma_keep_last_sent ON subscribers;
+CREATE TRIGGER denma_keep_last_sent BEFORE DELETE ON subscribers
+    FOR EACH ROW EXECUTE FUNCTION denma_keep_last_sent();
 `
 
 // denmaSentAs marks an automation's e-mail (id 0 for a test) for the record.
