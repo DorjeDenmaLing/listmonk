@@ -342,6 +342,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 	// Start the campaign manager workers. The campaign batches (fetch from DB, push out
 	// messages) get processed at the specified interval.
 	denmaCenterCap(mgr, ko) // denma: the center's daily cap (cmd/denma_daily.go)
+	denmaHoldScan(mgr, ko)  // denma: a reload's new manager waits for the old (cmd/denma_lifecycle.go)
 	go mgr.Run()
 
 	// =========================================================================

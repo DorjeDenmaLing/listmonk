@@ -110,6 +110,8 @@ type denmaCenter struct {
 	app    *App
 	router *echo.Echo
 
+	holdScan bool // its App picks up no campaign until the one before has stopped (cmd/denma_lifecycle.go)
+
 	// Settings set when the center is provisioned (by the hub).
 	initial map[string]any
 }
@@ -139,6 +141,8 @@ type denmaCenters struct {
 	// load (and the first App keep sending), and a reload finishing after a
 	// disable would put the center back.
 	lifeMu sync.Mutex
+
+	stopping map[string][]chan struct{} // slug -> Apps being stopped (cmd/denma_lifecycle.go), under mu
 
 	// One pass of the hub's settings to the centers at a time
 	// (propagateShared); a hub reload during one asks for another after it.
@@ -697,6 +701,7 @@ func (d *denmaCenters) centerConfig(c *denmaCenter) *koanf.Koanf {
 	params := strings.TrimSpace(d.base.ko.String("db.params") + " search_path=" + c.Schema)
 	_ = ck.Set("db.params", params)
 	_ = ck.Set("denma.center", c.Slug)
+	_ = ck.Set("denma.hold_scan", c.holdScan)
 	_ = ck.Set("db.max_open", d.base.ko.Int("denma.center_db_max_open"))
 	_ = ck.Set("db.max_idle", d.base.ko.Int("denma.center_db_max_idle"))
 	if ck.Int("db.max_open") < 1 {
@@ -1071,21 +1076,29 @@ func (d *denmaCenters) disable(slug string) error {
 	if d.isStarting(slug) {
 		return errDenmaStarting
 	}
-	d.lifeMu.Lock()
-	defer d.lifeMu.Unlock()
-	if _, err := d.base.db.Exec(`UPDATE denma.centers SET status = 'disabled' WHERE slug = $1`, slug); err != nil {
-		return err
-	}
-	d.mu.Lock()
-	c := d.bySlug[slug]
-	delete(d.bySlug, slug)
-	delete(d.failed, slug)
-	d.mu.Unlock()
+	// Its App is stopped after the lock is let go (the other centers' enables
+	// and reloads don't wait for it), and the request waits for that.
+	c, end, err := func() (*denmaCenter, func(), error) {
+		d.lifeMu.Lock()
+		defer d.lifeMu.Unlock()
+		if _, err := d.base.db.Exec(`UPDATE denma.centers SET status = 'disabled' WHERE slug = $1`, slug); err != nil {
+			return nil, nil, err
+		}
+		d.mu.Lock()
+		c := d.bySlug[slug]
+		delete(d.bySlug, slug)
+		delete(d.failed, slug)
+		d.mu.Unlock()
+		if c == nil {
+			return nil, nil, nil
+		}
+		return c, d.beginStop(slug), nil
+	}()
 	if c != nil {
 		lo.Printf("denma: center %s disabled", slug)
-		denmaRetire(c.app, false)
+		d.retireThen(c.app, nil, nil, end)
 	}
-	return nil
+	return err
 }
 
 // enable loads a center and serves it again.
@@ -1102,6 +1115,10 @@ func (d *denmaCenters) enable(slug string) error {
 	if d.get(slug) != nil {
 		return nil
 	}
+	// An App of the center still stopping (disabled or replaced a moment ago)
+	// may be running campaigns: the new one picks them up after it.
+	before := d.stopsOf(slug)
+	c.holdScan = len(before) > 0
 	if err := d.load(&c); err != nil {
 		d.setFailed(slug, err)
 		return err
@@ -1110,6 +1127,9 @@ func (d *denmaCenters) enable(slug string) error {
 		return err
 	}
 	d.set(&c)
+	if c.holdScan {
+		go d.releaseScan(c.app, before)
+	}
 	lo.Printf("denma: center %s enabled", slug)
 	go d.retryBounces() // those that came while it was off (cmd/denma_bounces.go)
 	return nil
@@ -1121,22 +1141,28 @@ func (d *denmaCenters) watchReload(c *denmaCenter) {
 	<-old.chReload
 	lo.Printf("denma: reloading center %s", c.Slug)
 
-	next := &denmaCenter{ID: c.ID, Slug: c.Slug, Name: c.Name, Schema: c.Schema}
+	next := &denmaCenter{ID: c.ID, Slug: c.Slug, Name: c.Name, Schema: c.Schema, holdScan: true}
 	if err := d.load(next); err != nil {
 		lo.Printf("denma: error reloading center %s: %v", c.Slug, err)
 		go d.watchReload(c) // keep serving the old one
 		return
 	}
 	d.lifeMu.Lock()
-	defer d.lifeMu.Unlock()
 	if d.get(c.Slug) != c {
+		d.lifeMu.Unlock()
 		// Disabled or replaced meanwhile: the new one is never served.
 		lo.Printf("denma: center %s changed while it reloaded: the reload is dropped", c.Slug)
 		denmaRetire(next.app, false)
+		next.app.manager.DenmaReleaseScan()
 		return
 	}
 	d.set(next)
-	denmaRetire(old, false)
+	before := d.stopsOf(c.Slug)
+	end := d.beginStop(c.Slug)
+	d.lifeMu.Unlock()
+	// The old App stops after the lock is let go; the new one picks up
+	// campaigns once it has.
+	d.retireThen(old, next.app, before, end)
 }
 
 // watchBaseReload rebuilds the hub when its settings are saved:
@@ -1186,14 +1212,14 @@ const denmaRetireWait = time.Minute
 // replacement, or when the center is enabled again) without sending anyone a
 // second copy; after a grace period for in-flight requests, and any import
 // running in it, the rest.
-func denmaRetire(old *App, original bool) {
+func denmaRetire(old *App, original bool) (stopped bool) {
 	first := false
 	old.retired.Do(func() { first = true })
 	if !first {
-		return // closing its manager and messengers twice would panic
+		return true // closing its manager and messengers twice would panic
 	}
 	old.manager.StopScanning()
-	stopped := old.manager.DenmaStop(denmaRetireWait)
+	stopped = old.manager.DenmaStop(denmaRetireWait)
 	if !stopped {
 		old.log.Printf("denma: a campaign didn't save its progress in %v; it resumes from its last checkpoint", denmaRetireWait)
 	}
@@ -1231,6 +1257,7 @@ func denmaRetire(old *App, original bool) {
 		manager.DenmaDeliveriesWait(30 * time.Second) // automation e-mails being sent record how they went first
 		old.db.Close()
 	}()
+	return stopped
 }
 
 // denmaEmailMessenger is the app's default "email" messenger, if any.

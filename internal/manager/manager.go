@@ -475,6 +475,9 @@ func (m *Manager) scanCampaigns(tick time.Duration) {
 		if m.scanStopped() { // denma: manager/denma.go
 			return
 		}
+		if m.scanHeld() { // denma: denma_scanhold.go
+			continue
+		}
 		campaigns, err := m.denmaNextCampaigns() // denma: denma.go
 		if err != nil {
 			m.log.Printf("error fetching campaigns: %v", err)
