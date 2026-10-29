@@ -164,9 +164,16 @@ SELECT
 // tracking, so its opens and clicks count per person: some of its views are
 // a subscriber's, or none is anonymous. Views are anonymous when sent while
 // individual tracking was off, and once their subscriber is deleted (listmonk
-// keeps them), which doesn't stop the others counting.
-const denmaTrackedCampSQL = `(EXISTS (SELECT 1 FROM S.campaign_views v WHERE v.campaign_id = c.id AND v.subscriber_id IS NOT NULL)
-		OR NOT EXISTS (SELECT 1 FROM S.campaign_views v WHERE v.campaign_id = c.id AND v.subscriber_id IS NULL))`
+// keeps them), which doesn't stop the others counting. Not if it started
+// before Maintenance deleted the center's analytics (denmaAnalyticsDeleted):
+// its views and clicks are gone.
+const denmaTrackedCampSQL = `((c.started_at IS NULL OR c.started_at >= COALESCE((SELECT since FROM S.denma_stat_starts WHERE stat = '` + denmaAnalyticsDeleted + `'), '-infinity'))
+		AND (EXISTS (SELECT 1 FROM S.campaign_views v WHERE v.campaign_id = c.id AND v.subscriber_id IS NOT NULL)
+		OR NOT EXISTS (SELECT 1 FROM S.campaign_views v WHERE v.campaign_id = c.id AND v.subscriber_id IS NULL)))`
+
+// denmaAnalyticsDeleted is the denma_stat_starts row whose time is the date
+// up to which Maintenance deleted the center's views and clicks.
+const denmaAnalyticsDeleted = "analytics_deleted"
 
 // denmaNoConsentCountSQL is how many of a center's subscribers the API added
 // without consent (cmd/denma_noconsent.go), left out of its figures.

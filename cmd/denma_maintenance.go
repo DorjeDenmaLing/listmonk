@@ -149,9 +149,10 @@ func (a *App) DenmaGCSubscriptions(c echo.Context) error {
 	}{n}})
 }
 
-// DenmaGCCampaignAnalytics deletes campaign views and/or clicks older than a
+// DenmaGCCampaignAnalytics deletes campaign views and clicks older than a
 // date, and automations' (cmd/denma_auto_reports.go): in a center or a single
-// install, or the hub's centers.
+// install, or the hub's centers. Whichever type is asked, views and clicks go
+// together.
 func (a *App) DenmaGCCampaignAnalytics(c echo.Context) error {
 	ctrs, err := a.denmaMaintainIn(c)
 	if err != nil {
@@ -165,7 +166,7 @@ func (a *App) DenmaGCCampaignAnalytics(c echo.Context) error {
 	if typ != "all" && typ != "views" && typ != "clicks" {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))
 	}
-	gc := func(app *App) (int, error) { return 0, app.denmaGCAnalytics(typ, t) }
+	gc := func(app *App) (int, error) { return 0, app.denmaGCAnalytics(t) }
 	if ctrs == nil {
 		_, err = gc(a)
 	} else {
@@ -177,22 +178,22 @@ func (a *App) DenmaGCCampaignAnalytics(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
-// denmaGCAnalytics deletes the app's views and/or clicks (typ: all, views,
-// clicks) older than t, campaigns' and automations'.
-func (a *App) denmaGCAnalytics(typ string, t time.Time) error {
-	if typ != "clicks" {
-		if err := a.core.DeleteCampaignViews(t); err != nil {
-			return err
-		}
-		if _, err := a.db.Exec(`DELETE FROM denma_automation_views WHERE created_at < $1`, t); err != nil { // cmd/denma_auto_reports.go
-			return err
-		}
+// denmaGCAnalytics deletes the app's views and clicks older than t,
+// campaigns' and automations', together, and records the date: campaigns that
+// started before it are left out of rates (denmaTrackedCampSQL).
+func (a *App) denmaGCAnalytics(t time.Time) error {
+	if _, err := a.db.Exec(`INSERT INTO denma_stat_starts (stat, since) VALUES ($2, LEAST($1::TIMESTAMPTZ, NOW()))
+		ON CONFLICT (stat) DO UPDATE SET since = GREATEST(denma_stat_starts.since, EXCLUDED.since)`, t, denmaAnalyticsDeleted); err != nil {
+		return err
 	}
-	if typ != "views" {
-		if err := a.core.DeleteCampaignLinkClicks(t); err != nil {
-			return err
-		}
-		if _, err := a.db.Exec(`DELETE FROM denma_automation_clicks WHERE created_at < $1`, t); err != nil { // cmd/denma_automations.go
+	if err := a.core.DeleteCampaignViews(t); err != nil {
+		return err
+	}
+	if err := a.core.DeleteCampaignLinkClicks(t); err != nil {
+		return err
+	}
+	for _, table := range []string{"denma_automation_views", "denma_automation_clicks"} { // cmd/denma_auto_reports.go, cmd/denma_automations.go
+		if _, err := a.db.Exec(`DELETE FROM `+table+` WHERE created_at < $1`, t); err != nil {
 			return err
 		}
 	}

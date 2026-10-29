@@ -68,15 +68,8 @@
 		<div class="card">
 			<h4 class="text-4">{{ .L.T "globals.terms.analytics" }}</h4>
 			<div class="row">
-				<div class="col-4">
-					<label data-field>
-						Data
-						<select aria-label="Data" x-model="analyticsType">
-							<option value="all">{{ .L.T "globals.terms.all" }}</option>
-							<option value="views">{{ .L.T "dashboard.campaignViews" }}</option>
-							<option value="clicks">{{ .L.T "dashboard.linkClicks" }}</option>
-						</select>
-					</label>
+				<div class="col-4">{{/* denma: views and clicks are deleted together, and earlier campaigns leave the rates (cmd/denma_maintenance.go) */}}
+					<p class="text-light" data-testid="analytics-note">Campaign and automation views and clicks go together. Campaigns sent before the date show no open or click rates afterwards.</p>
 				</div>
 				<div class="col-4">
 					<label data-field>
