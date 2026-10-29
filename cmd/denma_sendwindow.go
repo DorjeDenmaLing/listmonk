@@ -8,8 +8,7 @@ package main
 // claimed overnight) and go on when they open; automations that send e-mail
 // wait to run. Confirmations, password resets, notices, tests and the API's
 // transactional e-mails always go. Off by default. A save applies at once, as
-// the daily cap does: a campaign waiting for the hours would hold up the
-// center's reload.
+// the daily cap does.
 
 import (
 	"fmt"

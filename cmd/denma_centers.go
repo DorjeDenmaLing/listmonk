@@ -977,7 +977,8 @@ func (d *denmaCenters) syncShared(db *sqlx.DB) (bool, error) {
 // reloads those that changed, one at a time, each once the one before has
 // been rebuilt. A center that is sending a campaign is reloaded once it has
 // finished (it shows "needs restart" until then, as listmonk does for a
-// settings save).
+// settings save); one whose campaigns only wait (for its sending hours or a
+// daily limit) is reloaded at once.
 //
 // Only one pass runs at a time: a hub reload during one (the hub's settings
 // saved again) asks for one more pass after it, which reloads only the
@@ -1023,7 +1024,7 @@ func (d *denmaCenters) propagatePass() {
 		if !changed {
 			continue
 		}
-		if c.app.manager.HasRunningCampaigns() {
+		if c.app.denmaSending() {
 			c.app.Lock()
 			c.app.needsRestart = true
 			c.app.Unlock()
@@ -1048,7 +1049,7 @@ func (d *denmaCenters) awaitReload(c *denmaCenter) {
 	lo.Printf("denma: center %s hasn't reloaded within a minute; going on to the next", c.Slug)
 }
 
-// reloadWhenIdle reloads a center once it has no running campaigns, unless it
+// reloadWhenIdle reloads a center once it has no campaign sending, unless it
 // has been reloaded (or disabled) in the meantime.
 func (d *denmaCenters) reloadWhenIdle(c *denmaCenter) {
 	for {
@@ -1056,8 +1057,8 @@ func (d *denmaCenters) reloadWhenIdle(c *denmaCenter) {
 		if cur := d.get(c.Slug); cur == nil || cur.app != c.app {
 			return
 		}
-		if !c.app.manager.HasRunningCampaigns() {
-			lo.Printf("denma: center %s finished sending; reloading it with the hub's settings", c.Slug)
+		if !c.app.denmaSending() {
+			lo.Printf("denma: center %s isn't sending; reloading it with the hub's settings", c.Slug)
 			denmaSignalReload(c.app)
 			return
 		}

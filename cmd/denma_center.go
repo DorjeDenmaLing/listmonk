@@ -265,7 +265,7 @@ func (a *App) ViewDenmaWebhooks(c echo.Context) error {
 }
 
 // DenmaUpdateCenter saves the Config page and reloads the center (after
-// any campaign it's sending).
+// any campaign it's sending; one that only waits doesn't hold it up).
 func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -383,8 +383,7 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	a.denmaDesignLogoChanged(oldLogo, f.LogoURL) // the center's design shows its logo (cmd/denma_design.go)
-	// The daily cap applies at once: campaigns waiting for it would hold
-	// up the reload (cmd/denma_daily.go).
+	// The daily cap applies at once (cmd/denma_daily.go).
 	if c := denmaCenterCounter(a.ko); c != nil {
 		c.SetLimit(f.DailyCap, 0)
 	}
@@ -406,11 +405,11 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{map[string]bool{"reloading": a.denmaReloadCenter()}})
 }
 
-// denmaReloadCenter reloads the center a is, now or once any running
-// campaign has finished, reporting whether it's now.
+// denmaReloadCenter reloads the center a is, now or once any campaign
+// sending has finished, reporting whether it's now.
 func (a *App) denmaReloadCenter() bool {
 	ctr := denmaHub.get(a.ko.String("denma.center"))
-	if ctr != nil && ctr.app == a && a.manager.HasRunningCampaigns() {
+	if ctr != nil && ctr.app == a && a.denmaSending() {
 		a.Lock()
 		a.needsRestart = true
 		a.Unlock()
