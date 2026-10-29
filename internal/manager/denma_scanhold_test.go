@@ -59,3 +59,26 @@ func TestScanStoppedWhileHeld(t *testing.T) {
 		t.Fatal("it scanned")
 	}
 }
+
+// Once scanning is stopped, a scan in progress makes no pipe, so DenmaStop's
+// look at the pipes is the last.
+func TestScanPipeAfterStop(t *testing.T) {
+	m := newTestManager(&mockStore{}, mockMessenger{})
+	p, err := m.denmaScanPipe(newTestCampaign(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.StopScanning()
+	c2 := newTestCampaign(0)
+	c2.ID = 2
+	if _, err := m.denmaScanPipe(c2); err == nil {
+		t.Fatal("a pipe was made after scanning was stopped")
+	}
+	p.wg.Done() // ends the first, which was stopped by DenmaStop's loop
+	if !m.DenmaStop(time.Second) {
+		t.Fatal("DenmaStop didn't see its pipes end")
+	}
+	if len(m.pipes) != 0 {
+		t.Fatalf("%d pipes left", len(m.pipes))
+	}
+}

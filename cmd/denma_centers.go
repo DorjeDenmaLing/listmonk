@@ -449,6 +449,9 @@ func denmaEveryMinute(a *App, at int, job string, fn func()) (int, error) {
 	// to a cron that has since stopped (a replaced app) never runs.
 	time.AfterFunc(offset, func() {
 		if _, err := a.crons.Add("@every 1m", func() {
+			if a.manager.DenmaScanHeld() { // a reload's new App waits for the old (cmd/denma_lifecycle.go)
+				return
+			}
 			fn()
 			denmaJobRan(job, center)
 		}); err != nil {

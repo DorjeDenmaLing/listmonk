@@ -96,6 +96,8 @@ type Manager struct {
 
 	denmaCountsMut sync.Mutex // denma: the sent counts' saves, one at a time (denma.go)
 
+	denmaScan denmaScanState // denma: no pipe is made once scanning is stopped (denma_scanhold.go)
+
 	denmaCloseMu sync.RWMutex // denma: msgQ's closing, and deliveries pushed to it (denma_delivery.go)
 	denmaClosed  bool
 
@@ -486,7 +488,7 @@ func (m *Manager) scanCampaigns(tick time.Duration) {
 
 		for _, c := range campaigns {
 			// Create a new pipe that'll handle this campaign's states.
-			p, err := m.newPipe(c)
+			p, err := m.denmaScanPipe(c) // denma: denma_scanhold.go
 			if err != nil {
 				m.log.Printf("error processing campaign (%s): %v", c.Name, err)
 				continue

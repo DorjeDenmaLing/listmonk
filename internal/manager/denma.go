@@ -35,6 +35,7 @@ var stoppedScans sync.Map
 // until Close().
 func (m *Manager) StopScanning() {
 	stoppedScans.Store(m, struct{}{})
+	m.denmaCloseScan() // and a scan in progress makes no pipe after this (denma_scanhold.go)
 }
 
 // scanStopped reports (once) whether StopScanning was called.
