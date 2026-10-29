@@ -23,6 +23,10 @@ package main
 // before, and so does confirming later. Add without run_automations runs
 // them, as listmonk did.
 //
+// A move of a pending double opt-in to another double opt-in list sends no
+// e-mail: it records the old list in the new subscription's meta, and the
+// old list's link confirms the new one (denmaMovedLists).
+//
 // Lists have no tags: the admin doesn't offer them (the list form, the Lists
 // page, list search), and the database keeps none but the API's own api-send
 // (denma_keep_api_list_tag, cmd/denma_noconsent.go), which features version
@@ -43,6 +47,28 @@ func initDenmaListMoveHandlers(g *echo.Group, a *App) {
 	g.PUT("/api/denma/subscribers/move", a.auth.Perm(a.DenmaMoveSubscribers, "subscribers:manage"))
 }
 
+// denmaMovedFrom is the key in a subscription's meta naming (by UUID) the
+// double opt-in lists a pending opt-in was moved from, so that the opt-in
+// page confirms the new list from the old list's link (denmaMovedLists).
+const denmaMovedFrom = "moved_from"
+
+// denmaMovedLists adds to the lists an opt-in link names (listUUIDs) the
+// unconfirmed lists its person was moved to from them.
+func (a *App) denmaMovedLists(subUUID string, listUUIDs *[]string) {
+	if len(*listUUIDs) == 0 {
+		return
+	}
+	var moved []string
+	if err := a.db.Select(&moved, `SELECT l.uuid::TEXT FROM subscriber_lists sl
+		JOIN subscribers s ON s.id = sl.subscriber_id AND s.uuid = $1::UUID
+		JOIN lists l ON l.id = sl.list_id
+		WHERE sl.status = 'unconfirmed' AND sl.meta->'`+denmaMovedFrom+`' ?| $2`, subUUID, pq.Array(*listUUIDs)); err != nil {
+		a.log.Printf("denma: error finding the lists a pending opt-in was moved to: %v", err)
+		return
+	}
+	*listUUIDs = append(*listUUIDs, moved...)
+}
+
 // denmaMoveSQL moves the subscribers subs gives (a query of their IDs) from
 // list from to list to, confirming them there if pre, and running its
 // automations if run (SQL parameters).
@@ -52,12 +78,15 @@ quiet AS (
     SELECT set_config('denma.quiet_joins', CASE WHEN ` + run + `::BOOLEAN THEN '' ELSE 'on' END, true) AS v
 ),
 added AS (
-    INSERT INTO subscriber_lists (subscriber_id, list_id, status)
+    INSERT INTO subscriber_lists (subscriber_id, list_id, status, meta)
     SELECT sl.subscriber_id, t.id, (CASE
         WHEN sl.status = 'unsubscribed' THEN 'unsubscribed'
         WHEN t.optin = 'double' AND ` + pre + `::BOOLEAN THEN 'confirmed'
         WHEN t.optin = 'double' AND NOT (f.optin = 'double' AND sl.status = 'confirmed') THEN 'unconfirmed'
-        ELSE sl.status END)::subscription_status
+        ELSE sl.status END)::subscription_status,
+        (CASE WHEN f.optin = 'double' AND sl.status = 'unconfirmed' AND t.optin = 'double' AND NOT ` + pre + `::BOOLEAN
+            THEN jsonb_build_object('` + denmaMovedFrom + `', COALESCE(sl.meta->'` + denmaMovedFrom + `', '[]'::JSONB) || to_jsonb(f.uuid::TEXT))
+            ELSE '{}'::JSONB END)
     FROM subscriber_lists sl
     JOIN lists f ON f.id = sl.list_id
     JOIN lists t ON t.id = ` + to + `::INT

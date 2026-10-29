@@ -472,6 +472,8 @@ func (a *App) OptinPage(c echo.Context) error {
 		}
 	}
 
+	a.denmaMovedLists(subUUID, &req.ListUUIDs) // denma: the lists a pending opt-in was moved to (cmd/denma_listmove.go)
+
 	// Get the list of subscription lists where the subscriber hasn't confirmed.
 	lists, err := a.core.GetSubscriberLists(0, subUUID, nil, req.ListUUIDs, models.SubscriptionStatusUnconfirmed, "")
 	if err != nil {
