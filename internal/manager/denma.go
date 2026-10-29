@@ -97,11 +97,37 @@ func (m *Manager) denmaNextCampaigns() ([]*models.Campaign, error) {
 }
 
 // denmaSaveCounts saves a pipe's sent count since the last save, and its
-// checkpoint, when it ends.
+// checkpoint, when it ends, and those it finished past the checkpoint, which
+// the next pipe skips (denmaLoadAhead).
 func (p *pipe) denmaSaveCounts() error {
 	p.m.denmaCountsMut.Lock()
 	defer p.m.denmaCountsMut.Unlock()
-	return p.m.store.UpdateCampaignCounts(p.camp.ID, 0, int(p.sent.Swap(0)), int(p.lastID.Load()))
+	if err := p.m.store.UpdateCampaignCounts(p.camp.ID, 0, int(p.sent.Swap(0)), int(p.lastID.Load())); err != nil {
+		return err
+	}
+	p.denmaQ.mu.Lock()
+	ahead := make([]int, 0, len(p.denmaQ.done))
+	for id := range p.denmaQ.done {
+		ahead = append(ahead, id)
+	}
+	p.denmaQ.mu.Unlock()
+	return p.m.store.DenmaSaveSentAhead(p.camp.ID, ahead)
+}
+
+// denmaLoadAhead reads those that pipes before finished past the
+// checkpoint, for the pipe to skip.
+func (p *pipe) denmaLoadAhead() error {
+	ids, err := p.m.store.DenmaSentAhead(p.camp.ID)
+	if err != nil {
+		return fmt.Errorf("error reading campaign (%s)'s sends past its checkpoint: %v", p.camp.Name, err)
+	}
+	if len(ids) > 0 {
+		p.denmaAhead = make(map[int]bool, len(ids))
+		for _, id := range ids {
+			p.denmaAhead[id] = true
+		}
+	}
+	return nil
 }
 
 // DenmaStop stops the manager for a shutdown: it picks up no more campaigns,

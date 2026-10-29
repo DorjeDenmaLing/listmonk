@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS denma_send_failures (
 );
 ALTER TABLE denma_send_failures ADD COLUMN IF NOT EXISTS uncertain BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_retry_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_sent_ahead INTEGER[] NOT NULL DEFAULT '{}';
 `
 
 // DenmaSendFailed records a failed send (or a retry's failure) for the
@@ -114,6 +115,29 @@ func (s *store) DenmaRetryLater(campID int) (bool, error) {
 		WHERE f.campaign_id = $1 AND f.temporary AND f.retries < $3 AND s.status != 'blocklisted' AND `+denmaStillSentSQL+`
 	) WHERE id = $1 RETURNING denma_retry_at`, campID, pq.Array(denmaRetryWaits), len(denmaRetryWaits))
 	return at.Valid, err
+}
+
+// DenmaSentAhead returns those a campaign's stopped pipes sent past its
+// checkpoint, which a resumed one skips.
+func (s *store) DenmaSentAhead(campID int) ([]int, error) {
+	var ids pq.Int64Array
+	if err := s.core.DenmaDB().Get(&ids, `SELECT denma_sent_ahead FROM campaigns WHERE id = $1`, campID); err != nil {
+		return nil, err
+	}
+	out := make([]int, len(ids))
+	for i, id := range ids {
+		out[i] = int(id)
+	}
+	return out, nil
+}
+
+// DenmaSaveSentAhead adds ids to those sent past the campaign's checkpoint,
+// keeping only those still past it.
+func (s *store) DenmaSaveSentAhead(campID int, ids []int) error {
+	_, err := s.core.DenmaDB().Exec(`UPDATE campaigns c SET denma_sent_ahead = ARRAY(
+		SELECT DISTINCT x FROM unnest(c.denma_sent_ahead || $2::INT[]) x WHERE x > c.last_subscriber_id ORDER BY x)
+		WHERE c.id = $1 AND (c.denma_sent_ahead <> '{}' OR CARDINALITY($2::INT[]) > 0)`, campID, pq.Array(ids))
+	return err
 }
 
 // denmaSendFailure is a failed send, for the campaign's page.

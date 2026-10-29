@@ -31,6 +31,7 @@ type pipe struct {
 	denmaRetryOnly   bool
 	denmaRetryCursor int
 	denmaRetried     map[int]bool
+	denmaAhead       map[int]bool // sent ahead of the checkpoint by a pipe that stopped
 	denmaStreak      atomic.Int64
 	denmaStreakHit   atomic.Bool
 
@@ -77,6 +78,11 @@ func (m *Manager) newPipe(c *models.Campaign) (*pipe, error) {
 	// (campaigns.denma_retry_at) only does that (denma.go).
 	p.denmaRetrying.Store(true)
 	p.denmaRetryOnly = c.DenmaRetryAt.Valid
+
+	// denma: and skips those a stopped pipe sent ahead of its checkpoint (denma.go).
+	if err := p.denmaLoadAhead(); err != nil {
+		return nil, err
+	}
 
 	// Increment the waitgroup so that Wait() blocks immediately. This is necessary
 	// as a campaign pipe is created first and subscribers/messages under it are
@@ -141,7 +147,7 @@ func (p *pipe) NextSubscribers() (bool, error) {
 
 	// Push messages.
 	for _, s := range subs {
-		if p.denmaRetried[s.ID] { // denma: tried again already (denma.go)
+		if p.denmaRetried[s.ID] || p.denmaAhead[s.ID] { // denma: tried again already, or sent ahead (denma.go)
 			continue
 		}
 		msg, err := p.newMessage(s)

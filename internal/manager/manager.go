@@ -64,6 +64,10 @@ type Store interface {
 	DenmaRetrySent(campID, subID int) error
 	DenmaRetrySubscribers(campID, afterID, limit int, all bool) ([]models.Subscriber, error)
 	DenmaRetryLater(campID int) (bool, error)
+
+	// denma: those sent ahead of the checkpoint by a pipe that stopped (denma.go).
+	DenmaSentAhead(campID int) ([]int, error)
+	DenmaSaveSentAhead(campID int, ids []int) error
 }
 
 // Messenger is an interface for a generic messaging backend,

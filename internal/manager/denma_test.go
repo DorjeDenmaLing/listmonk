@@ -31,6 +31,7 @@ type mockStore struct {
 	retrySent  []int               // DenmaRetrySent's subscribers
 	retryLater bool                // DenmaRetryLater's answer
 	statuses   []string            // UpdateCampaignStatus' statuses
+	ahead      []int               // DenmaSaveSentAhead's subscribers, read by DenmaSentAhead
 }
 
 func (s *mockStore) DenmaSendFailed(campID, subID int, reason string, temporary, uncertain bool) error {
@@ -57,6 +58,17 @@ func (s *mockStore) DenmaRetrySubscribers(campID, afterID, limit int, all bool) 
 	return out, nil
 }
 func (s *mockStore) DenmaRetryLater(campID int) (bool, error) { return s.retryLater, nil }
+func (s *mockStore) DenmaSentAhead(campID int) ([]int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ahead, nil
+}
+func (s *mockStore) DenmaSaveSentAhead(campID int, ids []int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ahead = append(s.ahead, ids...)
+	return nil
+}
 
 // sent is the sent counts saved.
 func (s *mockStore) sent() int64 {
@@ -262,6 +274,45 @@ func TestCheckpointHoldsAtSkipped(t *testing.T) {
 	p.denmaFinished(3) // 2 was skipped
 	if got := p.lastID.Load(); got != 1 {
 		t.Fatalf("checkpoint %d, want 1", got)
+	}
+}
+
+// A pipe that stops saves those it sent past the checkpoint, and the next
+// one skips them.
+func TestSentAheadSkipped(t *testing.T) {
+	store := &mockStore{}
+	m := newTestManager(store, mockMessenger{})
+	p, err := m.newPipe(newTestCampaign(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int{1, 2, 3} {
+		p.denmaQueued(id)
+	}
+	p.denmaFinished(1)
+	p.denmaFinished(3) // 2 was skipped
+	if err := p.denmaSaveCounts(); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.ahead) != 1 || store.ahead[0] != 3 {
+		t.Fatalf("saved ahead %v, want [3]", store.ahead)
+	}
+
+	m = newTestManager(store, mockMessenger{})
+	store.batches = [][]models.Subscriber{makeSubs(2, 3, 4)}
+	p, err = m.newPipe(newTestCampaign(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.NextSubscribers(); err != nil {
+		t.Fatal(err)
+	}
+	var got []int
+	for len(m.campMsgQ) > 0 {
+		got = append(got, (<-m.campMsgQ).Subscriber.ID)
+	}
+	if fmt.Sprint(got) != "[2 4]" {
+		t.Fatalf("resumed pipe sent to %v, want [2 4]", got)
 	}
 }
 
