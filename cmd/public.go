@@ -512,7 +512,7 @@ func (a *App) confirmOptinSubscription(c echo.Context, subUUID string, listUUIDs
 		meta["optin_ip"] = c.RealIP() // denma: not any client's X-Forwarded-For (srv.IPExtractor, cmd/init.go)
 	}
 
-	a.denmaNoConsentOptin(subUUID, c.FormValue("t")) // denma: their own confirmation (cmd/denma_noconsent.go)
+	a.denmaNoConsentOptin(subUUID, c.FormValue("t"))   // denma: their own confirmation (cmd/denma_noconsent.go)
 	a.denmaOwnConfirm(meta, subUUID, c.FormValue("t")) // denma: recorded as theirs only with the token (cmd/denma_optintoken.go)
 	if err := a.core.ConfirmOptionSubscription(subUUID, listUUIDs, meta); err != nil {
 		a.log.Printf("error confirming opt-in subscription: %v", err)

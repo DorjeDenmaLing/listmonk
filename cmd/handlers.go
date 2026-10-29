@@ -227,7 +227,7 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 
 		g.GET("/api/media", pm(a.GetAllMedia, "media:get"))
 		g.GET("/api/media/:id", pm(hasID(a.GetMedia), "media:get"))
-		g.POST("/api/media", pm(a.denmaMediaLimit(a.UploadMedia), "media:manage")) // denma: images too large to decode refused, one at a time (cmd/denma_media.go)
+		g.POST("/api/media", pm(a.denmaMediaLimit(a.UploadMedia), "media:manage"))              // denma: images too large to decode refused, one at a time (cmd/denma_media.go)
 		g.DELETE("/api/media/:id", pm(hasID(a.denmaMediaGuard(a.DeleteMedia)), "media:manage")) // denma: refused while something shows the file, unless confirmed (cmd/denma_mediause.go)
 
 		g.GET("/api/templates", pm(a.GetTemplates, "templates:get"))
@@ -425,7 +425,7 @@ func (a *App) hasUUID(next echo.HandlerFunc, params ...string) echo.HandlerFunc 
 func hasID(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		id, _ := strconv.Atoi(denmaDigits(c.Param("id"))) // denma: digits only (cmd/denma_csp.go)
-		if id < 1 || id > 1<<31-1 { // denma: none past the database's integers
+		if id < 1 || id > 1<<31-1 {                       // denma: none past the database's integers
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid ID")
 		}
 

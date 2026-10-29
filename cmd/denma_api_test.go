@@ -419,7 +419,7 @@ func TestDenmaLinkHosts(t *testing.T) {
 	for in, want := range map[string]string{
 		"ht\ntps://evil.example":              "evil.example",
 		"https://good.example\n.evil.example": "good.example,good.example.evil.example",
-		"Order 12\nhttps://good.example/x":   "good.example",
+		"Order 12\nhttps://good.example/x":    "good.example",
 	} {
 		if got := strings.Join(denmaLinkHosts(in), ","); got != want {
 			t.Errorf("value %q: %q, want %q", in, got, want)
