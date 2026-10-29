@@ -25,10 +25,23 @@ import (
 	"github.com/lib/pq"
 )
 
+// denmaSharedReasonText is the reason a center is given, other than the one
+// that found it, for an address that hard-bounced.
+const denmaSharedReasonText = "the address can't receive e-mail"
+
+// denmaCenterReason is the shared blocklist's reason as a center that didn't
+// find the address is told it.
+func denmaCenterReason(reason string) string {
+	if reason == "hard bounce" {
+		return denmaSharedReasonText
+	}
+	return reason
+}
+
 // denmaBlockEverywhere adds an address to the shared blocklist and
 // blocklists it in every center (including the one that found it). It does
-// nothing if the address is already on it. The reason is the same in every
-// center and doesn't name one (the shared list records which found it).
+// nothing if the address is already on it. The other centers are given
+// denmaCenterReason.
 func denmaBlockEverywhere(email, reason, slug string) {
 	if denmaHub == nil {
 		return
@@ -45,16 +58,23 @@ func denmaBlockEverywhere(email, reason, slug string) {
 		return
 	}
 
-	var schemas []string
-	if err := db.Select(&schemas, `SELECT schema_name FROM denma.centers ORDER BY slug`); err != nil {
+	var centers []struct {
+		Slug   string `db:"slug"`
+		Schema string `db:"schema_name"`
+	}
+	if err := db.Select(&centers, `SELECT slug, schema_name FROM denma.centers ORDER BY slug`); err != nil {
 		lo.Printf("denma: error getting the centers to blocklist %s in: %v", email, err)
 		return
 	}
 	n := 0
-	for _, s := range schemas {
-		res, err := db.Exec(denmaBlocklistSQL(pq.QuoteIdentifier(s)+"."), email, denmaReasonAttr(reason))
+	for _, ctr := range centers {
+		why := denmaCenterReason(reason)
+		if ctr.Slug == slug {
+			why = reason
+		}
+		res, err := db.Exec(denmaBlocklistSQL(pq.QuoteIdentifier(ctr.Schema)+"."), email, denmaReasonAttr(why))
 		if err != nil {
-			lo.Printf("denma: error blocklisting %s in %s: %v", email, s, err)
+			lo.Printf("denma: error blocklisting %s in %s: %v", email, ctr.Schema, err)
 			continue
 		}
 		if c, _ := res.RowsAffected(); c > 0 {
@@ -129,8 +149,8 @@ func (a *App) applySharedBlocks() {
 		return
 	}
 	for _, s := range subs {
-		a.log.Printf("denma: blocklisting subscriber %d: on the shared blocklist (%s)", s.ID, s.Reason)
-		if _, err := a.db.Exec(denmaBlocklistSQL(""), s.Email, denmaReasonAttr(s.Reason)); err != nil {
+		a.log.Printf("denma: blocklisting subscriber %d: on the shared blocklist (%s)", s.ID, denmaCenterReason(s.Reason))
+		if _, err := a.db.Exec(denmaBlocklistSQL(""), s.Email, denmaReasonAttr(denmaCenterReason(s.Reason))); err != nil {
 			a.log.Printf("denma: error blocklisting subscriber %d: %v", s.ID, err)
 			continue
 		}

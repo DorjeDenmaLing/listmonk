@@ -1516,6 +1516,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 // can't receive mail, is blocklisted. It returns why, or "".
 func (a *App) signupVouchedCheck(sub models.Subscriber) string {
 	if reason, shared := denmaSharedBlock(a.db, sub.Email); shared {
+		reason = denmaCenterReason(reason)
 		if r, _ := sub.Attribs["auto_blocklist_reason"].(string); r != "" && sub.Status != models.SubscriberStatusBlockListed {
 			return "" // enabled here on purpose
 		}

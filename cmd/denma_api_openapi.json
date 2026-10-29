@@ -348,7 +348,7 @@
         "tags": ["Events"],
         "operationId": "listEvents",
         "summary": "List unsubscribes, complaints and bounces",
-        "description": "The last 30 days' events about the addresses the key has sent to, from when it first did, oldest first: who unsubscribed, complained (marked an e-mail as spam), bounced (the address doesn't exist), or was blocklisted for another reason (its domain takes no mail, or it bounced from another center). The same events are sent to the key's webhook (`events`, under webhooks); this is for a system that can't take webhooks, or missed some. Ask again with `after` set to the answer's `after` while `more` is true.",
+        "description": "The last 30 days' events about the addresses the key has sent to, from when it first did, oldest first: who unsubscribed, complained (marked an e-mail as spam), bounced (the address doesn't exist), or was blocklisted for another reason (its domain takes no mail, or the address can't receive e-mail). The same events are sent to the key's webhook (`events`, under webhooks); this is for a system that can't take webhooks, or missed some. Ask again with `after` set to the answer's `after` while `more` is true.",
         "x-denma-can": "events",
         "parameters": [
           {
@@ -676,7 +676,7 @@
           "type": {
             "type": "string",
             "enum": ["unsubscribed", "complained", "bounced", "blocklisted", "campaign_started", "campaign_paused", "campaign_resumed", "campaign_finished", "campaign_cancelled", "test"],
-            "description": "`unsubscribed`; `complained` (marked an e-mail as spam); `bounced` (a hard bounce: the address doesn't exist); `blocklisted` for another reason (its domain takes no mail, or it bounced from another center); `campaign_*`: one of the key's campaigns started, paused, resumed, finished or was cancelled (to a key that sends campaigns); `test`, from the Config -> API page, to webhooks only."
+            "description": "`unsubscribed`; `complained` (marked an e-mail as spam); `bounced` (a hard bounce: the address doesn't exist); `blocklisted` for another reason (its domain takes no mail, or the address can't receive e-mail); `campaign_*`: one of the key's campaigns started, paused, resumed, finished or was cancelled (to a key that sends campaigns); `test`, from the Config -> API page, to webhooks only."
           },
           "email": { "type": "string", "description": "The address it's about; none for a campaign's." },
           "reason": { "type": "string" },

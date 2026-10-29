@@ -10,8 +10,7 @@ package main
 //     (cmd/denma_optouts.go);
 //   - bounced for good (a hard bounce of the center's mail);
 //   - was blocklisted for another reason: its domain can't receive mail, or
-//     it's on the shared blocklist (a hard bounce in another center), with
-//     the reason.
+//     it's on the shared blocklist (it can't receive mail), with the reason.
 //
 // And how each API campaign goes, by a trigger on its status: started,
 // paused, resumed, finished, cancelled (campaign_*, with the campaign's key

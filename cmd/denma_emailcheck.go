@@ -241,6 +241,7 @@ func denmaCheckOptin(send func(models.Subscriber, []int) (int, error), db *sqlx.
 	skip := denmaEmailSkip(ko)
 	return func(sub models.Subscriber, listIDs []int) (int, error) {
 		reason, shared := denmaSharedBlock(db, sub.Email)
+		reason = denmaCenterReason(reason)
 		if shared {
 			if r, _ := sub.Attribs["auto_blocklist_reason"].(string); r == "" {
 				lo.Printf("denma: blocklisting %s: on the shared blocklist (%s)", sub.Email, reason)
@@ -297,7 +298,7 @@ func denmaImportCheck(db *sqlx.DB, ko *koanf.Koanf) func(time.Time, *log.Logger)
 				ilog.Printf("error checking the shared blocklist: %v", err)
 			}
 			for _, r := range rows {
-				denmaBlocklist(db, r.Email, r.Reason)
+				denmaBlocklist(db, r.Email, denmaCenterReason(r.Reason))
 				shared++
 			}
 		}
