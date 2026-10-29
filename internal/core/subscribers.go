@@ -622,7 +622,7 @@ func validateQueryTables(db *sqlx.DB, query string, allowedTables map[string]str
 	defer tx.Rollback()
 
 	var plan string
-	if err = tx.QueryRow("EXPLAIN (FORMAT JSON) "+query, args...).Scan(&plan); err != nil {
+	if err = tx.QueryRow("EXPLAIN (VERBOSE, FORMAT JSON) "+query, args...).Scan(&plan); err != nil { // denma: VERBOSE names each table's schema (denma_plan.go)
 		return err
 	}
 
@@ -630,6 +630,10 @@ func validateQueryTables(db *sqlx.DB, query string, allowedTables map[string]str
 	tables, err := getTablesFromQueryPlan(plan)
 	if err != nil {
 		return fmt.Errorf("error getting tables from query: %v", err)
+	}
+
+	if err := denmaCheckPlanSchemas(tx, plan); err != nil { // denma: the current schema's tables only (denma_plan.go)
+		return err
 	}
 
 	// Validate against allowed tables.
