@@ -268,7 +268,7 @@ func (a *App) CreateUser(c echo.Context) error {
 	if done, err := a.denmaCreateMember(c, u); done { // denma: in a center, a person, by e-mail address (cmd/denma_people.go)
 		return err
 	}
-	if err := a.denmaCheckUserUnique(u); err != nil { // denma: not a person's username (cmd/denma_people.go)
+	if err := a.denmaCheckUserUnique(u, 0); err != nil { // denma: not a person's username (cmd/denma_people.go)
 		return err
 	}
 
@@ -319,7 +319,7 @@ func (a *App) UpdateUser(c echo.Context) error {
 	if done, err := a.denmaUpdateMember(c, id, u); done { // denma: a person's account (cmd/denma_people.go)
 		return err
 	}
-	if err := a.denmaCheckUserUnique(u); err != nil { // denma: not a person's username (cmd/denma_people.go)
+	if err := a.denmaCheckUserUnique(u, id); err != nil { // denma: not a person's username (cmd/denma_people.go)
 		return err
 	}
 	if u.Type != auth.UserTypeAPI {
@@ -573,8 +573,8 @@ func (a *App) DisableTOTP(c echo.Context) error {
 	}
 
 	// Verify the password.
-	if _, err := a.core.LoginUser(u.Username, password); err != nil {
-		return echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidPassword"))
+	if err := a.denmaHubPassword(u, password, echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidPassword"))); err != nil { // denma: not too many guesses (cmd/denma_throttle.go)
+		return err
 	}
 
 	// Disable TOTP in the DB.

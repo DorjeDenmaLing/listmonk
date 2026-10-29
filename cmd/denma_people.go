@@ -47,6 +47,7 @@ import (
 	"net/url"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,6 +75,7 @@ const (
 
 var (
 	errDenmaUsernameTaken = echo.NewHTTPError(http.StatusBadRequest, "Username already taken")
+	errDenmaUsernameAt    = echo.NewHTTPError(http.StatusBadRequest, "A superadmin's username can't have an @: it could be someone's e-mail address.")
 	errDenmaEmailTaken    = echo.NewHTTPError(http.StatusBadRequest, "E-mail address already taken")
 )
 
@@ -610,10 +612,17 @@ func (a *App) denmaIsMember(userID int) bool {
 }
 
 // denmaCheckUserUnique refuses a hub user's username that's a person's
-// (/login tells them apart by username). Centers' usernames are their own.
-func (a *App) denmaCheckUserUnique(u auth.User) error {
+// (/login tells them apart by username), or that could be a person's e-mail
+// address (an @), which /login would take for the hub user's. An existing
+// user (id) keeps their username. Centers' usernames are their own.
+func (a *App) denmaCheckUserUnique(u auth.User, id int) error {
 	if denmaHub == nil || a.denmaInCenter() || u.Type == auth.UserTypeAPI {
 		return nil
+	}
+	if strings.Contains(u.Username, "@") {
+		if cur, err := a.core.GetUser(id, "", ""); id == 0 || err != nil || !strings.EqualFold(cur.Username, u.Username) {
+			return errDenmaUsernameAt
+		}
 	}
 	var taken bool
 	if err := a.db.Get(&taken, `SELECT EXISTS (SELECT 1 FROM denma.people WHERE LOWER(username) = LOWER($1))`, u.Username); err != nil {
@@ -757,10 +766,8 @@ func (a *App) denmaUpdateOwnAccount(c echo.Context) (bool, error) {
 	}
 	newEmail := email != strings.ToLower(p.Email)
 	if newEmail || password != "" {
-		if ok, err := denmaHub.passwordOK(p.ID, u.CurrentPassword); err != nil {
-			return true, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-		} else if !ok {
-			return true, errDenmaCurrentPassword
+		if err := a.denmaPersonPassword(p.ID, u.CurrentPassword, errDenmaCurrentPassword); err != nil {
+			return true, err
 		}
 	}
 
@@ -822,8 +829,8 @@ func (a *App) denmaCheckHubProfile(c echo.Context, user auth.User) (bool, error)
 		return false, nil // listmonk says so
 	}
 	if !strings.EqualFold(strings.TrimSpace(u.Email.String), user.Email.String) || u.Password.String != "" {
-		if _, err := a.core.LoginUser(user.Username, u.CurrentPassword); err != nil {
-			return true, errDenmaCurrentPassword
+		if err := a.denmaHubPassword(user, u.CurrentPassword, errDenmaCurrentPassword); err != nil {
+			return true, err
 		}
 	}
 	return false, nil
@@ -890,13 +897,46 @@ func (a *App) denmaDisableTOTP(c echo.Context, password string) (bool, error) {
 	if !p.TwofaKey.Valid {
 		return true, echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("users.twoFANotEnabled"))
 	}
-	if ok, err := denmaHub.passwordOK(p.ID, password); err != nil || !ok {
-		return true, echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidPassword"))
+	if err := a.denmaPersonPassword(p.ID, password, echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidPassword"))); err != nil {
+		return true, err
 	}
 	if err := denmaHub.setTwofa(p.ID, ""); err != nil {
 		return true, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return true, c.JSON(http.StatusOK, okResp{true})
+}
+
+// denmaPersonPassword is nil if password is the person's, else wrong (or the
+// error of too many wrong ones, cmd/denma_throttle.go).
+func (a *App) denmaPersonPassword(personID int, password string, wrong error) error {
+	ok, err := denmaCurrentPassword("person:"+strconv.Itoa(personID), func() (bool, error) { return denmaHub.passwordOK(personID, password) })
+	switch {
+	case err != nil:
+		var he *echo.HTTPError
+		if errors.As(err, &he) {
+			return he
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	case !ok:
+		return wrong
+	}
+	return nil
+}
+
+// denmaHubPassword is nil if password is the hub user's, else wrong (or the
+// error of too many wrong ones).
+func (a *App) denmaHubPassword(user auth.User, password string, wrong error) error {
+	ok, err := denmaCurrentPassword("hub:"+strconv.Itoa(user.ID), func() (bool, error) {
+		_, err := a.core.LoginUser(user.Username, password)
+		return err == nil, nil
+	})
+	switch {
+	case err != nil:
+		return err
+	case !ok:
+		return wrong
+	}
+	return nil
 }
 
 // passwordOK reports whether password is the person's.

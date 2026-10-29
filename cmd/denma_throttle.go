@@ -8,10 +8,12 @@ package main
 // Failures are counted in memory (one process serves every center), over a
 // sliding window, by account and by client address (c.RealIP(), which is the
 // visitor's only when the web server passes it on: listmonk-infra/
-// Caddyfile.multi-center):
+// Caddyfile.multi-center; an IPv6 address counts as its /64):
 //   - passwords (/login, and the hub's /admin/login): 10 wrong for one
 //     account (a person's username and e-mail address together), or 30 from
 //     one address, in 15 minutes;
+//   - current passwords (changing one's own, turning two-factor off): 10 wrong
+//     for one signed-in user in 15 minutes;
 //   - two-factor codes: 5 wrong for one person in 15 minutes, whichever
 //     sign-in they came in;
 //   - forgotten passwords (/login/forgot): 3 e-mails to one address, and 10
@@ -34,6 +36,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +70,7 @@ var (
 	denmaPasswordByAccount = newDenmaThrottle(10, 15*time.Minute)
 	denmaPasswordByIP      = newDenmaThrottle(30, 15*time.Minute)
 	denmaPasswordByDevice  = newDenmaThrottle(10, 15*time.Minute)
+	denmaPasswordByUser    = newDenmaThrottle(10, 15*time.Minute)
 	denmaTwofaByPerson     = newDenmaThrottle(5, 15*time.Minute)
 	denmaForgotByEmail     = newDenmaThrottle(3, time.Hour)
 	denmaForgotByIP        = newDenmaThrottle(10, time.Hour)
@@ -134,6 +138,46 @@ func denmaTooMany(wait time.Duration) error {
 	return echo.NewHTTPError(http.StatusTooManyRequests, "Too many attempts. Try again "+when+".")
 }
 
+// denmaIPKey is the key a client address counts under: the address, or for
+// IPv6 its /64, which one client can rotate within.
+func denmaIPKey(ip string) string {
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	a = a.Unmap().WithZone("")
+	if a.Is6() {
+		if p, err := a.Prefix(64); err == nil {
+			return p.String()
+		}
+	}
+	return a.String()
+}
+
+// denmaClientKey is the key the request's client counts under.
+func denmaClientKey(c echo.Context) string {
+	return denmaIPKey(c.RealIP())
+}
+
+// denmaCurrentPassword checks a signed-in user's current password (right
+// reports it), with the sign-in's limit of wrong ones; key is the user's
+// ("person:<id>", "hub:<id>"). Past the limit it isn't checked.
+func denmaCurrentPassword(key string, check func() (bool, error)) (bool, error) {
+	if wait := denmaPasswordByUser.wait(key); wait > 0 {
+		return false, denmaTooMany(wait)
+	}
+	right, err := check()
+	switch {
+	case err != nil:
+		return false, err
+	case right:
+		denmaPasswordByUser.clear(key)
+	default:
+		denmaPasswordByUser.add(key)
+	}
+	return right, nil
+}
+
 // denmaAccountKey is the account a sign-in names, in any case.
 func denmaAccountKey(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
@@ -155,7 +199,7 @@ func (a *App) denmaPersonKey(name string) string {
 // (for this account, or from this address; or from this browser, one the
 // account has signed in from), or nil.
 func (a *App) denmaPasswordWait(c echo.Context, account string) error {
-	wait := max(denmaPasswordByAccount.wait(account), denmaPasswordByIP.wait(c.RealIP()))
+	wait := max(denmaPasswordByAccount.wait(account), denmaPasswordByIP.wait(denmaClientKey(c)))
 	if dev := a.denmaDevice(c, account); dev != "" {
 		wait = denmaPasswordByDevice.wait(dev)
 	}
@@ -182,7 +226,7 @@ func (a *App) denmaPasswordResult(c echo.Context, account string, ok bool) {
 		return
 	}
 	denmaPasswordByAccount.add(account)
-	denmaPasswordByIP.add(c.RealIP())
+	denmaPasswordByIP.add(denmaClientKey(c))
 }
 
 const (
@@ -243,7 +287,7 @@ func (a *App) denmaRememberDevice(c echo.Context, account, dev string) {
 // denmaForgotAllowed reports whether a forgotten password e-mail may go to
 // email now, counting it if so. Each request counts for the client's address.
 func denmaForgotAllowed(c echo.Context, email string) bool {
-	ip := c.RealIP()
+	ip := denmaClientKey(c)
 	if denmaForgotByIP.wait(ip) > 0 {
 		return false
 	}
