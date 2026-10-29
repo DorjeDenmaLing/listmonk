@@ -15,10 +15,13 @@ package main
 //     bounces);
 //  3. else the only center with the address.
 //
-// An address in several centers with neither header can't be placed: a hard
-// bounce goes on the shared blocklist (the address can't receive mail from
-// any center, cmd/denma_blocklist.go); a soft bounce or a complaint is only
-// logged, as it may concern one center's mail only.
+// A hard bounce goes on the shared blocklist whatever happens (the address
+// can't receive mail from any center, cmd/denma_blocklist.go). A complaint
+// for an address in several centers with neither header is recorded in the
+// one that last sent to it (denma_messages); one for an address no center
+// has, or with no e-mail sent to say, can't be placed and is only logged.
+// A soft bounce that can't be placed is only logged, as it may concern one
+// center's mail only.
 //
 // A complaint lost would leave someone who reported spam able to be mailed
 // again, so every bounce is kept in denma.pending_bounces before it's
@@ -239,18 +242,55 @@ func (d *denmaCenters) recordBounce(b models.Bounce) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("finding its center: %w", err)
 	}
+	slug := ""
+	if len(slugs) == 1 {
+		slug = slugs[0]
+	} else if len(slugs) > 1 && b.Type == models.BounceTypeComplaint {
+		if slug, err = d.lastSentCenter(slugs, b.Email); err != nil {
+			return "", fmt.Errorf("finding the center that last sent to them: %w", err)
+		}
+	}
+	if b.Type == models.BounceTypeHard && b.Email != "" {
+		denmaBlockEverywhere(b.Email, "hard bounce", slug) // cmd/denma_blocklist.go
+	}
+	if slug != "" {
+		return slug, d.recordIn(slug, b)
+	}
 	switch {
-	case len(slugs) == 1:
-		return slugs[0], d.recordIn(slugs[0], b)
 	case len(slugs) == 0:
-		lo.Printf("denma: %s bounce for %s, which no center has: not recorded", b.Type, b.Email)
-	case b.Type == models.BounceTypeHard:
-		lo.Printf("denma: hard bounce for %s, which %d centers have (no campaign or subscriber to tell whose mail it was): blocklisted in all", b.Email, len(slugs))
-		denmaBlockEverywhere(b.Email, "hard bounce", "")
+		lo.Printf("denma: %s bounce for an address which no center has: not recorded", b.Type)
+	case b.Type == models.BounceTypeComplaint:
+		lo.Printf("denma: complaint for an address which %d centers have, none of which has sent to it: not recorded", len(slugs))
 	default:
-		lo.Printf("denma: %s bounce for %s, which %d centers have (no campaign or subscriber to tell whose mail it was): not recorded", b.Type, b.Email, len(slugs))
+		lo.Printf("denma: %s bounce for an address which %d centers have (no campaign or subscriber to tell whose mail it was): not recorded", b.Type, len(slugs))
 	}
 	return "", nil
+}
+
+// lastSentCenter returns the one of the centers (slugs) that last e-mailed
+// the address, by what denma_messages records ("" if none has).
+func (d *denmaCenters) lastSentCenter(slugs []string, email string) (string, error) {
+	if email == "" {
+		return "", nil
+	}
+	db := d.current().db
+	cs, err := denmaCenterSchemas(db, slugs, "subscribers", "denma_messages")
+	if err != nil || len(cs) == 0 {
+		return "", err
+	}
+	parts := make([]string, len(cs))
+	for i, c := range cs {
+		parts[i] = fmt.Sprintf(`(SELECT %s AS slug, MAX(m.sent_at) AS at FROM %[2]s.denma_messages m JOIN %[2]s.subscribers s ON s.id = m.subscriber_id
+			WHERE LOWER(s.email) = $1 AND m.status IN ('sent', 'uncertain'))`, pq.QuoteLiteral(c.Slug), pq.QuoteIdentifier(c.Schema))
+	}
+	var slug string
+	if err := db.Get(&slug, `SELECT slug FROM (`+strings.Join(parts, " UNION ALL ")+`) x WHERE at IS NOT NULL ORDER BY at DESC, slug LIMIT 1`, strings.ToLower(email)); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return slug, nil
 }
 
 // recordIn records a bounce in a center, if it's running. A bounce listmonk
