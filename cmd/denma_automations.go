@@ -634,13 +634,25 @@ var denmaAutoShown sync.Map
 
 const denmaAutoShownFor = 15 * time.Minute
 
-// autoContentOK is autoContent(auto, false), passes remembered.
+// denmaForgetAutoChecks forgets a's automations' remembered passes, so that
+// they're checked again (a Media file was deleted).
+func (a *App) denmaForgetAutoChecks() {
+	prefix := fmt.Sprintf("%p/", a)
+	denmaAutoShown.Range(func(k, _ any) bool {
+		if strings.HasPrefix(k.(string), prefix) {
+			denmaAutoShown.Delete(k)
+		}
+		return true
+	})
+}
+
+// autoContentOK is autoContent(auto, true), passes remembered.
 func (a *App) autoContentOK(auto denmaAutomation) error {
 	key := fmt.Sprintf("%p/%d/%d", a, auto.ID, auto.UpdatedAt.UnixNano())
 	if t, ok := denmaAutoShown.Load(key); ok && time.Since(t.(time.Time)) < denmaAutoShownFor {
 		return nil
 	}
-	if err := a.autoContent(auto, false); err != nil {
+	if err := a.autoContent(auto, true); err != nil {
 		return err
 	}
 	denmaAutoShown.Range(func(k, t any) bool { // old Apps' and old versions'
@@ -677,8 +689,9 @@ func (a *App) runAutomation(auto denmaAutomation) {
 			}
 			return
 		}
-		// Nor while its e-mails don't show the center's postal address
-		// (cmd/denma_address.go). A pass is kept for a while (denmaAutoShown).
+		// Nor while its e-mails don't show the center's details
+		// (cmd/denma_address.go) or have an image missing from its Media
+		// (cmd/denma_images.go). A pass is kept for a while (denmaAutoShown).
 		if err := a.autoContentOK(auto); err != nil {
 			key := fmt.Sprintf("%s/%d/address", a.ko.String("denma.center"), auto.ID)
 			if t, ok := denmaAutoHeld.Load(key); !ok || time.Since(t.(time.Time)) > time.Hour {
@@ -1274,7 +1287,7 @@ func (a *App) ViewDenmaAutomation(c echo.Context) error {
 		}
 		out.Title = out.Automation.Name
 		out.StepStats = a.autoStepStats(id) // cmd/denma_auto_series.go
-		if err := a.autoContent(out.Automation, false); err != nil && out.Automation.Broken() == "" {
+		if err := a.autoContent(out.Automation, true); err != nil && out.Automation.Broken() == "" {
 			out.Held = err.Error()
 		}
 	}

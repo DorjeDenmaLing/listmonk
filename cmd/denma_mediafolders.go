@@ -269,6 +269,7 @@ func initDenmaMediaFolderHandlers(g *echo.Group, a *App) {
 	g.PUT("/api/denma/media/folders/:id", pm(hasID(a.DenmaRenameMediaFolder), "media:manage"))
 	g.DELETE("/api/denma/media/folders/:id", pm(hasID(a.DenmaDeleteMediaFolder), "media:manage"))
 	g.PUT("/api/denma/media/folder", pm(a.DenmaMoveMedia, "media:manage"))
+	g.GET("/api/denma/media/:id/uses", pm(hasID(a.DenmaMediaUses), "media:manage")) // cmd/denma_mediause.go
 }
 
 // plural is one or many, by n.

@@ -55,11 +55,11 @@ function component(mode) {
     },
 
     async onDelete(id, name) {
-      if (!(await u.confirm())) {
+      if (!(await this.denmaConfirmDelete(id))) { // denma: says what shows the file (denma-media.js)
         return;
       }
 
-      await api('media', `/media/${id}`, 'DELETE');
+      await api('media', `/media/${id}?confirm=true`, 'DELETE'); // denma: confirmed
       u.reload({ message: i18n.ts('globals.messages.deleted', { name }) });
     },
   };

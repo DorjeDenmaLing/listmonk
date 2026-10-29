@@ -228,7 +228,7 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		g.GET("/api/media", pm(a.GetAllMedia, "media:get"))
 		g.GET("/api/media/:id", pm(hasID(a.GetMedia), "media:get"))
 		g.POST("/api/media", pm(a.denmaMediaLimit(a.UploadMedia), "media:manage")) // denma: images too large to decode refused, one at a time (cmd/denma_media.go)
-		g.DELETE("/api/media/:id", pm(hasID(a.DeleteMedia), "media:manage"))
+		g.DELETE("/api/media/:id", pm(hasID(a.denmaMediaGuard(a.DeleteMedia)), "media:manage")) // denma: refused while something shows the file, unless confirmed (cmd/denma_mediause.go)
 
 		g.GET("/api/templates", pm(a.GetTemplates, "templates:get"))
 		g.GET("/api/templates/:id", pm(hasID(a.GetTemplate), "templates:get"))

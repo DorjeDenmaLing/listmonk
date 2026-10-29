@@ -167,6 +167,19 @@ export function denmaMedia() {
       }
     },
 
+    // Asks before a file is deleted, saying what shows it, if anything does
+    // (cmd/denma_mediause.go).
+    async denmaConfirmDelete(id) {
+      let uses;
+      try {
+        uses = (await api('media', `/denma/media/${id}/uses`)).uses;
+      } catch (err) {
+        return false;
+      }
+      if (!uses.length) return u.confirm();
+      return u.confirm(`This file is shown by ${uses.join('; ')}. Deleting it leaves the image missing from them. Delete it anyway?`);
+    },
+
     async denmaDeleteFolder(id, name) {
       if (!(await u.confirm(`Delete the folder ${name}?`))) return;
       try {

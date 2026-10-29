@@ -39,7 +39,7 @@ func TestDenmaHubUploadsRewriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	for in, want := range map[string]string{
-		`<img src="https://news.example.org/uploads/Square-Green.png">`:      `<img src="` + own + `Square-Green.png">`,
+		`<img src="https://news.example.org/uploads/Square-Green.png">`:     `<img src="` + own + `Square-Green.png">`,
 		`<img src='/uploads/Square-Green.png?w=1'>`:                         `<img src='` + own + `Square-Green.png?w=1'>`,
 		`<td style="background:url(/uploads/Square-Green.png)">`:            `<td style="background:url(` + own + `Square-Green.png)">`,
 		`{"url":"https://news.example.org/uploads/Square-Green.png"}`:       `{"url":"` + own + `Square-Green.png"}`,
@@ -53,5 +53,35 @@ func TestDenmaHubUploadsRewriter(t *testing.T) {
 		if got := rw(in); got != want {
 			t.Errorf("%s:\n got %s\nwant %s", in, got, want)
 		}
+	}
+}
+
+// A Media file is found in links by its name (as written or in a URL), whole,
+// at the end of a link.
+func TestDenmaFileLink(t *testing.T) {
+	re := denmaFileLink([]string{"logo.png", "my pic.jpg"})
+	for s, want := range map[string]bool{
+		`<img src="https://x.org/uploads/logo.png">`: true,
+		`<img src='/c/a/uploads/logo.png?w=2'>`:      true,
+		`{"src":"https://x.org/uploads/logo.png"}`:   true,
+		`url(/uploads/logo.png)`:                     true,
+		`<img src="/uploads/my%20pic.jpg">`:          true,
+		`<img src="/uploads/my pic.jpg">`:            true,
+		`logo.png`:                                   true,
+		`<img src="/uploads/biglogo.png">`:           false,
+		`<img src="/uploads/logo.png.bak">`:          false,
+		`<img src="/uploads/logo.pngx">`:             false,
+		`<p>no images here</p>`:                      false,
+	} {
+		if got := re.MatchString(s); got != want {
+			t.Errorf("%s: found %v, want %v", s, got, want)
+		}
+	}
+	if got := denmaUseList("the template", []string{"A", "B"}); got != "the template A, B" {
+		t.Errorf("named: %q", got)
+	}
+	many := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
+	if got := denmaUseList("", many); got != "1, 2, 3, 4, 5, 6, 7, 8 and 2 more" {
+		t.Errorf("named: %q", got)
 	}
 }

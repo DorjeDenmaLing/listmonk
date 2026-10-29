@@ -4,9 +4,10 @@ package main
 // e-mail that's in the center's Media is shown from there; deleted from
 // Media since, it would be a broken image in everyone's e-mail. So a
 // campaign doesn't start, nor is scheduled or tested, and an automation isn't
-// saved or turned on, while its e-mail (as rendered) has an image from the
+// saved, turned on or run, while its e-mail (as rendered) has an image from the
 // center's uploads that its Media no longer has. Images from elsewhere aren't
-// checked.
+// checked. Deleting a file is checked against what shows it too
+// (cmd/denma_mediause.go).
 //
 // Nor while it has one at the hub's uploads address that the hub's Media
 // doesn't have: a center's files were there before centers had their own
