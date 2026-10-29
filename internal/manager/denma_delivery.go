@@ -3,6 +3,7 @@ package manager
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/textproto"
 	"sync"
 	"sync/atomic"
@@ -120,6 +121,32 @@ func (m *Manager) DenmaPushTaken(msg models.Message, wait time.Duration, onTaken
 		}
 		return <-d.taken // a worker took it just then
 	}
+}
+
+// DenmaPushTracked queues msg as PushMessage does, without waiting for a
+// worker, and has onTaken (before the mail server sees it) and onDone (with
+// its answer) called as DenmaPushTaken's are. A message that isn't queued
+// (an error) won't be sent. One queued and never taken (a restart) gets
+// neither call.
+func (m *Manager) DenmaPushTracked(msg models.Message, onTaken func() error, onDone func(error)) error {
+	m.denmaCloseMu.RLock()
+	defer m.denmaCloseMu.RUnlock()
+	if m.denmaClosed || denmaStopping.Load() {
+		return errors.New("sending is stopping")
+	}
+	if msg.Headers == nil {
+		msg.Headers = textproto.MIMEHeader{}
+	}
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	tok := hex.EncodeToString(b)
+	denmaDeliveries.Store(tok, &denmaDelivery{taken: make(chan bool, 1), onTaken: onTaken, onDone: onDone})
+	msg.Headers.Set(denmaDeliveryHeader, tok)
+	if err := m.PushMessage(msg); err != nil {
+		denmaDeliveries.Delete(tok)
+		return err
+	}
+	return nil
 }
 
 // denmaTake is the worker's side: for a delivery's message, whether to send

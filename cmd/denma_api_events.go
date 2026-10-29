@@ -10,7 +10,10 @@ package main
 //     (cmd/denma_optouts.go);
 //   - bounced for good (a hard bounce of the center's mail);
 //   - was blocklisted for another reason: its domain can't receive mail, or
-//     it's on the shared blocklist (it can't receive mail), with the reason.
+//     it's on the shared blocklist (it can't receive mail), with the reason;
+//   - was sent a transactional e-mail that failed, or may not have arrived
+//     (message_failed, message_uncertain, cmd/denma_api_outbox.go), for the
+//     key that sent it.
 //
 // And how each API campaign goes, by a trigger on its status: started,
 // paused, resumed, finished, cancelled (campaign_*, with the campaign's key
@@ -94,7 +97,7 @@ const (
 const denmaAPIEventsSQL = `
 CREATE TABLE IF NOT EXISTS denma_api_events (
     id          BIGSERIAL PRIMARY KEY,
-    type        TEXT NOT NULL, -- unsubscribed, complained, bounced, blocklisted
+    type        TEXT NOT NULL, -- unsubscribed, complained, bounced, blocklisted, message_failed, message_uncertain
     email       TEXT NOT NULL,
     reason      TEXT NOT NULL DEFAULT '',
     campaign_id INTEGER NULL,
@@ -211,11 +214,13 @@ DROP INDEX IF EXISTS denma_api_events_key;
 
 // denmaAPIKeyEventsSQL is a key's events after a place in the feed ($1), at
 // most $2: with the events permission ($4), those about the addresses the
-// key ($3) has sent to, since it did; if it sends campaigns ($5), its
-// campaigns'. Their place is their ID.
+// key ($3) has sent to, since it did, and how its e-mails went (an event of
+// the key's with an address); if it sends campaigns ($5), its campaigns'
+// (an event of the key's with none). Their place is their ID.
 const denmaAPIKeyEventsSQL = `SELECT e.seq AS id, e.type, COALESCE(e.email, '') AS email, e.reason, e.campaign_id, e.created_at
 	FROM denma_api_events e
-	WHERE e.seq > $1 AND ((e.key_id = $3 AND $5) OR (e.key_id IS NULL AND $4 AND EXISTS (SELECT 1 FROM denma_api_contacts k
+	WHERE e.seq > $1 AND ((e.key_id = $3 AND CASE WHEN e.email IS NULL THEN $5::BOOLEAN ELSE $4::BOOLEAN END)
+		OR (e.key_id IS NULL AND $4 AND EXISTS (SELECT 1 FROM denma_api_contacts k
 		WHERE k.key_id = $3 AND k.email_hash = denma_email_hash(e.email) AND k.created_at <= e.created_at)))
 	ORDER BY e.seq LIMIT $2`
 
@@ -314,6 +319,8 @@ func denmaStartAPIJobs(a *App) {
 			return // no keys (or not installed yet)
 		}
 		a.apiCheckPause()
+		a.apiRecoverMessages() // cmd/denma_api_outbox.go
+		a.apiRetryMessages()
 		a.apiResumeStarting()
 		a.apiCleanUp()
 		a.apiExpiryReminders()

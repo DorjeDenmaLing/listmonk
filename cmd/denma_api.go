@@ -215,7 +215,7 @@ CREATE TABLE IF NOT EXISTS denma_api_alerts (
     sent_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     PRIMARY KEY (key_id, kind)
 );
-` + denmaAPIEventsSQL
+` + denmaAPIEventsSQL + denmaAPIOutboxSQL
 
 // What a key can do. Each of the API's sending and events endpoints needs
 // one (apiNeeds); the rest (its status, the templates) any key can use.

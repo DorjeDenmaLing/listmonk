@@ -104,7 +104,7 @@
         "tags": ["Transactional e-mail"],
         "operationId": "sendMessage",
         "summary": "Send a transactional e-mail",
-        "description": "A password reset, receipt or notice, to an address or up to 50, from a transactional template, from the key's sender. The template uses `{{ .Tx.Data.<name> }}` for `data`, and `{{ .Subscriber.Name }}`.\n\nIt goes to people who unsubscribed too, as it's not marketing; not to those who complained, bounced, or whose domain can't receive mail (`skipped`, \"not sent\"). Each new address is added to the center as a subscriber without lists, so that its bounces and complaints are recorded, with no consent to the center's own mail.\n\nIts links (in `data` and `subject`, such as a password reset link) can go only to the key's link domains and the center's own.\n\nAll of it fits under the key's daily limit and the center's daily cap, or none of it is sent (429). It's sent at once, whatever the center's sending hours.\n\n`sent` means queued: the mail server's answer comes after.",
+        "description": "A password reset, receipt or notice, to an address or up to 50, from a transactional template, from the key's sender. The template uses `{{ .Tx.Data.<name> }}` for `data`, and `{{ .Subscriber.Name }}`.\n\nIt goes to people who unsubscribed too, as it's not marketing; not to those who complained, bounced, or whose domain can't receive mail (`skipped`, \"not sent\"). Each new address is added to the center as a subscriber without lists, so that its bounces and complaints are recorded, with no consent to the center's own mail.\n\nIts links (in `data` and `subject`, such as a password reset link) can go only to the key's link domains and the center's own.\n\nAll of it fits under the key's daily limit and the center's daily cap, or none of it is sent (429). It's sent at once, whatever the center's sending hours.\n\n`sent` means queued: each is sent within seconds, and the mail server's answer comes after. If it can't take one now (\"try later\", or it can't be reached), it's tried again after 5 minutes, 30 minutes and 2 hours, within the daily limit and the cap, and then fails. A key with the `events` permission is told of the outcome, for each address: `message_failed` (the mail server refused it, or couldn't take it after those tries) or `message_uncertain` (the connection was lost before the mail server answered, so it may have been delivered: it isn't sent again, so that no one gets a receipt twice). Nothing is told of those that went well. A bounce comes later, as `bounced`.",
         "x-denma-can": "messages",
         "parameters": [
           { "$ref": "#/components/parameters/IdempotencyKey" }
@@ -348,7 +348,7 @@
         "tags": ["Events"],
         "operationId": "listEvents",
         "summary": "List unsubscribes, complaints and bounces",
-        "description": "The last 30 days' events about the addresses the key has sent to, from when it first did, oldest first: who unsubscribed, complained (marked an e-mail as spam), bounced (the address doesn't exist), or was blocklisted for another reason (its domain takes no mail, or the address can't receive e-mail). The same events are sent to the key's webhook (`events`, under webhooks); this is for a system that can't take webhooks, or missed some. Ask again with `after` set to the answer's `after` while `more` is true.",
+        "description": "The last 30 days' events about the addresses the key has sent to, from when it first did, oldest first: who unsubscribed, complained (marked an e-mail as spam), bounced (the address doesn't exist), or was blocklisted for another reason (its domain takes no mail, or the address can't receive e-mail); and how its transactional e-mails went when they didn't arrive (`message_failed`, `message_uncertain`). The same events are sent to the key's webhook (`events`, under webhooks); this is for a system that can't take webhooks, or missed some. Ask again with `after` set to the answer's `after` while `more` is true.",
         "x-denma-can": "events",
         "parameters": [
           {
@@ -392,7 +392,7 @@
         "tags": ["Events"],
         "operationId": "eventsWebhook",
         "summary": "Unsubscribes, complaints, bounces, and how its campaigns go, as they happen",
-        "description": "The key's notifications, sent within a minute to its notifications address (set on Config -> API, `https://` only), in order, at most 100 events a request: with the `events` permission, its events (`GET /events`); if it sends campaigns, how each of its campaigns goes (`campaign_started`, `campaign_paused`, `campaign_resumed`, `campaign_finished`, `campaign_cancelled`, with `campaign_id` and no `email`; `GET /campaigns/{id}` has its figures). Answer with a 2xx; anything else is tried again later, waiting longer each time (up to 6 hours), and later events wait their turn. The Config -> API page can send a test event (`\"type\": \"test\"`).\n\nCheck the signature before trusting the request: `X-Listmonk-Signature` is `t=<unix time>,v1=<signature>`, the signature being the hex HMAC-SHA256, with the webhook's signing secret, of the time, a full stop and the request's body (`<t>.<body>`). Compare it in constant time, and refuse a request whose `t` is more than 5 minutes from your clock, so that a request someone captured can't be sent again later.",
+        "description": "The key's notifications, sent within a minute to its notifications address (set on Config -> API, `https://` only), in order, at most 100 events a request: with the `events` permission, its events (`GET /events`, including `message_failed` and `message_uncertain` for its transactional e-mails); if it sends campaigns, how each of its campaigns goes (`campaign_started`, `campaign_paused`, `campaign_resumed`, `campaign_finished`, `campaign_cancelled`, with `campaign_id` and no `email`; `GET /campaigns/{id}` has its figures). Answer with a 2xx; anything else is tried again later, waiting longer each time (up to 6 hours), and later events wait their turn. The Config -> API page can send a test event (`\"type\": \"test\"`).\n\nCheck the signature before trusting the request: `X-Listmonk-Signature` is `t=<unix time>,v1=<signature>`, the signature being the hex HMAC-SHA256, with the webhook's signing secret, of the time, a full stop and the request's body (`<t>.<body>`). Compare it in constant time, and refuse a request whose `t` is more than 5 minutes from your clock, so that a request someone captured can't be sent again later.",
         "security": [],
         "parameters": [
           {
@@ -588,7 +588,7 @@
         "type": "object",
         "required": ["sent", "skipped"],
         "properties": {
-          "sent": { "type": "array", "items": { "type": "string" }, "description": "The addresses it was queued for: each is sent within seconds. A refusal or failure after that isn't reported here, nor tried again; a bounce is in the key's events." },
+          "sent": { "type": "array", "items": { "type": "string" }, "description": "The addresses it was queued for: each is sent within seconds. A refusal or failure after that isn't reported here: it's tried again if it's temporary, and the key's events say if it failed (`message_failed`) or may have been delivered (`message_uncertain`)." },
           "skipped": { "type": "array", "items": { "$ref": "#/components/schemas/Skip" } }
         }
       },
@@ -675,11 +675,11 @@
           "id": { "type": "integer", "format": "int64", "description": "Its place in the feed, increasing: events come in this order, each after those already given, so `after` never skips one. `GET /events?after=` takes it." },
           "type": {
             "type": "string",
-            "enum": ["unsubscribed", "complained", "bounced", "blocklisted", "campaign_started", "campaign_paused", "campaign_resumed", "campaign_finished", "campaign_cancelled", "test"],
-            "description": "`unsubscribed`; `complained` (marked an e-mail as spam); `bounced` (a hard bounce: the address doesn't exist); `blocklisted` for another reason (its domain takes no mail, or the address can't receive e-mail); `campaign_*`: one of the key's campaigns started, paused, resumed, finished or was cancelled (to a key that sends campaigns); `test`, from the Config -> API page, to webhooks only."
+            "enum": ["unsubscribed", "complained", "bounced", "blocklisted", "message_failed", "message_uncertain", "campaign_started", "campaign_paused", "campaign_resumed", "campaign_finished", "campaign_cancelled", "test"],
+            "description": "`unsubscribed`; `complained` (marked an e-mail as spam); `bounced` (a hard bounce: the address doesn't exist); `blocklisted` for another reason (its domain takes no mail, or the address can't receive e-mail); `message_failed` (a transactional e-mail the key sent to the address wasn't delivered: `reason` says the mail server refused it, or couldn't take it after its tries); `message_uncertain` (one the key sent may have been delivered, as the connection was lost before the mail server answered, and isn't sent again); `campaign_*`: one of the key's campaigns started, paused, resumed, finished or was cancelled (to a key that sends campaigns); `test`, from the Config -> API page, to webhooks only."
           },
           "email": { "type": "string", "description": "The address it's about; none for a campaign's." },
-          "reason": { "type": "string" },
+          "reason": { "type": "string", "description": "Why, for `blocklisted`, `message_failed` and `message_uncertain`; the mail server's own words aren't given." },
           "campaign_id": { "type": ["integer", "null"], "description": "The campaign it came from, if known." },
           "created_at": { "type": "string", "format": "date-time" }
         }

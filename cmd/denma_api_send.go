@@ -39,7 +39,6 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
-	"net/textproto"
 	"net/url"
 	"regexp"
 	"slices"
@@ -479,26 +478,10 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 			m.Subject, string(m.Body), m.AltBody); err != nil {
 			return err
 		}
-		h := textproto.MIMEHeader{}
-		h.Set(models.EmailHeaderSubscriberUUID, sub.UUID) // so its bounces and complaints find it (cmd/denma_bounces.go)
 		if replyTo == "" {
 			replyTo = a.denmaReplyTo() // the center's default (cmd/denma_reply_to.go)
 		}
-		if replyTo != "" {
-			h.Set("Reply-To", replyTo)
-		}
-		msgs = append(msgs, models.Message{
-			Subscriber:  sub,
-			To:          []string{sub.Email},
-			From:        from,
-			Subject:     m.Subject,
-			ContentType: m.ContentType,
-			Messenger:   emailMsgr,
-			Body:        m.Body,
-			AltBody:     []byte(m.AltBody),
-			Attachments: tpl.Attachments,
-			Headers:     h,
-		})
+		msgs = append(msgs, denmaAPIMessage(sub, from, replyTo, m.Subject, m.ContentType, m.Body, m.AltBody, tpl.Attachments)) // cmd/denma_api_outbox.go
 	}
 
 	// The key's daily limit, and the center's daily cap: all of them, or
@@ -533,7 +516,15 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 	for i, msg := range msgs {
 		denmaMarkClaim(&msg, denmaCenterClaimHeader, centerClaim) // cmd/denma_daily.go
 		denmaMarkClaim(&msg, denmaClaimHeader, daily)
-		if err := a.manager.PushMessage(msg); err != nil {
+		// Recorded until the mail server answers, which may mean trying it
+		// again or an event for the key (cmd/denma_api_outbox.go).
+		outID, err := a.apiOutboxAdd(k.ID, tplID, msg)
+		if err == nil {
+			if err = a.apiOutboxPush(outID, msg); err != nil {
+				a.apiOutboxForget(outID)
+			}
+		}
+		if err != nil {
 			if cc != nil {
 				cc.Release(centerClaim, 1)
 			}

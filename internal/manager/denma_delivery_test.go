@@ -57,3 +57,31 @@ func TestDenmaPushTaken(t *testing.T) {
 		t.Fatal("an ordinary message wasn't sent")
 	}
 }
+
+// A tracked message is queued without waiting, and its sender hears of it
+// once a worker takes it, and of the mail server's answer.
+func TestDenmaPushTracked(t *testing.T) {
+	m := &Manager{msgQ: make(chan models.Message, 10)}
+	var taken, done int
+	var got error
+	if err := m.DenmaPushTracked(denmaDeliveryMsg(), func() error { taken++; return nil }, func(err error) { done++; got = err }); err != nil {
+		t.Fatal(err)
+	}
+	if taken != 0 || done != 0 {
+		t.Fatalf("told before a worker took it: onTaken %d, onDone %d", taken, done)
+	}
+	msg := <-m.msgQ
+	d, send := denmaTake(msg)
+	if !send || taken != 1 || msg.Headers.Get(denmaDeliveryHeader) != "" {
+		t.Fatalf("taken: send %v, onTaken %d, header %q", send, taken, msg.Headers.Get(denmaDeliveryHeader))
+	}
+	d.finish(errors.New("try later"))
+	if done != 1 || got == nil || got.Error() != "try later" {
+		t.Fatalf("onDone %d times with %v, want once with the answer", done, got)
+	}
+
+	m.denmaMarkClosed()
+	if err := m.DenmaPushTracked(denmaDeliveryMsg(), nil, nil); err == nil {
+		t.Fatal("queued after the manager closed")
+	}
+}
