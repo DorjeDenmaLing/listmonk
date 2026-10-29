@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/knadh/koanf/v2"
@@ -24,5 +25,31 @@ func TestDenmaSESTopicAllowed(t *testing.T) {
 		if denmaSESTopicAllowed(ko, arn) {
 			t.Errorf("%q was taken", arn)
 		}
+	}
+}
+
+// The cache of which center a UUID is in remembers, forgets, and stays
+// within its limit.
+func TestDenmaCenterCache(t *testing.T) {
+	var c denmaCenterCache
+	if _, ok := c.get("a"); ok {
+		t.Fatal("an empty cache had an entry")
+	}
+	c.put("a", "halifax")
+	if s, ok := c.get("a"); !ok || s != "halifax" {
+		t.Errorf("got %q %v, want halifax", s, ok)
+	}
+	c.drop("a")
+	if _, ok := c.get("a"); ok {
+		t.Error("a dropped entry was still there")
+	}
+	for i := 0; i < 3*denmaCenterCacheMax; i++ {
+		c.put(fmt.Sprint(i), "x")
+		if len(c.m) > denmaCenterCacheMax {
+			t.Fatalf("the cache has %d entries, over its limit", len(c.m))
+		}
+	}
+	if s, ok := c.get(fmt.Sprint(3*denmaCenterCacheMax - 1)); !ok || s != "x" {
+		t.Error("the newest entry was lost")
 	}
 }

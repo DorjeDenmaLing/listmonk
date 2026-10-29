@@ -31,6 +31,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -190,8 +191,43 @@ func denmaSESTopicAllowed(ko *koanf.Koanf, arn string) bool {
 	return set[arn]
 }
 
-// denmaBounceCampaigns caches which center each bounced campaign is in.
-var denmaBounceCampaigns sync.Map // campaign UUID -> slug
+// denmaCenterCache remembers which center a UUID is in, up to a limit (it's
+// emptied when full).
+type denmaCenterCache struct {
+	mu sync.Mutex
+	m  map[string]string
+}
+
+// denmaCenterCacheMax is how many UUIDs a denmaCenterCache keeps.
+const denmaCenterCacheMax = 20000
+
+func (c *denmaCenterCache) get(id string) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s, ok := c.m[id]
+	return s, ok
+}
+
+func (c *denmaCenterCache) put(id, slug string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil || len(c.m) >= denmaCenterCacheMax {
+		c.m = map[string]string{}
+	}
+	c.m[id] = slug
+}
+
+func (c *denmaCenterCache) drop(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.m, id)
+}
+
+// The center each bounced campaign, and each subscriber, is in.
+var (
+	denmaBounceCampaigns   denmaCenterCache
+	denmaBounceSubscribers denmaCenterCache
+)
 
 // errDenmaNotRunning is a bounce's center not running.
 var errDenmaNotRunning = errors.New("its center isn't running")
@@ -363,19 +399,13 @@ func (d *denmaCenters) watchPendingBounces() {
 // one with its campaign, else its subscriber, else every one with its address.
 func (d *denmaCenters) bounceCenters(b models.Bounce) ([]string, error) {
 	if id, err := uuid.FromString(b.CampaignUUID); err == nil {
-		if s, ok := denmaBounceCampaigns.Load(id.String()); ok {
-			return []string{s.(string)}, nil
-		}
-		slugs, err := d.findInCenters(`SELECT %s FROM %s.campaigns WHERE uuid = $1::UUID`, id.String())
+		slugs, err := d.centersWithUUID(&denmaBounceCampaigns, "campaigns", id.String())
 		if err != nil || len(slugs) == 1 {
-			if len(slugs) == 1 {
-				denmaBounceCampaigns.Store(id.String(), slugs[0])
-			}
 			return slugs, err
 		}
 	}
 	if id, err := uuid.FromString(b.SubscriberUUID); err == nil {
-		slugs, err := d.findInCenters(`SELECT %s FROM %s.subscribers WHERE uuid = $1::UUID`, id.String())
+		slugs, err := d.centersWithUUID(&denmaBounceSubscribers, "subscribers", id.String())
 		if err != nil || len(slugs) == 1 {
 			return slugs, err
 		}
@@ -386,20 +416,65 @@ func (d *denmaCenters) bounceCenters(b models.Bounce) ([]string, error) {
 	return d.findInCenters(`SELECT %s FROM %s.subscribers WHERE LOWER(email) = $1`, b.Email)
 }
 
+// centersWithUUID returns the centers with a row of table (campaigns or
+// subscribers) with that UUID. A center in the cache is asked whether it
+// still has it, rather than all of them.
+func (d *denmaCenters) centersWithUUID(cache *denmaCenterCache, table, id string) ([]string, error) {
+	if slug, ok := cache.get(id); ok {
+		if has, err := d.centerHasUUID(slug, table, id); err == nil && has {
+			return []string{slug}, nil
+		}
+		cache.drop(id)
+	}
+	slugs, err := d.findInCenters(`SELECT %s FROM %s.`+table+` WHERE uuid = $1::UUID`, id)
+	if err == nil && len(slugs) == 1 {
+		cache.put(id, slugs[0])
+	}
+	return slugs, err
+}
+
+// centerHasUUID reports whether a registered center has a row of table with
+// that UUID.
+func (d *denmaCenters) centerHasUUID(slug, table, id string) (bool, error) {
+	db := d.current().db
+	var schema string
+	if err := db.Get(&schema, `SELECT schema_name FROM denma.centers WHERE slug = $1`, slug); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	var has bool
+	err := db.Get(&has, `SELECT EXISTS (SELECT 1 FROM `+pq.QuoteIdentifier(schema)+`.`+table+` WHERE uuid = $1::UUID)`, id)
+	return has, err
+}
+
+// denmaCenterSchema is a registered center's slug and schema.
+type denmaCenterSchema struct {
+	Slug   string `db:"slug"`
+	Schema string `db:"schema_name"`
+}
+
+// denmaCenterSchemas returns the registered centers (only slugs, if given)
+// whose schemas have all the tables (a center that failed to install may
+// have none).
+func denmaCenterSchemas(db *sqlx.DB, slugs []string, tables ...string) ([]denmaCenterSchema, error) {
+	where := ""
+	for _, t := range tables {
+		where += ` AND to_regclass(quote_ident(schema_name) || '.` + t + `') IS NOT NULL`
+	}
+	var cs []denmaCenterSchema
+	err := db.Select(&cs, `SELECT slug, schema_name FROM denma.centers WHERE ($1::TEXT[] IS NULL OR slug = ANY($1))`+where+` ORDER BY id`, pq.Array(slugs))
+	return cs, err
+}
+
 // findInCenters runs a query (with %s for the slug literal and the schema)
 // in every registered center at once, running or not, and returns the slugs
 // of those where it finds a row.
 func (d *denmaCenters) findInCenters(q, arg string) ([]string, error) {
 	db := d.current().db
-	var cs []struct {
-		Slug   string `db:"slug"`
-		Schema string `db:"schema_name"`
-	}
-	// Only schemas with listmonk's tables (a center that failed to install
-	// may have none).
-	if err := db.Select(&cs, `SELECT slug, schema_name FROM denma.centers
-		WHERE to_regclass(quote_ident(schema_name) || '.campaigns') IS NOT NULL
-		AND to_regclass(quote_ident(schema_name) || '.subscribers') IS NOT NULL ORDER BY id`); err != nil {
+	cs, err := denmaCenterSchemas(db, nil, "campaigns", "subscribers")
+	if err != nil {
 		return nil, err
 	}
 	if len(cs) == 0 {
