@@ -445,20 +445,28 @@ func denmaEveryMinute(a *App, at int, job string, fn func()) (int, error) {
 	_, _ = h.Write([]byte(center))
 	offset := time.Duration((int(h.Sum32()%30)+at)%60) * time.Second
 
-	// An @every job's first run is a minute after it's added; a job added
-	// to a cron that has since stopped (a replaced app) never runs.
-	time.AfterFunc(offset, func() {
-		if _, err := a.crons.Add("@every 1m", func() {
-			if a.manager.DenmaScanHeld() { // a reload's new App waits for the old (cmd/denma_lifecycle.go)
-				return
-			}
-			fn()
-			denmaJobRan(job, center)
-		}); err != nil {
-			a.log.Printf("denma: error adding a job: %v", err)
+	// A job added to a cron that has since stopped (a replaced app) never runs.
+	if _, err := a.crons.Schedule(denmaMinuteAt(offset), func() {
+		if a.manager.DenmaScanHeld() { // a reload's new App waits for the old (cmd/denma_lifecycle.go)
+			return
 		}
-	})
+		fn()
+		denmaJobRan(job, center)
+	}); err != nil {
+		a.log.Printf("denma: error adding a job: %v", err)
+	}
 	return 0, nil
+}
+
+// denmaMinuteAt is a cron schedule: at its second of every minute.
+type denmaMinuteAt time.Duration
+
+func (m denmaMinuteAt) Next(t time.Time) time.Time {
+	next := t.Truncate(time.Minute).Add(time.Duration(m))
+	if !next.After(t) {
+		next = next.Add(time.Minute)
+	}
+	return next
 }
 
 // denmaHubPath reports whether the hub serves a path: its admin and API (but
@@ -1143,6 +1151,9 @@ func (d *denmaCenters) enable(slug string) error {
 func (d *denmaCenters) watchReload(c *denmaCenter) {
 	old := c.app
 	<-old.chReload
+	if d.get(c.Slug) != c {
+		return // retired (retireThen)
+	}
 	lo.Printf("denma: reloading center %s", c.Slug)
 
 	next := &denmaCenter{ID: c.ID, Slug: c.Slug, Name: c.Name, Schema: c.Schema, holdScan: true}
@@ -1158,6 +1169,7 @@ func (d *denmaCenters) watchReload(c *denmaCenter) {
 		lo.Printf("denma: center %s changed while it reloaded: the reload is dropped", c.Slug)
 		denmaRetire(next.app, false)
 		next.app.manager.DenmaReleaseScan()
+		denmaSignalReload(next.app) // ends its watchReload
 		return
 	}
 	d.set(next)
@@ -1251,8 +1263,12 @@ func denmaRetire(old *App, original bool) (stopped bool) {
 			old.db.SetMaxIdleConns(0) // let its connections go; main() closes it
 			return
 		}
-		if !stopped {
-			return // closing its manager under a campaign still sending would panic
+		// Closing its manager under a campaign still sending would panic.
+		for deadline := time.Now().Add(denmaStragglerWait); !stopped && old.manager.HasRunningCampaigns(); {
+			if time.Now().After(deadline) {
+				return
+			}
+			time.Sleep(5 * time.Second)
 		}
 		old.manager.Close()
 		for _, m := range old.messengers {

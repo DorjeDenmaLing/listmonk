@@ -68,9 +68,18 @@ const denmaStragglerWait = 10 * time.Minute
 // stops before had finished.
 func (d *denmaCenters) retireThen(old, next *App, before []chan struct{}, end func()) {
 	stopped := denmaRetire(old, false)
+	denmaSignalReload(old) // ends its watchReload, if it's waiting
+	deadline := time.Now().Add(denmaStragglerWait)
 	// Its campaigns are all marked stopped; they're done once they've saved.
-	for deadline := time.Now().Add(denmaStragglerWait); !stopped && old.manager.HasRunningCampaigns() && time.Now().Before(deadline); {
+	for !stopped && old.manager.HasRunningCampaigns() && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Second)
+	}
+	// And a job it was running (an automation's) has finished.
+	if old.crons != nil {
+		select {
+		case <-old.crons.Stop().Done():
+		case <-time.After(time.Until(deadline)):
+		}
 	}
 	end()
 	d.releaseScan(next, before)
