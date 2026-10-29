@@ -13,8 +13,10 @@ package main
 //     (denma.daily_reserve, a percentage of it, 5 to start with), so that
 //     what they send never uses up the provider's quota.
 //   - Campaign messages wait when they reach that, and go on as the 24 hours
-//     roll on and the oldest sends drop out (internal/manager/denma.go); a
-//     campaign paused or stopped meanwhile stops waiting.
+//     roll on and the oldest sends drop out (internal/manager/denma.go), in
+//     order, one center's after another's in turn; a campaign paused or
+//     stopped meanwhile stops waiting, and gives its count back. Room a
+//     transactional e-mail or an automation was refused is left for it.
 //   - Automations send nothing while it's reached, and no more than what's
 //     left; those due are sent on a later run (cmd/denma_automations.go).
 //   - Opt-in confirmations, password resets, invites and notifications always
@@ -77,6 +79,16 @@ func denmaCenterCounter(ko *koanf.Koanf) *denmadaily.Counter {
 	return denmaCenterSends.Get(center)
 }
 
+// denmaCenterRoom is n, or the room left under the center's cap if less.
+func denmaCenterRoom(ko *koanf.Koanf, n int) int {
+	if cc := denmaCenterCounter(ko); cc != nil {
+		if left := cc.Left(); left >= 0 {
+			return min(n, left)
+		}
+	}
+	return n
+}
+
 // denmaCenterCap sets a center's cap from its settings (ko), and makes its
 // campaign messages wait for it. Called by buildApp, before the manager
 // runs. (Its Config page sets a new cap at once, as a save doesn't reload a
@@ -84,7 +96,7 @@ func denmaCenterCounter(ko *koanf.Koanf) *denmadaily.Counter {
 func denmaCenterCap(mgr *manager.Manager, ko *koanf.Koanf) {
 	if c := denmaCenterCounter(ko); c != nil {
 		c.SetLimit(ko.Int("denma.daily_cap"), 0)
-		mgr.DenmaSetCenterWait(c.Wait)
+		mgr.DenmaSetCenterWait(ko.String("denma.center"), func(stopped func() bool) (bool, func()) { return c.Wait("", stopped) })
 	}
 	denmaCenterWindow(mgr, ko) // and its sending hours (cmd/denma_sendwindow.go)
 }

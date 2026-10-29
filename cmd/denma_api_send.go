@@ -495,9 +495,8 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 	cc := denmaCenterCounter(a.ko)
 	var centerClaim int64
 	if cc != nil && len(msgs) > 0 {
-		got, id := cc.Claim(len(msgs))
-		if got < len(msgs) {
-			cc.Release(id, got)
+		id, ok := cc.ClaimAll(len(msgs))
+		if !ok {
 			a.apiUnclaim(k.ID, denmaAPIUseSend, len(msgs))
 			return a.apiCapErr(len(msgs))
 		}

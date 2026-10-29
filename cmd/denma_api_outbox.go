@@ -274,6 +274,7 @@ func (a *App) apiRetryMessages() {
 		return
 	}
 	if len(froms) == 0 {
+		a.apiOutboxWant(0, 0, nil)
 		return
 	}
 	waiting := []string{}
@@ -286,6 +287,7 @@ func (a *App) apiRetryMessages() {
 	// Claimed as new e-mails are, before any is sent.
 	limit := denmaAPIRetryBatch
 	got, claim := denmaDaily.Claim(limit)
+	a.apiOutboxWant(limit, got, waiting)
 	if got == 0 {
 		return
 	}
@@ -342,4 +344,19 @@ func (a *App) apiRetryMessages() {
 		}
 		pushed++
 	}
+}
+
+// apiOutboxWant asks the daily limit to keep room, ahead of campaigns, for
+// the retries due that its claim didn't cover and that may go (not from a
+// sender in waiting, within the center's cap); none clears it.
+func (a *App) apiOutboxWant(limit, got int, waiting []string) {
+	due := 0
+	if got < limit {
+		if err := a.db.Get(&due, `SELECT COUNT(*) FROM (SELECT 1 FROM denma_api_outbox
+			WHERE status = 'retry' AND next_at <= NOW() AND from_email <> ALL($2) LIMIT $1) x`, limit, pq.Array(waiting)); err != nil {
+			a.log.Printf("denma: error counting the API's e-mails to try again: %v", err)
+			return
+		}
+	}
+	denmaDaily.Want(a.ko.String("denma.center")+"/api-outbox", max(denmaCenterRoom(a.ko, due)-got, 0))
 }

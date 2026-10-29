@@ -705,6 +705,7 @@ func (a *App) runAutomation(auto denmaAutomation) {
 		// at the same time in other centers can't take the same room. What
 		// isn't sent is given back; the rest are run later.
 		got, id := denmaDaily.Claim(limit)
+		a.denmaAutoWant(auto, limit, got) // and what's due that it couldn't get
 		if got == 0 {
 			return
 		}
@@ -722,6 +723,26 @@ func (a *App) runAutomation(auto denmaAutomation) {
 	}
 	pushed += a.runAutoFirst(auto, limit, claim, centerClaim)
 	pushed += a.runAutoDue(auto, limit-pushed, claim, centerClaim) // cmd/denma_auto_series.go
+}
+
+// denmaAutoWant tells the daily limit how many of auto's e-mails are due
+// that its claim of got (of limit) can't cover, and the center's cap would
+// let go, so that campaign messages leave room for them (denmaDaily.Want);
+// none if its claim was whole.
+func (a *App) denmaAutoWant(auto denmaAutomation, limit, got int) {
+	key := a.ko.String("denma.center") + "/" + strconv.Itoa(auto.ID)
+	due := 0
+	if got < limit {
+		if err := a.db.Get(&due, `SELECT
+			(SELECT COUNT(*) FROM (SELECT 1 FROM (`+denmaAutoPendingSQL("a.id = $1")+`) p
+				WHERE p.first_at + make_interval(mins => p.delay_minutes) <= NOW() LIMIT $2) x)
+			+ (SELECT COUNT(*) FROM (SELECT 1 FROM denma_automation_sends
+				WHERE automation_id = $1 AND status IN ('waiting', 'retry') AND next_at <= NOW() LIMIT $2) y)`, auto.ID, limit); err != nil {
+			a.log.Printf("denma: error counting automation %d's due e-mails: %v", auto.ID, err)
+			return
+		}
+	}
+	denmaDaily.Want(key, max(denmaCenterRoom(a.ko, due)-got, 0))
 }
 
 // runAutoFirst runs an automation for those whose wait is over (up to

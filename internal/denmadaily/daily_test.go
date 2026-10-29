@@ -3,8 +3,10 @@ package denmadaily
 // The daily sending limit's count.
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -20,6 +22,12 @@ func counter(limit int, sent ...[2]int) *Counter {
 		d.total += s[1]
 	}
 	return d
+}
+
+// wait is Wait's first answer.
+func wait(d *Counter, center string, stopped func() bool) bool {
+	ok, _ := d.Wait(center, stopped)
+	return ok
 }
 
 // The count is of the last 24 hours: older minutes drop out.
@@ -61,7 +69,7 @@ func TestDailyWaitStops(t *testing.T) {
 	stop := make(chan struct{})
 	done := make(chan bool)
 	go func() {
-		done <- d.Wait(func() bool {
+		done <- wait(d, "", func() bool {
 			select {
 			case <-stop:
 				return true
@@ -85,7 +93,7 @@ func TestDailyWaitStops(t *testing.T) {
 		t.Fatal("still waiting after the campaign stopped")
 	}
 	d.SetLimit(2, 0)
-	if !d.Wait(func() bool { return false }) {
+	if !wait(d, "", func() bool { return false }) {
 		t.Fatal("under the limit, a message should go")
 	}
 }
@@ -105,7 +113,7 @@ func TestDailyWaitTakesOne(t *testing.T) {
 	}
 	went := make(chan bool, 50)
 	for range 50 {
-		go func() { went <- d.Wait(stopped) }()
+		go func() { went <- wait(d, "", stopped) }()
 	}
 	time.Sleep(300 * time.Millisecond)
 	close(stop)
@@ -235,5 +243,208 @@ func TestCentersSeparate(t *testing.T) {
 	cs.Save() // no database yet: a no-op, counts kept
 	if a.pending[time.Now().Unix()/60] != 2 {
 		t.Fatalf("a's pending counts lost: %v", a.pending)
+	}
+}
+
+// never is a stopped() for a campaign that isn't stopped.
+func never() bool { return false }
+
+// grants starts a waiter of center, and returns a channel that gets its
+// center when it's let go.
+func grants(d *Counter, center string, out chan<- string) {
+	go func() {
+		if ok, _ := d.Wait(center, never); ok {
+			out <- center
+		}
+	}()
+	time.Sleep(20 * time.Millisecond) // queued, in the order started
+}
+
+// Waiting messages go in order, one center's after another's in turn, as
+// room frees: no center's queue takes it all (tofix 103).
+func TestDailyWaitInTurn(t *testing.T) {
+	d := counter(10, [2]int{1, 10})
+	out := make(chan string, 10)
+	for _, c := range []string{"a", "a", "a", "b", "c"} {
+		grants(d, c, out)
+	}
+	var got []string
+	for i := range 5 {
+		d.SetLimit(11+i, 0) // room for one more
+		select {
+		case c := <-out:
+			got = append(got, c)
+		case <-time.After(time.Second):
+			t.Fatalf("no message went after room for %d; got %v", i+1, got)
+		}
+	}
+	if fmt.Sprint(got) != "[a b c a a]" {
+		t.Fatalf("went in the order %v, want [a b c a a]", got)
+	}
+}
+
+// Room freed wakes a waiting message at once, without waiting for a poll.
+func TestDailyWaitWakes(t *testing.T) {
+	d := counter(10, [2]int{1, 5})
+	got, id := d.Claim(5)
+	if got != 5 {
+		t.Fatalf("claimed %d, want 5", got)
+	}
+	out := make(chan string, 1)
+	grants(d, "a", out)
+	select {
+	case <-out:
+		t.Fatal("a message went with no room")
+	default:
+	}
+	d.Release(id, 5)
+	select {
+	case <-out:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("room was freed and the message didn't go at once")
+	}
+}
+
+// A claim refused for lack of room is left room: waiting campaign messages
+// don't take the room that frees first (tofix 102).
+func TestDailyClaimBeforeWaiters(t *testing.T) {
+	d := counter(10, [2]int{1, 10})
+	if _, ok := d.ClaimAll(1); ok {
+		t.Fatal("a claim at the limit went")
+	}
+	out := make(chan string, 1)
+	grants(d, "a", out)
+	d.SetLimit(11, 0)
+	select {
+	case <-out:
+		t.Fatal("a campaign message took the room a refused claim needs")
+	case <-time.After(100 * time.Millisecond):
+	}
+	if _, ok := d.ClaimAll(1); !ok {
+		t.Fatal("the claim wasn't given the room that freed")
+	}
+	d.SetLimit(12, 0)
+	select {
+	case <-out:
+	case <-time.After(time.Second):
+		t.Fatal("the campaign message didn't go once the claim was served")
+	}
+}
+
+// Refused claims are left room as one, the largest, however often they're
+// tried; one that could never fit is left none.
+func TestDailyDemandOnce(t *testing.T) {
+	d := counter(10, [2]int{1, 10})
+	for range 5 {
+		d.ClaimAll(3)
+	}
+	d.ClaimAll(2)
+	d.ClaimAll(holdMax + 1)
+	d.mu.Lock()
+	held := d.hold(time.Now())
+	d.mu.Unlock()
+	if held != 3 {
+		t.Fatalf("held %d, want 3", held)
+	}
+}
+
+// Room left for a refused claim is left for a while only.
+func TestDailyDemandExpires(t *testing.T) {
+	d := counter(10, [2]int{1, 10})
+	d.ClaimAll(3)
+	d.demands[0].until = time.Now().Add(-time.Second)
+	d.SetLimit(11, 0)
+	if s := d.Status(); s.Left != 1 {
+		t.Fatalf("left %d, want 1", s.Left)
+	}
+	out := make(chan string, 1)
+	grants(d, "a", out)
+	select {
+	case <-out:
+	case <-time.After(time.Second):
+		t.Fatal("an expired demand still held the room")
+	}
+}
+
+// A message let go and not sent gives its count back; one that gives up
+// waiting leaves its queue, and takes nothing.
+func TestDailyGiveBack(t *testing.T) {
+	d := counter(10, [2]int{1, 5})
+	ok, back := d.Wait("a", never)
+	if !ok || d.Status().Sent != 6 {
+		t.Fatalf("ok %v, sent %d; want it counted", ok, d.Status().Sent)
+	}
+	back()
+	if s := d.Status(); s.Sent != 5 || len(d.pending) != 0 {
+		t.Fatalf("sent %d, pending %v; want the count given back", s.Sent, d.pending)
+	}
+
+	d.SetLimit(5, 0)
+	var stop atomic.Bool
+	done := make(chan bool)
+	go func() { ok, _ := d.Wait("a", stop.Load); done <- ok }()
+	time.Sleep(20 * time.Millisecond)
+	stop.Store(true)
+	select {
+	case ok := <-done:
+		if ok {
+			t.Fatal("a stopped wait went")
+		}
+	case <-time.After(pollEvery + time.Second):
+		t.Fatal("still waiting after the campaign stopped")
+	}
+	d.mu.Lock()
+	n := len(d.order) + len(d.queues)
+	d.mu.Unlock()
+	if n != 0 || d.Status().Sent != 5 {
+		t.Fatalf("queue left %d, sent %d; want none, 5", n, d.Status().Sent)
+	}
+}
+
+// Many waiters go one by one as room frees, each exactly once.
+func TestDailyManyWaiters(t *testing.T) {
+	d := counter(10, [2]int{1, 10})
+	out := make(chan string, 500)
+	for i := range 500 {
+		go func() {
+			if ok, _ := d.Wait(fmt.Sprint(i%7), never); ok {
+				out <- ""
+			}
+		}()
+	}
+	time.Sleep(100 * time.Millisecond)
+	d.SetLimit(10+300, 0)
+	time.Sleep(300 * time.Millisecond)
+	if s := d.Status(); len(out) != 300 || s.Sent != 310 {
+		t.Fatalf("%d went, %d sent; want 300 and 310", len(out), s.Sent)
+	}
+}
+
+// An automation's due e-mails that got no room are left room, replaced each
+// time it's seen and cleared with 0; ClaimAll's successes don't touch them.
+func TestDailyWant(t *testing.T) {
+	d := counter(10, [2]int{1, 10})
+	out := make(chan string, 1)
+	d.Want("c/1", 2)
+	d.Want("c/1", 1) // replaces
+	grants(d, "a", out)
+	d.SetLimit(11, 0)
+	select {
+	case <-out:
+		t.Fatal("a campaign message took the room an automation needs")
+	case <-time.After(100 * time.Millisecond):
+	}
+	if got, _ := d.Claim(5); got != 1 {
+		t.Fatalf("the automation claimed %d, want the 1 left", got)
+	}
+	if len(d.demands) != 1 {
+		t.Fatalf("demands %v, want the automation's kept until it says otherwise", d.demands)
+	}
+	d.Want("c/1", 0) // nothing due any more: the campaign message goes
+	d.Release(1, 1)
+	select {
+	case <-out:
+	case <-time.After(time.Second):
+		t.Fatal("the campaign message didn't go once nothing was wanted")
 	}
 }

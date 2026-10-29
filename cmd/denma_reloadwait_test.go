@@ -6,8 +6,9 @@ import (
 	"github.com/knadh/listmonk/internal/denmadaily"
 )
 
-// Campaigns wait outside the sending hours, or with a daily limit reached
-// (no limit isn't one); otherwise they're sending.
+// Campaigns wait outside the sending hours, or with a daily limit reached or
+// what's left of it kept for others (no limit isn't one); otherwise they're
+// sending.
 func TestDenmaCampaignsWaiting(t *testing.T) {
 	for _, c := range []struct {
 		open   bool
@@ -19,6 +20,8 @@ func TestDenmaCampaignsWaiting(t *testing.T) {
 		{true, []denmadaily.Status{{}}, false},
 		{true, []denmadaily.Status{{Limit: 100, Left: 5}}, false},
 		{true, []denmadaily.Status{{Limit: 100, Left: 0}}, true},
+		{true, []denmadaily.Status{{Limit: 100, Left: 5, Held: 5}}, true},
+		{true, []denmadaily.Status{{Limit: 100, Left: 5, Held: 4}}, false},
 		{true, []denmadaily.Status{{Limit: 100, Left: 5}, {Limit: 10, Left: 0}}, true},
 		{false, []denmadaily.Status{{Limit: 100, Left: 5}}, true},
 	} {

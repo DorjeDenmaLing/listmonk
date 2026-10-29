@@ -588,12 +588,12 @@ func TestCleanupWaitsForRetries(t *testing.T) {
 // stops, and the checkpoint stays before it.
 func TestDailyWaitSkips(t *testing.T) {
 	stopped := make(chan struct{})
-	DenmaDailyWait = func(stop func() bool) bool {
+	DenmaDailyWait = func(_ string, stop func() bool) (bool, func()) {
 		for !stop() {
 			time.Sleep(time.Millisecond)
 		}
 		close(stopped)
-		return false
+		return false, nil
 	}
 	defer func() { DenmaDailyWait = nil }()
 	store := &mockStore{batches: [][]models.Subscriber{makeSubs(1)}}
@@ -645,5 +645,39 @@ func TestPaceWaitSkips(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	if p.sent.Load()+store.sent() != 0 || p.lastID.Load() != 0 || len(store.failures) != 0 {
 		t.Fatalf("sent %d, checkpoint %d, failures %v; want it skipped, not sent or failed", p.sent.Load()+store.sent(), p.lastID.Load(), store.failures)
+	}
+}
+
+// A message's waits run in order, and when a later one gives up the counts
+// of the earlier ones are given back (tofix 104).
+func TestDenmaWaitsGiveBack(t *testing.T) {
+	var log []string
+	defer func() { DenmaDailyWait, DenmaPaceWait = nil, nil }()
+	m := &Manager{denmaCenter: "c"}
+	m.denmaCenterWait = func(func() bool) (bool, func()) {
+		log = append(log, "cap")
+		return true, func() { log = append(log, "cap back") }
+	}
+	DenmaDailyWait = func(center string, _ func() bool) (bool, func()) {
+		log = append(log, "hub "+center)
+		return true, func() { log = append(log, "hub back") }
+	}
+	paced := false
+	DenmaPaceWait = func(func() bool) bool { log = append(log, "pace"); return paced }
+	if m.denmaWaits(func() bool { return false }) {
+		t.Fatal("went with the pace given up")
+	}
+	if got := fmt.Sprint(log); got != "[cap hub c pace cap back hub back]" {
+		t.Fatalf("waits %v, want the cap, the hub's and the pace, and both counts given back", got)
+	}
+	log, paced = nil, true
+	if !m.denmaWaits(func() bool { return false }) || fmt.Sprint(log) != "[cap hub c pace]" {
+		t.Fatalf("waits %v, want them all, nothing given back", log)
+	}
+	// The hub's wait giving up gives the cap's back, and the pace isn't reached.
+	log = nil
+	DenmaDailyWait = func(string, func() bool) (bool, func()) { log = append(log, "hub"); return false, nil }
+	if m.denmaWaits(func() bool { return false }) || fmt.Sprint(log) != "[cap hub cap back]" {
+		t.Fatalf("waits %v, want the cap's count given back", log)
 	}
 }

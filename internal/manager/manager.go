@@ -122,7 +122,8 @@ type Manager struct {
 
 	tplFuncs template.FuncMap
 
-	denmaCenterWait func(stopped func() bool) bool // denma: the center's daily cap (denma.go)
+	denmaCenterWait DenmaCountWait                 // denma: the center's daily cap (denma.go)
+	denmaCenter     string                         // denma: the center's slug, for its turn at the hub's limit (denma.go)
 	denmaWindowWait func(stopped func() bool) bool // denma: the center's sending hours (denma.go)
 	denmaReplyTo    string                         // denma: the center's default reply-to (denma_reply_to.go)
 }
@@ -531,23 +532,8 @@ func (m *Manager) worker() {
 				continue
 			}
 
-			// denma: the center's sending hours, before any room is claimed (denma.go).
-			if msg.pipe != nil && m.denmaWindowWait != nil && !m.denmaWindowWait(msg.pipe.stopped.Load) {
-				msg.pipe.wg.Done()
-				continue
-			}
-			// denma: the hub's daily limit (denma.go).
-			if msg.pipe != nil && DenmaDailyWait != nil && !DenmaDailyWait(msg.pipe.stopped.Load) {
-				msg.pipe.wg.Done()
-				continue
-			}
-			// denma: and the center's own daily cap (denma.go).
-			if msg.pipe != nil && m.denmaCenterWait != nil && !m.denmaCenterWait(msg.pipe.stopped.Load) {
-				msg.pipe.wg.Done()
-				continue
-			}
-			// denma: and its turn at the process's send rate (denma.go).
-			if msg.pipe != nil && DenmaPaceWait != nil && !DenmaPaceWait(msg.pipe.stopped.Load) {
+			// denma: the center's sending hours, daily cap and the hub's daily limit, then its turn at the send rate (denma.go).
+			if msg.pipe != nil && !m.denmaWaits(msg.pipe.stopped.Load) {
 				msg.pipe.wg.Done()
 				continue
 			}

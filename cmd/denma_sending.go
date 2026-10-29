@@ -139,9 +139,8 @@ func denmaClaimDaily(n int) (claim int64, err error) {
 	if n <= 0 {
 		return 0, nil
 	}
-	got, id := denmaDaily.Claim(n)
-	if got < n {
-		denmaDaily.Release(id, got)
+	id, ok := denmaDaily.ClaimAll(n)
+	if !ok {
 		return 0, errDenmaDaily
 	}
 	return id, nil

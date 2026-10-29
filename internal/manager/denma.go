@@ -128,11 +128,16 @@ func (m *Manager) DenmaStop(wait time.Duration) bool {
 	}
 }
 
-// DenmaDailyWait, if set, blocks a campaign message until the hub's daily
-// limit lets it go (cmd/denma_daily.go), and returns false if stopped()
-// first: its campaign was paused or stopped, so the message is skipped as a
-// stopped campaign's are, and sent when it resumes.
-var DenmaDailyWait func(stopped func() bool) bool
+// DenmaCountWait blocks a campaign message until a daily limit lets it go
+// and counts it, returning true and a function that gives the count back; or
+// returns false if stopped() first: its campaign was paused or stopped, so
+// the message is skipped as a stopped campaign's are, and sent when it
+// resumes.
+type DenmaCountWait func(stopped func() bool) (bool, func())
+
+// DenmaDailyWait, if set, is DenmaCountWait for the hub's daily limit
+// (cmd/denma_daily.go), in its center's turn.
+var DenmaDailyWait func(center string, stopped func() bool) (bool, func())
 
 // DenmaPaceWait, if set, blocks a campaign message until its turn at the
 // process's send rate (cmd/denma_sending.go), after the daily waits, and
@@ -183,9 +188,51 @@ func (m *Manager) DenmaSetWindowWait(wait func(stopped func() bool) bool) {
 }
 
 // DenmaSetCenterWait sets the wait for the manager's center's own daily cap
-// (cmd/denma_daily.go), as DenmaDailyWait. Call it before Run.
-func (m *Manager) DenmaSetCenterWait(wait func(stopped func() bool) bool) {
-	m.denmaCenterWait = wait
+// (cmd/denma_daily.go), as DenmaDailyWait, and its slug. Call it before Run.
+func (m *Manager) DenmaSetCenterWait(center string, wait DenmaCountWait) {
+	m.denmaCenter, m.denmaCenterWait = center, wait
+}
+
+// denmaWaits runs a campaign message's waits in order: the center's sending
+// hours, its daily cap, the hub's daily limit, its turn at the send rate. A
+// wait that gives up gives back what the earlier ones counted. Hours that
+// closed during the daily waits give the counts back and wait again.
+func (m *Manager) denmaWaits(stopped func() bool) bool {
+	for {
+		if m.denmaWindowWait != nil && !m.denmaWindowWait(stopped) {
+			return false
+		}
+		var back []func()
+		giveBack := func() {
+			for _, f := range back {
+				f()
+			}
+		}
+		if m.denmaCenterWait != nil {
+			ok, f := m.denmaCenterWait(stopped)
+			if !ok {
+				return false
+			}
+			back = append(back, f)
+		}
+		if DenmaDailyWait != nil {
+			ok, f := DenmaDailyWait(m.denmaCenter, stopped)
+			if !ok {
+				giveBack()
+				return false
+			}
+			back = append(back, f)
+		}
+		if m.denmaWindowWait != nil && !m.denmaWindowWait(func() bool { return true }) { // closed meanwhile
+			giveBack()
+			continue
+		}
+		if DenmaPaceWait != nil && !DenmaPaceWait(stopped) {
+			giveBack()
+			return false
+		}
+		return true
+	}
 }
 
 // Failed sends (cmd/denma_retries.go). Each is recorded with its reason and

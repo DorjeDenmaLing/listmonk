@@ -8,13 +8,13 @@ import "github.com/knadh/listmonk/internal/denmadaily"
 
 // denmaCampaignsWaiting reports whether a center's campaigns can't send
 // now: outside its sending hours, or a daily limit (the hub's, the
-// center's) reached.
+// center's) reached, or what's left of it kept for others.
 func denmaCampaignsWaiting(hoursOpen bool, limits ...denmadaily.Status) bool {
 	if !hoursOpen {
 		return true
 	}
 	for _, s := range limits {
-		if s.Limit > 0 && s.Left == 0 {
+		if s.Limit > 0 && s.Left <= s.Held {
 			return true
 		}
 	}

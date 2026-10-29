@@ -6,7 +6,14 @@
 //
 // Campaign messages each wait for their turn (Wait), which counts them as it
 // lets them go, so that messages waiting together can't all take the last
-// of the limit. Automations send a
+// of the limit. They queue, and are let go in order, one center's message
+// after another's in turn, as room frees (a timer wakes them; none polls). A
+// claim refused for lack of room (ClaimAll), and an automation's due e-mails
+// that got none (Want), are remembered for a while (refused claims as one, the
+// largest), and campaign messages
+// leave that much room for them, so transactional e-mails and automations
+// aren't starved by them. A message whose wait gives up, or
+// whose later wait does, gives its count back. Automations send a
 // batch at once, so they claim their share of what's left first (Claim): it
 // counts against the limit straight away, so that automations in several
 // centers running in the same minute can't each take the same room. Each
@@ -22,6 +29,7 @@ package denmadaily
 
 import (
 	"log"
+	"slices"
 	"sync"
 	"time"
 
@@ -54,6 +62,12 @@ type Counter struct {
 	db      *sqlx.DB
 	log     *log.Logger
 	center  string // a center's counter (Counters); "" for the hub's
+
+	queues  map[string][]*waiter // campaign messages waiting, by center, in order
+	order   []string             // the centers waiting, in turn
+	turn    int                  // the next center's place in order
+	timer   *time.Timer          // wakes the queue when room frees
+	demands []demand             // claims refused lately, to leave room for
 }
 
 // New returns a counter without a limit, logging to lg.
@@ -210,7 +224,20 @@ func (d *Counter) unclaim(id int64, n int, now time.Time) {
 // claimed. Without a limit, it gets all n, unclaimed (nothing to count
 // against).
 func (d *Counter) Claim(n int) (int, int64) {
-	if d.Left() < 0 {
+	got, id := d.claim(n, false)
+	return got, id
+}
+
+// ClaimAll is Claim, all or none: ok is false, with nothing claimed, if n
+// isn't there; campaign messages then leave n of room for it for a while.
+func (d *Counter) ClaimAll(n int) (id int64, ok bool) {
+	got, id := d.claim(n, true)
+	return id, got == max(n, 0)
+}
+
+func (d *Counter) claim(n int, all bool) (int, int64) {
+	n = max(n, 0)
+	if d.Left() < 0 { // logs that the limit's reached
 		return n, 0
 	}
 	now := time.Now()
@@ -218,7 +245,15 @@ func (d *Counter) Claim(n int) (int, int64) {
 	defer d.mu.Unlock()
 	d.expire(now)
 	left := max(d.limit-d.limit*d.reserve/100-d.total-d.claimed, 0)
-	got := min(max(n, 0), left)
+	got := min(n, left)
+	if all && got < n {
+		if n <= min(d.limit-d.limit*d.reserve/100, holdMax) { // one that could ever fit
+			d.want("", n, now)
+		}
+		got = 0
+	} else if all {
+		d.served(got)
+	}
 	if got == 0 {
 		return 0, 0
 	}
@@ -233,9 +268,94 @@ func (d *Counter) Claim(n int) (int, int64) {
 
 // Release gives back n of claim id's e-mails that weren't sent.
 func (d *Counter) Release(id int64, n int) {
+	now := time.Now()
 	d.mu.Lock()
-	d.unclaim(id, n, time.Now())
+	d.unclaim(id, n, now)
+	d.dispatch(now)
 	d.mu.Unlock()
+}
+
+// demand is room that a claimant needs, for a while: refused claims' (no
+// key: one, the largest of them, renewed by each), or an automation's (key,
+// replaced as it's seen again).
+type demand struct {
+	key   string
+	n     int
+	until time.Time
+}
+
+const (
+	demandTTL = 5 * time.Minute // how long campaign messages leave room for a demand
+	holdMax   = 500             // the most room they leave
+)
+
+// Want sets the room that key (an automation) needs and didn't get, for a
+// while; 0 clears it. Campaign messages leave that room.
+func (d *Counter) Want(key string, n int) {
+	now := time.Now()
+	d.mu.Lock()
+	d.want(key, n, now)
+	d.dispatch(now)
+	d.mu.Unlock()
+}
+
+// want records the room n for key ("": a refused claim's). Call with mu
+// held.
+func (d *Counter) want(key string, n int, now time.Time) {
+	d.hold(now)
+	if key == "" && n > 0 {
+		for i := range d.demands {
+			if x := &d.demands[i]; x.key == "" {
+				x.n, x.until = max(x.n, n), now.Add(demandTTL)
+				return
+			}
+		}
+	}
+	if key != "" {
+		d.demands = slices.DeleteFunc(d.demands, func(x demand) bool { return x.key == key })
+	}
+	if n <= 0 {
+		return
+	}
+	if len(d.demands) >= 1000 {
+		d.demands = d.demands[1:]
+	}
+	d.demands = append(d.demands, demand{key: key, n: n, until: now.Add(demandTTL)})
+}
+
+// served takes n e-mails off the refused claims' demand: a claim got them.
+// Call with mu held.
+func (d *Counter) served(n int) {
+	for i := 0; i < len(d.demands) && n > 0; {
+		x := &d.demands[i]
+		if x.key != "" {
+			i++
+			continue
+		}
+		k := min(n, x.n)
+		x.n -= k
+		n -= k
+		if x.n == 0 {
+			d.demands = slices.Delete(d.demands, i, i+1)
+		} else {
+			i++
+		}
+	}
+}
+
+// hold returns the room left for refused claims, dropping those that have
+// expired. Call with mu held.
+func (d *Counter) hold(now time.Time) int {
+	sum := 0
+	live := d.demands[:0]
+	for _, x := range d.demands {
+		if x.until.After(now) {
+			live = append(live, x)
+			sum += x.n
+		}
+	}
+	d.demands = live
+	return min(sum, holdMax)
 }
 
 // SetLimit sets the limit (the hub's setting; 0 for none) and the reserve,
@@ -244,6 +364,7 @@ func (d *Counter) SetLimit(n, reservePct int) {
 	d.mu.Lock()
 	d.limit = max(n, 0)
 	d.reserve = min(max(reservePct, 0), 100)
+	d.dispatch(time.Now())
 	d.mu.Unlock()
 }
 
@@ -254,6 +375,7 @@ type Status struct {
 	CampaignLimit int       // the limit less the reserve: campaigns' and automations'
 	Reserve       int       // the reserve, in percent
 	Left          int       // for campaigns, with a limit
+	Held          int       // of Left, kept for refused claims and automations (Want)
 	Claimed       int       // claimed by automations and transactional e-mails, not sent yet
 	FreesAt       time.Time // when one more campaign message can go, if it's reached
 }
@@ -272,16 +394,24 @@ func (d *Counter) Status() Status {
 	}
 	s.CampaignLimit = d.limit - d.limit*d.reserve/100
 	s.Left = max(s.CampaignLimit-d.total-d.claimed, 0)
+	s.Held = min(d.hold(now), s.Left)
 	if s.Left == 0 {
-		need := d.total + d.claimed - s.CampaignLimit + 1
-		for _, m := range d.minutes {
-			if need -= m.N; need <= 0 {
-				s.FreesAt = time.Unix((m.Minute+dayMinutes+1)*60, 0)
-				break
-			}
-		}
+		s.FreesAt = d.freesAt(0)
 	}
 	return s
+}
+
+// freesAt returns when campaigns' share has room for one more, after hold
+// e-mails more: when enough of the oldest minutes drop out; zero if they
+// can't. Call with mu held.
+func (d *Counter) freesAt(hold int) time.Time {
+	need := d.total + d.claimed + hold - (d.limit - d.limit*d.reserve/100) + 1
+	for _, m := range d.minutes {
+		if need -= m.N; need <= 0 {
+			return time.Unix((m.Minute+dayMinutes+1)*60, 0)
+		}
+	}
+	return time.Time{}
 }
 
 // Left returns how many more campaign and automation e-mails may go now (-1
@@ -317,46 +447,184 @@ func (d *Counter) Left() int {
 	return s.Left
 }
 
-// pollEvery is how often a waiting campaign message checks again.
+// pollEvery is how often a waiting campaign message checks that its
+// campaign is still running.
 const pollEvery = 2 * time.Second
 
-// Wait blocks a campaign message until the limit lets it go, counts it as
-// sent, and returns true; or false once stopped() (its campaign was paused
-// or stopped). Its send mustn't count it again (manager.DenmaDailyCounted).
-func (d *Counter) Wait(stopped func() bool) bool {
+// waiter is a campaign message waiting for room.
+type waiter struct {
+	center  string
+	ready   chan struct{} // closed when it's let go
+	granted bool
+	minute  int64 // the minute it was counted in
+}
+
+// Wait blocks a campaign message of center until the limit lets it go, in
+// its turn, counts it as sent, and returns true, with a function that gives
+// the count back if the message isn't sent after all; or false once stopped()
+// (its campaign was paused or stopped). Its send mustn't count it again
+// (manager.DenmaDailyCounted).
+func (d *Counter) Wait(center string, stopped func() bool) (bool, func()) {
+	w := &waiter{center: center, ready: make(chan struct{})}
+	d.mu.Lock()
+	if d.queues == nil {
+		d.queues = map[string][]*waiter{}
+	}
+	if len(d.queues[center]) == 0 {
+		d.order = append(d.order, center)
+	}
+	d.queues[center] = append(d.queues[center], w)
+	d.dispatch(time.Now())
+	granted, resumed := w.granted, d.waiting
+	d.mu.Unlock()
+	if granted {
+		if resumed {
+			d.Left() // logs that sending goes on
+		}
+		return true, func() { d.giveBack(w.minute) }
+	}
+	d.Left() // logs that the limit's reached
+	tick := time.NewTicker(pollEvery)
+	defer tick.Stop()
 	for {
-		if d.take() {
-			return true
+		select {
+		case <-w.ready:
+			if d.isWaiting() {
+				d.Left() // logs that sending goes on
+			}
+			return true, func() { d.giveBack(w.minute) }
+		case <-tick.C:
+			if !stopped() {
+				continue
+			}
+			d.mu.Lock()
+			if w.granted {
+				d.giveBackLocked(w.minute, time.Now())
+			} else {
+				d.dequeue(w)
+			}
+			d.mu.Unlock()
+			return false, nil
 		}
-		d.Left() // logs that the limit's reached
-		if stopped() {
-			return false
-		}
-		wait := pollEvery
-		if s := d.Status(); !s.FreesAt.IsZero() {
-			wait = min(wait, max(time.Until(s.FreesAt), 10*time.Millisecond))
-		}
-		time.Sleep(wait)
 	}
 }
 
-// take counts one campaign or automation e-mail if there's room for it
-// (always without a limit), in one step, and reports whether it did.
-func (d *Counter) take() bool {
+func (d *Counter) isWaiting() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.waiting
+}
+
+// dequeue takes a waiter out of its queue. Call with mu held.
+func (d *Counter) dequeue(w *waiter) {
+	q := d.queues[w.center]
+	for i, x := range q {
+		if x == w {
+			q = append(q[:i], q[i+1:]...)
+			break
+		}
+	}
+	if len(q) > 0 {
+		d.queues[w.center] = q
+		return
+	}
+	delete(d.queues, w.center)
+	for i, c := range d.order {
+		if c == w.center {
+			d.order = append(d.order[:i], d.order[i+1:]...)
+			if i < d.turn {
+				d.turn--
+			}
+			break
+		}
+	}
+}
+
+// next takes the first waiter of the next center in turn. Call with mu held,
+// and a waiter queued.
+func (d *Counter) next() *waiter {
+	if d.turn >= len(d.order) {
+		d.turn = 0
+	}
+	c := d.order[d.turn]
+	q := d.queues[c]
+	w := q[0]
+	if len(q) == 1 {
+		delete(d.queues, c)
+		d.order = append(d.order[:d.turn], d.order[d.turn+1:]...)
+	} else {
+		d.queues[c] = q[1:]
+		d.turn++
+	}
+	return w
+}
+
+// dispatch lets waiting campaign messages go while there's room (always
+// without a limit), one center's after another's, counting each, and sets
+// the timer to wake the rest when room frees. Call with mu held.
+func (d *Counter) dispatch(now time.Time) {
+	d.expire(now)
+	hold := d.hold(now)
+	for len(d.order) > 0 {
+		if d.limit > 0 && d.limit-d.limit*d.reserve/100-d.total-d.claimed-hold <= 0 {
+			break
+		}
+		w := d.next()
+		d.add(now)
+		w.granted, w.minute = true, now.Unix()/60
+		close(w.ready)
+	}
+	if len(d.order) == 0 {
+		if d.timer != nil {
+			d.timer.Stop()
+		}
+		return
+	}
+	wake := time.Minute // in case claims expire, or room frees otherwise
+	if at := d.freesAt(hold); !at.IsZero() {
+		wake = min(wake, max(time.Until(at), 10*time.Millisecond))
+	}
+	for _, x := range d.demands {
+		wake = min(wake, max(time.Until(x.until), 10*time.Millisecond))
+	}
+	if d.timer == nil {
+		d.timer = time.AfterFunc(wake, d.wake)
+	} else {
+		d.timer.Reset(wake)
+	}
+}
+
+// wake is the timer's: room may have freed.
+func (d *Counter) wake() {
+	d.mu.Lock()
+	d.dispatch(time.Now())
+	d.mu.Unlock()
+}
+
+// giveBack takes back the count of a message let go (by Wait) and not sent.
+func (d *Counter) giveBack(minute int64) {
 	now := time.Now()
 	d.mu.Lock()
-	d.expire(now)
-	if d.limit > 0 && d.limit-d.limit*d.reserve/100-d.total-d.claimed <= 0 {
-		d.mu.Unlock()
-		return false
-	}
-	d.add(now)
-	waiting := d.waiting
+	d.giveBackLocked(minute, now)
 	d.mu.Unlock()
-	if waiting {
-		d.Left() // logs that sending goes on
+}
+
+// giveBackLocked is giveBack, with mu held.
+func (d *Counter) giveBackLocked(minute int64, now time.Time) {
+	d.expire(now)
+	for i := len(d.minutes) - 1; i >= 0; i-- {
+		if d.minutes[i].Minute == minute {
+			if d.minutes[i].N > 0 {
+				d.minutes[i].N--
+				d.total--
+				if d.pending[minute]--; d.pending[minute] == 0 {
+					delete(d.pending, minute)
+				}
+			}
+			break
+		}
 	}
-	return true
+	d.dispatch(now)
 }
 
 // Counters is each center's Counter, against its own daily cap: one table
