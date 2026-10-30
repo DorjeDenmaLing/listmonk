@@ -64,7 +64,7 @@ import (
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
 // older one gets it again when it loads.
-const denmaFeaturesVersion = 59
+const denmaFeaturesVersion = 60
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't
 // have them yet.

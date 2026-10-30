@@ -216,9 +216,12 @@ export function denmaImportPreview() {
       }
       if (f.mode === 'blocklist') {
         const d = p.block_dates;
-        const dated = d ? ` ${n(d.dated)} new to the center are dated by their ${d.key}${d.undated ? `, ${n(d.undated)} by today (none given, or not a date like 2019-03-04 15:22:10)` : ''}.` : '';
+        const dated = d ? ` They're dated by their ${d.key} (${n(d.dated)})${d.undated ? `, or today (${n(d.undated)}: none given, or not a date like 2019-03-04 15:22:10)` : ''}.` : '';
         if (f.denmaBlockReason === 'unsubscribed') {
           w.push(`These are recorded as having unsubscribed themselves: only they can subscribe again, by signing up and confirming.${dated}`);
+          if (d && d.kept) {
+            w.push(`${n(d.kept)} already in the center consented here after that date: they're left as they are.`);
+          }
         } else if (f.denmaBlockReason === 'bounced') {
           w.push(`These are marked as bounced in this center only: an admin can still enable one on purpose.${dated}`);
         } else {

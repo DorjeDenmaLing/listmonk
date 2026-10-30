@@ -28,6 +28,20 @@ UPDATE subscriber_lists SET status='confirmed', meta=meta || ($3::JSONB - '` + d
     WHERE subscriber_id = (SELECT id FROM subID) AND list_id = ANY(SELECT id FROM listIDs)
     AND (SELECT set_config('denma.own_confirm', CASE WHEN $3::JSONB ? '` + denmaOwnConfirmKey + `' THEN 'on' ELSE '' END, true)) IS NOT NULL;`,
 
+	// A blocklist import gives the triggers the file's dates for someone the
+	// center has (denma.import_file, read by denma_import_file_date,
+	// cmd/denma_imports.go).
+	"upsert-blocklist-subscriber": `WITH sub AS (
+    INSERT INTO subscribers (uuid, email, name, attribs, status)
+    VALUES($1, $2, $3, $4, 'blocklisted')
+    ON CONFLICT (email) DO UPDATE SET status='blocklisted', updated_at=NOW()
+        WHERE set_config('denma.import_file', jsonb_build_object('unsubscribed_at', EXCLUDED.attribs->'unsubscribed_at',
+            'bounced_at', EXCLUDED.attribs->'bounced_at')::TEXT, true) IS NOT NULL
+    RETURNING id
+)
+UPDATE subscriber_lists SET status='unsubscribed', updated_at=NOW()
+    WHERE subscriber_id = (SELECT id FROM sub);`,
+
 	// Unique views and clicks (with individual tracking) are people's: not
 	// the anonymous ones (a deleted subscriber's, or from while it was off),
 	// which DISTINCT ON counted as one more person.

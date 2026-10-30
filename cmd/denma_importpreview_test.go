@@ -176,6 +176,7 @@ func TestDenmaPreviewTurn(t *testing.T) {
 // A file is kept for its person and center, by a token: replaced by a new
 // one, dropped, expired, and the oldest goes when there are too many.
 func TestDenmaKeptFiles(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir()) // not the dev server's kept files
 	k := &denmaKeptFiles{files: map[string]*denmaKeptFile{}, ttl: time.Minute}
 	read := func(key, token string) (string, bool) {
 		f, _, ok := k.open(key, token)

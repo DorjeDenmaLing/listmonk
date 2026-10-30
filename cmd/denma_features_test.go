@@ -22,6 +22,9 @@ func TestDenmaImportQueries(t *testing.T) {
 		if !strings.Contains(q[name], marks[i][1]) {
 			t.Errorf("%s no longer has %q", name, marks[i][1])
 		}
+		if r, ok := denmaQueries[name]; ok && !strings.Contains(r, marks[i][1]) {
+			t.Errorf("the fork's %s doesn't have %q", name, marks[i][1])
+		}
 	}
 	for name, body := range q {
 		if name == "upsert-subscriber" || name == "upsert-blocklist-subscriber" {
