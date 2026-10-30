@@ -139,7 +139,10 @@ func (a *App) UploadMedia(c echo.Context) error {
 	}
 
 	// Upload the file to the media store.
-	opt := a.denmaOptimizeImage(fName, ext, src) // denma: cmd/denma_media.go
+	opt := a.denmaOptimizeImage(fName, ext, src)                                               // denma: cmd/denma_media.go
+	if fName, contentType, opt, err = a.denmaMediaStore(fName, contentType, opt); err != nil { // denma: a PNG saved as a JPEG is .jpg; a large transparent one refused
+		return err
+	}
 	fName, err = a.media.Put(fName, contentType, opt.reader(src))
 	if err != nil {
 		a.log.Printf("error uploading file: %v", err)

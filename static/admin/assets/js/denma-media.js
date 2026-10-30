@@ -27,6 +27,41 @@ export async function denmaToFolder(ids) {
   await api('media', '/denma/media/folder', 'PUT', { ids: got, folder_id: folder }).catch(() => {});
 }
 
+// Uploaded PNGs saved as JPEGs: [chosen name, stored name].
+const converted = [];
+// Uploads that failed: "name: why".
+const failed = [];
+
+// denmaUploadFailed notes a failed upload, to show after the page reloads.
+export function denmaUploadFailed(file, err) {
+  failed.push(`${file.name}: ${err.message}`);
+  return null;
+}
+
+// denmaUploaded is an uploaded file's ID (null if none), noting a PNG saved
+// as a JPEG.
+export function denmaUploaded(file, m) {
+  if (!m) return null;
+  if (/\.png$/i.test(file.name) && /\.jpg$/i.test(m.filename || '')) converted.push([file.name, m.filename]);
+  return m.id;
+}
+
+// denmaUploadToast is the toast after an upload naming the files that failed
+// and the PNGs saved as JPEGs, or null.
+export function denmaUploadToast() {
+  const lines = [...failed];
+  if (converted.length === 1) {
+    lines.push(`${converted[0][0]} was saved as ${converted[0][1]}: PNGs over 1 MB are saved as JPEGs, which are much smaller.`);
+  } else if (converted.length) {
+    lines.push(`${converted.length} PNGs over 1 MB were saved as JPEGs, which are much smaller: ${converted.map((c) => c[1]).join(', ')}.`);
+  }
+  if (!lines.length) return null;
+  const toast = { message: lines.join(' '), variant: failed.length ? 'danger' : 'info', duration: failed.length ? 15000 : 10000 };
+  converted.length = 0;
+  failed.length = 0;
+  return toast;
+}
+
 export function denmaMedia() {
   const d = data();
   return {

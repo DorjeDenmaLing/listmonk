@@ -12,7 +12,10 @@ package main
 //     clearly smaller (or needed, to scale or turn it); otherwise the
 //     original image data is kept, without the metadata.
 //   - PNG: scaled down, or recompressed (losslessly) when that's smaller.
-//   - GIF (perhaps animated) and SVG are stored as they are.
+//     One over denmaMediaPNGToJPEG without transparency is saved as a JPEG
+//     (.jpg), with its colour profile; one with transparency still over it
+//     once optimized is refused.
+//   - GIF (perhaps animated), animated PNG and SVG are stored as they are.
 //
 // Anything that can't be read is stored as it is, as listmonk would.
 //
@@ -24,6 +27,7 @@ package main
 
 import (
 	"bytes"
+	"compress/zlib"
 	"encoding/binary"
 	"fmt"
 	"image"
@@ -43,6 +47,7 @@ const (
 	denmaMediaMaxSize   = 1600      // px, the longer side
 	denmaMediaQuality   = 82        // JPEG
 	denmaMediaMaxDecode = 512 << 20 // bytes an image's decoding may take
+	denmaMediaPNGToJPEG = 1 << 20   // bytes: a larger PNG without transparency is saved as a JPEG
 )
 
 // denmaMediaTurn is the turn to process an uploaded image: one at a time.
@@ -104,6 +109,32 @@ func denmaDecodeSize(cfg image.Config) int64 {
 type denmaMedia struct {
 	data          []byte
 	width, height int
+	jpeg          bool  // a PNG saved as a JPEG
+	heavy         int64 // bytes of a PNG with transparency still over denmaMediaPNGToJPEG: refused
+}
+
+// denmaMediaStore is the name and content type to store an upload under: a
+// PNG saved as a JPEG is named .jpg, made unique as listmonk does (if it
+// can't be, the upload is stored as it is). A PNG with transparency still
+// over denmaMediaPNGToJPEG once optimized is refused.
+func (a *App) denmaMediaStore(fName, contentType string, m denmaMedia) (string, string, denmaMedia, error) {
+	if m.heavy > 0 {
+		return "", "", m, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(
+			"This PNG has transparent parts and would still be %.1f MB at %d px, too large for e-mails. Save it without transparency (it will be stored as a JPEG) or make it smaller, and upload it again.",
+			float64(m.heavy)/(1<<20), denmaMediaMaxSize))
+	}
+	if !m.jpeg {
+		return fName, contentType, m, nil
+	}
+	name := strings.TrimSuffix(fName, filepath.Ext(fName)) + ".jpg"
+	if _, err := a.core.GetMedia(0, "", name, a.media); err == nil {
+		suffix, err := generateRandomString(6)
+		if err != nil {
+			return fName, contentType, denmaMedia{}, nil
+		}
+		name = appendSuffixToFilename(name, suffix)
+	}
+	return name, "image/jpeg", m, nil
 }
 
 // reader is what to store.
@@ -182,6 +213,9 @@ func denmaOptimize(orig []byte) (denmaMedia, error) {
 		return denmaMedia{}, nil
 
 	case "png":
+		if denmaPNGAnimated(orig) {
+			return denmaMedia{}, nil
+		}
 		img, err := png.Decode(bytes.NewReader(orig))
 		if err != nil {
 			return denmaMedia{}, err
@@ -193,8 +227,26 @@ func denmaOptimize(orig []byte) (denmaMedia, error) {
 		if err := (&png.Encoder{CompressionLevel: png.BestCompression}).Encode(&buf, img); err != nil {
 			return denmaMedia{}, err
 		}
-		if tooBig || buf.Len() < len(orig)*95/100 {
-			b := img.Bounds()
+		b := img.Bounds()
+		smaller := tooBig || buf.Len() < len(orig)*95/100
+		stored := len(orig)
+		if smaller {
+			stored = buf.Len()
+		}
+		if len(orig) > denmaMediaPNGToJPEG {
+			if o, ok := img.(interface{ Opaque() bool }); ok && o.Opaque() {
+				var j bytes.Buffer
+				if err := jpeg.Encode(&j, img, &jpeg.Options{Quality: denmaMediaQuality}); err != nil {
+					return denmaMedia{}, err
+				}
+				if j.Len() < buf.Len() {
+					return denmaMedia{data: denmaJPEGWithProfile(j.Bytes(), denmaPNGProfile(orig)), width: b.Dx(), height: b.Dy(), jpeg: true}, nil
+				}
+			} else if stored > denmaMediaPNGToJPEG {
+				return denmaMedia{heavy: int64(stored)}, nil
+			}
+		}
+		if smaller {
 			return denmaMedia{data: buf.Bytes(), width: b.Dx(), height: b.Dy()}, nil
 		}
 	}
@@ -265,6 +317,79 @@ func denmaJPEGWithICC(enc, orig []byte) []byte {
 	out = append(out, enc[:2]...)
 	out = append(out, icc...)
 	return append(out, enc[2:]...)
+}
+
+// denmaJPEGWithProfile adds a colour profile (nil: none) to a JPEG that has
+// none, as APP2 ICC_PROFILE segments.
+func denmaJPEGWithProfile(enc, profile []byte) []byte {
+	const most = 0xFFFF - 2 - 14 // a segment's data, after its length and header
+	n := (len(profile) + most - 1) / most
+	if n == 0 || n > 255 || len(enc) < 2 {
+		return enc
+	}
+	out := make([]byte, 0, len(enc)+len(profile)+n*18)
+	out = append(out, enc[:2]...)
+	for i := range n {
+		part := profile[i*most : min((i+1)*most, len(profile))]
+		out = append(out, 0xFF, 0xE2)
+		out = binary.BigEndian.AppendUint16(out, uint16(2+14+len(part)))
+		out = append(out, "ICC_PROFILE\x00"...)
+		out = append(out, byte(i+1), byte(n))
+		out = append(out, part...)
+	}
+	return append(out, enc[2:]...)
+}
+
+// ---- PNG chunks ----
+
+// denmaPNGChunks calls f with each chunk before the image data (IDAT): its
+// type and its data.
+func denmaPNGChunks(b []byte, f func(typ string, data []byte)) {
+	if !bytes.HasPrefix(b, []byte("\x89PNG\r\n\x1a\n")) {
+		return
+	}
+	for i := 8; i+12 <= len(b); {
+		n := int(binary.BigEndian.Uint32(b[i:]))
+		typ := string(b[i+4 : i+8])
+		if typ == "IDAT" || n > len(b)-i-12 {
+			return
+		}
+		f(typ, b[i+8:i+8+n])
+		i += 12 + n
+	}
+}
+
+// denmaPNGAnimated is whether the PNG is animated (APNG).
+func denmaPNGAnimated(b []byte) bool {
+	animated := false
+	denmaPNGChunks(b, func(typ string, _ []byte) {
+		animated = animated || typ == "acTL"
+	})
+	return animated
+}
+
+// denmaPNGProfile is the PNG's colour profile (iCCP), or nil.
+func denmaPNGProfile(b []byte) []byte {
+	var profile []byte
+	denmaPNGChunks(b, func(typ string, data []byte) {
+		if typ != "iCCP" || profile != nil {
+			return
+		}
+		name := bytes.IndexByte(data, 0) // the profile's name, then the compression method
+		if name < 0 || name+2 > len(data) || data[name+1] != 0 {
+			return
+		}
+		r, err := zlib.NewReader(bytes.NewReader(data[name+2:]))
+		if err != nil {
+			return
+		}
+		defer r.Close()
+		p, err := io.ReadAll(io.LimitReader(r, 4<<20+1))
+		if err == nil && len(p) <= 4<<20 {
+			profile = p
+		}
+	})
+	return profile
 }
 
 // denmaJPEGOrientation is the EXIF orientation (1 is upright; 0 if there's none).

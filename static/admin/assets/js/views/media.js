@@ -5,7 +5,7 @@ import {
   i18n,
 } from '../main.js';
 import * as u from '../utils.js';
-import { denmaMedia, denmaToFolder } from '../denma-media.js'; // denma: folders and the preview
+import { denmaMedia, denmaToFolder, denmaUploaded, denmaUploadFailed, denmaUploadToast } from '../denma-media.js'; // denma: folders, the preview, what an upload did
 
 function component(mode) {
   return {
@@ -42,15 +42,15 @@ function component(mode) {
             const out = await resp.json().catch(() => ({}));
             throw new Error(out.message || resp.statusText);
           }
-          return resp.json().then((out) => out.data && out.data.id).catch(() => null); // denma: its ID, for its folder
+          return resp.json().then((out) => denmaUploaded(file, out.data)).catch(() => null); // denma: its ID, for its folder
         }).catch((err) => {
-          u.toast(`${file.name}: ${err.message}`, 'danger');
+          denmaUploadFailed(file, err); // denma: shown after the reload (denma-media.js)
         });
       }));
 
       await denmaToFolder(results); // denma: into the folder shown (denma-media.js)
       this.isUploading = false;
-      u.reload({ message: i18n.ts('globals.messages.done') });
+      u.reload(denmaUploadToast() || { message: i18n.ts('globals.messages.done') }); // denma: failures and PNGs saved as JPEGs
       return results;
     },
 
