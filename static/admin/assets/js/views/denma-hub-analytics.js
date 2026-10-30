@@ -161,7 +161,7 @@ function component() {
 
       // Mailbox providers.
       const pr = t.providers;
-      this.providers.rows = s.PROVIDERS.map((x) => [x[0], x[1], x[3]]).concat([['other', 'Other', false]]).map(([key, label, apple]) => ({
+      this.providers.rows = s.PROVIDERS.map((x) => [x[0], x[1], x[2]]).concat([['other', 'Other', false]]).map(([key, label, apple]) => ({
         key,
         label,
         apple: !!apple,

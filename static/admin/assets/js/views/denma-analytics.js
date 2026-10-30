@@ -387,7 +387,7 @@ function component(opts) {
     },
 
     renderProviders({ rows, used, total }) {
-      this.providers.rows = PROVIDERS.map((x) => [x[0], x[1], x[3]]).concat([['other', 'Other', false]]).map(([key, label, apple]) => ({
+      this.providers.rows = PROVIDERS.map((x) => [x[0], x[1], x[2]]).concat([['other', 'Other', false]]).map(([key, label, apple]) => ({
         key,
         label,
         apple: !!apple,

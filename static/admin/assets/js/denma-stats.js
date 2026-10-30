@@ -346,13 +346,13 @@ export function growthChart(bk, width) {
 
 // ---- Mailbox providers (Analytics, and the hub's Analytics) ----
 
-// [key, label, address domains (* is any ending), opens inflated by Apple
-// Mail]. The hub's are the same (denmaProviders, cmd/denma_hub_analytics.go).
+// [key, label, opens inflated by Apple Mail]. Their domains are on the
+// server (denmaProviders, cmd/denma_hub_analytics.go).
 export const PROVIDERS = [
-  ['gmail', 'Gmail', ['gmail.com', 'googlemail.com']],
-  ['microsoft', 'Microsoft', ['outlook.*', 'hotmail.*', 'live.*', 'msn.com', 'windowslive.com']],
-  ['yahoo', 'Yahoo / AOL', ['yahoo.*', 'ymail.com', 'rocketmail.com', 'aol.*', 'aim.com']],
-  ['apple', 'Apple iCloud', ['icloud.com', 'me.com', 'mac.com'], true],
+  ['gmail', 'Gmail'],
+  ['microsoft', 'Microsoft'],
+  ['yahoo', 'Yahoo / AOL'],
+  ['apple', 'Apple iCloud', true],
 ];
 export const OTHER_PROVIDER = "Every other address, including organizations' own domains (even when they use Google or Microsoft mail).";
 const PROVIDER_MIN_PERIOD = 30; // emails before a rate is judged

@@ -28,8 +28,8 @@ import (
 )
 
 // denmaProviders are the mailbox providers, by address domain (* is any
-// ending), as in views/denma-analytics.js (PROVIDERS in denma-stats.js).
-// Every other address is "other".
+// ending), for both Analytics pages; their names are PROVIDERS in
+// denma-stats.js. Every other address is "other".
 var denmaProviders = []struct {
 	Key     string
 	Domains []string
