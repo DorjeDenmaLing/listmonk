@@ -252,7 +252,9 @@ BEGIN
     IF now_tags = had_tags THEN
         RETURN NULL;
     END IF;
-    DELETE FROM denma_tag_log WHERE subscriber_id = NEW.id AND NOT (tag = ANY(now_tags));
+    IF TG_OP = 'UPDATE' THEN -- planned each time, for the log's size now
+        EXECUTE 'DELETE FROM denma_tag_log WHERE subscriber_id = $1 AND NOT (tag = ANY($2))' USING NEW.id, now_tags;
+    END IF;
     -- Not an import's tags without its automations (cmd/denma_imports.go).
     IF denma_is_import() AND NOT denma_import_opt('automations') THEN
         RETURN NULL;
