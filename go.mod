@@ -11,40 +11,40 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.33.6
 	github.com/aws/aws-sdk-go-v2/service/ses v1.42.1
 	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.77.0
-	github.com/coreos/go-oidc/v3 v3.14.1
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/disintegration/imaging v1.6.2
 	github.com/emersion/go-message v0.18.2
 	github.com/gdgvda/cron v0.4.0
-	github.com/gofrs/uuid/v5 v5.3.2
+	github.com/gofrs/uuid/v5 v5.5.1
 	github.com/gorilla/feeds v1.2.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/knadh/go-pop3 v1.0.2
 	github.com/knadh/goyesql/v2 v2.2.0
-	github.com/knadh/koanf/maps v0.1.2
-	github.com/knadh/koanf/parsers/json v1.0.0
+	github.com/knadh/koanf/maps v0.1.3
+	github.com/knadh/koanf/parsers/json v1.0.1
 	github.com/knadh/koanf/parsers/toml v0.1.0
-	github.com/knadh/koanf/providers/confmap v1.0.0
+	github.com/knadh/koanf/providers/confmap v1.0.1
 	github.com/knadh/koanf/providers/env v1.1.0
-	github.com/knadh/koanf/providers/file v1.2.0
-	github.com/knadh/koanf/providers/posflag v1.0.1
-	github.com/knadh/koanf/providers/rawbytes v1.0.0
-	github.com/knadh/koanf/v2 v2.2.2
+	github.com/knadh/koanf/providers/file v1.2.1
+	github.com/knadh/koanf/providers/posflag v1.0.2
+	github.com/knadh/koanf/providers/rawbytes v1.0.1
+	github.com/knadh/koanf/v2 v2.4.1
 	github.com/knadh/paginator/v2 v2.0.3
 	github.com/knadh/smtppool/v2 v2.1.2
 	github.com/knadh/stuffbin v1.3.0
 	github.com/labstack/echo/v4 v4.16.0
-	github.com/lib/pq v1.10.9
+	github.com/lib/pq v1.12.3
 	github.com/paulbellamy/ratecounter v0.2.0
 	github.com/pquerna/otp v1.5.0
 	github.com/rhnvrm/simples3 v0.11.1
-	github.com/spf13/pflag v1.0.6
+	github.com/spf13/pflag v1.0.10
 	github.com/yuin/goldmark v1.7.17
 	github.com/zerodha/easyjson v1.0.1
 	github.com/zerodha/simplesessions/stores/postgres/v3 v3.0.0
 	github.com/zerodha/simplesessions/v3 v3.0.0
-	golang.org/x/mod v0.41.0
-	golang.org/x/oauth2 v0.30.0
-	golang.org/x/text v0.42.0
+	golang.org/x/mod v0.42.0
+	golang.org/x/oauth2 v0.37.0
+	golang.org/x/text v0.43.0
 	gopkg.in/volatiletech/null.v6 v6.0.0-20170828023728-0bef4e07ae1b
 )
 
@@ -81,9 +81,9 @@ require (
 	github.com/spf13/cast v1.9.2 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
-	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/image v0.46.0 // indirect
-	golang.org/x/net v0.60.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 )
