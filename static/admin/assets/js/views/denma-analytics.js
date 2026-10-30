@@ -130,9 +130,8 @@ function component(opts) {
           const tracked = s.startedIn(c, p.cur).filter(s.isTracked);
           const ids = tracked.map((x) => x.id);
           const from = tracked.length ? new Date(Math.min(...tracked.map((x) => new Date(x.started_at)))) : p.cur.start;
-          return Promise.all([c, s.perCampaign('views', ids, from), s.perCampaign('clicks', ids, from),
-            s.campaignOutcomes(s.startedIn(c, p.cur).map((x) => x.id))]);
-        }), ([c, opens, clicks, outcomes]) => this.renderReports(c, p, opens, clicks, outcomes), 'campaign reports');
+          return Promise.all([c, s.campaignPeople(ids, from), s.campaignOutcomes(s.startedIn(c, p.cur).map((x) => x.id))]);
+        }), ([c, people, outcomes]) => this.renderReports(c, p, people.views, people.clicks, outcomes), 'campaign reports');
       }
 
       if (this.show.automations) {

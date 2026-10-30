@@ -111,16 +111,17 @@ export function startedIn(campaigns, p) {
 // anonymous too, but leave the campaign counted.
 export const isTracked = (c) => c.denmaTracked !== false;
 
-// Unique views or clicks per campaign ({id: count}) since `from`.
-export async function perCampaign(type, ids, from) {
+// The people who opened and clicked each campaign since `from` (cmd/denma_campaign_stats.go):
+// { views: {id: count}, clicks: {id: count} }.
+export async function campaignPeople(ids, from) {
+  const out = { views: {}, clicks: {} };
   if (!ids.length) {
-    return {};
+    return out;
   }
   const q = `${ids.map((id) => `id=${id}`).join('&')}&from=${isoDay(from)}&to=${isoDay(addDays(new Date(), 1))}`;
-  const rows = await getJSON(`/campaigns/analytics/${type}?${q}`);
-  const out = {};
-  (rows || []).forEach((r) => {
-    out[r.campaign_id] = (out[r.campaign_id] || 0) + (r.count || 0);
+  (await getJSON(`/denma/stats/people?${q}`) || []).forEach((r) => {
+    out.views[r.campaign_id] = r.opened;
+    out.clicks[r.campaign_id] = r.clicked;
   });
   return out;
 }
@@ -187,11 +188,12 @@ export async function measure(campaigns, p) {
   const ids = tracked.map((c) => c.id);
   const from = tracked.length ? new Date(Math.min(...tracked.map((c) => new Date(c.started_at)))) : p.start;
 
-  const [opens, clicks, unsubs] = await Promise.all([
-    perCampaign('views', ids, from).then(sumValues),
-    perCampaign('clicks', ids, from).then(sumValues),
+  const [people, unsubs] = await Promise.all([
+    campaignPeople(ids, from),
     subscriberStat('unsub', { period: p }).then((d) => (d && d.total) || 0),
   ]);
+  const opens = sumValues(people.views);
+  const clicks = sumValues(people.clicks);
   const delivered = sends - bounces;
   const rate = (n, d) => (d > 0 ? n / d : null);
   return {
