@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/knadh/listmonk/internal/auth"
@@ -164,6 +165,87 @@ func (a *App) DenmaStatSubscribers(c echo.Context) error {
 		Results:   res,
 		PageProps: models.PageProps{Total: total, Page: pg.Page, PerPage: pg.PerPage},
 	}})
+}
+
+// denmaProvidersSQL is, by provider, who received, opened and clicked each
+// campaign in $1, as the received, opens and clicks figures count them, of the
+// subscribers on a list in $2 (all if empty).
+const denmaProvidersSQL = `WITH camp AS (
+	SELECT id, started_at, max_subscriber_id FROM campaigns WHERE id = ANY($1::INT[])
+), prov AS MATERIALIZED (
+	SELECT s.id, s.status, s.updated_at, P(s.email) AS provider FROM subscribers s
+	WHERE COALESCE(CARDINALITY($2::INT[]), 0) = 0 OR EXISTS (SELECT 1 FROM subscriber_lists x WHERE x.subscriber_id = s.id AND x.list_id = ANY($2::INT[]))
+), got AS (
+	` + denmaGotSQL + `
+)
+SELECT 'received' AS kind, got.campaign_id, p.provider, COUNT(*) AS n FROM got JOIN prov p ON p.id = got.subscriber_id
+	WHERE p.status <> 'blocklisted' OR p.updated_at > got.started_at GROUP BY 2, 3
+UNION ALL
+SELECT 'opens', v.campaign_id, p.provider, COUNT(DISTINCT v.subscriber_id) FROM campaign_views v JOIN prov p ON p.id = v.subscriber_id
+	WHERE v.campaign_id = ANY($1::INT[]) GROUP BY 2, 3
+UNION ALL
+SELECT 'clicks', k.campaign_id, p.provider, COUNT(DISTINCT k.subscriber_id) FROM link_clicks k JOIN prov p ON p.id = k.subscriber_id
+	WHERE k.campaign_id = ANY($1::INT[]) GROUP BY 2, 3
+UNION ALL
+SELECT 'active', 0, p.provider, COUNT(*) FROM subscribers JOIN prov p ON p.id = subscribers.id WHERE ACTIVE GROUP BY 3
+UNION ALL
+SELECT 'unsub', 0, p.provider, COUNT(*) FROM subscribers JOIN prov p ON p.id = subscribers.id WHERE UNSUB GROUP BY 3`
+
+// DenmaStatProviders returns the Mailbox providers figures in one request:
+// active subscribers and unsubscribes in the period, by provider, and each
+// campaign's received, opens and clicks by provider.
+//
+//	GET /api/denma/stats/providers?id=12&id=13&from=<RFC 3339>&to=...
+//	{ "active": { "gmail": 120, ..., "other": 80 }, "unsub": {...},
+//	  "campaigns": { "12": { "received": {...}, "opens": {...}, "clicks": {...} } } }
+func (a *App) DenmaStatProviders(c echo.Context) error {
+	var (
+		user = auth.GetUser(c)
+		qp   = c.QueryParams()
+		t    [2]time.Time
+	)
+	for i, k := range []string{"from", "to"} {
+		var err error
+		if t[i], err = time.Parse(time.RFC3339, qp.Get(k)); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, k+" isn't an RFC 3339 time")
+		}
+	}
+	ids, err := getQueryInts("id", qp)
+	if err != nil || len(ids) > 100 {
+		return echo.NewHTTPError(http.StatusBadRequest, "id: up to 100 campaign IDs")
+	}
+	active, _ := denmaStatSQL("active", t[0], t[1], 0)
+	unsub, _ := denmaStatSQL("unsub", t[0], t[1], 0)
+	listIDs, err := a.filterListQueryByPerm("list_id", qp, user)
+	if err != nil {
+		return err
+	}
+
+	q := strings.NewReplacer("S.", "", "P(s.email)", denmaProviderSQL("s.email"), "ACTIVE", "("+active+")", "UNSUB", "("+unsub+")").Replace(denmaProvidersSQL)
+	var rows []struct {
+		Kind     string `db:"kind"`
+		Campaign int    `db:"campaign_id"`
+		Provider string `db:"provider"`
+		N        int    `db:"n"`
+	}
+	if err := a.db.Select(&rows, q, pq.Array(ids), pq.Array(listIDs)); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	out := map[string]any{"active": map[string]int{}, "unsub": map[string]int{}}
+	camps := map[int]map[string]map[string]int{}
+	for _, id := range ids {
+		camps[id] = map[string]map[string]int{"received": {}, "opens": {}, "clicks": {}}
+	}
+	for _, r := range rows {
+		if r.Campaign == 0 {
+			out[r.Kind].(map[string]int)[r.Provider] = r.N
+		} else if m := camps[r.Campaign]; m != nil {
+			m[r.Kind][r.Provider] = r.N
+		}
+	}
+	out["campaigns"] = camps
+	return c.JSON(http.StatusOK, okResp{out})
 }
 
 // DenmaUntrackedCampaigns returns the IDs of the campaigns whose opens are

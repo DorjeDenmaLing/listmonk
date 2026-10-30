@@ -40,15 +40,16 @@ var denmaProviders = []struct {
 	{"apple", []string{"icloud.com", "me.com", "mac.com"}},
 }
 
-// denmaProviderSQL is the provider of the address in col, matched as the
-// search's domain: is (cmd/denma_search.go).
+// denmaProviderSQL is the provider of the address in col, by its domain, as
+// the search's domain: matches it (cmd/denma_search.go).
 func denmaProviderSQL(col string) string {
+	dom := "LOWER(SPLIT_PART(" + col + ", '@', -1))"
 	var b strings.Builder
 	b.WriteString("CASE")
 	for _, p := range denmaProviders {
 		conds := make([]string, len(p.Domains))
 		for i, d := range p.Domains {
-			conds[i] = col + " ILIKE " + pq.QuoteLiteral("%@"+strings.ReplaceAll(denmaLikeEscape(d), "*", "%"))
+			conds[i] = dom + " LIKE " + pq.QuoteLiteral(strings.ReplaceAll(denmaLikeEscape(d), "*", "%"))
 		}
 		fmt.Fprintf(&b, " WHEN %s THEN '%s'", strings.Join(conds, " OR "), p.Key)
 	}
@@ -100,15 +101,10 @@ const denmaReachSQL = `WITH camp AS (
 	SELECT c.id, c.started_at, c.max_subscriber_id FROM S.campaigns c
 	WHERE c.started_at >= $1 AND c.started_at < $2 AND c.sent > 0 AND c.type <> 'optin'
 		AND ` + denmaTrackedCampSQL + `
+), prov AS MATERIALIZED (
+	SELECT s.id, s.status, s.updated_at, P(s.email) AS provider FROM S.subscribers s
 ), got AS (
-	SELECT DISTINCT camp.id, s.id AS subscriber_id, s.email FROM camp
-	JOIN S.campaign_lists cl ON cl.campaign_id = camp.id
-	JOIN S.subscriber_lists sl ON sl.list_id = cl.list_id AND sl.created_at <= camp.started_at
-	JOIN S.lists l ON l.id = sl.list_id
-	JOIN S.subscribers s ON s.id = sl.subscriber_id
-	WHERE s.id <= camp.max_subscriber_id AND (s.status <> 'blocklisted' OR s.updated_at > camp.started_at)
-		AND ((l.optin = 'double' AND sl.status = 'confirmed') OR (l.optin <> 'double' AND sl.status <> 'unsubscribed')
-			OR (sl.status = 'unsubscribed' AND sl.updated_at > camp.started_at))
+	` + denmaGotSQL + `
 ), seen AS (
 	SELECT DISTINCT 'opens' AS kind, v.campaign_id, v.subscriber_id FROM S.campaign_views v JOIN camp ON camp.id = v.campaign_id
 	WHERE v.subscriber_id IS NOT NULL
@@ -116,11 +112,22 @@ const denmaReachSQL = `WITH camp AS (
 	SELECT DISTINCT 'clicks', k.campaign_id, k.subscriber_id FROM S.link_clicks k JOIN camp ON camp.id = k.campaign_id
 	WHERE k.subscriber_id IS NOT NULL
 )
-SELECT 'received' AS kind, P(got.email) AS provider, COUNT(*) AS n FROM got GROUP BY 1, 2
+SELECT 'received' AS kind, p.provider, COUNT(*) AS n FROM got JOIN prov p ON p.id = got.subscriber_id
+	WHERE p.status <> 'blocklisted' OR p.updated_at > got.started_at GROUP BY 1, 2
 UNION ALL
-SELECT seen.kind, P(s.email), COUNT(*) FROM seen JOIN S.subscribers s ON s.id = seen.subscriber_id GROUP BY 1, 2
+SELECT seen.kind, p.provider, COUNT(*) FROM seen JOIN prov p ON p.id = seen.subscriber_id GROUP BY 1, 2
 UNION ALL
 SELECT 'campaigns', '', COUNT(*) FROM camp`
+
+// denmaGotSQL is who was on each campaign (camp) when it started, by their
+// lists: the "received" figure before the blocklisted are left out (prov).
+const denmaGotSQL = `SELECT DISTINCT camp.id AS campaign_id, sl.subscriber_id, camp.started_at FROM camp
+	JOIN S.campaign_lists cl ON cl.campaign_id = camp.id
+	JOIN S.subscriber_lists sl ON sl.list_id = cl.list_id AND sl.created_at <= camp.started_at
+	JOIN S.lists l ON l.id = sl.list_id
+	WHERE sl.subscriber_id <= camp.max_subscriber_id
+		AND ((l.optin = 'double' AND sl.status = 'confirmed') OR (l.optin <> 'double' AND sl.status <> 'unsubscribed')
+			OR (sl.status = 'unsubscribed' AND sl.updated_at > camp.started_at))`
 
 // denmaAnalytics is the Analytics figures of a center, or of several added up.
 type denmaAnalytics struct {
@@ -236,7 +243,7 @@ func (a *App) DenmaHubAnalytics(c echo.Context) error {
 	}
 
 	var (
-		providers = strings.NewReplacer("P(s.email)", denmaProviderSQL("s.email"), "P(got.email)", denmaProviderSQL("got.email"))
+		providers = strings.NewReplacer("P(s.email)", denmaProviderSQL("s.email"))
 		inSchema  = func(q, schema string) string { return denmaInSchema(providers.Replace(q), schema) }
 		key       = fmt.Sprintf("analytics|%v|%s", t, tz)
 		out       = make([]denmaHubAnalytics, len(reg))

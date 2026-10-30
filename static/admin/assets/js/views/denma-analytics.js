@@ -52,35 +52,12 @@ const focusID = () => parseInt(new URLSearchParams(window.location.search).get('
 // listmonk doesn't record who each campaign went to, so "received" is rebuilt
 // from list memberships as listmonk picks recipients: on the campaign's lists
 // when it started, subscription confirmed on double opt-in lists, not
-// unsubscribed or blocklisted then. Each campaign costs 15 small counts (3
-// figures x 5 groups), so only the latest PROVIDER_MAX_CAMPAIGNS are used.
+// unsubscribed or blocklisted then. The server counts every figure in one
+// request (cmd/denma_stats.go), for the latest PROVIDER_MAX_CAMPAIGNS.
 
 const PROVIDER_MAX_CAMPAIGNS = 20;
-const PROVIDER_CONCURRENCY = 6;
 const PROVIDER_MIN_CAMPAIGN = 20;
 const FIGURES = ['received', 'opens', 'clicks'];
-
-// A provider's addresses, as a search (cmd/denma_search.go).
-function providerSearch(key) {
-  if (key === 'all') return '';
-  const pr = PROVIDERS.find((x) => x[0] === key);
-  return pr[2].map((d) => `domain:${d}`).join(' OR ');
-}
-
-// Runs at most `n` requests at once.
-function limiter(n) {
-  let active = 0;
-  const queue = [];
-  const next = () => {
-    if (active >= n || !queue.length) return;
-    active += 1;
-    const job = queue.shift();
-    job.fn().then(job.resolve, job.reject).then(() => { active -= 1; next(); });
-  };
-  return (fn) => new Promise((resolve, reject) => { queue.push({ fn, resolve, reject }); next(); });
-}
-const providerQueue = limiter(PROVIDER_CONCURRENCY);
-const countWhere = (metric, opts) => providerQueue(() => s.subscriberStat(metric, opts)).then((d) => (d && d.total) || 0);
 
 const atCampaign = (id) => (x) => x.campaigns.find((y) => y.c.id === id) || { received: 0, opens: 0 };
 
@@ -113,7 +90,6 @@ function component(opts) {
     growth: { cells: s.growthPlaceholders(), note: '', busy: true },
     providers: { rows: [], all: null, note: 'Loading…', busy: true },
     seq: 0,
-    providerCache: {},
 
     init() {
       this.load();
@@ -170,7 +146,7 @@ function component(opts) {
 
       if (this.show.providers) {
         this.providers.note = 'Loading…';
-        run('providers', () => camps.then((c) => this.loadProviders(c, p, current)), (d) => this.renderProviders(d), 'mailbox providers');
+        run('providers', () => camps.then((c) => this.loadProviders(c, p)), (d) => this.renderProviders(d), 'mailbox providers');
       }
     },
 
@@ -375,59 +351,38 @@ function component(opts) {
 
     // ---- Mailbox providers ----
 
-    campaignCount(c, figure, key) {
-      const k = `${c.id}|${figure}|${key}`;
-      if (!this.providerCache[k]) {
-        this.providerCache[k] = countWhere(figure, { campaign: c.id, search: providerSearch(key) });
-        this.providerCache[k].catch(() => { delete this.providerCache[k]; });
-      }
-      return this.providerCache[k];
-    },
-
-    async loadProviders(campaigns, p, current) {
-      const keys = PROVIDERS.map((x) => x[0]).concat('all');
+    async loadProviders(campaigns, p) {
+      const keys = PROVIDERS.map((x) => x[0]).concat('other');
       const inRange = s.startedIn(campaigns, p.cur)
         .filter((c) => s.isTracked(c) && c.type !== 'optin')
         .sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
       const list = inRange.slice(0, PROVIDER_MAX_CAMPAIGNS);
-
-      let jobs = 0;
-      let done = 0;
-      const track = (pr) => {
-        jobs += 1;
-        pr.then(() => {
-          done += 1;
-          if (current() && done < jobs) this.providers.note = `Loading… ${Math.round(done / jobs * 100)}%`;
-        }, () => {});
-        return pr;
-      };
-      const perGroup = keys.map((k) => Promise.all([
-        track(countWhere('active', { search: providerSearch(k) })),
-        track(countWhere('unsub', { period: p.cur, search: providerSearch(k) })),
-      ]));
-      const perCampaign = list.map((c) => Promise.all(keys.map((k) => Promise.all(FIGURES.map((f) => track(this.campaignCount(c, f, k)))))));
-      const [groups, camps] = await Promise.all([Promise.all(perGroup), Promise.all(perCampaign)]);
+      const q = new URLSearchParams({ from: p.cur.start.toISOString(), to: p.cur.end.toISOString() });
+      list.forEach((c) => q.append('id', c.id));
+      const d = await s.getJSON(`/denma/stats/providers?${q}`);
 
       // rows[key] = { subscribers, unsub, received, opens, clicks, campaigns: [{ c, received, opens, clicks }] }
       const rows = {};
-      keys.concat('other').forEach((k) => { rows[k] = { subscribers: 0, unsub: 0, received: 0, opens: 0, clicks: 0, campaigns: [] }; });
-      keys.forEach((k, i) => { [rows[k].subscribers, rows[k].unsub] = groups[i]; });
-      list.forEach((c, ci) => {
-        const other = { c, received: 0, opens: 0, clicks: 0 };
-        keys.forEach((k, ki) => {
-          const v = camps[ci][ki];
-          const m = { c, received: v[0], opens: v[1], clicks: v[2] };
-          rows[k].campaigns.push(m);
-          FIGURES.forEach((f) => {
-            rows[k][f] += m[f];
-            other[f] += k === 'all' ? m[f] : -m[f];
-          });
-        });
-        rows.other.campaigns.push(other);
-        FIGURES.forEach((f) => { rows.other[f] += other[f]; });
+      keys.concat('all').forEach((k) => { rows[k] = { subscribers: 0, unsub: 0, received: 0, opens: 0, clicks: 0, campaigns: [] }; });
+      keys.forEach((k) => {
+        rows[k].subscribers = d.active[k] || 0;
+        rows[k].unsub = d.unsub[k] || 0;
+        rows.all.subscribers += rows[k].subscribers;
+        rows.all.unsub += rows[k].unsub;
       });
-      ['subscribers', 'unsub'].forEach((f) => {
-        rows.other[f] = rows.all[f] - PROVIDERS.reduce((n, x) => n + rows[x[0]][f], 0);
+      list.forEach((c) => {
+        const all = { c, received: 0, opens: 0, clicks: 0 };
+        keys.forEach((k) => {
+          const m = { c };
+          FIGURES.forEach((f) => {
+            m[f] = d.campaigns[c.id][f][k] || 0;
+            rows[k][f] += m[f];
+            all[f] += m[f];
+          });
+          rows[k].campaigns.push(m);
+        });
+        rows.all.campaigns.push(all);
+        FIGURES.forEach((f) => { rows.all[f] += all[f]; });
       });
       return { rows, used: list.length, total: inRange.length };
     },

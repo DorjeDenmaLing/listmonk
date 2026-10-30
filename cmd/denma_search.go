@@ -872,6 +872,7 @@ func denmaFind(all []denmaNamed, v, what string) (int, error) {
 func initDenmaSearchAPIHandlers(g *echo.Group, a *App) {
 	g.GET("/api/denma/search/check", a.DenmaCheckSearch)
 	g.GET("/api/denma/stats/subscribers", a.auth.Perm(a.DenmaStatSubscribers, "subscribers:get_all", "subscribers:get"))
+	g.GET("/api/denma/stats/providers", a.auth.Perm(a.DenmaStatProviders, "subscribers:get_all", "subscribers:get"))
 	g.GET("/api/denma/stats/untracked", a.auth.Perm(a.DenmaUntrackedCampaigns, "campaigns:get_all", "campaigns:get"))
 	g.GET("/api/denma/stats/campaigns", a.auth.Perm(a.DenmaCampaignOutcomes, "campaigns:get_analytics")) // cmd/denma_campaign_stats.go
 }
