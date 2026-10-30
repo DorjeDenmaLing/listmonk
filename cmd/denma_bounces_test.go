@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	"github.com/knadh/koanf/v2"
+	"github.com/knadh/listmonk/models"
 )
 
 // SES notifications are taken from denma.ses_topics in config.toml (and,
@@ -24,6 +26,30 @@ func TestDenmaSESTopicAllowed(t *testing.T) {
 	for _, arn := range []string{"", "arn:aws:sns:ca-central-1:999999999999:ses-feedback"} {
 		if denmaSESTopicAllowed(ko, arn) {
 			t.Errorf("%q was taken", arn)
+		}
+	}
+}
+
+// SES's bounces of mail it didn't send (a suppression list, its validation)
+// stay in their center; real hard bounces, and other providers', don't.
+func TestDenmaSuppressedBounce(t *testing.T) {
+	meta := func(sub string) json.RawMessage {
+		return json.RawMessage(`{"notificationType":"Bounce","bounce":{"bounceType":"Permanent","bounceSubType":"` + sub + `"}}`)
+	}
+	for _, c := range []struct {
+		b    models.Bounce
+		want bool
+	}{
+		{models.Bounce{Source: "ses", Type: "hard", Meta: meta("OnAccountSuppressionList")}, true},
+		{models.Bounce{Source: "ses", Type: "hard", Meta: meta("EmailValidationSuppressed")}, true},
+		{models.Bounce{Source: "ses", Type: "hard", Meta: meta("Suppressed")}, true},
+		{models.Bounce{Source: "ses", Type: "hard", Meta: meta("General")}, false},
+		{models.Bounce{Source: "ses", Type: "hard", Meta: meta("NoEmail")}, false},
+		{models.Bounce{Source: "ses", Type: "hard", Meta: json.RawMessage(`"not an object"`)}, false},
+		{models.Bounce{Source: "postmark", Type: "hard", Meta: meta("OnAccountSuppressionList")}, false},
+	} {
+		if got := denmaSuppressedBounce(c.b); got != c.want {
+			t.Errorf("%s %s: %v, want %v", c.b.Source, c.b.Meta, got, c.want)
 		}
 	}
 }

@@ -16,7 +16,8 @@ package main
 //  3. else the only center with the address.
 //
 // A hard bounce goes on the shared blocklist whatever happens (the address
-// can't receive mail from any center, cmd/denma_blocklist.go). A complaint
+// can't receive mail from any center, cmd/denma_blocklist.go), except SES's
+// for mail it didn't send (denmaSuppressedBounce). A complaint
 // for an address in several centers with neither header is recorded in the
 // one that last sent to it (denma_messages), and one for an address no center
 // has in the one that last sent to it before it was deleted
@@ -43,6 +44,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -258,7 +260,7 @@ func (d *denmaCenters) recordBounce(b models.Bounce) (string, error) {
 			return "", fmt.Errorf("finding the center that last sent to them: %w", err)
 		}
 	}
-	if b.Type == models.BounceTypeHard && b.Email != "" {
+	if b.Type == models.BounceTypeHard && b.Email != "" && !denmaSuppressedBounce(b) {
 		denmaBlockEverywhere(b.Email, "hard bounce", slug) // cmd/denma_blocklist.go
 	}
 	if slug != "" {
@@ -275,6 +277,24 @@ func (d *denmaCenters) recordBounce(b models.Bounce) (string, error) {
 		lo.Printf("denma: %s bounce for an address which %d centers have (no campaign or subscriber to tell whose mail it was): not recorded", b.Type, len(slugs))
 	}
 	return "", nil
+}
+
+// denmaSuppressedSubtypes are SES's hard bounces of mail it didn't send: the
+// address was on a suppression list or failed its validation.
+var denmaSuppressedSubtypes = []string{"Suppressed", "OnAccountSuppressionList", "OnTenantSuppressionList", "EmailValidationSuppressed"}
+
+// denmaSuppressedBounce is a bounce of mail SES didn't send, recorded in its
+// center only.
+func denmaSuppressedBounce(b models.Bounce) bool {
+	if b.Source != "ses" {
+		return false
+	}
+	var m struct {
+		Bounce struct {
+			SubType string `json:"bounceSubType"`
+		} `json:"bounce"`
+	}
+	return json.Unmarshal(b.Meta, &m) == nil && slices.Contains(denmaSuppressedSubtypes, m.Bounce.SubType)
 }
 
 // lastSentCenter returns the one of the centers (slugs) that last e-mailed

@@ -8,6 +8,9 @@ package main
 // center that gets the address later (a sign-up, an import) blocklists it
 // too, before any opt-in.
 //
+// SES's bounces of mail it didn't send (denmaSuppressedBounce) stay in their
+// center.
+//
 // Hard bounces are found by each center's per-minute e-mail check job:
 // those recorded in the last two days, and older ones whose subscriber is
 // still blocklisted (so an address a center deliberately unblocked after an
@@ -109,8 +112,9 @@ func (a *App) shareHardBounces() {
 	if err := a.db.Select(&emails, `SELECT DISTINCT LOWER(s.email) FROM bounces b
 		JOIN subscribers s ON s.id = b.subscriber_id
 		WHERE b.type = 'hard' AND (s.status = 'blocklisted' OR b.created_at > NOW() - INTERVAL '2 days')
+			AND NOT (b.source = 'ses' AND COALESCE(b.meta->'bounce'->>'bounceSubType' = ANY($1), false))
 			AND NOT EXISTS (SELECT 1 FROM denma.blocked_emails g WHERE g.email = LOWER(s.email))
-		LIMIT 200`); err != nil {
+		LIMIT 200`, pq.Array(denmaSuppressedSubtypes)); err != nil {
 		a.log.Printf("denma: error getting hard bounces: %v", err)
 		return
 	}
