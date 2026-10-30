@@ -29,22 +29,22 @@
 						<label data-field>{{/* cmd/denma_address.go */}}
 							Postal address
 							<textarea name="postal_address" rows="3" maxlength="500" required x-model="form.postal_address" placeholder="1234 Main Street&#10;Halifax NS  B3H 1A1&#10;Canada" data-testid="postal-address"></textarea>
-							<small data-hint>The center's mailing address, which Canada's anti-spam law (CASL) requires in every campaign and automation e-mail; its templates and design show it. Its admins can change it on its Config page.</small>
+							<small data-hint>Canada's anti-spam law (CASL) requires it in every campaign and automation e-mail.</small>
 						</label>
 						<label data-field>{{/* cmd/denma_footer.go */}}
 							Website
 							<input name="website" maxlength="200" required x-model="form.website" placeholder="example.org" data-testid="website" />
-							<small data-hint>Shown in every campaign and automation e-mail, with the contact e-mail, as a way to get in touch.</small>
+							<small data-hint>In the footer of every campaign and automation e-mail.</small>
 						</label>
 						<label data-field>
 							Contact e-mail
 							<input name="contact_email" type="email" maxlength="200" required x-model="form.contact_email" placeholder="programs@example.org" data-testid="contact-email" />
-							<small data-hint>Shown in every campaign and automation e-mail, for people to write to.</small>
+							<small data-hint>In the same footer, for people to write to.</small>
 						</label>
 						<label data-field>
 							Sender
 							<input name="from_email" maxlength="300" required x-model="form.from_email" placeholder='"Center name" &lt;name@example.org&gt;' />
-							<small data-hint>The From of the center's e-mails, as on its Config page, where its admins can change it to another address at its domains. Its domain is added for the center under Sending domains, where you'll find the DNS records to send to whoever manages the center's DNS; nothing can be sent from it until Amazon SES has verified them.</small>
+							<small data-hint>Its domain is added under Sending domains, with the DNS records the center has to add before it can send.</small>
 						</label>
 					</fieldset>
 
@@ -62,7 +62,7 @@
 						<label data-field>
 							Username
 							<input name="admin_username" maxlength="200" required minlength="3" pattern="[a-zA-Z0-9_\-\.@]+" autocomplete="off" x-model="form.admin_username" />
-							<small data-hint>For someone new. Someone who already has an account (as another center's user) keeps theirs, and their password.</small>
+							<small data-hint>For someone new; someone with an account keeps theirs.</small>
 						</label>
 					</fieldset>
 				</section>

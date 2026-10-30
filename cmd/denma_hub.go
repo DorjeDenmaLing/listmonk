@@ -578,6 +578,11 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 	funcs["DenmaDailySending"] = func() denmadaily.Status {
 		return denmaDaily.Status()
 	}
+	// DenmaPublicForms reports whether the public sign-up page, which the
+	// Forms page makes forms for, is on (a hub setting).
+	funcs["DenmaPublicForms"] = func() bool {
+		return denmaHub == nil || denmaHub.current().cfg.EnablePublicSubPage
+	}
 	// DenmaIsHub reports whether the page is the hub's.
 	funcs["DenmaIsHub"] = func() bool {
 		return denmaHub != nil && u.RootPath == denmaHub.current().urlCfg.RootPath

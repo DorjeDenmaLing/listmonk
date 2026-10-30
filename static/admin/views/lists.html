@@ -31,7 +31,7 @@
 		<div class="col-8 col-end align-right hstack justify-end">
 			<form method="get" action="{{ URI "/admin/lists" }}" class="search-form">
 				{{- $d.Page.FormFields "query" -}}
-				{{ template "denma-search" dict "Root" . "Kind" "lists" "Name" "query" "Value" $d.Page.Query "Placeholder" "Search names, or filter" }}{{/* denma: partials/denma/search.html */}}
+				{{ template "denma-search" dict "Root" . "Kind" "lists" "Name" "query" "Value" $d.Page.Query "Placeholder" "Search lists" }}{{/* denma: partials/denma/search.html */}}
 			</form>
 			{{- if $d.Can "lists:manage_all" }}
 				<a href="{{ URI "/admin/lists/new" }}" class="button" data-variant="primary" data-testid="btn-new">
@@ -67,7 +67,7 @@
 						<th width="5%"><input type="checkbox" aria-label="{{ .L.T "globals.buttons.toggleSelect" }}"></th>
 						<th width="27%">{{ $d.Page.SortLink (URI "/admin/lists") "name" (.L.T "globals.fields.name") }}</th>
 						<th width="22%">{{ $d.Page.SortLink (URI "/admin/lists") "type" (.L.T "globals.fields.type") }}</th>
-						<th width="10%" class="subscribers">{{ $d.Page.SortLink (URI "/admin/lists") "subscriber_count" (.L.T "globals.terms.subscribers") }}</th>
+						<th width="10%" class="subscribers">{{ $d.Page.SortLink (URI "/admin/lists") "subscriber_count" (.L.T "denma.contacts") }}</th>{{/* denma: counts are contacts */}}
 						<th width="18%"></th>
 						<th width="12%">{{ $d.Page.SortLink (URI "/admin/lists") "created_at" (.L.T "globals.fields.createdAt") }}</th>
 						<th width="5%" class="align-right"></th>
@@ -94,7 +94,7 @@
 									<a href="{{ $base }}?optin={{ .Optin }}" title="{{ $.L.T "globals.buttons.view" }} {{ $.L.T (printf "lists.optins.%s" .Optin) }}">{{ Badge (list (Icon $icon) ($.L.T (printf "lists.optins.%s" .Optin))) "enum" }}</a>
 								</div>
 							</td>
-							<td class="subscribers" data-label="{{ $.L.T "globals.terms.subscribers" }}">
+							<td class="subscribers" data-label="{{ $.L.T "denma.contacts" }}">{{/* denma */}}
 								{{- if $d.Can "subscribers:get" "subscribers:get_all" }}
 									<a class="subscriber-total align-center" href="{{ URI "/admin/subscribers/lists" }}/{{ .ID }}">{{ FormatNumber .SubscriberCount }}<br /><span class="view">{{ $.L.T "globals.buttons.view" }}</span></a>
 								{{- else }}

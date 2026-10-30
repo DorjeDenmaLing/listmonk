@@ -9,7 +9,7 @@
 			<p class="text-light text-8" x-text="g.description"></p>
 			<template x-for="o in g.ops" :key="o.key">
 				<details data-testid="api-op" :data-op="o.op.operationId">
-					<summary><strong x-text="o.method"></strong> <code x-text="o.path"></code>: <span x-text="o.op.summary"></span></summary>
+					<summary><span class="denma-op"><span x-text="o.op.summary"></span> <span class="denma-op-route"><strong x-text="o.method"></strong> <code x-text="o.path"></code></span></span></summary>
 					<div class="vstack gap-3">
 						<div x-html="md(o.op.description)"></div>
 						<p class="text-8"><strong>{{ . }}:</strong> <span x-text="needs(o)"></span></p>

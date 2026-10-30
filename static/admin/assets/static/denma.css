@@ -1101,6 +1101,25 @@ section.analytics {
     margin: 0;
   }
 
+  /* The webhooks' table: room for names and addresses. */
+  @media (min-width: 770px) {
+    th {
+      white-space: nowrap;
+    }
+
+    td[data-label="Name"] {
+      min-width: 12rem;
+    }
+
+    td[data-label="Address"] {
+      min-width: 15rem;
+
+      code {
+        font-size: 0.8rem;
+      }
+    }
+  }
+
   @media (max-width: 769px) {
     .denma-signup-url {
       min-width: 0;
@@ -1632,6 +1651,10 @@ section.analytics {
       }
     }
 
+    .denma-brand-place {
+      display: none;
+    }
+
     .favicon {
       display: none;
       height: 24px;
@@ -2042,6 +2065,25 @@ section.analytics {
     .denma-refresh,
     .denma-user {
       display: none;
+    }
+
+    .denma-brand {
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      color: var(--denma-nav-text);
+
+      .favicon {
+        margin-top: 0;
+      }
+
+      .denma-brand-place {
+        display: block;
+        overflow: hidden;
+        font-weight: 600;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
     }
   }
 
@@ -2618,4 +2660,66 @@ body.denma-media-dragging .denma-media-folders a[data-folder] {
   dialog.denma-media-preview .denma-media-step {
     display: none;
   }
+}
+
+/* An API or webhook operation's row: what it does, then its method and path. */
+.denma-op {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.denma-op-route {
+  color: var(--muted-foreground);
+  font-size: var(--text-8);
+  font-weight: normal;
+}
+
+/* Campaigns: each figure and date on one line. */
+@media (min-width: 1000px) {
+  section.campaigns td.stats dd {
+    white-space: nowrap;
+  }
+}
+
+/* Config -> General: the footer's template tags, folded. */
+details.denma-center-tags {
+  margin-top: var(--space-2);
+  font-size: var(--text-8);
+
+  summary {
+    padding: var(--space-1) 0;
+    color: var(--muted-foreground);
+  }
+
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-1) var(--space-4);
+    margin: var(--space-2) 0 0;
+  }
+
+  dd {
+    margin: 0;
+  }
+}
+
+/* A page's reference for developers, folded (Config -> Webhooks, API). */
+details.card.denma-reference {
+  padding: 0;
+
+  > summary {
+    padding: var(--space-4) var(--space-6);
+    font-weight: 600;
+  }
+
+  > div {
+    margin: var(--space-4) var(--space-6) var(--space-6);
+  }
+}
+
+/* A hint with nothing to say. */
+small[data-hint]:empty {
+  display: none;
 }

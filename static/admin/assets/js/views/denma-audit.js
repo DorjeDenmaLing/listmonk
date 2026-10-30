@@ -62,8 +62,8 @@ function denmaAudit(hub = false, centers = []) {
     },
 
     who(r) {
-      let s = r.username || 'Unknown';
-      if (r.user_name && r.user_name !== r.username) {
+      let s = r.username || r.user_name || 'Unknown';
+      if (r.user_name && r.username && r.user_name !== r.username) {
         s = `${r.user_name} (${r.username})`;
       }
       // Through Claude, with an MCP key (cmd/denma_mcp.go).

@@ -19,7 +19,7 @@ package main
 //     attributes give consent_at (a date that reads, not after the import)
 //     and consent_source keeps them as the subscriber's consent record, with
 //     consent_import, the import's number. A subscriber the center has gets
-//     it only if they have none, and only with "Overwrite user info" (the
+//     it only if they have none, and only with "Update names and attributes" (the
 //     importer writes their attributes only then). Rows without a good one
 //     are still imported, without it. Not in blocklist mode, nor through an
 //     MCP key.
@@ -280,7 +280,7 @@ const (
 	denmaConsentFuture         = "a consent_at after today"
 	denmaConsentEarly          = "a consent_at before 1990"
 	denmaConsentHasOne         = "already in the center with a consent record, which they keep"
-	denmaConsentNotOverwritten = `already in the center: only "Overwrite user info" gives them one`
+	denmaConsentNotOverwritten = `already in the center: only "Update names and attributes" gives them one`
 )
 
 // denmaImportConsentsPreview fills in the consent records the import would

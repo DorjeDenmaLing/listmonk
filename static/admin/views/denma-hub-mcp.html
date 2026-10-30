@@ -14,11 +14,11 @@
 	</header>
 
 	<div class="page-content content vstack gap-6">
-		<p class="text-light">Claude (claude.ai, the Claude apps and Claude Code) works in a center through the listmonk MCP server, with a key a center's admins make on its Config &rarr; MCP page for one of its users. The MCP server reaches listmonk at <code>{{ $d.MCPURL }}</code>.</p>
+		<p class="text-light">Claude works in a center through the listmonk MCP server, with a key its admins make on Config &rarr; MCP. The server reaches listmonk at <code>{{ $d.MCPURL }}</code>.</p>
 
 		<fieldset class="card vstack gap-3" data-testid="mcp-connector">
 			<legend>The claude.ai connector</legend>
-			<p class="text-light text-8">The hosted MCP server's secret, in its settings as <code>LM_CONNECTOR_SECRET</code>. With it, the MCP server acts for someone who signed in to it with Google, with their own key in the center they ask about, if that key is ticked <em>usable from claude.ai</em> and the address they signed in with is theirs here. It can't do anything without such a key. If it may have leaked, make a new one (the old one stops working at once) or delete it.</p>
+			<p class="text-light text-8">The hosted MCP server's secret (its <code>LM_CONNECTOR_SECRET</code>), so that people signed in with Google can use their own keys marked <em>usable from claude.ai</em>. If it may have leaked, make a new one or delete it.</p>
 			<template x-if="connector">
 				<div class="vstack gap-1">
 					<span><code x-text="`lmc_…${connector.secret_hint}`"></code></span>

@@ -349,7 +349,7 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		// 404 pages.
 		g.RouteNotFound("/*", func(c echo.Context) error {
 			return c.Render(http.StatusNotFound, tplMessage,
-				makeMsgTpl("404 - "+a.i18n.T("public.notFoundTitle"), "", ""))
+				makeMsgTpl("404 - "+a.i18n.T("public.notFoundTitle"), "", a.i18n.T("denma.notFound"))) // denma: and a sentence (i18n/denma/en.json)
 		})
 		g.RouteNotFound("/api/*", func(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusNotFound, "404 unknown endpoint")

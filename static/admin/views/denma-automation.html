@@ -67,8 +67,8 @@
 					<input list="auto-lists" placeholder="Choose lists…" @input="triggerListAutocomplete($el)" @pointerdown="triggerListAutocomplete($el)" @focus="triggerListAutocomplete($el)" />
 					<datalist id="auto-lists"></datalist>
 				</ot-taginput>
-				<small data-hint x-show="form.trigger_type === 'confirms'">Any of these. When they click the link in the confirmation e-mail (or are added already confirmed), never before: until then they've given no consent. People added by an import or by hand count too.</small>
-				<small data-hint x-show="form.trigger_type === 'joins'">Any of these, as soon as they're on it. People added by an import or by hand count too.</small>
+				<small data-hint x-show="form.trigger_type === 'confirms'">Any of these, once they've confirmed, including people added by an import or by hand.</small>
+				<small data-hint x-show="form.trigger_type === 'joins'">Any of these, as soon as they're on it, including people added by an import or by hand.</small>
 			</label>
 
 			<div x-show="form.trigger_type === 'tagged'">
@@ -137,7 +137,7 @@
 							<input list="auto-add-lists" placeholder="Choose lists…" @input="listAutocomplete($el)" @pointerdown="listAutocomplete($el)" @focus="listAutocomplete($el)" />
 							<datalist id="auto-add-lists"></datalist>
 						</ot-taginput>
-						<small data-hint>Confirmed, if they've confirmed a subscription here; otherwise unconfirmed, so a double opt-in list's campaigns don't reach them. Never back on a list they unsubscribed from.</small>
+						<small data-hint>Never onto a list they unsubscribed from. Unconfirmed unless they've confirmed a subscription here.</small>
 					</label>
 				</div>
 				<div class="col-6">
@@ -147,7 +147,7 @@
 							<input list="auto-remove-lists" placeholder="Choose lists…" @input="listAutocomplete($el)" @pointerdown="listAutocomplete($el)" @focus="listAutocomplete($el)" />
 							<datalist id="auto-remove-lists"></datalist>
 						</ot-taginput>
-						<small data-hint>Their subscription is taken off; it isn't an unsubscribe. A list they unsubscribed from keeps that.</small>
+						<small data-hint>This isn't an unsubscribe: they're just taken off the list.</small>
 					</label>
 				</div>
 			</div>
@@ -181,7 +181,7 @@
 							<a :href="form.template_id ? `{{ URI "/admin/templates" }}/${form.template_id}` : null" x-show="form.template_id" target="_blank" class="button ghost small text-nowrap">{{ Icon "edit-2" }} Edit</a>
 							<a href="{{ URI "/admin/templates/new" }}" target="_blank" class="button ghost small text-nowrap">{{ Icon "plus" }} New template</a>
 						</div>
-						<small data-hint>The whole e-mail: a visual template, made in Templates. Like every campaign's, it must have the footer (Templates lists its tags). <code>{{ "{{ .Subscriber.FirstName }}" }}</code> puts in their first name. Imported subscribers aren't sent it.</small>
+						<small data-hint>A visual template from Campaigns &rarr; Templates, with the center's footer. <code>{{ "{{ .Subscriber.FirstName }}" }}</code> puts in their first name.</small>
 					</div>
 					<label data-field>
 						Subject
@@ -201,7 +201,7 @@
 							<input type="number" min="1" max="30" required x-model.number="quietDays" :disabled="!quietOn" aria-label="Days" data-testid="quiet-days" />
 							<span>days</span>
 						</div>
-						<small data-hint>Checked before each of its e-mails. Campaigns and other automations' e-mails count; confirmations, transactional e-mails, tests and its own e-mails don't. An e-mail that would come too soon after another isn't sent, and the rest of the series goes on. It can be up to 30 days.</small>
+						<small data-hint>Up to 30 days. Campaigns and other automations count; confirmations and transactional e-mails don't. An e-mail that would come too soon is skipped.</small>
 					</div>
 
 					{{- /* denma: follow-up e-mails (cmd/denma_auto_series.go) */}}
@@ -242,7 +242,7 @@
 						<div>
 							<button type="button" class="ghost small" @click="addStep" x-show="steps.length < maxSteps" data-testid="btn-add-step">{{ Icon "plus" }} Add a follow-up e-mail</button>
 						</div>
-						<small data-hint>A series: each follow-up is sent a wait after the e-mail before it. Lists and tags change only once, with the first e-mail. Before each follow-up they must still be subscribed here (not unsubscribed or blocklisted) and meet the conditions above, so "Not if they have the tag" ends their series. Turned off, the series wait; turned on again, those due go.</small>
+						<small data-hint>Each follow-up goes a set time after the one before, while they're still subscribed and meet the conditions above.</small>
 					</div>
 				</div>
 			</template>
@@ -270,7 +270,7 @@
 				<label data-field>
 					Send a test to
 					<input type="email" maxlength="200" x-model="testEmail" data-testid="test-email" />
-					<small data-hint>The e-mail, as it is on this page, saved or not. If the address is a contact's, it's filled in with theirs. Lists and tags aren't changed.</small>
+					<small data-hint>The e-mail as it is on this page, saved or not, filled in with the contact's details if the address is theirs.</small>
 				</label>
 				<button type="button" data-testid="btn-test" @click="onTest" :aria-busy="isLoading('test')" :disabled="isLoading('test')">{{ Icon "send" }} Send test</button>
 			</div>

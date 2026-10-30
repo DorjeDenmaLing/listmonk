@@ -25,34 +25,45 @@
 			<label data-field>
 				Name
 				<input name="site_name" maxlength="200" required x-model="form.site_name" />
-				<small data-hint>Shown in the admin, on the public pages and in e-mails.</small>
+				<small data-hint>Shown in the admin, on public pages and in e-mails.</small>
 			</label>
 			{{/* cmd/denma_address.go */}}
 			<label data-field data-testid="center-postal-address">
 				Postal address
 				<textarea name="postal_address" rows="3" maxlength="500" required x-model="form.postal_address" placeholder="1234 Main Street&#10;Halifax NS  B3H 1A1&#10;Canada" data-testid="postal-address"></textarea>
-				<small data-hint>The center's mailing address. Canada's anti-spam law (CASL) requires it in every campaign and automation e-mail, so none is sent without it. <code>{{ "{{ CenterAddress }}" }}</code> puts it in a template, a line for each of its lines.</small>
+				<small data-hint>Canada's anti-spam law (CASL) requires it in every campaign and automation e-mail.</small>
 			</label>
 			{{/* cmd/denma_footer.go */}}
 			<label data-field>
 				Website
 				<input name="website" maxlength="200" required x-model="form.website" placeholder="example.org" data-testid="website" />
-				<small data-hint>Shown in every campaign and automation e-mail, as a way to get in touch: <code>{{ "{{ CenterWebsite }}" }}</code>.</small>
+				<small data-hint>In the footer of every campaign and automation e-mail.</small>
 			</label>
 			<label data-field>
 				Contact e-mail
 				<input name="contact_email" type="email" maxlength="200" required x-model="form.contact_email" placeholder="programs@example.org" data-testid="contact-email" />
-				<small data-hint>Shown in every campaign and automation e-mail, for people to write to: <code>{{ "{{ CenterEmail }}" }}</code>.</small>
+				<small data-hint>In the same footer, for people to write to.</small>
 			</label>
 			<div data-field data-testid="center-footer">
 				<span class="denma-static-label">E-mail footer</span>
-				<small data-hint>Every campaign and automation e-mail must have an unsubscribe link (<code>{{ "{{ UnsubscribeURL }}" }}</code>), a view-in-browser link (<code>{{ "{{ MessageURL }}" }}</code>), and the postal address, website and contact e-mail above (their tags, or written in). <code>{{ "{{ CenterFooter }}" }}</code> gives both links; a template without them all isn't saved. The templates the center started with and its design show them.
-				{{- with $d.FooterTemplates }} <span class="text-danger" data-testid="footer-templates">These templates lack some, so campaigns using them can't be sent: {{ range $i, $t := . }}{{ if $i }}; {{ end }}{{ $t.Name }} ({{ $t.Missing }}){{ end }}.</span>{{ end }}</small>
+				<small data-hint>Every campaign and automation e-mail needs an unsubscribe link, a view-in-browser link and the three details above. The center's templates have them.</small>
+				{{- with $d.FooterTemplates }}
+				<small class="text-danger" data-testid="footer-templates">Campaigns using these templates can't be sent until they have them: {{ range $i, $t := . }}{{ if $i }}; {{ end }}{{ $t.Name }} ({{ $t.Missing }}){{ end }}.</small>
+				{{- end }}
+				<details class="denma-center-tags">
+					<summary>Template tags</summary>
+					<dl>
+						<dt><code>{{ "{{ CenterFooter }}" }}</code></dt><dd>The unsubscribe and view-in-browser links</dd>
+						<dt><code>{{ "{{ CenterAddress }}" }}</code></dt><dd>The postal address</dd>
+						<dt><code>{{ "{{ CenterWebsite }}" }}</code></dt><dd>The website</dd>
+						<dt><code>{{ "{{ CenterEmail }}" }}</code></dt><dd>The contact e-mail</dd>
+					</dl>
+				</details>
 			</div>
 			<div data-field>
-				<span class="denma-static-label">Address</span>
+				<span class="denma-static-label">Web address</span>
 				<span class="denma-static" data-testid="center-address">{{ $d.Address }}</span>
-				<small data-hint>Set when the center was created.</small>
+				<small data-hint>Of its public pages. Set when the center was created.</small>
 			</div>
 			<div data-field>
 				<label for="center-lang">Language</label>
@@ -61,7 +72,7 @@
 					<option value="{{ .Code }}">{{ .Name }}</option>
 					{{- end }}
 				</select>
-				<small data-hint>Of this center's admin, public pages and system e-mails (opt-in confirmations, notifications).</small>
+				<small data-hint>For the admin, public pages and automatic e-mails.</small>
 			</div>
 			<label data-field>
 				Logo
@@ -72,7 +83,7 @@
 					{{- end }}
 					<template x-if="form.logo_url"><img :src="form.logo_url" alt="Logo preview" class="denma-center-logo" /></template>
 				</div>
-				<small data-hint>An image, for the public pages and e-mails: choose one in Media (or upload it there), or give its address. Empty for listmonk's.</small>
+				<small data-hint>For public pages and e-mails. Pick one from Media or paste its address.</small>
 			</label>
 			<label data-field>
 				Favicon
@@ -83,7 +94,7 @@
 					{{- end }}
 					<template x-if="form.favicon_url"><img :src="form.favicon_url" alt="Favicon preview" class="denma-center-favicon" /></template>
 				</div>
-				<small data-hint>The small icon in browser tabs, for the public pages: a small square image (PNG or ICO), from Media or an address. Empty for listmonk's.</small>
+				<small data-hint>The small square icon in browser tabs (PNG or ICO).</small>
 			</label>
 		</fieldset>
 		{{- if $canMedia }}
@@ -95,12 +106,12 @@
 			<label data-field>
 				Sender
 				<input name="from_email" maxlength="300" required x-model="form.from_email" placeholder='"Center name" &lt;name@example.org&gt;' />
-				<small data-hint>The From of campaigns that don't set their own, and of system e-mails.{{ if $d.DomainsOn }} It has to be at one of the center's domains, which Amazon SES has to verify before anything can be sent from them; a superadmin adds them.{{ else }} Use an address the mail servers can send for.{{ end }}</small>
+				<small data-hint>The From of automatic e-mails, and of campaigns that don't set their own.{{ if $d.DomainsOn }} It must be at one of the sending domains below.{{ end }}</small>
 			</label>
 			<label data-field>{{/* cmd/denma_reply_to.go */}}
 				Reply-to
 				<input name="reply_to" maxlength="300" x-model="form.reply_to" placeholder="Same as the sender" data-testid="reply-to" />
-				<small data-hint>Where replies to the center's e-mails go: its campaigns, automations, API and system e-mails. Empty sends replies to the sender. A campaign can set its own.</small>
+				<small data-hint>Where replies go. Empty: to the sender. A campaign can set its own.</small>
 			</label>
 			{{- if $d.DomainsOn }}
 			<div data-field data-testid="center-domains">
@@ -108,20 +119,20 @@
 				{{- range $d.Domains }}
 				<span class="denma-static hstack gap-2" data-domain="{{ .Domain }}">{{ .Domain }} {{ Badge (list (Dot) .Label) (printf "enum %s" .Badge) }}</span>
 				{{- else }}
-				<span class="denma-static text-light">None yet: ask a superadmin to add the center's domain.</span>
+				<span class="denma-static text-light">None yet: a superadmin adds them.</span>
 				{{- end }}
 			</div>
 			{{- end }}
 			<label data-field>
 				Admin e-mails
 				<textarea name="notify_emails" rows="3" x-model="notify" placeholder="admin@example.org"></textarea>
-				<small data-hint>One per line. They get notices about campaigns (started, finished, paused) and imports.</small>
+				<small data-hint>One per line. They're told when campaigns and imports start and finish.</small>
 			</label>
 			{{/* cmd/denma_daily.go */}}
 			<label data-field data-testid="center-daily-cap">
 				Daily sending cap
 				<input type="number" min="0" max="1000000" step="1" x-model.number="form.daily_cap"{{ if not $d.Super }} disabled{{ end }} data-testid="daily-cap" />
-				<small data-hint>The most e-mails this center sends in any 24 hours: its campaigns, automations and API e-mails. At the cap, campaigns wait and go on as the 24 hours roll on, automations wait, and the API refuses e-mails. Confirmations, password resets and notices always go. 0 is no cap{{ if not $d.Super }}; only a superadmin can change it{{ end }}.
+				<small data-hint>The most campaign, automation and API e-mails in 24 hours; 0 is no cap. Confirmations and password resets always go.{{ if not $d.Super }} Only a superadmin can change it.{{ end }}
 				Sent in the last 24 hours: {{ $d.Sending.Sent }}{{ if gt $d.Sending.Cap 0 }} of {{ $d.Sending.Cap }}{{ end }}.</small>
 			</label>
 			{{/* cmd/denma_sendwindow.go */}}
@@ -149,15 +160,17 @@
 						</select>
 					</label>
 				</div>
-				<small data-hint>Outside these hours, campaigns wait and go on when they open, and automation e-mails wait; a campaign started outside them waits too. Confirmations, password resets, notices, tests and the API's transactional e-mails always go.</small>
+				<small data-hint>Outside them, campaigns and automations wait. Confirmations, password resets, tests and transactional e-mails always go.</small>
 			</div>
 		</fieldset>
 
 		{{/* The design for e-mails and pages (cmd/denma_design.go). */}}
 		<fieldset class="card" data-testid="center-design">
 			<legend>Design</legend>
-			<p>{{ if $d.Design }}<a href="{{ URI "/admin/templates" }}/{{ $d.Design }}" data-testid="design-link">Edit the center's design</a>{{ else }}The center's design{{ end }}, "Center design (e-mails and pages)", frames its automatic e-mails (opt-in confirmations, data exports, and its staff's invites, password resets and notices) and its public pages (unsubscribe, opt-in, sign-up); the wording stays the standard.</p>
-			<small data-hint>It has the logo above. Its HTML block holding <code>&lt;div data-content data-default-design&gt;(Page content will appear here)&lt;/div&gt;</code> is where each e-mail's or page's own text goes. Links only campaigns have, such as unsubscribe and view in browser, can't be in it.</small>
+			<p>The look of the center's automatic e-mails (confirmations, invites, password resets) and public pages (unsubscribe, opt-in).</p>
+			{{- if $d.Design }}
+			<p><a href="{{ URI "/admin/templates" }}/{{ $d.Design }}" data-testid="design-link">Edit the design</a></p>
+			{{- end }}
 		</fieldset>
 
 		{{/* The features (cmd/denma_features.go). */}}
@@ -165,7 +178,7 @@
 			<legend>Unsubscribing</legend>
 			<label data-field>
 				<span><input type="checkbox" role="switch" x-model="form.unsubscribe_everywhere" data-testid="unsubscribe-everywhere"{{ if and $d.Form.UnsubscribeEverywhere (not $d.Super) }} disabled{{ end }} /> Unsubscribing someone from one list here unsubscribes them from all</span>
-				<small data-hint>Contacts who unsubscribe themselves (the unsubscribe link, or the e-mail app's unsubscribe button) always leave every list and are blocklisted. This does the same when someone is unsubscribed from a list here in the admin, by an import or through the API. Only a superadmin can turn it off.</small>
+				<small data-hint>People who unsubscribe themselves always leave every list. This does the same for unsubscribes made here, by imports or by the API. Only a superadmin can turn it off.</small>
 			</label>
 		</fieldset>
 
@@ -173,16 +186,16 @@
 			<legend>Campaigns</legend>
 			<label data-field>
 				<span><input type="checkbox" role="switch" x-model="form.plain_text_auto" data-testid="plain-text-auto" /> Make the plain-text version automatically</span>
-				<small data-hint>For e-mail apps that don't show HTML: made from the e-mail (with its template) each time a campaign is saved. A campaign can still have it written by hand.</small>
+				<small data-hint>For e-mail apps that don't show HTML. A campaign can still have its own.</small>
 			</label>
 			<div data-field data-testid="visual-template">
 				Default visual template: <strong>{{ or $d.VisualTemplate "none" }}</strong>
-				<small data-hint>New campaigns are Visual and start from it; it can't be deleted while it's the default. Change it on <a href="{{ URI "/admin/templates" }}">Campaigns &rarr; Templates</a>: Set default, in a visual template's menu.</small>
+				<small data-hint>New campaigns start from it. Change it in <a href="{{ URI "/admin/templates" }}">Campaigns &rarr; Templates</a>.</small>
 			</div>
 			<label data-field>
 				Add UTM tags to links to
 				<textarea rows="3" x-model="utm" placeholder="example.org" data-testid="utm-domains"></textarea>
-				<small data-hint>One domain per line (its subdomains too). When a campaign is scheduled or starts, its links there get utm_source=newsletter, utm_medium=email and utm_campaign with the campaign's name, for Google Analytics. Links with their own UTM tags are left as they are. Empty: none.</small>
+				<small data-hint>One domain per line. Campaign links to them get UTM tags with the campaign's name, for Google Analytics.</small>
 			</label>
 		</fieldset>
 

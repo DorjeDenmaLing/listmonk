@@ -25,8 +25,7 @@
 	<div class="page-content content vstack gap-6">
 		<fieldset class="card vstack gap-4">
 			<legend>Keys</legend>
-			<p class="text-light text-8">For Claude (claude.ai, the Claude apps and Claude Code), through the listmonk MCP server. Each key belongs to one of the center's users: Claude works as them, and can do only what both the key's permissions and their role allow. What it changes is in the <a href="{{ URI "/admin/activity" }}">Activity</a> log under their name, "via MCP key …", as if they'd done it, and the center's rules apply as they do in the admin: nobody who unsubscribed is re-subscribed, and nothing is sent without the center's postal address. Give a key only what its user wants Claude for; a key that only reads is the safest.</p>
-			<p class="text-light text-8">Unless <em>Claude may see personal data</em> is ticked, Claude sees stand-ins for contacts' addresses, names and attributes, and can't export them. A key <em>usable from claude.ai</em> works for its user when they sign in to the center's Claude connector with Google, with the e-mail address they sign in here with{{ if not $d.Connector }}, once a superadmin has set the connector up in the hub{{ end }}. Otherwise it's for Claude Code: its user gives it to their own Claude. If a key may have leaked, delete it or make a new one.</p>
+			<p class="text-light text-8">Let Claude work in this center as one of its users, doing only what both the key and the user's role allow. What it does is in the <a href="{{ URI "/admin/activity" }}">Activity</a> log under their name. A key that only reads is the safest. If a key may have leaked, delete it or make a new one.</p>
 
 			<template x-if="!keys.length">
 				<p class="text-light" data-testid="no-mcp-keys">No keys yet.</p>
@@ -80,11 +79,11 @@
 		<fieldset class="card vstack gap-3" data-testid="mcp-using">
 			<legend>Using a key</legend>
 			<div class="vstack gap-3 denma-signup-help">
-				<p><strong>Claude Code:</strong> add the listmonk MCP server with the key (the server's address is in its README, or ask a superadmin):</p>
+				<p><strong>Claude Code:</strong> add the listmonk MCP server with the key (a superadmin has the server's address):</p>
 				<pre><code>claude mcp add --transport http listmonk-{{ $d.CenterSlug }} &lt;the MCP server's address&gt; \
   --header "Authorization: Bearer lmm_…"</code></pre>
-				<p><strong>claude.ai and the Claude apps:</strong> tick <em>usable from claude.ai</em> on the user's key (one per user), then they connect the listmonk connector under Customize &rarr; Connectors and sign in with Google as the address they use here.</p>
-				<p class="text-light text-8">The MCP server reaches the center at <code>{{ $d.MCPURL }}</code>. Each key makes at most {{ $d.PerMinute }} requests a minute. Keys, secrets, settings, profiles and two-factor sign-in can't be changed with a key: they're done here.</p>
+				<p><strong>claude.ai and the Claude apps:</strong> tick <em>Usable from claude.ai</em> on the user's key; they then add the listmonk connector under Customize &rarr; Connectors and sign in with Google, with the address they use here.{{ if not $d.Connector }} A superadmin has to set the connector up first.{{ end }}</p>
+				<p class="text-light text-8">At most {{ $d.PerMinute }} requests a minute per key. Keys, settings, profiles and sign-in can't be changed through Claude.</p>
 			</div>
 		</fieldset>
 	</div>
@@ -127,16 +126,16 @@
 								</template>
 							</div>
 						</template>
-						<small data-hint>Only what the user wants Claude for. Sending (campaigns:send, tx:send) and deleting are the riskiest; Claude asks before it changes anything, but the key is what limits it.</small>
+						<small data-hint>Only what the user wants Claude for. Sending and deleting are the riskiest.</small>
 					</fieldset>
 					<label class="hstack gap-2"><input type="checkbox" x-model="edit.personal_data" data-testid="mcp-key-personal" /> Claude may see personal data</label>
-					<small data-hint>Contacts' addresses, names and attributes, and exports of them. Unticked, Claude sees stand-ins (the same one for the same address), which is enough to count, compare and follow someone through, and can still be given an address to add or look up. The stand-ins are made by the MCP server, not by listmonk: someone using the key directly, not through the server, gets the real data, so keep such a key to those who may see it.</small>
+					<small data-hint>Contacts' addresses, names and attributes. Unticked, Claude sees stand-ins instead. Used directly, outside Claude, a key gets the real data: give keys only to people who may see it.</small>
 					<label class="hstack gap-2"><input type="checkbox" x-model="edit.connector" data-testid="mcp-key-connector" /> Usable from claude.ai</label>
-					<small data-hint>For the user signed in to the listmonk connector on claude.ai or the Claude apps with Google, as the address they use here. One such key per user. Once the key is ticked, its user's Claude can use it at their next sign-in to the connector, without their saying so: tick it only for someone who wants it.</small>
+					<small data-hint>One per user. Their Claude uses it when they sign in to the connector: tick it only for someone who wants that.</small>
 					<label data-field>
 						Expires (optional)
 						<input type="date" x-model="edit.expires_on" :min="tomorrow()" data-testid="mcp-key-expires" />
-						<small data-hint>It stops working at the end of this day (UTC). Empty: it doesn't expire.</small>
+						<small data-hint>It stops at the end of this day (UTC). Empty: never.</small>
 					</label>
 				</section>
 				<footer class="dialog-foot hstack gap-3 justify-end">

@@ -1,7 +1,7 @@
 {{/*
 	denma: the top bar, in place of listmonk's (views/base.html), looking and
-	working as in listmonk v6.2.0: the logo (the favicon on narrow screens),
-	Refresh, and the user's round avatar opening Profile and Logout (and, ours,
+	working as in listmonk v6.2.0: the logo (the favicon on narrow screens,
+	with the center's or hub's name on phones), Refresh, and the user's round avatar opening Profile and Logout (and, ours,
 	the theme, and for someone who's a user of more than one center, their
 	other centers, to switch to: cmd/denma_people.go). On phones a menu button on the right opens the sidebar
 	(partials/denma/sidebar.html) below it, as 6.2.0's menu.
@@ -22,6 +22,7 @@
 		<span class="logo">{{ template "denma-logo" . }}</span>
 		<img class="favicon" src="{{ URI "/admin/static/favicon.png" }}?v={{ .AssetVersion }}" alt="listmonk" />
 		{{- end }}
+		<span class="denma-brand-place" data-testid="topnav-place">{{ .SiteName }}</span>
 	</a>
 	<div class="denma-topnav-end">
 		{{ template "denma-superadmin-notice" . }}
@@ -61,10 +62,10 @@
 	<legend>Admin logo</legend>
 	{{ template "denma-image-field" (dict "Key" "denma.admin_logo_url" "Kind" "logo" "U" .Data.Profile "TestID" "admin-logo"
 		"Label" "Logo" "Placeholder" "https://example.org/logo.png"
-		"Hint" "From Media, or an image's address. Shown in place of listmonk's logo at the top left of the admin, in the hub and every center. Empty for listmonk's. About 32 pixels high shows best; it doesn't change with the dark theme, so pick one that reads on both.") }}
+		"Hint" "At the top left of the admin, in the hub and every center. About 32 pixels high; it should read on light and dark backgrounds. Empty: listmonk's.") }}
 	{{ template "denma-image-field" (dict "Key" "denma.admin_icon_url" "Kind" "favicon" "U" .Data.Profile "TestID" "admin-icon"
 		"Label" "Icon for narrow screens" "Placeholder" "https://example.org/icon.png"
-		"Hint" "A small square version, shown instead of the logo on narrow screens. Empty to use the logo there too.") }}
+		"Hint" "A small square version for narrow screens. Empty: the logo.") }}
 </fieldset>
 {{- if Can .Data.Profile "media:get" }}
 <dialog id="denma-media-picker" class="media-picker-modal" data-src="{{ URI "/admin/campaigns/media/fragment" }}">

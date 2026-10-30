@@ -212,7 +212,7 @@ export function denmaImportPreview() {
         w.push(`${n(p.no_name)} ${p.no_name === 1 ? 'row has' : 'rows have'} no name, so they're named from their address (jane.doe@… becomes Jane Doe).`);
       }
       if (p.duplicates) {
-        w.push(`${n(p.duplicates)} ${p.duplicates === 1 ? 'row repeats' : 'rows repeat'} an earlier row's address: each is imported in turn, so the last one's details win if "Overwrite user info" is on.`);
+        w.push(`${n(p.duplicates)} ${p.duplicates === 1 ? 'row repeats' : 'rows repeat'} an earlier row's address: each is imported in turn, so the last one's details win if "Update names and attributes" is on.`);
       }
       if (f.mode === 'blocklist') {
         const d = p.block_dates;
@@ -233,10 +233,10 @@ export function denmaImportPreview() {
         w.push(`"Start automations" is on: ${p.automations.join(', ')} start for up to ${n(p.addresses)} people. Their e-mails count towards the daily limit.`);
       }
       if (p.existing_with_tags && !f.overwriteUserInfo) {
-        w.push(`${n(p.existing_with_tags)} already in the center have tags in the file, but won't get them: their details aren't changed unless "Overwrite user info" is on.`);
+        w.push(`${n(p.existing_with_tags)} already in the center have tags in the file, but won't get them: their details aren't changed unless "Update names and attributes" is on.`);
       }
       if (p.existing && f.overwriteUserInfo) {
-        w.push(`"Overwrite user info" is on: ${n(p.existing)} already in the center get the file's name and attributes in place of theirs (they keep their tags and consent record).`);
+        w.push(`"Update names and attributes" is on: ${n(p.existing)} already in the center get the file's name and attributes in place of theirs (they keep their tags and consent record).`);
       }
       (p.lists || []).forEach((l) => {
         if (l.optin === 'double' && f.subStatus === 'unconfirmed') {

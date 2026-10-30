@@ -37,7 +37,7 @@
 						{{- if .Hub }}<td data-label="Center" x-text="r.center ? (r.center_name || r.center) : 'Hub'"></td>{{ end }}
 						<td data-label="Who">
 							<span x-text="who(r)"></span>
-							<template x-if="r.superadmin"><small class="denma-audit-badge" x-text="r.superadmin === r.username ? 'superadmin' : 'superadmin ' + r.superadmin"></small></template>
+							<template x-if="r.superadmin"><small class="denma-audit-badge" x-text="r.superadmin === r.username ? 'superadmin' : 'superadmin: ' + r.superadmin"></small></template>
 						</td>
 						<td data-label="What">
 							<span x-text="r.action"></span>

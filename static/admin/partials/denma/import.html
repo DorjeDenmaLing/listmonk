@@ -210,7 +210,7 @@
 		</label>
 		<label data-field>
 			<input type="checkbox" role="switch" x-model="form.denmaKeepConsent" data-testid="import-consent" /> Keep the consent dates in the file
-			<small data-hint>Rows whose attributes give <code>consent_at</code> (when they agreed, like 2019-03-04 15:22:10) and <code>consent_source</code> (how) keep them as their consent record, noted as from this import. Rows without are still imported.</small>
+			<small data-hint>Each row's <code>consent_at</code> and <code>consent_source</code> attributes become their consent record (see Consent records below).</small>
 		</label>
 	</div>
 </template>
@@ -218,6 +218,8 @@
 
 {{/* The instructions' note on tags. */}}
 {{ define "denma-import-help" -}}
+<h6>Names</h6>
+<p class="text-light">Instead of <code>name</code>, a file can have <code>first_name</code> and <code>last_name</code> columns. A name alone is split at its first space.</p>
 <h6>Tags</h6>
 <p class="text-light">Give tags in the attributes, as a list: <code>"{""tags"": [""volunteer"", ""donor""]}"</code>. A tag the center doesn't have is left out, unless you choose to add it in the preview.</p>
 <h6>Consent records</h6>

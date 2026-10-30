@@ -29,7 +29,7 @@
 
 			<div class="col-3">
 				<article class="card stat-card" data-cy="subscribers">
-					<small class="text-light">{{ Icon "at-sign" }} {{ .L.T "globals.terms.subscribers" }}</small>
+					<small class="text-light">{{ Icon "at-sign" }} {{ .L.T "denma.contacts" }}</small>{{/* denma: counts are contacts */}}
 					<div class="stat-value"><a href="{{ URI "/admin/subscribers" }}" class="unstyled">{{ FormatNumber $c.Subscribers.Total }}</a></div>
 					<dl class="stat-meta hstack justify-between">
 						<div class="hstack gap-1"><dt><a href="{{ URI "/admin/subscribers" }}?subscription_status=none" class="unstyled"><strong>{{ FormatNumber $c.Subscribers.Orphans }}</strong></a></dt><dd class="text-light">{{ .L.T "dashboard.orphanSubs" }}</dd></div>

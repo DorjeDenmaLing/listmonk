@@ -37,9 +37,9 @@
 		</label>
 
 		{{ template "list-selector" dict "Root" $root "Model" "form.lists" "ListID" "campaign-lists" "Label" "globals.terms.lists" "Placeholder" "campaigns.sendToLists" "Disabled" "!canEdit" }}
-		{{ template "denma-tag-picker" dict "Model" "form.subscriber_tags" "ID" "campaign-sub-tags" "Label" "Subscriber tags" "Disabled" "!canEdit" "Hint" "Also send to everyone with any of these tags (Subscribers -> Tags) who is subscribed to a list and not blocklisted. Each person gets it once." }}{{/* denma: cmd/denma_tags.go */}}
+		{{ template "denma-tag-picker" dict "Model" "form.subscriber_tags" "ID" "campaign-sub-tags" "Label" "Subscriber tags" "Disabled" "!canEdit" "Hint" "Also send to subscribed contacts with any of these tags, once each." }}{{/* denma: cmd/denma_tags.go */}}
 
-		<label data-field for="messenger">
+		<label data-field for="messenger"{{ if le (len $root.ConfigJS.Messengers) 1 }} hidden{{ end }}>{{/* denma: not when there's only one */}}
 			{{ $root.L.Tc "globals.terms.messenger" 1 }}
 			<select id="messenger" name="messenger" x-model="form.messenger" :disabled="!canEdit" required>
 				{{- range $root.ConfigJS.Messengers }}<option value="{{ . }}">{{ . }}</option>{{ end }}

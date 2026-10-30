@@ -28,7 +28,7 @@
 	<div class="page-content content vstack gap-6">
 		<fieldset class="card vstack gap-4">
 			<legend>Sign-up webhooks</legend>
-			<p class="text-light text-8">How other systems subscribe people to the center's lists; they don't send e-mail (that's the <a href="{{ URI "/admin/center/api" }}">API</a>). A <strong>Form webhook</strong> is for a sign-up form on the center's website: whoever signs up is sent the confirmation e-mail, and is subscribed once they click it. A <strong>Server webhook</strong> is for a system that vouches for the person's consent, such as a booking system whose registration form has a newsletter box: it can subscribe them at once. Only superadmins make Server webhooks. Someone who unsubscribed is sent the e-mail to subscribe again, unless they marked an e-mail as spam or their address bounced.</p>
+			<p class="text-light text-8">How websites and other systems sign people up. A <strong>Form webhook</strong> is for a form on the center's website: people confirm by e-mail before they're subscribed. A <strong>Server webhook</strong> is for a system that already has their consent, such as a registration form's newsletter box; only superadmins make them.</p>
 
 			<template x-if="!hooks.length">
 				<p class="text-light" data-testid="no-hooks">No webhooks yet.</p>
@@ -90,32 +90,35 @@
 		<fieldset class="card">
 			<legend>Setting up a form</legend>
 			<div class="vstack gap-3 denma-signup-help">
-				<p><strong>Gravity Forms</strong> (WordPress), with its Webhooks add-on: in the form's Settings &rarr; Webhooks, add one with the Form webhook's address as the Request URL, Request Method <em>POST</em>, Request Format <em>JSON</em>, and Request Body <em>Select Fields</em>, with these keys:</p>
+				<p><strong>Gravity Forms</strong> (WordPress, with its Webhooks add-on): in the form's Settings &rarr; Webhooks, add one with the Form webhook's address as the Request URL, method <em>POST</em>, format <em>JSON</em> and body <em>Select Fields</em>, with these keys:</p>
 				<ul>
 					<li><code>email</code>: the e-mail field (required).</li>
 					<li><code>name</code>, or <code>first_name</code> and <code>last_name</code>: the name fields (optional).</li>
-					<li><code>consent</code>: a consent checkbox, if the form has one. When it's sent, it has to be ticked.</li>
-					<li><code>form_id</code>, <code>entry_id</code>, <code>page_url</code>: optional (the {form_id}, {entry_id} and {embed_url} merge tags). They're kept with the contact's consent record.</li>
-					<li><code>attribs.&lt;name&gt;</code>: anything else to keep with someone new, such as <code>attribs.city</code> (optional). An existing contact's details aren't changed.</li>
-					<li><code>tags</code>: tags for someone new, of those the webhook may give (optional; separated by commas).</li>
+					<li><code>consent</code>: the consent checkbox, if the form has one (optional).</li>
+					<li><code>form_id</code>, <code>entry_id</code>, <code>page_url</code>: kept with their consent record (optional).</li>
+					<li><code>attribs.&lt;name&gt;</code>: anything else to keep, such as <code>attribs.city</code> (optional).</li>
+					<li><code>tags</code>: tags to give, separated by commas (optional).</li>
 				</ul>
-				<p><strong>Turn on the form's spam protection</strong> (Gravity Forms' Turnstile or reCAPTCHA field). A bot filling the form would make the center send confirmation e-mails to people who didn't ask for them, and spam complaints follow. The webhook only sees the form's server, not the visitor, so it can only limit how many sign-ups it takes an hour; the admins are told when that's reached.</p>
-				<p><strong>Any other form or service</strong> that can POST JSON or a form with the same fields. A plain HTML form works too, and shows the "check your e-mail" page:</p>
-				<pre class="denma-signup-code" x-text="htmlForm()"></pre>
-				<p class="text-light">The address is secret only in that whoever has it can sign people up, who still have to confirm by e-mail. If it's been misused, give the webhook a new address and update the form. An address gets at most 5 confirmation e-mails a day.</p>
+				<p><strong>Turn on the form's spam protection</strong> (a Turnstile or reCAPTCHA field): otherwise bots can make the center e-mail strangers.</p>
+				<details>
+					<summary>Any other form</summary>
+					<p>Anything that can post JSON or a form with the same fields works. A plain HTML form shows the "check your e-mail" page:</p>
+					<pre class="denma-signup-code" x-text="htmlForm()"></pre>
+				</details>
+				<p class="text-light text-8">If an address is misused, give the webhook a new one and update the form.</p>
 			</div>
 		</fieldset>
 
 		{{/* The webhooks' reference, made from their OpenAPI description
 			(cmd/denma_signup_openapi.json) by denmaAPIDocs. */}}
-		<fieldset class="card" x-data="denmaAPIDocs('_denmaSignupSpec', 'SECRET')" data-testid="signup-docs">
-			<legend>Reference</legend>
+		<details class="card denma-reference" x-data="denmaAPIDocs('_denmaSignupSpec', 'SECRET')" data-testid="signup-docs">
+			<summary>Reference, for developers</summary>
 			<div class="vstack gap-3 denma-signup-help">
-				<p>Server webhooks are at <code>{{ $d.ServerURL }}</code>, with the webhook's secret. The <a href="https://spec.openapis.org/oas/v3.1.1.html" target="_blank" rel="noopener">OpenAPI 3.1</a> description this reference is made from is at <a :href="`${base}/openapi.json`" target="_blank" rel="noopener" data-testid="signup-openapi-link"><code x-text="`${base}/openapi.json`"></code></a>.</p>
+				<p>Server webhooks are at <code>{{ $d.ServerURL }}</code>, with the webhook's secret. As <a href="https://spec.openapis.org/oas/v3.1.1.html" target="_blank" rel="noopener">OpenAPI 3.1</a>: <a :href="`${base}/openapi.json`" target="_blank" rel="noopener" data-testid="signup-openapi-link"><code x-text="`${base}/openapi.json`"></code></a>.</p>
 				<div x-html="md(spec.info.description)"></div>
 				{{ template "denma-openapi-ops" "Secret" }}
 			</div>
-		</fieldset>
+		</details>
 	</div>
 
 	<dialog x-ref="hookDialog">
@@ -135,16 +138,16 @@
 						<template x-if="!listsFor(edit).length">
 							<p class="text-danger">The center has no double opt-in lists. Make one on the Lists page first.</p>
 						</template>
-						<small data-hint x-show="edit.kind === 'form'">Double opt-in lists only, so that everyone confirms by e-mail first. To end up on a single opt-in list, choose a double opt-in list here, and an automation (Automations) moves them on once they've confirmed, as every new center's does.</small>
-						<small data-hint x-show="edit.kind === 'server'">A request can name some of them (by ID); else it signs people up to all. With "confirmed" they're subscribed at once, double opt-in lists too; without it, double opt-in lists send the confirmation e-mail.</small>
+						<small data-hint x-show="edit.kind === 'form'">Double opt-in lists only, so everyone confirms first. An automation can move them on to another list once they have.</small>
+						<small data-hint x-show="edit.kind === 'server'">A request can name some of them by ID; otherwise it signs people up to all.</small>
 					</fieldset>
-					{{ template "denma-tag-picker" dict "Model" "edit.tags" "ID" "hook-tags" "Label" "Tags for everyone (optional)" "Hint" "Given to everyone who signs up through this webhook, new or already subscribed. Pick from the center's tags; new ones are added under Subscribers -> Tags. Campaigns sent to a tag reach them once they've confirmed." }}
-					{{ template "denma-tag-picker" dict "Model" "edit.request_tags" "ID" "hook-request-tags" "Label" "Tags a request may give (optional)" "Hint" "A request's tags are given only if they're among these; a Form webhook gives them only to someone new. Others are left out." }}
+					{{ template "denma-tag-picker" dict "Model" "edit.tags" "ID" "hook-tags" "Label" "Tags for everyone (optional)" "Hint" "Given to everyone who signs up through it. New tags are added under Subscribers -> Tags." }}
+					{{ template "denma-tag-picker" dict "Model" "edit.request_tags" "ID" "hook-request-tags" "Label" "Tags a request may give (optional)" "Hint" "Tags a request names are given only if they're among these." }}
 					<template x-if="edit.kind === 'form'">
 						<label data-field>
 							Sign-ups an hour
 							<input type="number" min="1" max="{{ $d.MaxPerHour }}" x-model.number="edit.per_hour" required data-testid="hook-per-hour" />
-							<small data-hint>The most it takes in an hour (up to {{ $d.MaxPerHour }}); past it, sign-ups are refused until the hour is over, and the admins are told. A little over what the form really gets, so that a bot can't send many confirmation e-mails through it.</small>
+							<small data-hint>Up to {{ $d.MaxPerHour }}. Set it a little above what the form really gets; past it, sign-ups are refused for the hour and the admins are told.</small>
 						</label>
 					</template>
 					<template x-if="edit.kind === 'server'">
@@ -156,7 +159,7 @@
 							<label data-field>
 								Used from (optional)
 								<textarea rows="2" x-model="edit.allowed_from" placeholder="203.0.113.4&#10;app.example.org" data-testid="hook-from"></textarea>
-								<small data-hint>One per line: IP addresses, networks or host names it can be used from. A system with a fixed address should give it. An AWS Lambda has none: leave it empty, and keep the secret in its parameters (SSM SecureString).</small>
+								<small data-hint>IP addresses, networks or host names, one per line. Empty for systems without a fixed address, such as an AWS Lambda.</small>
 							</label>
 						</div>
 					</template>
@@ -183,7 +186,7 @@
 							<option value="24">In a day</option>
 							<option value="168">In a week</option>
 						</select>
-						<small data-hint>Leaving it working a while lets the system using it change over without missing a sign-up. If the old secret may have leaked, stop it at once.</small>
+						<small data-hint>A while gives the other system time to change over. If it may have leaked, stop it at once.</small>
 					</label>
 				</section>
 				<footer class="dialog-foot hstack gap-3 justify-end">

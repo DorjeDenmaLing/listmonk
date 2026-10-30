@@ -59,7 +59,9 @@
 				<ul>
 					<li><a href="{{ URI "/admin/lists" }}" {{ IsNav $p "lists.all" }} data-cy="all-lists">{{ template "denma-icon" "format-list-bulleted-square" }}<span>{{ .L.T "menu.allLists" }}</span></a></li>
 					<li><a href="{{ URI "/admin/lists" }}?status=archived" {{ IsNav $p "lists.archived" }} data-cy="archived-lists">{{ template "denma-icon" "archive-outline" }}<span>{{ .L.T "lists.archived" }}</span></a></li>
+					{{- if DenmaPublicForms }}
 					<li><a href="{{ URI "/admin/lists/forms" }}" {{ IsNav $p "lists.forms" }} data-cy="forms">{{ template "denma-icon" "newspaper-variant-outline" }}<span>{{ .L.T "menu.forms" }}</span></a></li>
+					{{- end }}
 				</ul>
 			</details>
 		</li>
@@ -233,6 +235,6 @@
 	these are the hub's, for every center (cmd/denma_centers.go). */}}
 {{ define "denma-settings-note" }}
 {{- if and DenmaHubURL DenmaIsHub }}
-<p class="denma-settings-note" role="note">{{ Icon "info" }} These settings apply to every center, except what each center sets on its own Config page: its name, logo, favicon, language, sender and admin e-mails. Saving reloads the centers whose settings changed, one at a time; a center that is sending a campaign is reloaded when it finishes.</p>
+<p class="denma-settings-note" role="note">{{ Icon "info" }} These settings apply to every center, except what each sets on its Config page (name, logo, language, sender, admin e-mails). Saving reloads the centers one at a time.</p>
 {{- end }}
 {{ end }}

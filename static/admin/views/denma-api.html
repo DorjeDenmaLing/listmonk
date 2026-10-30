@@ -33,8 +33,8 @@
 
 		<fieldset class="card vstack gap-4">
 			<legend>Keys</legend>
-			<p class="text-light text-8">For other systems (a member database, a booking system, a website) that send e-mail through this center. Each system gets a key of its own, which can do one or more of: send transactional e-mails (password resets, receipts, notices), send campaigns to the addresses it gives (without adding them to the center's lists), and read the unsubscribes, complaints and bounces of the people it sends to. Give each key only what its system needs. A sending key sends from its own sender, at most its daily limit of e-mails, under the center's daily cap, with links only to its link domains and the center's, and skips whoever unsubscribed, complained or bounced. If a key may have leaked, delete it as leaked: that cancels its campaigns.</p>
-			<p class="text-light text-8">Keys don't subscribe people: sign-up webhooks do (<a href="{{ URI "/admin/center/webhooks" }}">Config &rarr; Webhooks</a>). The people a key sends to are added to the center without lists, and with no consent to its mail: they can join its lists only by signing up themselves.</p>
+			<p class="text-light text-8">For other systems that send e-mail through this center, such as a member database or a booking system. Give each its own key, allowed only what it needs. If a key may have leaked, delete it as leaked: that cancels its campaigns.</p>
+			<p class="text-light text-8">Keys don't subscribe people: <a href="{{ URI "/admin/center/webhooks" }}">sign-up webhooks</a> do. People a key sends to join the center's lists only by signing up themselves.</p>
 
 			<template x-if="!keys.length">
 				<p class="text-light" data-testid="no-keys">No keys yet.</p>
@@ -130,7 +130,7 @@
 
 		<fieldset class="card vstack gap-3" data-testid="api-templates">
 			<legend>Templates</legend>
-			<p class="text-light text-8">The API names a template; make them under Campaigns &rarr; Templates, each with a name of its own. Transactional templates are for <code>/messages</code>, campaign and visual templates for <code>/campaigns</code>.</p>
+			<p class="text-light text-8">Requests name one of these. Transactional templates are for <code>/messages</code>, the others for <code>/campaigns</code>. Make them under Campaigns &rarr; Templates.</p>
 			{{- if $d.Templates }}
 			<ul class="denma-api-templates">
 				{{- range $d.Templates }}
@@ -144,15 +144,15 @@
 
 		{{/* The API's reference, made from its OpenAPI description
 			(cmd/denma_api_openapi.json) by denmaAPIDocs. */}}
-		<fieldset class="card" x-data="denmaAPIDocs" data-testid="api-docs">
-			<legend>Using the API</legend>
+		<details class="card denma-reference" x-data="denmaAPIDocs" data-testid="api-docs">
+			<summary>Reference, for developers</summary>
 			<div class="vstack gap-3 denma-signup-help">
-				<p>The address is <code>{{ $d.BaseURL }}</code>. Its <a href="https://spec.openapis.org/oas/v3.1.1.html" target="_blank" rel="noopener">OpenAPI 3.1</a> description, which this reference is made from, is at <a href="{{ $d.BaseURL }}/openapi.json" target="_blank" rel="noopener" data-testid="api-openapi-link"><code>{{ $d.BaseURL }}/openapi.json</code></a>, with no key needed: import it into Postman or Insomnia, view it in Swagger UI or Redoc, or generate a client from it.</p>
+				<p>The API is at <code>{{ $d.BaseURL }}</code>. As <a href="https://spec.openapis.org/oas/v3.1.1.html" target="_blank" rel="noopener">OpenAPI 3.1</a>, for Postman, Swagger UI or a generated client: <a href="{{ $d.BaseURL }}/openapi.json" target="_blank" rel="noopener" data-testid="api-openapi-link"><code>{{ $d.BaseURL }}/openapi.json</code></a>.</p>
 				<div x-html="md(spec.info.description)"></div>
 
 				{{ template "denma-openapi-ops" "Key" }}
 			</div>
-		</fieldset>
+		</details>
 	</div>
 
 	{{/* A key's settings. */}}
@@ -170,41 +170,41 @@
 						<label class="hstack gap-2"><input type="checkbox" value="messages" x-model="edit.can" data-testid="key-can-messages" /> Send transactional e-mails <small class="text-light">(<code>POST /v1/messages</code>)</small></label>
 						<label class="hstack gap-2"><input type="checkbox" value="campaigns" x-model="edit.can" data-testid="key-can-campaigns" /> Send campaigns <small class="text-light">(<code>/v1/campaigns</code>)</small></label>
 <label class="hstack gap-2"><input type="checkbox" value="events" x-model="edit.can" data-testid="key-can-events" /> Read events <small class="text-light">(<code>GET /v1/events</code>)</small></label>
-						<small data-hint>Only what its system needs. Sending needs no lists: a campaign goes to the addresses the system gives. Events are the unsubscribes, complaints and bounces of the people it sends to, also sent to its notifications address. To subscribe people, use a sign-up webhook.</small>
+						<small data-hint>Only what its system needs. Events are the unsubscribes, complaints and bounces of the people it sends to.</small>
 					</fieldset>
 					<template x-if="sends(edit)">
 						<div class="vstack gap-3">
 							<label data-field>
 								Sender
 								<input x-model="edit.sender" maxlength="300" :placeholder="centerSender" data-testid="key-sender" />
-								<small data-hint>Who its e-mails are from, always: <code>name@…</code> or <code>Name &lt;name@…&gt;</code> at one of the center's sending domains. Empty: the center's sender. The system using the key can't change it.</small>
+								<small data-hint>At one of the center's sending domains. Empty: the center's sender. The other system can't change it.</small>
 							</label>
 							<label data-field>
 								Daily limit
 								<input type="number" min="1" max="1000000" x-model.number="edit.daily_limit" required data-testid="key-daily-limit" />
-								<small data-hint>The most e-mails it sends in 24 hours (a campaign's recipients count when it starts). A little over what its system needs, so that a leaked key can't do much. The center's admins are told when it's reached.</small>
+								<small data-hint>E-mails in 24 hours. Set it a little above what the system needs; the admins are told when it's reached.</small>
 							</label>
 							<label data-field>
 								Link domains
 								<textarea rows="2" x-model="edit.link_domains" placeholder="example.org" data-testid="key-links"></textarea>
-								<small data-hint>One per line: the domains (and their subdomains) the links and images in its e-mails can go to, such as its own website for a password reset link. Besides these, always <span x-text="ownDomains.join(', ')"></span>. A request with a link elsewhere is refused, so that a leaked key can't send the center's e-mails with someone else's links.</small>
+								<small data-hint>One per line: where links and images in its e-mails may point, besides <span x-text="ownDomains.join(', ')"></span>. Others are refused.</small>
 							</label>
 						</div>
 					</template>
 					<label data-field>
 						Used from (recommended)
 						<textarea rows="3" x-model="edit.allowed_from" placeholder="203.0.113.4&#10;app.example.org" data-testid="key-from"></textarea>
-						<small data-hint>One per line: IP addresses, networks (203.0.113.0/24) or host names, which the key can be used from. If its system runs on a server with a fixed address, give it: a leaked key is then no use anywhere else. Empty: anywhere, as a system without a fixed address (an AWS Lambda) needs.</small>
+						<small data-hint>IP addresses, networks or host names, one per line: a leaked key then works nowhere else. Empty: anywhere.</small>
 					</label>
 					<label data-field>
 						Notifications (optional)
 						<input type="url" x-model="edit.webhook_url" maxlength="2000" placeholder="https://example.org/listmonk-events" data-testid="key-webhook" />
-						<small data-hint>The other system's https:// address, to be told how its campaigns go (started, paused, finished, cancelled) if the key sends campaigns, and the unsubscribes, complaints and bounces of the people it sends to if it reads the events (Using the API, below). They're signed with a secret, shown once when the address is first set.</small>
+						<small data-hint>An https:// address told how its campaigns go and, if it reads events, of unsubscribes, complaints and bounces. Signed with a secret shown once.</small>
 					</label>
 					<label data-field>
 						Expires (optional)
 						<input type="date" x-model="edit.expires_on" :min="tomorrow()" data-testid="key-expires" />
-						<small data-hint>It stops working at the end of this day (UTC). The center's admins are reminded 14 and 3 days before. Empty: it doesn't expire.</small>
+						<small data-hint>It stops at the end of this day (UTC); the admins are reminded before. Empty: never.</small>
 					</label>
 </section>
 				<footer class="dialog-foot hstack gap-3 justify-end">
@@ -229,7 +229,7 @@
 							<option value="24">In a day</option>
 							<option value="168">In a week</option>
 						</select>
-						<small data-hint>Leaving it working a while lets the system using it change over to the new one without missing a request. If the old key may have leaked, stop it at once.</small>
+						<small data-hint>A while gives the other system time to change over. If it may have leaked, stop it at once.</small>
 					</label>
 				</section>
 				<footer class="dialog-foot hstack gap-3 justify-end">

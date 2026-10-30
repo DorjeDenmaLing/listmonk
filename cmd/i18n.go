@@ -94,6 +94,7 @@ func getI18nLang(lang string, fs stuffbin.FileSystem) (*i18n.I18n, bool, error) 
 	if err := i.Load(b); err != nil {
 		return i, true, fmt.Errorf("error loading i18n language file: %s: %v", lang, err)
 	}
+	denmaI18nOverlay(i, lang, fs) // denma: the fork's wording (cmd/denma_i18n.go)
 
 	return i, true, nil
 }
