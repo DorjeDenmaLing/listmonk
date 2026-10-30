@@ -883,7 +883,7 @@ func (d *denmaCenters) adopt(c *denmaCenter, db *sqlx.DB) error {
 	if err := d.adoptPeople(c, db); err != nil { // cmd/denma_people.go
 		return err
 	}
-	return d.features(c, db) // cmd/denma_features.go
+	return denmaRetryDeadlock(func() error { return d.features(c, db) }) // cmd/denma_features.go
 }
 
 // denmaCryptoFuncs makes listmonk's pgcrypto functions, which live in the

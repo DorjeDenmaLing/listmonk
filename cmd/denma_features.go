@@ -96,7 +96,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	// the transaction: a new enum value can't be used in the one adding it.
 	if ver < 11 {
 		if _, err := db.Exec(`ALTER TYPE template_type ADD VALUE IF NOT EXISTS 'design'`); err != nil {
-			return fmt.Errorf("adding the design template type: %v", err)
+			return fmt.Errorf("adding the design template type: %w", err)
 		}
 	}
 
@@ -111,7 +111,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	var dropped []string
 	if ver == 0 {
 		if old, dropped, err = denmaOldAddon(tx); err != nil {
-			return fmt.Errorf("reading the old add-on's triggers: %v", err)
+			return fmt.Errorf("reading the old add-on's triggers: %w", err)
 		}
 	}
 	// Its values replace the defaults; settings the center has are kept.
@@ -136,32 +136,32 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		}
 	}
 	if _, err := tx.Exec(denmaFeaturesSQL); err != nil {
-		return fmt.Errorf("installing the triggers: %v", err)
+		return fmt.Errorf("installing the triggers: %w", err)
 	}
 	// Version 9 gave every center its own design (cmd/denma_design.go).
 	if ver < 9 {
 		if err := denmaAddDefaultDesign(tx); err != nil {
-			return fmt.Errorf("adding the center's design: %v", err)
+			return fmt.Errorf("adding the center's design: %w", err)
 		}
 	}
 	// Version 10 gave every center without one a default visual template.
 	if ver < 10 {
 		if err := denmaAddVisualDefault(tx); err != nil {
-			return fmt.Errorf("adding the default visual template: %v", err)
+			return fmt.Errorf("adding the default visual template: %w", err)
 		}
 	}
 	// Version 11: the center's designs, made as visual templates, are designs.
 	if ver < 11 {
 		if _, err := tx.Exec(`UPDATE templates SET type = 'design' WHERE type = 'campaign_visual' AND id IN (
 			SELECT (value #>> '{}')::INT FROM settings WHERE key IN ('denma.default_design', 'denma.design_template'))`); err != nil {
-			return fmt.Errorf("making the designs designs: %v", err)
+			return fmt.Errorf("making the designs designs: %w", err)
 		}
 	}
 	// Version 16: the Website signups setting is an automation.
 	if ver < 16 {
 		moved, err := denmaMigrateSignupSetting(tx)
 		if err != nil {
-			return fmt.Errorf("making the website signups' automation: %v", err)
+			return fmt.Errorf("making the website signups' automation: %w", err)
 		}
 		if moved {
 			lo.Printf("denma: center %s: its Website signups setting is now an automation", c.Slug)
@@ -172,7 +172,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 22 {
 		res, err := tx.Exec(denmaNoConsentMigrateSQL)
 		if err != nil {
-			return fmt.Errorf("recording those the API added: %v", err)
+			return fmt.Errorf("recording those the API added: %w", err)
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			lo.Printf("denma: center %s: %d subscribers the API added have no consent", c.Slug, n)
@@ -181,7 +181,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		// webhooks do it (cmd/denma_signup.go).
 		var idle []string
 		if err := tx.Select(&idle, `SELECT name FROM denma_api_keys WHERE can = '{}' AND deleted_at IS NULL ORDER BY id`); err != nil {
-			return fmt.Errorf("reading the API keys: %v", err)
+			return fmt.Errorf("reading the API keys: %w", err)
 		}
 		for _, k := range idle {
 			lo.Printf("denma: center %s: API key %q only subscribed people, which keys don't any more; a superadmin can make it a Server webhook", c.Slug, k)
@@ -190,7 +190,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	// Version 23: no API users (cmd/denma_noapiusers.go).
 	if ver < 23 {
 		if err := denmaDeleteAPIUsers(tx, "center "+c.Slug); err != nil {
-			return fmt.Errorf("deleting the API users: %v", err)
+			return fmt.Errorf("deleting the API users: %w", err)
 		}
 	}
 	// Version 35: first and last names, from the names subscribers had
@@ -198,7 +198,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 35 {
 		res, err := tx.Exec(denmaSplitNamesSQL)
 		if err != nil {
-			return fmt.Errorf("splitting the subscribers' names: %v", err)
+			return fmt.Errorf("splitting the subscribers' names: %w", err)
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			lo.Printf("denma: center %s: %d subscribers' names split into first and last names", c.Slug, n)
@@ -209,7 +209,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 39 {
 		n, err := denmaAddAddressToTemplates(tx)
 		if err != nil {
-			return fmt.Errorf("adding the postal address to the templates: %v", err)
+			return fmt.Errorf("adding the postal address to the templates: %w", err)
 		}
 		if n > 0 {
 			lo.Printf("denma: center %s: %d of its templates show its postal address", c.Slug, n)
@@ -222,11 +222,11 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		uri := "/" + strings.Trim(hub.ko.String("upload.filesystem.upload_uri"), "/")
 		var hubNames []string // the hub's own, served at its uploads address
 		if err := hub.db.Select(&hubNames, `SELECT filename FROM media UNION SELECT thumb FROM media WHERE thumb <> ''`); err != nil {
-			return fmt.Errorf("reading the hub's media: %v", err)
+			return fmt.Errorf("reading the hub's media: %w", err)
 		}
 		n, err := denmaRewriteHubUploads(tx, root, uri, root+denmaCenterPath+c.Slug+uri+"/", hubNames)
 		if err != nil {
-			return fmt.Errorf("pointing old upload links to the center's own: %v", err)
+			return fmt.Errorf("pointing old upload links to the center's own: %w", err)
 		}
 		if n > 0 {
 			lo.Printf("denma: center %s: %d templates and campaigns link its own uploads instead of the hub's address", c.Slug, n)
@@ -236,7 +236,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 43 {
 		res, err := tx.Exec(denmaCancelOptinCampaignsSQL)
 		if err != nil {
-			return fmt.Errorf("cancelling opt-in campaigns: %v", err)
+			return fmt.Errorf("cancelling opt-in campaigns: %w", err)
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			lo.Printf("denma: center %s: %d opt-in campaigns cancelled", c.Slug, n)
@@ -253,7 +253,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	// log, so it can still give them (cmd/denma_signup.go).
 	if ver < 46 {
 		if _, err := tx.Exec(denmaTagHooksSQL, c.Slug); err != nil {
-			return fmt.Errorf("finding the tags webhooks created: %v", err)
+			return fmt.Errorf("finding the tags webhooks created: %w", err)
 		}
 	}
 	// Version 48: the stock templates' footers and the default design show
@@ -261,7 +261,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 48 {
 		n, err := denmaAddContactToTemplates(tx)
 		if err != nil {
-			return fmt.Errorf("adding the website and contact e-mail to the templates: %v", err)
+			return fmt.Errorf("adding the website and contact e-mail to the templates: %w", err)
 		}
 		if n > 0 {
 			lo.Printf("denma: center %s: %d of its templates show its website and contact e-mail", c.Slug, n)
@@ -271,14 +271,14 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	// the setting that chose another, or none, goes.
 	if ver < 49 {
 		if _, err := tx.Exec(`DELETE FROM settings WHERE key = 'denma.design_template'`); err != nil {
-			return fmt.Errorf("removing the design setting: %v", err)
+			return fmt.Errorf("removing the design setting: %w", err)
 		}
 	}
 	// Version 51: an import's joins and tags start automations only if
 	// asked; those imports logged before are left out (cmd/denma_imports.go).
 	if ver < 51 {
 		if _, err := tx.Exec(denmaImportEventsSQL); err != nil {
-			return fmt.Errorf("leaving out imports' automation events: %v", err)
+			return fmt.Errorf("leaving out imports' automation events: %w", err)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/lib/pq"
 )
 
 // denma_is_import() knows the importer by its queries' text: both of them
@@ -35,5 +38,25 @@ func TestDenmaImportQueries(t *testing.T) {
 				t.Errorf("%s has the import's mark %q", name, m[1])
 			}
 		}
+	}
+}
+
+// A center's update that deadlocks is tried again: the update's errors keep
+// Postgres's, so the retry still sees the deadlock through them.
+func TestDenmaFeaturesDeadlockRetried(t *testing.T) {
+	calls := 0
+	err := denmaRetryDeadlock(func() error {
+		calls++
+		if calls < 3 {
+			return fmt.Errorf("installing the triggers: %w", &pq.Error{Code: "40P01"})
+		}
+		return nil
+	})
+	if err != nil || calls != 3 {
+		t.Fatalf("got %v after %d calls, want success on the third", err, calls)
+	}
+	calls = 0
+	if err := denmaRetryDeadlock(func() error { calls++; return fmt.Errorf("x: %w", &pq.Error{Code: "42P01"}) }); err == nil || calls != 1 {
+		t.Fatalf("another error: got %v after %d calls, want it at once", err, calls)
 	}
 }
