@@ -2516,50 +2516,189 @@ section.templates .editor-body:has(> visual-editor) {
   }
 }
 
-/* Media's folders and preview (partials/denma/media-folders.html). */
+/* Media's folders and preview (partials/denma/media-folders.html): All
+   media and Not in a folder as tabs, the folders as tiles. */
 .denma-media-folders {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
+  display: grid;
+  gap: var(--space-4);
   margin-bottom: var(--space-4);
+}
 
-  > a {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
+.denma-media-views {
+  display: inline-flex;
+  width: fit-content;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-medium);
+  background: var(--muted);
+
+  a {
     padding: var(--space-1) var(--space-3);
-    border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: var(--radius-small);
     font-size: var(--text-8);
-    color: var(--foreground);
+    color: var(--muted-foreground);
     text-decoration: none;
-    background: var(--card);
 
     span {
-      color: var(--muted-foreground);
+      margin-inline-start: var(--space-1);
     }
 
     &:hover {
-      border-color: var(--primary);
+      color: var(--foreground);
     }
 
     &[aria-current="page"] {
-      border-color: var(--primary);
-      color: var(--primary);
-      background: color-mix(in srgb, var(--primary) 10%, var(--card));
+      background: var(--card);
+      color: var(--foreground);
+      font-weight: 600;
+      box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+    }
+  }
+}
+
+.denma-media-folder-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: var(--space-3);
+}
+
+.denma-folder {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+
+  > .icon {
+    flex-shrink: 0;
+    width: 2.25rem;
+    height: 2.25rem;
+    color: #e2a93b;
+  }
+
+  &:hover {
+    border-color: var(--primary);
+  }
+
+  &[aria-current="page"] {
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  }
+}
+
+.denma-folder-text {
+  display: grid;
+  min-width: 0;
+}
+
+.denma-folder-name {
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.denma-folder-count {
+  font-size: var(--text-8);
+  color: var(--muted-foreground);
+}
+
+/* New folder: a dashed tile. */
+.denma-folder.denma-folder-new {
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted-foreground);
+
+  > .icon {
+    color: var(--muted-foreground);
+  }
+}
+
+/* The folder shown, by its path, with Rename and Delete folder. */
+.denma-media-place {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-2);
+
+  h2 {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--text-5);
+
+    a {
+      color: var(--muted-foreground);
+      font-weight: normal;
+      text-decoration: none;
     }
 
     .icon {
-      width: 1em;
-      height: 1em;
+      width: 1.25em;
+      height: 1.25em;
+      color: #e2a93b;
+    }
+  }
+}
+
+.denma-media-hint {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-8);
+  color: var(--muted-foreground);
+}
+
+/* Files: square tiles showing the whole image on a light checkerboard (for
+   transparent and odd-shaped ones), names on up to two lines, no date (it's
+   in the preview). */
+.media-files .gallery {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+
+  .thumb {
+    aspect-ratio: 1;
+    padding: var(--space-2);
+    background-color: var(--faint);
+    background-image: conic-gradient(color-mix(in srgb, var(--muted) 70%, transparent) 25%, transparent 0 50%, color-mix(in srgb, var(--muted) 70%, transparent) 0 75%, transparent 0);
+    background-size: 16px 16px;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .ext {
+      padding: var(--space-2) var(--space-3);
+      border-radius: var(--radius-small);
+      background: var(--card);
+      font-weight: 600;
+      color: var(--muted-foreground);
     }
   }
 
-  .denma-media-folder-actions {
-    display: inline-flex;
-    gap: var(--space-1);
-    margin-inline-start: auto;
+  figcaption {
+    > .text-8 {
+      display: none;
+    }
+  }
+
+  .filename {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: var(--text-8);
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 
@@ -2721,5 +2860,10 @@ details.card.denma-reference {
 
 /* A hint with nothing to say. */
 small[data-hint]:empty {
+  display: none;
+}
+
+/* Media's upload: files upload as they're chosen, so no second button. */
+.media-files #media-upload form > .hstack {
   display: none;
 }

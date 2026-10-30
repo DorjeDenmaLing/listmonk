@@ -5,9 +5,10 @@
 	CanManage.
 */}}
 
-{{/* The folders: all files, each folder, those in none; on the Media page,
-     a new folder, the one shown renamed or deleted, and files dragged onto
-     a folder (or "Not in a folder") moved there. */}}
+{{/* The folders: all files and those in none, then each folder; on the
+     Media page, a new folder, the one shown (named above the files) renamed
+     or deleted, and files dragged onto a folder (or "Not in a folder") moved
+     there. */}}
 {{ define "denma-media-folders" -}}
 {{- $root := .Root -}}
 {{- $d := $root.Data -}}
@@ -16,21 +17,41 @@
 {{- $base := URI "/admin/campaigns/media" -}}{{ if eq .Mode "picker" }}{{ $base = print $base "/fragment" }}{{ end }}
 <script nonce="{{ $root.CSPNonce }}">window._denmaMedia = {{ ToJSON (dict "files" $d.Media "folders" $f.Folders "folder_of" $f.FolderOf "folder" $f.Folder "manage" $manage) }};</script>
 <nav class="denma-media-folders" aria-label="Folders" data-testid="media-folders">
-	<a href="{{ $base }}" {{ if eq $f.Folder "" }}aria-current="page"{{ end }}>{{ Icon "image" }} All media <span>{{ $f.All }}</span></a>
-	{{- range $f.Folders }}
-	<a href="{{ $base }}?folder={{ .ID }}" {{ if eq $f.Folder (print .ID) }}aria-current="page"{{ end }} data-folder="{{ .ID }}" {{ if $manage }}@dragover="denmaDragOver($event, {{ .ID }})" @dragleave="denmaDragLeave($event)" @drop.prevent="denmaDrop($event, {{ .ID }})"{{ end }}>{{ Icon "folder-outline" "denma-icons.svg" }} {{ .Name }} <span>{{ .Count }}</span></a>
+	<div class="denma-media-views">
+		<a href="{{ $base }}" {{ if eq $f.Folder "" }}aria-current="page"{{ end }}>All media <span>{{ $f.All }}</span></a>
+		<a href="{{ $base }}?folder=none" {{ if eq $f.Folder "none" }}aria-current="page"{{ end }} data-folder="0" {{ if $manage }}@dragover="denmaDragOver($event, 0)" @dragleave="denmaDragLeave($event)" @drop.prevent="denmaDrop($event, 0)"{{ end }}>Not in a folder <span>{{ $f.None }}</span></a>
+	</div>
+	{{- if or $f.Folders $manage }}
+	<div class="denma-media-folder-list">
+		{{- range $f.Folders }}
+		<a href="{{ $base }}?folder={{ .ID }}" class="denma-folder" {{ if eq $f.Folder (print .ID) }}aria-current="page"{{ end }} data-folder="{{ .ID }}" {{ if $manage }}@dragover="denmaDragOver($event, {{ .ID }})" @dragleave="denmaDragLeave($event)" @drop.prevent="denmaDrop($event, {{ .ID }})"{{ end }}>
+			{{ Icon "folder" "denma-icons.svg" }}
+			<span class="denma-folder-text"><span class="denma-folder-name">{{ .Name }}</span><span class="denma-folder-count">{{ .Count }} {{ if eq .Count 1 }}file{{ else }}files{{ end }}</span></span>
+		</a>
+		{{- end }}
+		{{- if $manage }}
+		<button type="button" class="denma-folder denma-folder-new" @click="denmaFolderDialog()" data-testid="btn-new-folder">
+			{{ Icon "folder-plus-outline" "denma-icons.svg" }}
+			<span class="denma-folder-text"><span class="denma-folder-name">New folder</span></span>
+		</button>
+		{{- end }}
+	</div>
 	{{- end }}
-	<a href="{{ $base }}?folder=none" {{ if eq $f.Folder "none" }}aria-current="page"{{ end }} data-folder="0" {{ if $manage }}@dragover="denmaDragOver($event, 0)" @dragleave="denmaDragLeave($event)" @drop.prevent="denmaDrop($event, 0)"{{ end }}>Not in a folder <span>{{ $f.None }}</span></a>
+</nav>
+{{- if $f.FolderName }}
+<div class="denma-media-place">
+	<h2><a href="{{ $base }}">All media</a> <span aria-hidden="true">&rsaquo;</span> {{ Icon "folder" "denma-icons.svg" }} {{ $f.FolderName }}</h2>
 	{{- if $manage }}
-	<button type="button" class="ghost small" @click="denmaFolderDialog()" data-testid="btn-new-folder">{{ Icon "folder-plus-outline" "denma-icons.svg" }} New folder</button>
-	{{- if $f.FolderName }}
-	<span class="denma-media-folder-actions">
+	<span class="hstack gap-1">
 		<button type="button" class="ghost small" @click="denmaFolderDialog({{ $f.Folder }}, {{ ToJSON $f.FolderName }})" data-testid="btn-rename-folder">{{ Icon "edit-2" }} Rename</button>
 		<button type="button" class="ghost small" data-variant="danger" @click="denmaDeleteFolder({{ $f.Folder }}, {{ ToJSON $f.FolderName }})" data-testid="btn-delete-folder">{{ Icon "trash-2" }} Delete folder</button>
 	</span>
 	{{- end }}
-	{{- end }}
-</nav>
+</div>
+{{- end }}
+{{- if $manage }}
+<p class="denma-media-hint">Click a file to see it, choose its folder or delete it. Drag files onto a folder to move them.</p>
+{{- end }}
 
 {{- if $manage }}
 <dialog x-ref="denmaFolderDialog">

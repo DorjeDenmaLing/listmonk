@@ -12,7 +12,7 @@
 					{{ $root.L.T "media.title" }}
 					<span>({{ $d.Page.Total }})</span>
 				</h1>
-				{{- if $d.Provider }}<div class="text-lighter">{{ $d.Provider }}</div>{{ end }}
+				{{- if and $d.Provider (not DenmaInCenter) }}<div class="text-lighter">{{ $d.Provider }}</div>{{ end }}{{/* denma: not in a center */}}
 			</div>
 		</div>
 		<div class="col-8 col-end align-right hstack justify-end">
@@ -33,7 +33,7 @@
 							<div data-field>
 								<ot-upload>
 									<div data-field class="vstack">
-										<input type="file" name="file" multiple hidden @change="files = [...$event.target.files]" />
+										<input type="file" name="file" multiple hidden @change="files = [...$event.target.files]; onUpload()" />{{/* denma: uploads at once */}}
 										<button type="button" class="ghost" aria-label="{{ $root.L.T "media.upload" }}">{{ Icon "upload" }}</button>
 										<div data-files><small data-hint>{{ $root.L.T "media.uploadHelp" }}</small></div>
 									</div>

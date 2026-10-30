@@ -8,6 +8,7 @@
   "import.overwriteUserInfo": "Update names and attributes",
   "import.overwriteUserInfoHelp": "Of contacts already here.",
   "import.overwriteSubStatusHelp": "Of their subscriptions already here.",
+  "media.uploadHelp": "Click to choose files, or drop them here. They upload at once.",
   "lists.archivedHelp": "Hidden from the lists page, campaigns and forms. It can be brought back any time.",
   "lists.optinHelp": "Double opt-in asks people to confirm by e-mail; campaigns go only to those who have.",
   "lists.typeHelp": "Public lists can be shown on public pages, such as sign-up forms.",
