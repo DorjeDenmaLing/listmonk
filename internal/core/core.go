@@ -37,6 +37,8 @@ type Core struct {
 	db     *sqlx.DB
 	q      *models.Queries
 	log    *log.Logger
+
+	denmaViews denmaViewRefreshes // denma: refreshes on requests (denma_matviews.go)
 }
 
 // Constants represents constant config.
@@ -117,7 +119,7 @@ func (c *Core) refreshCache(name string, concurrent bool) error {
 		return nil
 	}
 
-	return c.RefreshMatView(name, concurrent)
+	return c.denmaRefreshView(name) // denma: concurrent and shared (denma_matviews.go)
 }
 
 // Given an error, pqErrMsg will try to return pq error details
