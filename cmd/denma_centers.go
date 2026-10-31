@@ -791,17 +791,64 @@ func denmaConnect(ck *koanf.Koanf) (*sqlx.DB, error) {
 	return initDB(ck), nil
 }
 
+// denmaInstalling says that a center is being installed, in which case install's
+// errors don't stop the process (installFatalf).
+var denmaInstalling atomic.Bool
+
+// denmaInstallError is an error in install, while a center is being installed.
+type denmaInstallError struct{ error }
+
+// installFatalf is install's error: the process's end, unless a center is being
+// installed, which fails alone.
+func installFatalf(format string, args ...any) {
+	if denmaInstalling.Load() {
+		panic(denmaInstallError{fmt.Errorf(format, args...)})
+	}
+	lo.Fatalf(format, args...)
+}
+
+// denmaRecoverInstall turns installFatalf's panic into provision's error.
+func denmaRecoverInstall(err *error) {
+	if r := recover(); r != nil {
+		e, ok := r.(denmaInstallError)
+		if !ok {
+			panic(r)
+		}
+		*err = fmt.Errorf("installing: %w", e.error)
+	}
+}
+
 // provision creates and installs the center's schema if it doesn't exist yet,
 // and points its URLs and uploads at /c/<slug>/.
-func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) error {
+func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) (err error) {
 	var installed bool
 	if err := db.Get(&installed, `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = 'settings')`, c.Schema); err != nil {
 		return err
 	}
 	if installed {
-		return nil
+		// Provisioning finishes by setting denma.provisioned. A center from
+		// before has its features instead; without either, it stopped part-way.
+		var done bool
+		if err := db.Get(&done, `SELECT EXISTS (SELECT 1 FROM settings WHERE key IN ('denma.provisioned', 'denma.features_version'))`); err != nil {
+			return err
+		}
+		if done {
+			return nil
+		}
+		var subs int
+		if err := db.Get(&subs, `SELECT COUNT(*) FROM subscribers`); err != nil {
+			return err
+		}
+		if subs > 2 { // more than the samples: not to be removed
+			return fmt.Errorf("center %s stopped part-way through being made, and has %d subscribers: look at it by hand", c.Slug, subs)
+		}
+		lo.Printf("denma: center %s stopped part-way through being made: making it again", c.Slug)
+		if _, err := db.Exec(`DROP SCHEMA "` + c.Schema + `" CASCADE`); err != nil {
+			return fmt.Errorf("removing what was made: %v", err)
+		}
 	}
 
+	defer denmaRecoverInstall(&err)
 	lo.Printf("denma: provisioning center %s (schema %s)", c.Slug, c.Schema)
 	if _, err := db.Exec(`CREATE SCHEMA IF NOT EXISTS "` + c.Schema + `"`); err != nil {
 		return fmt.Errorf("creating schema: %v", err)
@@ -820,6 +867,8 @@ func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) error {
 		return err
 	}
 
+	denmaInstalling.Store(true)
+	defer denmaInstalling.Store(false)
 	install(migList[len(migList)-1].version, db, fs, false, false)
 
 	// A clean center: none of listmonk's samples but two templates, its
@@ -853,6 +902,9 @@ func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) error {
 	// Its website signups' lists, and the automation moving people on.
 	if err := denmaDefaultAutomation(db); err != nil { // cmd/denma_automations.go
 		return fmt.Errorf("adding the website signups' automation: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO settings (key, value) VALUES ('denma.provisioned', 'true') ON CONFLICT (key) DO NOTHING`); err != nil {
+		return fmt.Errorf("finishing: %v", err)
 	}
 	return nil
 }

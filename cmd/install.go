@@ -34,7 +34,7 @@ func install(lastVer string, db *sqlx.DB, fs stuffbin.FileSystem, prompt, idempo
 		var ok string
 		fmt.Print("continue (y/N)?  ")
 		if _, err := fmt.Scanf("%s", &ok); err != nil {
-			lo.Fatalf("error reading value from terminal: %v", err)
+			installFatalf("error reading value from terminal: %v", err)
 		}
 		if strings.ToLower(ok) != "y" {
 			fmt.Println("install cancelled.")
@@ -49,7 +49,7 @@ func install(lastVer string, db *sqlx.DB, fs stuffbin.FileSystem, prompt, idempo
 			// denma: any other error (the database briefly unreachable) aborts,
 			// as installing drops every table (upstream PR #3196).
 			if !isTableNotExistErr(err) {
-				lo.Fatalf("error checking existing DB schema: %v", err)
+				installFatalf("error checking existing DB schema: %v", err)
 			}
 		} else {
 			lo.Println("skipping install as database appears to be already setup")
@@ -59,7 +59,7 @@ func install(lastVer string, db *sqlx.DB, fs stuffbin.FileSystem, prompt, idempo
 
 	// Migrate the tables.
 	if err := installSchema(lastVer, db, fs); err != nil {
-		lo.Fatalf("error migrating DB schema: %v", err)
+		installFatalf("error migrating DB schema: %v", err)
 	}
 	denmaInstallColumns(db) // denma: read by the campaign queries (cmd/denma_tags.go)
 
@@ -90,7 +90,7 @@ func install(lastVer string, db *sqlx.DB, fs stuffbin.FileSystem, prompt, idempo
 	// Admin user.
 	if user != "" && password != "" {
 		if len(user) < 3 || len(password) < 8 {
-			lo.Fatal("LISTMONK_ADMIN_USER should be min 3 chars and LISTMONK_ADMIN_PASSWORD should be min 8 chars")
+			installFatalf("%v", "LISTMONK_ADMIN_USER should be min 3 chars and LISTMONK_ADMIN_PASSWORD should be min 8 chars")
 		}
 
 		lo.Printf("creating superadmin user '%s'", user)
@@ -102,11 +102,11 @@ func install(lastVer string, db *sqlx.DB, fs stuffbin.FileSystem, prompt, idempo
 	// API User.
 	if apiUser != "" {
 		if !hasUser {
-			lo.Fatal("LISTMONK_ADMIN_API_USER requires LISTMONK_ADMIN_USER and LISTMONK_ADMIN_PASSWORD to be set")
+			installFatalf("%v", "LISTMONK_ADMIN_API_USER requires LISTMONK_ADMIN_USER and LISTMONK_ADMIN_PASSWORD to be set")
 		}
 
 		if len(apiUser) < 3 {
-			lo.Fatal("LISTMONK_ADMIN_API_USER should be min 3 chars")
+			installFatalf("%v", "LISTMONK_ADMIN_API_USER should be min 3 chars")
 		}
 
 		lo.Printf("creating superadmin API user '%s'", apiUser)
@@ -149,7 +149,7 @@ func installLists(q *models.Queries) (int, int) {
 		pq.StringArray{"test"},
 		"",
 	); err != nil {
-		lo.Fatalf("error creating list: %v", err)
+		installFatalf("error creating list: %v", err)
 	}
 
 	if err := q.CreateList.Get(&optinList, uuid.Must(uuid.NewV4()),
@@ -160,7 +160,7 @@ func installLists(q *models.Queries) (int, int) {
 		pq.StringArray{"test"},
 		"",
 	); err != nil {
-		lo.Fatalf("error creating list: %v", err)
+		installFatalf("error creating list: %v", err)
 	}
 
 	return defList, optinList
@@ -176,7 +176,7 @@ func installSubs(defListID, optinListID int, q *models.Queries) {
 		pq.Int64Array{int64(defListID)},
 		models.SubscriptionStatusUnconfirmed,
 		true, true); err != nil {
-		lo.Fatalf("Error creating subscriber: %v", err)
+		installFatalf("Error creating subscriber: %v", err)
 	}
 	if _, err := q.UpsertSubscriber.Exec(
 		uuid.Must(uuid.NewV4()),
@@ -186,7 +186,7 @@ func installSubs(defListID, optinListID int, q *models.Queries) {
 		pq.Int64Array{int64(optinListID)},
 		models.SubscriptionStatusUnconfirmed,
 		true, true); err != nil {
-		lo.Fatalf("error creating subscriber: %v", err)
+		installFatalf("error creating subscriber: %v", err)
 	}
 }
 
@@ -194,50 +194,50 @@ func installTemplates(q *models.Queries) (int, int) {
 	// Default campaign template.
 	campTpl, err := fs.Get("/static/email-templates/default.tpl")
 	if err != nil {
-		lo.Fatalf("error reading default e-mail template: %v", err)
+		installFatalf("error reading default e-mail template: %v", err)
 	}
 
 	var campTplID int
 	if err := q.CreateTemplate.Get(&campTplID, "Default campaign template", models.TemplateTypeCampaign, "", campTpl.ReadBytes(), nil); err != nil {
-		lo.Fatalf("error creating default campaign template: %v", err)
+		installFatalf("error creating default campaign template: %v", err)
 	}
 	if _, err := q.SetDefaultTemplate.Exec(campTplID); err != nil {
-		lo.Fatalf("error setting default template: %v", err)
+		installFatalf("error setting default template: %v", err)
 	}
 
 	// Default campaign archive template.
 	archiveTpl, err := fs.Get("/static/email-templates/default-archive.tpl")
 	if err != nil {
-		lo.Fatalf("error reading default archive template: %v", err)
+		installFatalf("error reading default archive template: %v", err)
 	}
 
 	var archiveTplID int
 	if err := q.CreateTemplate.Get(&archiveTplID, "Default archive template", models.TemplateTypeCampaign, "", archiveTpl.ReadBytes(), nil); err != nil {
-		lo.Fatalf("error creating default campaign template: %v", err)
+		installFatalf("error creating default campaign template: %v", err)
 	}
 
 	// Sample tx template.
 	txTpl, err := fs.Get("/static/email-templates/sample-tx.tpl")
 	if err != nil {
-		lo.Fatalf("error reading default e-mail template: %v", err)
+		installFatalf("error reading default e-mail template: %v", err)
 	}
 
 	if _, err := q.CreateTemplate.Exec("Sample transactional template", models.TemplateTypeTx, "Welcome {{ .Subscriber.Name }}", txTpl.ReadBytes(), nil); err != nil {
-		lo.Fatalf("error creating sample transactional template: %v", err)
+		installFatalf("error creating sample transactional template: %v", err)
 	}
 
 	// Sample visual campaign template.
 	visualTpl, err := fs.Get("/static/email-templates/default-visual.tpl")
 	if err != nil {
-		lo.Fatalf("error reading default visual template: %v", err)
+		installFatalf("error reading default visual template: %v", err)
 	}
 	visualSrc, err := fs.Get("/static/email-templates/default-visual.json")
 	if err != nil {
-		lo.Fatalf("error reading default visual template json: %v", err)
+		installFatalf("error reading default visual template json: %v", err)
 	}
 
 	if _, err := q.CreateTemplate.Exec("Sample visual template", models.TemplateTypeCampaignVisual, "", visualTpl.ReadBytes(), visualSrc.ReadBytes()); err != nil {
-		lo.Fatalf("error creating default campaign template: %v", err)
+		installFatalf("error creating default campaign template: %v", err)
 	}
 
 	return campTplID, archiveTplID
@@ -274,7 +274,7 @@ func installCampaign(campTplID, archiveTplID int, q *models.Queries) {
 		nil,
 		nil,
 	); err != nil {
-		lo.Fatalf("error creating sample campaign: %v", err)
+		installFatalf("error creating sample campaign: %v", err)
 	}
 
 }
@@ -327,12 +327,12 @@ func installUser(username, password, apiUsername string, q *models.Queries) {
 	// Create the Super Admin role in the DB.
 	var role auth.Role
 	if err := q.CreateRole.Get(&role, "Super Admin", auth.RoleTypeUser, pq.Array(perms)); err != nil {
-		lo.Fatalf("error creating super admin role: %v", err)
+		installFatalf("error creating super admin role: %v", err)
 	}
 
 	// Create the admin user.
 	if _, err := q.CreateUser.Exec(username, true, password, username+"@listmonk", username, auth.RoleTypeUser, role.ID, nil, auth.UserStatusEnabled); err != nil {
-		lo.Fatalf("error creating superadmin user: %v", err)
+		installFatalf("error creating superadmin user: %v", err)
 	}
 
 	// Create the admin API user.
@@ -340,7 +340,7 @@ func installUser(username, password, apiUsername string, q *models.Queries) {
 		// Generate a random API token.
 		tk, err := utils.GenerateRandomString(32)
 		if err != nil {
-			lo.Fatalf("error generating API token: %v", err)
+			installFatalf("error generating API token: %v", err)
 		}
 
 		var (
@@ -349,7 +349,7 @@ func installUser(username, password, apiUsername string, q *models.Queries) {
 		)
 
 		if _, err := q.CreateUser.Exec(apiUsername, false, password, email, apiUsername, auth.UserTypeAPI, role.ID, nil, auth.UserStatusEnabled); err != nil {
-			lo.Fatalf("error creating superadmin API user: %v", err)
+			installFatalf("error creating superadmin API user: %v", err)
 		}
 
 		// Print the token to stdout so that it can be grepped out.
