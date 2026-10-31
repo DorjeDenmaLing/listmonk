@@ -1,7 +1,7 @@
 {{/* denma: paths start with .RootURL, so centers under /c/<slug>/ work */}}
 {{ define "header" }}
 <!DOCTYPE html>
-<html>
+<html lang="{{ .L.T "_.code" }}">
 <head>
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />	
 	<title>{{ .Data.Title }} - {{ .SiteName }}</title>
@@ -30,9 +30,9 @@
 			<div class="logo">
 				<a href="{{ if .EnablePublicSubPage }}{{ .RootURL}}/subscription/form{{ end }}">
 				{{ if ne .LogoURL "" }}
-					<img src="{{ .LogoURL }}" alt="{{ .Data.Title }}" />
+					<img src="{{ .LogoURL }}" alt="{{ .SiteName }}" />
 				{{ else }}
-					<img src="{{ .RootURL }}/public/static/logo.svg?v={{ .AssetVersion }}" alt="{{ .Data.Title }}" />
+					<img src="{{ .RootURL }}/public/static/logo.svg?v={{ .AssetVersion }}" alt="{{ .SiteName }}" />
 				{{ end }}
 				</a>
 			</div>

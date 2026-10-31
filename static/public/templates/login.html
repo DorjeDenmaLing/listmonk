@@ -18,7 +18,7 @@
 				<input id="password" type="password" name="password" required minlength="8" />
 			</p>
 
-			{{ if .Data.Error }}<p><span class="error">{{ .Data.Error }}</span></p>{{ end }}
+			{{ if .Data.Error }}<p><span class="error" role="alert">{{ .Data.Error }}</span></p>{{ end }}
 
 			<p class="submit"><button class="button" type="submit">{{ .L.T "users.login" }}</button></p>
 		</div>

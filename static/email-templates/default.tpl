@@ -53,10 +53,10 @@
             .footer {
                 text-align: center;
                 font-size: 12px;
-                color: #888;
+                color: #666;
             }
                 .footer a {
-                    color: #888;
+                    color: #666;
                     margin-right: 5px;
                 }
 
@@ -91,11 +91,11 @@
         {{ template "content" . }}
     </div>
     
-    <div class="footer" style="text-align: center;font-size: 12px;color: #888;">
+    <div class="footer" style="text-align: center;font-size: 12px;color: #666;">
         <p>
-            <a href="{{ UnsubscribeURL }}" style="color: #888;">{{ L.T "email.unsub" }}</a>
+            <a href="{{ UnsubscribeURL }}" style="color: #666;">{{ L.T "email.unsub" }}</a>
             &nbsp;&nbsp;
-            <a href="{{ MessageURL }}" style="color: #888;">{{ L.T "email.viewInBrowser" }}</a>
+            <a href="{{ MessageURL }}" style="color: #666;">{{ L.T "email.viewInBrowser" }}</a>
         </p>
     </div>
     <div class="gutter" style="padding: 30px;">&nbsp;{{ TrackView }}</div>

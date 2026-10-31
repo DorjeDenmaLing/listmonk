@@ -27,7 +27,7 @@
     --foreground: light-dark(#09090b, #f7f8f8);
     --card-foreground: light-dark(#09090b, #f7f8f8);
     --secondary-foreground: light-dark(#574747, #eceef1);
-    --muted-foreground: light-dark(#7a7a7a, #8a8f98);
+    --muted-foreground: light-dark(#6b6b6b, #8a8f98);
     --faint-foreground: light-dark(#a1a1aa, #767a83);
     --primary: light-dark(#0055d4, #4f8ce6);
     --ring: light-dark(#0055d4, #4f8ce6);
