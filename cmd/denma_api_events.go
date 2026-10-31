@@ -314,11 +314,11 @@ func denmaStartAPIJobs(a *App) {
 	}
 	if _, err := denmaEveryMinute(a, 40, "api", func() {
 		a.signupLostLists() // cmd/denma_signup.go
+		a.apiCheckPause()
 		var n int
 		if err := a.db.Get(&n, `SELECT COUNT(*) FROM denma_api_keys`); err != nil || n == 0 {
 			return // no keys (or not installed yet)
 		}
-		a.apiCheckPause()
 		a.apiRecoverMessages() // cmd/denma_api_outbox.go
 		a.apiRetryMessages()
 		a.apiResumeStarting()
@@ -358,8 +358,8 @@ func denmaAPIPauseReason(r denmaAPIRates) string {
 	return ""
 }
 
-// apiCheckPause pauses the API's sending if the center's bounces or
-// complaints call for it.
+// apiCheckPause pauses the center's sending if its bounces or complaints call
+// for it.
 func (a *App) apiCheckPause() {
 	st, err := a.apiState()
 	if err != nil || st.PausedAt != nil {
@@ -385,8 +385,9 @@ func (a *App) apiCheckPause() {
 	a.apiPause(reason)
 }
 
-// apiPause pauses the API's sending and its running campaigns, and tells the
-// center's and the hub's admins.
+// apiPause pauses the center's sending: the API's, its automations and its
+// running campaigns, and tells the center's and the hub's admins. Password
+// resets and other notices still go.
 func (a *App) apiPause(reason string) {
 	res, err := a.db.Exec(`UPDATE denma_api_state SET paused_at = NOW(), paused_reason = $1 WHERE paused_at IS NULL`, reason)
 	if err != nil {
@@ -400,11 +401,11 @@ func (a *App) apiPause(reason string) {
 	// each marked with what it was (denma_api_paused), for the resume.
 	var ids []int
 	if err := a.db.Select(&ids, `UPDATE campaigns c SET attribs = c.attribs || jsonb_build_object('denma_api_paused', c.status::TEXT)
-		FROM denma_api_campaigns x WHERE x.campaign_id = c.id AND c.status IN ('running', 'scheduled') RETURNING c.id`); err != nil {
-		a.log.Printf("denma: error pausing the API's campaigns: %v", err)
+		WHERE c.status IN ('running', 'scheduled') RETURNING c.id`); err != nil {
+		a.log.Printf("denma: error pausing the center's campaigns: %v", err)
 	}
 	if _, err := a.db.Exec(`UPDATE campaigns SET status = 'draft' WHERE id = ANY($1) AND status = 'scheduled'`, pq.Array(ids)); err != nil {
-		a.log.Printf("denma: error holding the API's scheduled campaigns: %v", err)
+		a.log.Printf("denma: error holding the center's scheduled campaigns: %v", err)
 	}
 	for _, id := range ids {
 		if _, err := a.core.UpdateCampaignStatus(id, "paused"); err == nil {
@@ -412,19 +413,19 @@ func (a *App) apiPause(reason string) {
 		}
 	}
 	center := a.ko.String("app.site_name")
-	a.log.Printf("denma: the API's sending is paused (%d campaigns): %s", len(ids), reason)
+	a.log.Printf("denma: the center's sending is paused (%d campaigns): %s", len(ids), reason)
 
 	data := map[string]any{
 		"Center": center, "Reason": reason, "Campaigns": len(ids),
 		"URL": strings.TrimSuffix(a.urlCfg.RootURL, "/") + "/admin/center/api",
 	}
-	subject := "Sending through the API is paused: " + center
+	subject := "Sending is paused: " + center
 	if err := a.notifs.NotifySystem(subject, "denma-api-paused", data, nil); err != nil {
-		a.log.Printf("denma: error telling the center's admins of the API's pause: %v", err)
+		a.log.Printf("denma: error telling the center's admins of the pause: %v", err)
 	}
 	if hub := denmaHub.current(); hub != nil && hub.notifs != nil {
 		if err := hub.notifs.NotifySystem(subject, "denma-api-paused", data, nil); err != nil {
-			a.log.Printf("denma: error telling the superadmins of the API's pause: %v", err)
+			a.log.Printf("denma: error telling the superadmins of the pause: %v", err)
 		}
 	}
 }
@@ -459,11 +460,11 @@ func denmaAddAPITpls(n *notifs.Notifs) error {
 		return err
 	}
 	_, err := n.Tpls.New("denma-api-paused").Parse(`{{ template "header" . }}
-<h2>Sending through the API is paused</h2>
-<p>{{ index . "Center" }}'s e-mails sent by other systems, through its API, are paused: {{ index . "Reason" }}</p>
-<p>Its API e-mails are refused, and its API campaigns are paused ({{ index . "Campaigns" }} were sending). Its other campaigns go on.
-Find out why (the center's Bounces page, and the system sending the e-mails) before resuming: Amazon SES pauses sending for every center when an account's rates stay this high.</p>
-<p><a href="{{ index . "URL" }}" class="button">Open the API page</a></p>
+<h2>This center's sending is paused</h2>
+<p>{{ index . "Center" }}'s e-mails are paused: {{ index . "Reason" }}</p>
+<p>Its campaigns are paused or held ({{ index . "Campaigns" }} were sending or scheduled), its automations wait, and its API e-mails are refused. Password resets and other notices still go.
+Find out why (the center's Bounces page, and the lists or the system sending) before resuming: Amazon SES pauses sending for every center when an account's rates stay this high.</p>
+<p><a href="{{ index . "URL" }}" class="button">Open the center's API page</a></p>
 <p style="color: #666; font-size: 12px;">A superadmin resumes it there.</p>
 {{ template "footer" }}`)
 	return err

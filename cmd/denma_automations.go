@@ -607,7 +607,10 @@ func denmaMigrateSignupSetting(tx *sqlx.Tx) (bool, error) {
 
 // runAutomations runs what's due.
 func (a *App) runAutomations() {
-	a.denmaAutoRecover() // what the last process left (cmd/denma_auto_series.go)
+	a.denmaAutoRecover()                                           // what the last process left (cmd/denma_auto_series.go)
+	if st, err := a.apiState(); err == nil && st.PausedAt != nil { // the center's sending is paused (cmd/denma_api_events.go)
+		return
+	}
 	var autos []denmaAutomation
 	if err := a.db.Select(&autos, denmaAutoSelectSQL+` WHERE a.active AND `+denmaAutoRunnableSQL+` ORDER BY a.id`); err != nil {
 		a.log.Printf("denma: error getting automations: %v", err)

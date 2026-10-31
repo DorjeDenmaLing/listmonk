@@ -487,7 +487,7 @@ if (k.can.includes('events')) {
         return;
       }
       await api('resume', '/denma/center/api/resume', 'POST');
-      u.reload({ message: 'Sending through the API resumed.', variant: 'success' });
+      u.reload({ message: 'Sending resumed.', variant: 'success' });
     },
   };
 }

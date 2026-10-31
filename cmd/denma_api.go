@@ -35,9 +35,9 @@ package main
 // be replaced with an overlap, and be restored for denmaAPIKeepDeletedDays
 // days after they're deleted.
 //
-// The center's sending through the API pauses on its own when its bounce or
-// complaint rate reaches the hub's "At risk" band (cmd/denma_api_events.go);
-// a superadmin resumes it.
+// The center's sending pauses on its own when its bounce or complaint rate
+// reaches the hub's "At risk" band (cmd/denma_api_events.go); a superadmin
+// resumes it.
 
 import (
 	"context"
@@ -1236,25 +1236,14 @@ func (a *App) apiCanSend() error {
 	}
 	if s.PausedAt != nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable,
-			"Sending through the API is paused: "+s.PausedReason+" A superadmin has to resume it, on the center's Config -> API page.")
+			"This center's sending is paused: "+s.PausedReason+" A superadmin has to resume it, on the center's Config -> API page.")
 	}
 	return nil
 }
 
-// denmaCheckAPIPaused refuses to start or resume an API campaign while the
-// API's sending is paused (on the Campaigns page too): it resumes with it.
-func (a *App) denmaCheckAPIPaused(id int) error {
-	var api bool
-	if err := a.db.Get(&api, `SELECT EXISTS (SELECT 1 FROM denma_api_campaigns WHERE campaign_id = $1)`, id); err != nil {
-		var pe *pq.Error
-		if errors.As(err, &pe) && pe.Code == "42P01" {
-			return nil // no API here (undefined table)
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
-	if !api {
-		return nil
-	}
+// denmaCheckAPIPaused refuses to start or resume a campaign while the center's
+// sending is paused: it resumes with it.
+func (a *App) denmaCheckAPIPaused(int) error {
 	if err := a.apiCanSend(); err != nil {
 		var he *echo.HTTPError
 		if errors.As(err, &he) && he.Code == http.StatusServiceUnavailable {
@@ -1265,14 +1254,14 @@ func (a *App) denmaCheckAPIPaused(id int) error {
 	return nil
 }
 
-// DenmaResumeAPI resumes the API's sending after a pause; superadmins only.
+// DenmaResumeAPI resumes the center's sending after a pause; superadmins only.
 // Its campaigns paused with it are resumed too.
 func (a *App) DenmaResumeAPI(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
 	}
 	if auth.GetUser(c).UserRole.ID != auth.SuperAdminRoleID {
-		return echo.NewHTTPError(http.StatusForbidden, "Only a superadmin can resume the API's sending.")
+		return echo.NewHTTPError(http.StatusForbidden, "Only a superadmin can resume the center's sending.")
 	}
 	if _, err := a.db.Exec(`UPDATE denma_api_state SET paused_at = NULL, paused_reason = '', resumed_at = NOW()`); err != nil {
 		return denmaInternal(err)
@@ -1284,7 +1273,7 @@ func (a *App) DenmaResumeAPI(c echo.Context) error {
 		SendAt *time.Time `db:"send_at"`
 	}
 	if err := a.db.Select(&camps, `UPDATE campaigns c SET attribs = c.attribs - 'denma_api_paused'
-		FROM denma_api_campaigns x WHERE x.campaign_id = c.id AND c.status IN ('paused', 'draft')
+		WHERE c.status IN ('paused', 'draft')
 			AND COALESCE(c.attribs->>'denma_api_paused', '') <> ''
 		RETURNING c.id, (SELECT attribs->>'denma_api_paused' FROM campaigns o WHERE o.id = c.id) AS was, c.send_at`); err != nil {
 		return denmaInternal(err)
@@ -1295,9 +1284,9 @@ func (a *App) DenmaResumeAPI(c echo.Context) error {
 			status = "scheduled"
 		}
 		if _, err := a.core.UpdateCampaignStatus(cm.ID, status); err != nil {
-			a.log.Printf("denma: error resuming API campaign %d: %v", cm.ID, err)
+			a.log.Printf("denma: error resuming campaign %d: %v", cm.ID, err)
 		}
 	}
-	a.log.Printf("denma: the API's sending resumed by %s (%d campaigns resumed)", auth.GetUser(c).Username, len(camps))
+	a.log.Printf("denma: the center's sending resumed by %s (%d campaigns resumed)", auth.GetUser(c).Username, len(camps))
 	return c.JSON(http.StatusOK, okResp{true})
 }

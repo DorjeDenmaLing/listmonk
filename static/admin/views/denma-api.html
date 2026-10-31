@@ -24,7 +24,7 @@
 	<div class="page-content content vstack gap-6">
 		{{- if $d.State.PausedAt }}
 		<div role="alert" class="hstack justify-between gap-3" data-testid="api-paused">
-			<span><strong>Sending through the API is paused</strong> (since {{ $d.State.PausedAt.Format "2006-01-02 15:04 MST" }}): {{ $d.State.PausedReason }} Its e-mails are refused and its campaigns are paused. Find out why on the Bounces page, and with whoever runs the system sending them, before resuming.{{ if not $d.Super }} A superadmin resumes it.{{ end }}</span>
+			<span><strong>This center's sending is paused</strong> (since {{ $d.State.PausedAt.Format "2006-01-02 15:04 MST" }}): {{ $d.State.PausedReason }} Its e-mails are refused and its campaigns are paused. Find out why on the Bounces page, and with whoever runs the system sending them, before resuming.{{ if not $d.Super }} A superadmin resumes it.{{ end }}</span>
 			{{- if $d.Super }}
 			<button type="button" class="small" @click="onResume" data-testid="btn-api-resume">{{ Icon "send" }} Resume</button>
 			{{- end }}
