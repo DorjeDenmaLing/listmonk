@@ -298,7 +298,7 @@ func (a *App) ResetPage(c echo.Context) error {
 	)
 
 	// Validate token and email (don't delete it yet, as we may need it for POST).
-	data, err := tmptokens.Check(a.tmpKey(email)) // denma: per center
+	data, err := tmptokens.Peek(a.tmpKey(email)) // denma: per center; a wrong token mustn't use up the right one's tries
 	if err != nil {
 		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
 	}
