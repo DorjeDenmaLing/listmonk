@@ -17,6 +17,7 @@ func init() {
 	campsGet := []string{"campaigns:get_all", "campaigns:get"}
 	for p, perms := range map[string][][]string{
 		"/lists/new":                {{"lists:manage_all"}},
+		"/lists/forms":              {{"lists:get_all"}},
 		"/campaigns":                {campsGet},
 		"/campaigns/new":            {{"campaigns:manage_all", "campaigns:manage"}},
 		"/campaigns/:id":            {campsGet},
