@@ -151,8 +151,8 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		g.GET("/api/health", a.HealthCheck)
 		g.GET("/api/config", a.GetServerConfig)
 		g.GET("/api/lang/:lang", a.GetI18nLang)
-		g.GET("/api/dashboard/charts", a.GetDashboardCharts)
-		g.GET("/api/dashboard/counts", a.GetDashboardCounts)
+		g.GET("/api/dashboard/charts", pm(a.GetDashboardCharts, "subscribers:get_all")) // denma: needs a permission
+		g.GET("/api/dashboard/counts", pm(a.GetDashboardCounts, "subscribers:get_all")) // denma: needs a permission
 		g.GET("/api/dashboard/campaigns", a.GetDashboardCampaigns)
 
 		g.GET("/api/settings", pm(a.GetSettings, "settings:get"))
