@@ -115,12 +115,24 @@ type denmaCountedMessenger struct {
 	slug  string
 }
 
+// releaseClaims gives back what a refused message had claimed.
+func (m denmaCountedMessenger) releaseClaims(msg models.Message) {
+	if claim, ok := denmaClaimOf(msg, denmaCenterClaimHeader); ok {
+		m.count.Release(claim, 1)
+	}
+	if claim, ok := denmaClaimOf(msg, denmaClaimHeader); ok {
+		denmaDaily.Release(claim, 1)
+	}
+}
+
 func (m denmaCountedMessenger) Push(msg models.Message) error {
 	if err := denmaCheckCampaignLinks(m.slug, msg); err != nil { // cmd/denma_api_send.go
+		m.releaseClaims(msg)
 		return err
 	}
 	if m.Name() == emailMsgr && denmaIsMarketing(msg) { // the center's details (cmd/denma_footer.go)
 		if err := denmaFooterCheckSent(m.slug, msg.Body); err != nil {
+			m.releaseClaims(msg)
 			return err
 		}
 	}
