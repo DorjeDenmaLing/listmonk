@@ -50,7 +50,6 @@ package main
 // an automation (features version 16).
 
 import (
-	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -1094,8 +1093,8 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 		L:          a.i18n,
 	}
 
-	var b bytes.Buffer
-	subj, err := txttpl.New(models.BaseTpl).Funcs(txttpl.FuncMap(funcs)).Parse(auto.Subject)
+	var b models.DenmaTplBuffer // limits the output
+	subj, err := models.DenmaNoLoopText(txttpl.New(models.BaseTpl).Funcs(txttpl.FuncMap(funcs)).Parse(auto.Subject))
 	if err != nil {
 		return models.Message{}, fmt.Errorf("error in the subject: %v", err)
 	}
@@ -1105,7 +1104,7 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 	subject := strings.TrimSpace(b.String())
 	b.Reset()
 
-	body, err := template.New(models.BaseTpl).Funcs(funcs).Parse(models.DenmaTrackHTML(models.DenmaWithTrackView(models.DenmaFooter(reDenmaTrackLink.ReplaceAllString(tpl.Body, "$1")))))
+	body, err := models.DenmaNoLoopHTML(template.New(models.BaseTpl).Funcs(funcs).Parse(models.DenmaTrackHTML(models.DenmaWithTrackView(models.DenmaFooter(reDenmaTrackLink.ReplaceAllString(tpl.Body, "$1"))))))
 	if err != nil {
 		return models.Message{}, fmt.Errorf("error in the template: %v", err)
 	}

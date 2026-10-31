@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"html/template"
 	"net/http"
@@ -241,7 +240,7 @@ func (a *App) getCampaignArchives(offset, limit int, renderBody bool) ([]campArc
 func (a *App) compileArchiveCampaigns(camps []models.Campaign) ([]manager.CampaignMessage, error) {
 
 	var (
-		b   = bytes.Buffer{}
+		b   = models.DenmaTplBuffer{} // denma: limits the output
 		out = make([]manager.CampaignMessage, 0, len(camps))
 	)
 	for _, c := range camps {

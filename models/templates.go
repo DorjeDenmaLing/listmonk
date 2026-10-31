@@ -38,7 +38,7 @@ type Template struct {
 // Compile compiles a template body and subject (only for tx templates) and
 // caches the templat references to be executed later.
 func (t *Template) Compile(f template.FuncMap) error {
-	tpl, err := template.New(BaseTpl).Funcs(f).Parse(t.Body)
+	tpl, err := DenmaNoLoopHTML(template.New(BaseTpl).Funcs(f).Parse(t.Body)) // denma: refuses loops (denma_template.go)
 	if err != nil {
 		return fmt.Errorf("error compiling transactional template: %v", err)
 	}
@@ -48,7 +48,7 @@ func (t *Template) Compile(f template.FuncMap) error {
 	if hasTplExpr(t.Subject) {
 		subj := t.Subject
 
-		subjTpl, err := txttpl.New(BaseTpl).Funcs(txttpl.FuncMap(f)).Parse(subj)
+		subjTpl, err := DenmaNoLoopText(txttpl.New(BaseTpl).Funcs(txttpl.FuncMap(f)).Parse(subj)) // denma: refuses loops (denma_template.go)
 		if err != nil {
 			return fmt.Errorf("error compiling subject: %v", err)
 		}

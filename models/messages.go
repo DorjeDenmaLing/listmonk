@@ -1,7 +1,6 @@
 package models
 
 import (
-	"bytes"
 	"fmt"
 	"html/template"
 	"net/textproto"
@@ -81,7 +80,7 @@ func (m *TxMessage) Render(sub Subscriber, tpl *Template, funcs txttpl.FuncMap) 
 	}{sub, m}
 
 	// Render the body.
-	b := bytes.Buffer{}
+	b := DenmaTplBuffer{} // denma: limits the output
 	if err := tpl.Tpl.ExecuteTemplate(&b, BaseTpl, data); err != nil {
 		return err
 	}
@@ -91,7 +90,7 @@ func (m *TxMessage) Render(sub Subscriber, tpl *Template, funcs txttpl.FuncMap) 
 
 	// Render alt body if it has any templating strings.
 	if m.AltBody != "" && hasTplExpr(m.AltBody) {
-		t, err := txttpl.New(BaseTpl).Funcs(funcs).Parse(DenmaAddressText(m.AltBody)) // denma: denma_address.go
+		t, err := DenmaNoLoopText(txttpl.New(BaseTpl).Funcs(funcs).Parse(DenmaAddressText(m.AltBody))) // denma: refuses loops; denma_address.go
 		if err != nil {
 			return fmt.Errorf("error compiling alt body: %v", err)
 		}
@@ -110,7 +109,7 @@ func (m *TxMessage) Render(sub Subscriber, tpl *Template, funcs txttpl.FuncMap) 
 	if subject != "" {
 		if hasTplExpr(m.Subject) {
 			// If the subject has a template string, render that.
-			s, err := txttpl.New(BaseTpl).Funcs(funcs).Parse(m.Subject)
+			s, err := DenmaNoLoopText(txttpl.New(BaseTpl).Funcs(funcs).Parse(m.Subject)) // denma: refuses loops (denma_template.go)
 			if err != nil {
 				return fmt.Errorf("error compiling subject: %v", err)
 			}

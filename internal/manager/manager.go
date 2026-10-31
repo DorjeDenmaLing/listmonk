@@ -728,6 +728,7 @@ func (m *Manager) makeGnericFuncMap() template.FuncMap {
 	delete(sprigFuncs, "env")
 	delete(sprigFuncs, "expandenv")
 	delete(sprigFuncs, "getHostByName")
+	sprigFuncs = denmaTemplateFuncs(sprigFuncs) // denma: only those allowed (denma_template.go)
 
 	maps.Copy(funcs, sprigFuncs)
 

@@ -1,7 +1,6 @@
 package manager
 
 import (
-	"bytes"
 	"fmt"
 
 	"github.com/knadh/listmonk/models"
@@ -31,7 +30,7 @@ func (m *Manager) NewCampaignMessage(c *models.Campaign, s models.Subscriber) (C
 // render takes a Message, executes its pre-compiled Campaign.Tpl
 // and applies the resultant bytes to Message.body to be used in messages.
 func (m *CampaignMessage) render() error {
-	out := bytes.Buffer{}
+	out := models.DenmaTplBuffer{} // denma: limits the output
 
 	// Render the subject if it's a template.
 	if m.Campaign.SubjectTpl != nil {
@@ -51,7 +50,7 @@ func (m *CampaignMessage) render() error {
 	// Is there an alt body?
 	if m.Campaign.ContentType != models.CampaignContentTypePlain && m.Campaign.AltBody.Valid {
 		if m.Campaign.AltBodyTpl != nil {
-			b := bytes.Buffer{}
+			b := models.DenmaTplBuffer{} // denma: limits the output
 			if err := m.Campaign.AltBodyTpl.ExecuteTemplate(&b, models.ContentTpl, m); err != nil {
 				return err
 			}
@@ -65,7 +64,7 @@ func (m *CampaignMessage) render() error {
 	if m.Campaign.HeaderTpls == nil {
 		m.headers = m.Campaign.Headers
 	} else {
-		hdrOut := bytes.Buffer{}
+		hdrOut := models.DenmaTplBuffer{} // denma: limits the output
 		m.headers = make(models.Headers, len(m.Campaign.Headers))
 		for i, set := range m.Campaign.Headers {
 			m.headers[i] = make(map[string]string, len(set))
