@@ -152,7 +152,7 @@ BEGIN
     IF k = 'complained' THEN
         RAISE EXCEPTION '% marked one of this center''s e-mails as spam, so they can''t be subscribed again.', NEW.email;
     END IF;
-    RAISE EXCEPTION '% unsubscribed from this center, so only they can subscribe again: by signing up again, or by confirming the e-mail that Send a confirmation to subscribe again sends them.', NEW.email;
+    RAISE EXCEPTION '% unsubscribed from this center, so only they can subscribe again: by signing up again, or by confirming the e-mail that the Send a confirmation to subscribe again button sends them.', NEW.email;
 END $$;
 DROP TRIGGER IF EXISTS denma_keep_optouts ON subscribers;
 CREATE TRIGGER denma_keep_optouts BEFORE INSERT OR UPDATE ON subscribers
@@ -258,5 +258,5 @@ func (a *App) denmaCheckOptOut(id int, email, status string) error {
 			fmt.Sprintf("%s marked one of this center's e-mails as spam, so they can't be subscribed again.", email))
 	}
 	return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(
-		"%s unsubscribed from this center, so only they can subscribe again: by signing up again, or by confirming the e-mail that Send a confirmation to subscribe again (on their page) sends them, if they've asked you to.", email))
+		"%s unsubscribed from this center, so only they can subscribe again: by signing up again, or by confirming the e-mail that the Send a confirmation to subscribe again button (on their page) sends them, if they've asked you to.", email))
 }

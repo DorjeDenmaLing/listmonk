@@ -341,7 +341,7 @@ func (a *App) DenmaLoginTwofa(c echo.Context) error {
 			a.clearLoginState(c)
 			return a.renderLoginPage(c, denmaTooMany(wait))
 		}
-		out.Error = a.i18n.T("globals.messages.invalidValue")
+		out.Error = "That code didn't work. Enter the current 6-digit code from your authenticator app."
 		return c.Render(http.StatusOK, "denma-login-twofa", out)
 	}
 	denmaTwofaByPerson.clear(key)
@@ -460,7 +460,7 @@ func (a *App) DenmaLoginReset(c echo.Context) error {
 	password, password2 := c.FormValue("password"), c.FormValue("password2")
 	switch {
 	case !strHasLen(password, 8, stdInputMaxLen):
-		out.Error = a.i18n.Ts("globals.messages.invalidFields", "name", "password")
+		out.Error = "Use at least 8 characters."
 	case password != password2:
 		out.Error = a.i18n.T("users.passwordMismatch")
 	}
