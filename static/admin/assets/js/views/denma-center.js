@@ -24,6 +24,7 @@ function denmaCenter() {
   };
   form.send_window.days = form.send_window.days || [];
   return {
+    ...denmaUnsaved({ save() { return this.onSubmit(); } }),
     form,
     timeZones: timeZones(form.time_zone),
     weekDays: [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']],
@@ -33,6 +34,7 @@ function denmaCenter() {
     mediaField: null, // the field the Media picker fills: logo_url or favicon_url
 
     init() {
+      this.denmaUnsavedInit();
       // What's chosen in the Media picker (partials/media-picker.html, as
       // the campaign page's).
       window.addEventListener('message', (e) => {

@@ -5,6 +5,7 @@ import Alpine from 'alpinejs';
 import { api, urls, ListTag } from '../main.js';
 import * as u from '../utils.js';
 import { denmaTagAutocomplete } from '../denma-tags-ui.js';
+import { denmaUnsaved } from '../denma-unsaved.js';
 
 const UNITS = { minutes: 1, hours: 60, days: 1440 };
 
@@ -64,6 +65,10 @@ function denmaAutomation() {
 
   return {
     denmaTagAutocomplete,
+    ...denmaUnsaved({ save() { return this.onSubmit(); } }),
+    init() {
+      this.denmaUnsavedInit();
+    },
     form: {
       name: a.name || '',
       trigger_type: a.trigger_type || 'confirms',
