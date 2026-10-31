@@ -362,6 +362,9 @@ func denmaCached[T any](key string, f func() (T, error)) (T, error) {
 	return denmaCachedFor(key, denmaFiguresTTL, f)
 }
 
+// denmaFigureLocks has a lock per key of denmaFigures.
+var denmaFigureLocks sync.Map
+
 // denmaCachedFor is denmaCached, keeping f's result for ttl.
 func denmaCachedFor[T any](key string, ttl time.Duration, f func() (T, error)) (T, error) {
 	now := time.Now()
@@ -370,6 +373,18 @@ func denmaCachedFor[T any](key string, ttl time.Duration, f func() (T, error)) (
 	e, ok := c.m[key]
 	c.Unlock()
 	if ok && now.Sub(e.at) < e.ttl {
+		return e.v.(T), nil
+	}
+
+	// One at a time per key: the others wait for its answer.
+	lv, _ := denmaFigureLocks.LoadOrStore(key, &sync.Mutex{})
+	l := lv.(*sync.Mutex)
+	l.Lock()
+	defer l.Unlock()
+	c.Lock()
+	e, ok = c.m[key]
+	c.Unlock()
+	if ok && time.Since(e.at) < e.ttl {
 		return e.v.(T), nil
 	}
 
