@@ -318,6 +318,9 @@ func (a *App) denmaResubOptin(c echo.Context, subUUID string, confirm bool) (boo
 		makeMsgTpl(a.i18n.T("public.subConfirmedTitle"), "", a.i18n.Ts("public.subConfirmed")))
 }
 
+// errDenmaResubStale is a consent dated before an opt-out made while it was being acted on.
+var errDenmaResubStale = errors.New("they unsubscribed after that consent")
+
 // denmaListIDs is lists' IDs.
 func denmaListIDs(lists []models.List) []int {
 	ids := make([]int, len(lists))
@@ -351,7 +354,7 @@ func (a *App) denmaResubMore(subID int, ids []int) ([]int, error) {
 // opt-in is, so that automations that confirming them sets off run
 // (cmd/denma_automations.go), such as the one moving website signups on. own:
 // they confirmed it themselves (attribs.consent_confirmed_at).
-func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta models.JSON, own bool) error {
+func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta models.JSON, own bool, consentAt ...time.Time) error {
 	ids := denmaListIDs(lists)
 	more, err := a.denmaResubMore(subID, ids)
 	if err != nil {
@@ -373,6 +376,18 @@ func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta mo
 	if own {
 		if _, err := tx.Exec(`SELECT set_config('denma.own_confirm', 'on', true)`); err != nil {
 			return err
+		}
+	}
+	// A consent is only good for what came before it: they may have
+	// unsubscribed since it was read.
+	if len(consentAt) > 0 {
+		var newer bool
+		if err := tx.Get(&newer, `WITH s AS (SELECT email FROM subscribers WHERE id = $1 FOR UPDATE)
+			SELECT EXISTS (SELECT 1 FROM denma_optouts o, s WHERE (o.email_hash = denma_email_hash(s.email) OR o.canon_hash = denma_canon_hash(s.email)) AND o.created_at > $2)`, subID, consentAt[0]); err != nil {
+			return err
+		}
+		if newer {
+			return errDenmaResubStale
 		}
 	}
 	// Their opt-out goes (cmd/denma_optouts.go), and their address's

@@ -1259,7 +1259,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	// opt-out), and the record's first as their consent_at and
 	// consent_source if they have none.
 	var consentAt time.Time
-	if r.Confirmed {
+	if _, given := r.Attribs["consents"]; r.Confirmed || given { // the record is checked whenever it's given
 		if consentAt, err = denmaConsentAt(r.Attribs); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
@@ -1433,7 +1433,11 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		if err != nil {
 			return fail(err)
 		}
-		if err := a.denmaResubConfirm(sub.ID, lists, nil, models.JSON{"resubscribed": true, "via": "sign-up webhook: " + h.Name}, false); err != nil {
+		if err := a.denmaResubConfirm(sub.ID, lists, nil, models.JSON{"resubscribed": true, "via": "sign-up webhook: " + h.Name}, false, consentAt); err != nil {
+			if errors.Is(err, errDenmaResubStale) {
+				outcome = "their opt-out is newer than the consent"
+				return done("")
+			}
 			return fail(err)
 		}
 		outcome = denmaSignupResubscribed
@@ -1608,11 +1612,17 @@ func (a *App) signupNewTags(h denmaSignupHook, want []string) ([]string, error) 
 // other system's clock).
 const denmaConsentSkew = 5 * time.Minute
 
+// denmaConsentsMax is the most consent records a request can give.
+const denmaConsentsMax = 20
+
 // denmaConsentAt returns the latest "at" of attribs.consents, whose entries
 // each need "at" (RFC 3339) and "source".
 func denmaConsentAt(attribs map[string]any) (time.Time, error) {
 	const need = `"confirmed" needs a consent record: "attribs": {"consents": [{"at": "<when they agreed, RFC 3339>", "source": "<how>"}]}.`
 	list, _ := attribs["consents"].([]any)
+	if len(list) > denmaConsentsMax {
+		return time.Time{}, fmt.Errorf(`At most %d consents a request.`, denmaConsentsMax)
+	}
 	var at time.Time
 	for _, e := range list {
 		m, _ := e.(map[string]any)
