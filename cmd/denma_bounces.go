@@ -251,6 +251,15 @@ func (d *denmaCenters) recordBounce(b models.Bounce) (string, error) {
 	slug := ""
 	if len(slugs) == 1 {
 		slug = slugs[0]
+		// One that never e-mailed them isn't the one complained about, if one
+		// that did has since deleted them.
+		if b.Type == models.BounceTypeComplaint {
+			if sent, err := d.lastSentCenter(slugs, b.Email); err == nil && sent == "" {
+				if gone, err := d.lastSentCenterDeleted(b.Email); err == nil && gone != "" {
+					slug = gone
+				}
+			}
+		}
 	} else if len(slugs) > 1 && b.Type == models.BounceTypeComplaint {
 		if slug, err = d.lastSentCenter(slugs, b.Email); err != nil {
 			return "", fmt.Errorf("finding the center that last sent to them: %w", err)
@@ -374,15 +383,34 @@ func (d *denmaCenters) recordIn(slug string, b models.Bounce) error {
 // (its subscriber's, and the one complaining), before listmonk records it:
 // its "delete" action would leave no subscriber for denma_record_complaint
 // (cmd/denma_optouts.go) to find, as would one deleted before, and an
-// unsubscribe's opt-out becomes a complaint's.
+// unsubscribe's opt-out becomes a complaint's. It blocklists them too.
 func denmaComplaintOptOut(db *sqlx.DB, b models.Bounce) error {
-	_, err := db.Exec(`INSERT INTO denma_optouts (email_hash, canon_hash, kind, source)
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO denma_optouts (email_hash, canon_hash, kind, source)
 		SELECT DISTINCT ON (denma_email_hash(e)) denma_email_hash(e), denma_canon_hash(e), 'complained', 'complaint' FROM (
 			SELECT email FROM subscribers WHERE $1 <> '' AND uuid::TEXT = $1
 			UNION ALL SELECT $2 WHERE $2 <> '') x(e)
 		ON CONFLICT (email_hash) DO UPDATE SET kind = 'complained', source = 'complaint', created_at = NOW()`,
-		b.SubscriberUUID, b.Email)
-	return err
+		b.SubscriberUUID, b.Email); err != nil {
+		return err
+	}
+	// Whoever has the address now, and its variants (the same inbox).
+	if _, err := tx.Exec(`WITH sub AS (
+			UPDATE subscribers SET status = 'blocklisted', updated_at = NOW()
+			WHERE denma_canon_hash(email) IN (
+				SELECT denma_canon_hash(email) FROM subscribers WHERE $1 <> '' AND uuid::TEXT = $1
+				UNION SELECT denma_canon_hash($2) WHERE $2 <> '')
+			RETURNING id
+		)
+		UPDATE subscriber_lists SET status = 'unsubscribed', updated_at = NOW()
+		WHERE subscriber_id IN (SELECT id FROM sub) AND status <> 'unsubscribed'`, b.SubscriberUUID, b.Email); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // denmaInitPendingBounces creates the table of bounces kept to record later.
