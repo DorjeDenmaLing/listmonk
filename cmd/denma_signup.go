@@ -945,6 +945,10 @@ func (a *App) DenmaSignup(c echo.Context) error {
 	if isNew {
 		give = append(give, tags...)
 	}
+	// Only someone on a list: not who's refused, nor who has yet to come back.
+	if strings.HasPrefix(result, "opted out before") || strings.HasPrefix(result, "blocklisted") {
+		give = nil
+	}
 	if len(give) > 0 {
 		if _, err := a.db.Exec(`UPDATE subscribers SET attribs = `+denmaTagsSet("TRUE", "$2")+`, updated_at = NOW() WHERE LOWER(email) = LOWER($1)`,
 			email, pq.Array(give)); err != nil {
