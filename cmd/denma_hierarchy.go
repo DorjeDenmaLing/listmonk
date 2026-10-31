@@ -57,7 +57,7 @@ func (a *App) denmaHidesSuper(c echo.Context) bool {
 // its Center Admin. Anyone else with the role, such as an existing install's
 // admins (DDL's), becomes a Center Admin. On every load (adopt).
 func (d *denmaCenters) ownAdmins(c *denmaCenter, db *sqlx.DB) error {
-	if _, err := d.hubAccount(c.ID, db, 0, "hub", "hub@hub.invalid", "hub@hub.invalid", "Listmonk Shambhala"); err != nil {
+	if _, err := d.hubAccount(c.ID, db, 0, "hub", "hub@hub.invalid", "hub@hub.invalid", d.base.ko.String("app.site_name")); err != nil {
 		return fmt.Errorf("creating the hub's account: %v", err)
 	}
 	var names []string
