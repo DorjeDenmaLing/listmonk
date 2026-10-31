@@ -53,7 +53,8 @@ func denmaBlockEverywhere(email, reason, slug string) {
 	db := denmaHub.current().db
 
 	var added bool
-	if err := db.Get(&added, `INSERT INTO denma.blocked_emails (email, reason, center) VALUES ($1, $2, $3)
+	if err := db.Get(&added, `INSERT INTO denma.blocked_emails (email, reason, center, pending)
+		VALUES ($1, $2, $3, (SELECT COALESCE(ARRAY_AGG(slug), '{}') FROM denma.centers))
 		ON CONFLICT DO NOTHING RETURNING true`, email, reason, slug); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			lo.Printf("denma: error adding %s to the shared blocklist: %v", email, err)
@@ -83,8 +84,16 @@ func denmaBlockEverywhere(email, reason, slug string) {
 		if c, _ := res.RowsAffected(); c > 0 {
 			n++
 		}
+		denmaBlockDone(db, email, ctr.Slug)
 	}
 	lo.Printf("denma: blocklisted %s for every center (%s); it was subscribed in %d", email, reason, n)
+}
+
+// denmaBlockDone records that a center has blocklisted a shared address.
+func denmaBlockDone(db *sqlx.DB, email, slug string) {
+	if _, err := db.Exec(`UPDATE denma.blocked_emails SET pending = ARRAY_REMOVE(pending, $2) WHERE email = $1`, email, slug); err != nil {
+		lo.Printf("denma: error recording a shared blocklisting in %s: %v", slug, err)
+	}
 }
 
 // denmaSharedBlock is the shared blocklist's reason for an address, if it's on it.
@@ -132,6 +141,35 @@ CREATE TABLE IF NOT EXISTS denma_shared_applied (
 );
 `
 
+// applyPendingBlocks blocklists the shared addresses that denmaBlockEverywhere
+// didn't finish in this center: it failed here, or stopped. Those of the last
+// few minutes may be under way.
+func (a *App) applyPendingBlocks() {
+	slug := a.ko.String("denma.center")
+	var rows []struct {
+		Email  string `db:"email"`
+		Reason string `db:"reason"`
+		Center string `db:"center"`
+	}
+	if err := a.db.Select(&rows, `SELECT email, reason, center FROM denma.blocked_emails
+		WHERE pending <> '{}' AND $1 = ANY(pending) AND created_at < NOW() - INTERVAL '5 minutes'
+		ORDER BY created_at LIMIT 200`, slug); err != nil {
+		a.log.Printf("denma: error getting the shared blocklist's pending addresses: %v", err)
+		return
+	}
+	for _, r := range rows {
+		why := denmaCenterReason(r.Reason)
+		if r.Center == slug {
+			why = r.Reason
+		}
+		if _, err := a.db.Exec(denmaBlocklistSQL(""), r.Email, denmaReasonAttr(why)); err != nil {
+			a.log.Printf("denma: error blocklisting a shared address: %v", err)
+			continue
+		}
+		denmaBlockDone(a.db, r.Email, slug)
+	}
+}
+
 // applySharedBlocks blocklists the center's subscribers added in the last
 // day whose address is on the shared blocklist, once each: denma_shared_applied
 // remembers them, so one an admin enabled since stays enabled. Run by the
@@ -140,6 +178,7 @@ func (a *App) applySharedBlocks() {
 	if denmaHub == nil {
 		return
 	}
+	a.applyPendingBlocks()
 	var subs []struct {
 		ID     int    `db:"id"`
 		Email  string `db:"email"`

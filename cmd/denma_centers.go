@@ -534,7 +534,9 @@ func denmaInitRegistry(db *sqlx.DB) error {
 			reason     TEXT NOT NULL,
 			center     TEXT NOT NULL, -- the slug of the center that found it
 			created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-		);`)
+		);
+		ALTER TABLE denma.blocked_emails ADD COLUMN IF NOT EXISTS pending TEXT[] NOT NULL DEFAULT '{}'; -- centers still to blocklist it
+		CREATE INDEX IF NOT EXISTS blocked_emails_pending ON denma.blocked_emails (created_at) WHERE pending <> '{}';`)
 	if err != nil {
 		return err
 	}
