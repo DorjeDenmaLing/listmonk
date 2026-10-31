@@ -1,9 +1,7 @@
 package main
 
-// denma: who can manage whom, among a center's users (and the hub's). listmonk
-// lets anyone with users:manage or roles:manage give anyone any role, so a
-// Center Admin could make themselves Super Admin, or give their role the
-// settings permissions superadmins keep. Here, everyone but superadmins (the
+// denma: who can manage whom, among a center's users (and the hub's). Everyone
+// but superadmins (the
 // Super Admin role, 1):
 //
 //   - doesn't see Super Admin users or the Super Admin role;

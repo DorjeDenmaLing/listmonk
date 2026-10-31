@@ -1,10 +1,8 @@
 package main
 
 // denma: a limit on opt-in e-mails. Signing up to a double opt-in list sends
-// a confirmation e-mail, and signing the same address up again sends another,
-// so a public form can be used to flood someone's inbox (upstream #3229),
-// here with every center's form and through the organization's one sending
-// account. So an address is sent at most denmaOptinLimit opt-ins in
+// a confirmation e-mail, and signing the same address up again sends another
+// (upstream #3229). So an address is sent at most denmaOptinLimit opt-ins in
 // denmaOptinWindow, across all centers. After that, a sign-up is told that
 // one was sent already and nothing is sent (denmaCheckOptin,
 // cmd/denma_emailcheck.go); the subscription is kept, unconfirmed. Admins'

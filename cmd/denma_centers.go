@@ -634,7 +634,7 @@ func (d *denmaCenters) load(c *denmaCenter) (err error) {
 		}
 	}
 	// Never listmonk's first-run "create the Super Admin" page: a center's
-	// users come from the hub, and until they do, anyone could claim it.
+	// users come from the hub.
 	app.needsUserSetup = false
 	c.app = app
 	c.router = initHTTPRouter(app.cfg, app.urlCfg, app.i18n, fs, app)

@@ -173,7 +173,7 @@ func (c *Captcha) verifyHCaptcha(token string) (error, bool) {
 
 	var r hCaptchaResp
 	if err := json.Unmarshal(body, &r); err != nil {
-		return err, false // denma: fails closed (biofool/listmonk#5)
+		return err, false // denma: fails closed
 	}
 
 	if !r.Success {

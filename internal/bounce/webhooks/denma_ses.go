@@ -1,9 +1,7 @@
 package webhooks
 
-// denma: SNS signs every topic's messages, so a valid signature says only
-// that AWS sent it. Anyone could subscribe their own topic to the webhook and
-// send complaints for any address, so subscriptions and notifications are
-// taken only from the hub's topics (cmd/denma_bounces.go).
+// denma: subscriptions and notifications are taken only from the hub's topics
+// (cmd/denma_bounces.go), as well as having a valid signature.
 
 import (
 	"crypto/x509"

@@ -1413,7 +1413,7 @@ var reDenmaLink = regexp.MustCompile(`(?i)\bhttps?:[/\\]*([^/\\\s"'<>()\[\]{}^|?
 var reDenmaCSSEscape = regexp.MustCompile(`\\([0-9a-fA-F]{1,6})\s?`)
 
 // reDenmaAttrValue is a quoted attribute value or a CSS url(), where
-// browsers drop a link's tabs and newlines (ht\ntps://evil.example).
+// browsers drop a link's tabs and newlines.
 var reDenmaAttrValue = regexp.MustCompile(`=\s*"[^"]*"|=\s*'[^']*'|(?i)url\([^)]*\)`)
 
 // denmaDropTabNL is text without tabs and newlines.
@@ -1429,7 +1429,7 @@ func denmaLinkText(s string) string {
 		d := html.UnescapeString(s)
 		d = reDenmaCSSEscape.ReplaceAllStringFunc(d, func(m string) string {
 			n, err := strconv.ParseInt(strings.TrimSpace(m[1:]), 16, 32)
-			if err != nil || n < 0x20 || n > 0x10ffff { // not a control character: \\e in https:\\evil isn't one
+			if err != nil || n < 0x20 || n > 0x10ffff { // not a control character
 				return m
 			}
 			return string(rune(n))
@@ -1573,8 +1573,7 @@ func denmaAPIRecipientAttribs(rs []denmaAPIRecipient) []map[string]any {
 
 // apiCheckLinks refuses a request whose text has a link (in its subject,
 // body, data or attributes) to anywhere but the key's link domains and the
-// center's own (apiOwnLinkDomains): a leaked key can't send the center's
-// e-mails with someone else's links.
+// center's own (apiOwnLinkDomains).
 func (a *App) apiCheckLinks(c echo.Context, values ...any) error {
 	hosts := denmaLinkHosts(values...)
 	if len(hosts) == 0 {

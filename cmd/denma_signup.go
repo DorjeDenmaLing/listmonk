@@ -1123,8 +1123,7 @@ const (
 // consent_source. Tags are added; those the webhook may create are added to
 // the center's.
 //
-// The answer is the same whatever became of them, as a leaked secret's
-// mustn't say whether the center had someone; the activity log has it.
+// The answer is the same whatever became of them; the activity log has it.
 func (a *App) DenmaSignupServer(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err

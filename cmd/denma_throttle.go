@@ -308,8 +308,7 @@ var denmaTOTPUsed = struct {
 }{m: map[string]time.Time{}}
 
 // denmaTOTPOnce reports whether code is account's (secret) and hasn't been
-// used yet, and marks it used: one seen over someone's shoulder, or
-// replayed, doesn't sign anyone in again.
+// used yet, and marks it used.
 func denmaTOTPOnce(account, code, secret string) bool {
 	if !totp.Validate(code, secret) {
 		return false

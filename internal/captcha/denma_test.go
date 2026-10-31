@@ -11,8 +11,7 @@ type denmaRoundTrip func(*http.Request) (*http.Response, error)
 
 func (f denmaRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// hCaptcha's answer decides: one that isn't JSON fails, as a "no" does
-// (biofool/listmonk#5: it passed).
+// hCaptcha's answer decides: one that isn't JSON fails, as a "no" does.
 func TestDenmaHCaptchaFailsClosed(t *testing.T) {
 	for body, want := range map[string]bool{
 		`<html>bad gateway</html>`: false,

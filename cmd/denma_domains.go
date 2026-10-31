@@ -1473,9 +1473,8 @@ func (a *App) DenmaRemoveDomainCenter(c echo.Context) error {
 
 // DenmaDeleteDomain removes a sending domain from the hub, unless a sender
 // (the hub's or a center's), a campaign scheduled or sending, an active
-// automation or an API key is on it. It stays in SES: the server's role
-// can't delete identities (a compromised server could stop any domain's
-// mail), so a superadmin deletes it in the SES console.
+// automation or an API key is on it. It stays in SES, as the server's role
+// can't delete identities: a superadmin deletes it in the SES console.
 func (a *App) DenmaDeleteDomain(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {

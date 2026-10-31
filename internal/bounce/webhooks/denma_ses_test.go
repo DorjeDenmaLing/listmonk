@@ -62,10 +62,9 @@ func denmaSign(t *testing.T, s *SES, key *rsa.PrivateKey, n sesNotif) []byte {
 }
 
 // An SES notification is taken only from the hub's topics, signed with
-// SignatureVersion 1 or 2: SNS signs any topic's messages, so a forged
-// complaint from someone else's topic is refused.
+// SignatureVersion 1 or 2.
 func TestDenmaSESTopics(t *testing.T) {
-	const hub, other = "arn:aws:sns:ca-central-1:111111111111:ses-feedback", "arn:aws:sns:ca-central-1:999999999999:forged"
+	const hub, other = "arn:aws:sns:ca-central-1:111111111111:ses-feedback", "arn:aws:sns:ca-central-1:999999999999:other"
 	defer func(f func(string) bool) { DenmaSESTopicAllowed = f }(DenmaSESTopicAllowed)
 	DenmaSESTopicAllowed = func(arn string) bool { return arn == hub }
 
@@ -95,7 +94,7 @@ func TestDenmaSESTopics(t *testing.T) {
 	// Signed for the hub's topic, then given another's.
 	var n sesNotif
 	_ = json.Unmarshal(denmaSign(t, s, key, notif(hub, "1")), &n)
-	n.Message = `{"notificationType":"Complaint","mail":{"destination":["victim@example.org"]}}`
+	n.Message = `{"notificationType":"Complaint","mail":{"destination":["someone@example.org"]}}`
 	b, _ := json.Marshal(n)
 	if _, err := s.ProcessBounce(b); err == nil {
 		t.Error("a changed message was taken")

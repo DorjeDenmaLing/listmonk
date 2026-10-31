@@ -5,8 +5,7 @@ import (
 	"testing"
 )
 
-// Azure's webhook with no secret set takes nothing (biofool/listmonk#5: it
-// took anything); with one, only requests that carry it.
+// Azure's webhook with no secret set takes nothing; with one, only requests that carry it.
 func TestDenmaAzureFailsClosed(t *testing.T) {
 	req := httptest.NewRequest("POST", "/webhooks/service/azure", nil)
 	if err := NewAzure("", "").verifyAuth(req); err == nil {

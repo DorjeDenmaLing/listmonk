@@ -1,8 +1,7 @@
 package main
 
 // denma: one sign-in page for everyone, at /login (and /login/forgot for a
-// forgotten password), outside /admin: the web server keeps the hub's admin
-// behind Cloudflare Access, for superadmins, while people sign in here.
+// forgotten password), outside /admin.
 //
 // A superadmin (a hub user) signs in with listmonk's own sign-in, the hub's,
 // and lands in the hub. Anyone else is a person (cmd/denma_people.go), who

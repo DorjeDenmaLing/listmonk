@@ -4,13 +4,11 @@ package main
 // asking for consent a day: "Send opt-in e-mail" (SubscriberSendOptin) and
 // "Send a confirmation to subscribe again" (DenmaResubscribe). Nobody is
 // e-mailed to ask for consent unless they asked; each of these is an admin
-// saying someone did, and a script (or a misled assistant) could otherwise
-// send one to everyone who unsubscribed. Past the cap they're refused, and
+// saying someone did. Past the cap they're refused, and
 // the center's admins and the superadmins are told once a day. Sign-ups'
 // own opt-ins aren't counted (they have the per-address limit,
 // cmd/denma_optins.go). MCP keys can't send either (cmd/denma_mcp.go).
-// Server webhooks' have their own cap, denmaServerConsentPerDay: a leaked
-// secret isn't someone asking.
+// Server webhooks' have their own cap, denmaServerConsentPerDay.
 //
 // An admin's add or save of a subscriber (the admin API, MCP keys too)
 // sends no opt-in, even to a double opt-in list without "preconfirm": they

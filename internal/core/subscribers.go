@@ -393,7 +393,7 @@ func (c *Core) UpdateSubscriber(id int, sub models.Subscriber) (models.Subscribe
 			c.i18n.Ts("globals.messages.errorUpdating", "name", "{globals.terms.subscriber}", "error", pqErrMsg(err)))
 	}
 
-	out, err := c.GetSubscriber(id, "", "") // denma: the checked id, not the body's (biofool/listmonk#5)
+	out, err := c.GetSubscriber(id, "", "") // denma: the checked id, not the body's
 	if err != nil {
 		return models.Subscriber{}, err
 	}

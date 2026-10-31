@@ -1105,8 +1105,7 @@ const (
 )
 
 // apiLimitClaim claims n of a key's addresses or campaigns a day (as many as
-// its daily limit of e-mails), before anyone's added: a leaked key can't
-// fill the center with people or drafts. Past it, 429, and the admins are
+// its daily limit of e-mails), before anyone's added. Past it, 429, and the admins are
 // told. Every address given counts, new or not, so the answer doesn't say
 // which the center has.
 func (a *App) apiLimitClaim(c echo.Context, kind, what string, n int) error {
