@@ -98,9 +98,10 @@ LANGUAGE sql IMMUTABLE AS $$
         FROM (SELECT lower(trim(e)) AS x) a) b
 $$;
 CREATE OR REPLACE FUNCTION denma_canon_hash(e TEXT) RETURNS TEXT
-LANGUAGE sql IMMUTABLE AS $$ SELECT encode(sha256(convert_to(denma_email_canon(e), 'UTF8')), 'hex') $$;
+LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$ SELECT encode(sha256(convert_to(denma_email_canon(e), 'UTF8')), 'hex') $$;
 ALTER TABLE denma_optouts ADD COLUMN IF NOT EXISTS canon_hash TEXT NULL;
 CREATE INDEX IF NOT EXISTS denma_optouts_canon ON denma_optouts (canon_hash);
+CREATE INDEX IF NOT EXISTS denma_subscribers_canon ON subscribers (denma_canon_hash(email));
 -- An opt-out's canonical hash, from its subscriber's address, when the
 -- writer didn't give it; and those from before, whose subscriber is here.
 CREATE OR REPLACE FUNCTION denma_optout_canon() RETURNS TRIGGER

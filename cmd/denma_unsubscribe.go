@@ -58,8 +58,8 @@ func (a *App) denmaUnsubscribe(subUUID, campUUID string, _ bool) error {
 	// other records at a variant of the address (denma_canon_hash: dots,
 	// +tags), the same inbox, too.
 	if _, err := tx.Exec(`WITH sub AS (
-			UPDATE subscribers SET status = 'blocklisted' WHERE uuid = $1
-				OR denma_canon_hash(email) = (SELECT denma_canon_hash(email) FROM subscribers WHERE uuid = $1)
+			UPDATE subscribers SET status = 'blocklisted'
+			WHERE denma_canon_hash(email) = (SELECT denma_canon_hash(email) FROM subscribers WHERE uuid = $1)
 			RETURNING id
 		)
 		UPDATE subscriber_lists SET status = 'unsubscribed', updated_at = NOW()
