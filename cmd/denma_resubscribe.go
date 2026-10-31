@@ -487,7 +487,7 @@ func (a *App) DenmaResubscribe(c echo.Context) error {
 	if err != nil {
 		var he *echo.HTTPError
 		if errors.As(err, &he) && he.Code < 500 { // listmonk's not found is a 400
-			return echo.NewHTTPError(http.StatusNotFound, "There's no subscriber with that address on your lists.")
+			return echo.NewHTTPError(http.StatusNotFound, "There's no contact with that address on your lists.")
 		}
 		return err
 	}
