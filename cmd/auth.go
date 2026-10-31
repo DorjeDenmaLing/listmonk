@@ -459,7 +459,7 @@ func (a *App) doLogin(c echo.Context) error {
 	var (
 		startTime = time.Now()
 		username  = strings.TrimSpace(c.FormValue("username"))
-		password  = strings.TrimSpace(c.FormValue("password"))
+		password  = c.FormValue("password") // denma: as set
 	)
 
 	// Ensure timing mitigation is applied regardless of early returns
@@ -509,8 +509,8 @@ func (a *App) doFirstTimeSetup(c echo.Context) error {
 	var (
 		email     = strings.TrimSpace(c.FormValue("email"))
 		username  = strings.TrimSpace(c.FormValue("username"))
-		password  = strings.TrimSpace(c.FormValue("password"))
-		password2 = strings.TrimSpace(c.FormValue("password2"))
+		password  = c.FormValue("password")  // denma: as set
+		password2 = c.FormValue("password2") // denma: as set
 	)
 	if !utils.ValidateEmail(email) {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "email"))

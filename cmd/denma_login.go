@@ -188,7 +188,7 @@ func (a *App) DenmaLogin(c echo.Context) error {
 	var (
 		start    = time.Now()
 		username = strings.TrimSpace(c.FormValue("username"))
-		password = strings.TrimSpace(c.FormValue("password"))
+		password = c.FormValue("password")
 		next     = utils.SanitizeURI(c.FormValue("next"))
 	)
 	// As long as listmonk's (doLogin), whoever it is.
