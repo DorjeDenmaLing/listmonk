@@ -373,7 +373,7 @@ func (d *denmaCenters) recordIn(slug string, b models.Bounce) error {
 	err := denmaRecordBounce(ctr.app.db, b, ctr.app.core.RecordBounce) // and its automation's (cmd/denma_auto_reports.go)
 	var httpErr *echo.HTTPError
 	if errors.As(err, &httpErr) {
-		lo.Printf("denma: %s bounce for %s in center %s not recorded: %v", b.Type, b.Email, slug, err)
+		lo.Printf("denma: %s bounce in center %s not recorded: %s", b.Type, slug, reDenmaLogAddress.ReplaceAllString(err.Error(), "[address]"))
 		return nil
 	}
 	return err

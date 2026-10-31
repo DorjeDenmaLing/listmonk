@@ -155,7 +155,7 @@ func (p *pipe) NextSubscribers() (bool, error) {
 		}
 		msg, err := p.newMessage(s)
 		if err != nil {
-			p.m.log.Printf("error rendering message (%s) (%s): %v", p.camp.Name, s.Email, err)
+			p.m.log.Printf("error rendering message (%s) (subscriber %d): %v", p.camp.Name, s.ID, err) // denma: no address
 			p.denmaRenderFailed(s, err) // denma: denma.go
 			continue
 		}
