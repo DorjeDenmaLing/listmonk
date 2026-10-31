@@ -168,6 +168,9 @@ func denmaMCPMatch(p, pattern string) bool {
 // denmaMCPAllowed is why a key can't make a request (p: an /api path), or "".
 func denmaMCPAllowed(p, method string, personal bool) string {
 	refused := fmt.Sprintf("%s isn't available through the MCP: it's done in the admin.", p)
+	if path.Clean(strings.TrimSuffix(p, "/")) != strings.TrimSuffix(p, "/") {
+		return refused
+	}
 	for _, pre := range denmaMCPBlocked {
 		if denmaMCPMatch(p, pre) {
 			return refused
