@@ -112,6 +112,10 @@
 							<div data-field>
 								<input x-ref="totpCode" x-model="totpCode" maxlength="6" pattern="[0-9]{6}" placeholder="000000" required />
 							</div>
+							<label data-field>
+								{{ .L.T "users.password" }}
+								<input type="password" x-model="totpPassword" autocomplete="current-password" required data-testid="totp-password" />
+							</label>
 							<div class="hstack gap-3">
 								<button type="submit" data-variant="primary">{{ .L.T "globals.buttons.enable" }}</button>
 								<button type="button" class="outline" @click="cancelTotp">{{ .L.T "globals.buttons.cancel" }}</button>

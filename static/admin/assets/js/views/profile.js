@@ -23,6 +23,7 @@ function profileView() {
     totpQR: null,
     totpSecret: null,
     totpCode: '',
+    totpPassword: '',
 
     // TOTP disable flow.
     showDisableTotp: false,
@@ -75,6 +76,7 @@ function profileView() {
       await api('profile.totp', `/users/${user.id}/twofa`, 'PUT', {
         secret: this.totpSecret,
         code: this.totpCode,
+        password: this.totpPassword,
       });
       u.reload({ message: i18n.t('users.twoFAEnabled') });
     },
@@ -84,6 +86,7 @@ function profileView() {
       this.totpQR = null;
       this.totpSecret = null;
       this.totpCode = '';
+      this.totpPassword = '';
     },
 
     async confirmDisableTotp() {

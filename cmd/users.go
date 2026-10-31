@@ -504,8 +504,9 @@ func (a *App) EnableTOTP(c echo.Context) error {
 
 	// Incoming request.
 	var req struct {
-		Secret string `json:"secret"`
-		Code   string `json:"code"`
+		Secret   string `json:"secret"`
+		Code     string `json:"code"`
+		Password string `json:"password"` // denma
 	}
 	if err := c.Bind(&req); err != nil {
 		return err
@@ -518,7 +519,10 @@ func (a *App) EnableTOTP(c echo.Context) error {
 	if secret == "" || code == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidFields"))
 	}
-	if done, err := a.denmaEnableTOTP(c, secret, code); done { // denma: a person's (cmd/denma_people.go)
+	if done, err := a.denmaEnableTOTP(c, secret, code, req.Password); done { // denma: a person's (cmd/denma_people.go)
+		return err
+	}
+	if err := a.denmaHubPassword(u, req.Password, echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidCurrentPassword"))); err != nil { // denma
 		return err
 	}
 

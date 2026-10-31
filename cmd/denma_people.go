@@ -870,13 +870,16 @@ func (a *App) denmaSendEmailChange(p *denmaPerson, email string) error {
 
 // denmaEnableTOTP turns on a person's two-factor sign-in, for every one of
 // their centers (listmonk's EnableTOTP, once it has the secret and code).
-func (a *App) denmaEnableTOTP(c echo.Context, secret, code string) (bool, error) {
+func (a *App) denmaEnableTOTP(c echo.Context, secret, code, password string) (bool, error) {
 	p, err := a.denmaMemberOf(auth.GetUser(c).ID)
 	if err != nil || p == nil {
 		return err != nil, err
 	}
 	if p.TwofaKey.Valid {
 		return true, echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("users.twoFAAlreadyEnabled"))
+	}
+	if err := a.denmaPersonPassword(p.ID, password, echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidCurrentPassword"))); err != nil {
+		return true, err
 	}
 	if !totp.Validate(code, secret) {
 		return true, echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("users.invalidTOTPCode"))
