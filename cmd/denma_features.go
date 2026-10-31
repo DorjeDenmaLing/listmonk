@@ -92,6 +92,11 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver == denmaFeaturesVersion {
 		return nil
 	}
+	// An older build, after a newer one: it leaves the newer SQL as it is.
+	if ver > denmaFeaturesVersion {
+		lo.Printf("denma: center %s: its features are at version %d, newer than this build's %d; left as they are", c.Slug, ver, denmaFeaturesVersion)
+		return nil
+	}
 	// Version 11 added designs' template type (cmd/denma_design.go), outside
 	// the transaction: a new enum value can't be used in the one adding it.
 	if ver < 11 {
