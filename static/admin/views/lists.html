@@ -143,7 +143,7 @@
 												<a href="{{ URI "/admin/lists" }}/{{ .ID }}" role="menuitem" class="button ghost" data-testid="btn-edit">{{ Icon "edit-2" }} {{ $.L.T "globals.buttons.edit" }}</a>
 											{{- end }}
 											{{- if $d.Can "subscribers:import" }}
-												<a href="{{ URI "/admin/import" }}?list_id={{ .ID }}" role="menuitem" class="button ghost" data-testid="btn-import">{{ Icon "upload" }} {{ $.L.T "globals.terms.import" }}</a>
+												<a href="{{ URI "/admin/subscribers/import" }}?list_id={{ .ID }}" role="menuitem" class="button ghost" data-testid="btn-import">{{ Icon "upload" }} {{ $.L.T "globals.terms.import" }}</a>
 											{{- end }}
 											{{- if $d.CanManageList .ID }}
 												<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-delete" :disabled="isLoading('lists')" @click.prevent="onDeleteList({{ .ID }}, {{ ToJSON .Name }})">{{ Icon "trash-2" }} {{ $.L.T "globals.buttons.delete" }}</button>
