@@ -87,6 +87,7 @@ var denmaHubRoutes = []string{
 	"GET /api/users/:id/twofa/totp",
 	"GET /health",
 	"GET /health/centers",
+	"GET /health/sending",
 	"GET /public/custom.css",
 	"GET /public/custom.js",
 	"POST /admin/denma-twofa/later",
