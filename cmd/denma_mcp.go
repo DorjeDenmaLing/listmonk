@@ -143,6 +143,9 @@ var denmaMCPBlocked = []string{
 	"/api/users", "/api/roles", "/api/maintenance",
 }
 
+// denmaMCPMaxFrom is the most addresses a connector's allowed_from can have.
+const denmaMCPMaxFrom = 50
+
 // denmaMCPWriteBlockedExact is what a key can read but not change: the
 // center's own details (sender, reply-to, postal address).
 var denmaMCPWriteBlockedExact = []string{"/api/denma/center"}
@@ -1103,7 +1106,7 @@ func (a *App) DenmaUpdateMCPConnector(c echo.Context) error {
 		}
 		from = append(from, s)
 	}
-	if len(from) > 50 {
+	if len(from) > denmaMCPMaxFrom {
 		return echo.NewHTTPError(http.StatusBadRequest, "At most 50 addresses.")
 	}
 	var cn denmaMCPConnector

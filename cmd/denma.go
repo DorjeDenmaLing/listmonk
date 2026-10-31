@@ -20,7 +20,7 @@ import (
 // initDenmaAdminHandlers registers the denma admin pages on the authenticated admin group.
 func initDenmaAdminHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/calendar"), a.ViewDenmaCalendar)
-	g.GET(path.Join(uriAdmin, "/system"), a.ViewDenmaSystem) // cmd/denma_system.go
+	g.GET(path.Join(uriAdmin, "/system"), a.ViewDenmaSystem)           // cmd/denma_system.go
 	// System's old address, under Settings.
 	g.GET(path.Join(uriAdmin, "/settings/system"), func(c echo.Context) error {
 		return c.Redirect(http.StatusMovedPermanently, path.Join(a.urlCfg.AdminPath, uriAdmin, "/system"))

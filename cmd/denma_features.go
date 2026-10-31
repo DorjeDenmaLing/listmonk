@@ -850,7 +850,10 @@ INSERT INTO denma_tags (tag) SELECT DISTINCT t FROM campaigns, unnest(denma_tags
 // reloading the center.
 func (a *App) denmaVisualTemplate() int {
 	var id int
-	_ = a.db.Get(&id, `SELECT COALESCE((SELECT (value #>> '{}')::INT FROM settings WHERE key = 'denma.visual_template'), 0)`)
+	err := a.db.Get(&id, `SELECT COALESCE((SELECT (value #>> '{}')::INT FROM settings WHERE key = 'denma.visual_template'), 0)`)
+	if err != nil {
+		a.log.Printf("denma: error reading the default visual template: %v", err)
+	}
 	return id
 }
 
