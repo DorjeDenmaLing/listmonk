@@ -11,12 +11,15 @@ on:
     branches: [ddl]
   workflow_call:
   workflow_dispatch:
+  schedule:
+    - cron: "17 9 * * 1" # the vulnerabilities job, each Monday
 
 permissions:
   contents: read
 
 jobs:
   test:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -31,6 +34,8 @@ jobs:
           --health-cmd "pg_isready -U listmonk" --health-interval 2s --health-timeout 5s --health-retries 30
     env:
       LISTMONK_db__host: localhost
+      LISTMONK_db__port: "5432"
+      LISTMONK_db__database: listmonk
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,10 +50,10 @@ jobs:
         run: sh .github/denma-build.sh "$RUNNER_TEMP/listmonk"
 
       - name: Vet
-        run: go vet ./cmd/ ./internal/...
+        run: go vet ./cmd/ ./models/ ./internal/...
 
       - name: Unit tests
-        run: go test ./internal/...
+        run: go test ./internal/... ./models/
 
       # The cmd package's tests run in listmonk's process, which reads
       # config.toml and connects to an installed database on start.

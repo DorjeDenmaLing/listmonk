@@ -103,6 +103,9 @@ func TestDenmaSendWindowNext(t *testing.T) {
 func TestDenmaSendWindowSQL(t *testing.T) {
 	host, name := os.Getenv("LISTMONK_db__host"), os.Getenv("LISTMONK_db__database")
 	if host == "" || name == "" {
+		if os.Getenv("CI") != "" {
+			t.Fatal("no test database in CI")
+		}
 		t.Skip("no test database")
 	}
 	db, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%s user=listmonk password=listmonk dbname=%s sslmode=disable",
