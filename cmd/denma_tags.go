@@ -347,6 +347,15 @@ func (a *App) DenmaChangeTag(c echo.Context) error {
 			_, err = tx.Exec(`UPDATE denma_tag_aliases SET tag = $2 WHERE tag = $1`, from[0], to[0])
 		}
 	}
+	// An automation keeps its tags: without one, its conditions would change.
+	if err == nil && len(to) == 0 && denmaAutomationsOn(a) {
+		var names []string
+		err = tx.Select(&names, `SELECT name FROM denma_automations
+			WHERE $1::TEXT = ANY(trigger_tags || if_tags || unless_tags || add_tags || remove_tags) ORDER BY name LIMIT 5`, from[0])
+		if err == nil && len(names) > 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Automations use the tag %s: %s. Take it off them first.", from[0], strings.Join(names, ", ")))
+		}
+	}
 	if err == nil {
 		res, err = tx.Exec(`DELETE FROM denma_tags WHERE tag = $1`, from[0])
 	}
