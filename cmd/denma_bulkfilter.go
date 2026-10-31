@@ -32,11 +32,44 @@ func (a *App) denmaBulkSearch(user auth.User, req *subQueryReq) error {
 	return denmaWithSubStatus(req.SubscriberStatus, &req.Query)
 }
 
+// denmaStatusSubscribed is the status filter for those who get mail, which
+// is no status of a subscriber's own.
+const denmaStatusSubscribed = "subscribed"
+
+// denmaSubscribedSQL is those who get mail: enabled, and on a list as the
+// hub's figures count it (denmaActiveSQL).
+const denmaSubscribedSQL = `subscribers.status = 'enabled' AND EXISTS (SELECT 1 FROM subscriber_lists sl JOIN lists l ON l.id = sl.list_id
+	WHERE sl.subscriber_id = subscribers.id AND sl.status <> 'unsubscribed' AND NOT (l.optin = 'double' AND sl.status = 'unconfirmed')
+	AND ` + denmaHubListActive + `)`
+
+// denmaStatusFilter moves the status filter for those who get mail into
+// query, for the queries that take a subscriber's own status.
+func denmaStatusFilter(status, query string) (string, string) {
+	if status == denmaStatusSubscribed {
+		return "", denmaAndSQL(query, denmaSubscribedSQL)
+	}
+	return status, query
+}
+
+// denmaSubsNav is the sidebar item for the Contacts page's filter.
+func denmaSubsNav(c echo.Context) string {
+	switch c.QueryParam("status") {
+	case denmaStatusSubscribed:
+		return "subscribers.subscribed"
+	case models.SubscriberStatusBlockListed:
+		return "subscribers.blocklisted"
+	}
+	return "subscribers.all"
+}
+
 // denmaWithSubStatus adds a subscriber status to query, the condition
 // denmaSearch made.
 func denmaWithSubStatus(status string, query *string) error {
 	switch status {
 	case "":
+		return nil
+	case denmaStatusSubscribed:
+		*query = denmaAndSQL(*query, denmaSubscribedSQL)
 		return nil
 	case models.SubscriberStatusEnabled, models.SubscriberStatusDisabled, models.SubscriberStatusBlockListed:
 	default:

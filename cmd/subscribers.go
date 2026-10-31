@@ -143,7 +143,7 @@ func (a *App) ViewSubscribers(c echo.Context) error {
 	}
 
 	data := subscribersView{
-		adminView:   newAdminView(c, a.i18n.T("globals.terms.subscribers"), "", "subscribers.all"),
+		adminView:   newAdminView(c, a.i18n.T("globals.terms.subscribers"), "", denmaSubsNav(c)), // denma: cmd/denma_bulkfilter.go
 		Subscribers: subs,
 		Page:        props,
 		AllLists:    allLists,
@@ -319,12 +319,13 @@ func (a *App) getSubscribers(c echo.Context, listID int) ([]models.Subscriber, m
 
 	// Run the DB query.
 	pg := a.pg.NewFromURL(q)
+	status, query := denmaStatusFilter(q.Get("status"), query) // denma: cmd/denma_bulkfilter.go
 	res, total, err := a.core.QuerySubscribers(
 		search, // denma
 		query,
 		listIDs,
 		q.Get("subscription_status"),
-		q.Get("status"),
+		status,
 		q.Get("order"),
 		q.Get("order_by"),
 		pg.Offset,
@@ -411,6 +412,8 @@ func (a *App) QuerySubscribers(c echo.Context) error {
 	if err := a.denmaSearch(user, &searchStr, &query); err != nil { // denma: cmd/denma_search.go
 		return err
 	}
+
+	subscriberStatus, query = denmaStatusFilter(subscriberStatus, query) // denma: cmd/denma_bulkfilter.go
 
 	// Query subscribers from the DB.
 	res, total, err := a.core.QuerySubscribers(searchStr, query, listIDs, subStatus, subscriberStatus, order, orderBy, pg.Offset, pg.Limit)

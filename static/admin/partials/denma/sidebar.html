@@ -73,6 +73,8 @@
 				<ul>
 					{{- if Can $u "subscribers:get" "subscribers:get_all" }}
 					<li><a href="{{ URI "/admin/subscribers" }}" {{ IsNav $p "subscribers.all" }} data-cy="all-subscribers">{{ template "denma-icon" "account-multiple" }}<span>{{ .L.T "menu.allSubscribers" }}</span></a></li>
+					<li><a href="{{ URI "/admin/subscribers" }}?status=subscribed" {{ IsNav $p "subscribers.subscribed" }} data-cy="subscribed">{{ template "denma-icon" "email-check-outline" }}<span>Subscribers</span></a></li>
+					<li><a href="{{ URI "/admin/subscribers" }}?status=blocklisted" {{ IsNav $p "subscribers.blocklisted" }} data-cy="blocklisted">{{ template "denma-icon" "cancel" }}<span>Blocklisted</span></a></li>
 					{{- end }}
 					{{- if Can $u "subscribers:import" }}
 					<li><a href="{{ URI "/admin/subscribers/import" }}" {{ IsNav $p "subscribers.import" }} data-cy="import">{{ template "denma-icon" "file-upload-outline" }}<span>{{ .L.T "menu.import" }}</span></a></li>
