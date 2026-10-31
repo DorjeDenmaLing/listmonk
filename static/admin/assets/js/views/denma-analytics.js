@@ -291,32 +291,20 @@ function component(opts) {
     // ---- Audience growth ----
 
     async loadGrowth(p) {
-      const q = (metric, period, all) => s.subscriberStat(metric, { period }, all);
+      const q = (metric, period) => s.subscriberStat(metric, { period });
       const r = await Promise.all([
-        q('active'), q('new', p.cur, true), q('unsub', p.cur, true), q('removed', p.cur, true),
-        q('new', p.prev), q('unsub', p.prev), q('removed', p.prev), s.fetchBounces(p.cur.start),
+        q('active'), s.growthStat(p.cur, s.buckets(p)), q('new', p.prev), q('unsub', p.prev), q('removed', p.prev),
       ]);
-      // Each removed subscriber counts on the day of their first bounce in the period.
-      const removedIds = new Set((r[3].results || []).map((x) => x.id));
-      const firstBounce = {};
-      r[7].forEach((b) => {
-        const t = new Date(b.created_at);
-        if (removedIds.has(b.subscriber_id) && t >= p.cur.start && t < p.cur.end
-          && (!firstBounce[b.subscriber_id] || t < firstBounce[b.subscriber_id])) {
-          firstBounce[b.subscriber_id] = t;
-        }
-      });
+      const sum = (counts) => counts.reduce((n, v) => n + v, 0);
       const g = {
         active: r[0].total || 0,
-        added: r[1].total || 0,
-        addedRows: r[1].results || [],
-        unsub: r[2].total || 0,
-        unsubRows: r[2].results || [],
-        removed: r[3].total || 0,
-        removedDates: Object.values(firstBounce),
-        prevAdded: r[4].total || 0,
-        prevUnsub: r[5].total || 0,
-        prevRemoved: r[6].total || 0,
+        added: sum(r[1].added),
+        unsub: sum(r[1].unsub),
+        removed: sum(r[1].removed),
+        counts: r[1],
+        prevAdded: r[2].total || 0,
+        prevUnsub: r[3].total || 0,
+        prevRemoved: r[4].total || 0,
       };
       g.net = g.added - g.unsub - g.removed;
       g.prevNet = g.prevAdded - g.prevUnsub - g.prevRemoved;
@@ -327,21 +315,11 @@ function component(opts) {
       this.growth.cells = s.growthCells(g);
 
       const bk = s.buckets(p);
-      const place = (date, key) => {
-        const t = new Date(date);
-        const b = bk.list.find((x) => t >= x.start && t < x.end);
-        if (b) b[key] += 1;
-      };
-      g.addedRows.forEach((x) => place(x.created_at, 'added'));
-      g.unsubRows.forEach((x) => {
-        let latest = null;
-        (x.lists || []).forEach((l) => {
-          if (l.subscription_status === 'unsubscribed' && l.subscription_updated_at
-            && (!latest || l.subscription_updated_at > latest)) latest = l.subscription_updated_at;
-        });
-        if (latest) place(latest, 'unsub');
+      bk.list.forEach((b, i) => {
+        b.added = g.counts.added[i];
+        b.unsub = g.counts.unsub[i];
+        b.removed = g.counts.removed[i];
       });
-      g.removedDates.forEach((d) => place(d, 'removed'));
 
       const box = this.$refs.growthChart;
       box.replaceChildren(s.growthChart(bk, box.clientWidth));

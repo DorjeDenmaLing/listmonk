@@ -142,10 +142,10 @@ export async function campaignOutcomes(ids) {
 const sumValues = (m) => Object.values(m).reduce((n, v) => n + v, 0);
 
 // Subscribers in one of the server's figures (cmd/denma_stats.go): { total,
-// results } (results only when all). opts: period ({ start, end }), campaign
-// (an ID), and search (the search language, cmd/denma_search.go).
-export function subscriberStat(metric, opts = {}, all = false) {
-  const q = new URLSearchParams({ metric, per_page: all ? 'all' : '1' });
+// results }, of whom only the total is used. opts: period ({ start, end }),
+// campaign (an ID), and search (the search language, cmd/denma_search.go).
+export function subscriberStat(metric, opts = {}) {
+  const q = new URLSearchParams({ metric, per_page: '1' });
   if (opts.period) {
     q.set('from', opts.period.start.toISOString());
     q.set('to', opts.period.end.toISOString());
@@ -157,6 +157,15 @@ export function subscriberStat(metric, opts = {}, all = false) {
     q.set('search', opts.search);
   }
   return getJSON(`/denma/stats/subscribers?${q.toString()}`);
+}
+
+// The new, unsub and removed figures of a period, counted in chart buckets
+// (buckets): { added, unsub, removed }, each a count per bucket.
+export function growthStat(period, bk) {
+  const q = new URLSearchParams({ from: period.start.toISOString(), to: period.end.toISOString() });
+  bk.list.forEach((b) => q.append('edge', b.start.toISOString()));
+  q.append('edge', bk.list[bk.list.length - 1].end.toISOString());
+  return getJSON(`/denma/stats/growth?${q.toString()}`);
 }
 
 // Bounces, newest first, paging back only as far as `since`.

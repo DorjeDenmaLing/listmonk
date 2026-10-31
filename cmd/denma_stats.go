@@ -153,6 +153,9 @@ func (a *App) DenmaStatSubscribers(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	if qp.Get("per_page") == "all" { // page through instead
+		qp.Set("per_page", strconv.Itoa(denmaStatPageMax))
+	}
 	pg := a.pg.NewFromURL(qp)
 	res, total, err := a.core.QuerySubscribers("", "("+cond+")", listIDs, "", "", "", "", pg.Offset, pg.Limit)
 	if err != nil {
@@ -165,6 +168,94 @@ func (a *App) DenmaStatSubscribers(c echo.Context) error {
 		Results:   res,
 		PageProps: models.PageProps{Total: total, Page: pg.Page, PerPage: pg.PerPage},
 	}})
+}
+
+// denmaStatPageMax is the most subscribers a figure gives at a time.
+const denmaStatPageMax = 1000
+
+// denmaGrowthEdgesMax is the most bucket edges DenmaStatGrowth takes.
+const denmaGrowthEdgesMax = 400
+
+// DenmaStatGrowth counts the new, unsub and removed figures of a period, in
+// the buckets between its edges: unsub by their opt-out's date, removed by
+// their first bounce in the period.
+//
+//	GET /api/denma/stats/growth?from=<RFC 3339>&to=...&edge=...&edge=...
+func (a *App) DenmaStatGrowth(c echo.Context) error {
+	qp := c.QueryParams()
+	bad := func(msg string) error { return echo.NewHTTPError(http.StatusBadRequest, msg) }
+
+	from, err := time.Parse(time.RFC3339, qp.Get("from"))
+	if err != nil {
+		return bad("from isn't an RFC 3339 time")
+	}
+	to, err := time.Parse(time.RFC3339, qp.Get("to"))
+	if err != nil {
+		return bad("to isn't an RFC 3339 time")
+	}
+	raw := qp["edge"]
+	if len(raw) < 2 || len(raw) > denmaGrowthEdgesMax {
+		return bad(fmt.Sprintf("give 2 to %d edges", denmaGrowthEdgesMax))
+	}
+	edges := make([]string, len(raw))
+	var last time.Time
+	for i, v := range raw {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil || !t.After(last) {
+			return bad("edges are RFC 3339 times, in order")
+		}
+		last, edges[i] = t, t.UTC().Format(time.RFC3339Nano)
+	}
+	if edge0, _ := time.Parse(time.RFC3339Nano, edges[0]); from.Before(edge0) || to.After(last) {
+		return bad("the edges have to span the period")
+	}
+
+	listIDs, err := a.filterListQueryByPerm("list_id", qp, auth.GetUser(c))
+	if err != nil {
+		return err
+	}
+	scope := " AND (COALESCE(CARDINALITY($2::INT[]), 0) = 0 OR subscribers.id IN (SELECT subscriber_id FROM subscriber_lists WHERE list_id = ANY($2::INT[])))"
+
+	sqls := map[string]string{}
+	for metric, q := range map[string]string{
+		"added": `SELECT WIDTH_BUCKET(subscribers.created_at, $1::TIMESTAMPTZ[]) AS b, COUNT(*) AS n FROM subscribers WHERE %s GROUP BY 1`,
+		"unsub": `SELECT WIDTH_BUCKET(o.created_at, $1::TIMESTAMPTZ[]) AS b, COUNT(*) AS n FROM subscribers
+			JOIN denma_optouts o ON o.email_hash = denma_email_hash(subscribers.email) WHERE %s GROUP BY 1`,
+		"removed": `SELECT WIDTH_BUCKET(x.t, $1::TIMESTAMPTZ[]) AS b, COUNT(*) AS n FROM (
+			SELECT (SELECT MIN(b.created_at) FROM bounces b WHERE b.subscriber_id = subscribers.id AND b.created_at >= $3 AND b.created_at < $4) AS t
+			FROM subscribers WHERE %s) x GROUP BY 1`,
+	} {
+		name := map[string]string{"added": "new", "unsub": "unsub", "removed": "removed"}[metric]
+		cond, err := denmaStatSQL(name, from, to, 0)
+		if err != nil {
+			return bad(err.Error())
+		}
+		sqls[metric] = fmt.Sprintf(q, "("+cond+")"+scope)
+	}
+
+	out := map[string][]int{}
+	for metric, q := range sqls {
+		args := []any{pq.Array(edges), pq.Array(listIDs)}
+		if metric == "removed" {
+			args = append(args, from, to)
+		}
+		var rows []struct {
+			B int `db:"b"`
+			N int `db:"n"`
+		}
+		if err := a.db.Select(&rows, q, args...); err != nil {
+			a.log.Printf("denma: error counting %s: %v", metric, err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "Error getting the figures.")
+		}
+		counts := make([]int, len(edges)-1)
+		for _, r := range rows {
+			if r.B >= 1 && r.B <= len(counts) {
+				counts[r.B-1] = r.N
+			}
+		}
+		out[metric] = counts
+	}
+	return c.JSON(http.StatusOK, okResp{out})
 }
 
 // denmaProvidersSQL is, by provider, who received, opened and clicked each
