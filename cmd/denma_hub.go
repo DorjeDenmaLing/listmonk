@@ -218,7 +218,7 @@ func (a *App) DenmaHubStats(c echo.Context) error {
 
 	reg, err := d.registered()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 
 	type figures struct {
@@ -309,7 +309,7 @@ func (a *App) DenmaOpenCenter(c echo.Context) error {
 	userID, err := d.superadminIn(ctr, auth.GetUser(c))
 	if err != nil {
 		a.log.Printf("denma: error signing into center %s: %v", ctr.Slug, err)
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 
 	// The center's session cookie (its auth names it for the center), and
@@ -449,10 +449,10 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 	// A new person's username must be free (an existing person, by e-mail
 	// address, keeps theirs).
 	if p, err := d.personByEmail(d.db(), adminEmail); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	} else if p == nil {
 		if taken, err := d.usernameTaken(d.db(), req.AdminUsername, 0); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		} else if taken {
 			return errDenmaUsernameTaken
 		}
@@ -558,7 +558,7 @@ func (a *App) DenmaSetCenterStatus(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "center not found")
 	}
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{true})
 }
@@ -682,7 +682,7 @@ func denmaSessionUser(ko *koanf.Koanf, u auth.User, err error) (auth.User, error
 		FROM denma.center_superadmins s JOIN denma.centers c ON c.id = s.center_id
 		LEFT JOIN `+pq.QuoteIdentifier(denmaHub.baseSchema)+`.users hu ON hu.id = s.hub_user_id
 		WHERE c.slug = $1 AND s.center_user_id = $2), false)`, slug, u.ID, auth.SuperAdminRoleID); err != nil {
-		return auth.User{}, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return auth.User{}, denmaInternal(err)
 	}
 	if !ok {
 		return auth.User{}, errDenmaAccountOff

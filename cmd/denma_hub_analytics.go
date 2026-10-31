@@ -230,7 +230,7 @@ func (a *App) DenmaHubAnalytics(c echo.Context) error {
 	var known bool
 	if tz != "" {
 		if err := db.Get(&known, `SELECT EXISTS (SELECT 1 FROM pg_timezone_names WHERE name = $1)`, tz); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	}
 	if !known {
@@ -239,7 +239,7 @@ func (a *App) DenmaHubAnalytics(c echo.Context) error {
 
 	reg, err := d.registered()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 
 	var (

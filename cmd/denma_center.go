@@ -222,19 +222,19 @@ func (a *App) ViewDenmaCenter(c echo.Context) error {
 	}
 	form, err := a.centerForm()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	langs, err := denmaLangList(a.fs)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	view := denmaCenterView{adminView: v, Form: form, Address: a.urlCfg.RootURL, Langs: langs,
 		Super: v.Profile.UserRole.ID == auth.SuperAdminRoleID, Design: a.denmaDefaultDesignID()}
 	if err := a.db.Get(&view.VisualTemplate, `SELECT COALESCE((SELECT name FROM templates WHERE id = $1 AND type = 'campaign_visual'), '')`, a.denmaVisualTemplate()); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if view.Domains, err = a.denmaCenterDomains(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	view.DomainsOn = denmaDomainsOn()
 	view.Sending = a.denmaCapStatus()
@@ -252,14 +252,14 @@ func (a *App) ViewDenmaWebhooks(c echo.Context) error {
 		MaxPerHour: denmaSignupMaxPerHour, Super: denmaIsSuperadmin(c),
 		ServerURL: strings.TrimSuffix(a.urlCfg.RootURL, "/") + "/signup/server"}
 	if view.SignupHooks, err = a.signupHooks(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := a.db.Select(&view.SignupLists, `SELECT id, name, optin::TEXT AS optin FROM lists
 		WHERE NOT ($1 = ANY(COALESCE(tags, '{}'))) ORDER BY name`, denmaAPIListTag); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if view.Spec, err = a.signupOpenAPI(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.Render(http.StatusOK, "admin-denma-webhooks", view)
 }
@@ -327,7 +327,7 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	}
 	langs, err := denmaLangList(a.fs)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	known := false
 	for _, l := range langs {
@@ -344,7 +344,7 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	if auth.GetUser(c).UserRole.ID != auth.SuperAdminRoleID {
 		cur, err := a.centerForm()
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		if !f.UnsubscribeEverywhere && cur.UnsubscribeEverywhere {
 			return echo.NewHTTPError(http.StatusForbidden, "Only a superadmin can turn off unsubscribing from all lists.")
@@ -365,22 +365,22 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	_ = json.Unmarshal(b, &vals)
 	tx, err := a.db.Beginx()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	defer tx.Rollback()
 	for field, key := range denmaFormKeys {
 		if _, err := tx.Exec(`UPDATE settings SET value = $1::jsonb, updated_at = NOW() WHERE key = $2`, string(vals[field]), key); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	}
 	// The details as they were, which e-mails being sent may still show
 	// for a while (cmd/denma_footer.go).
 	newContact := denmaContact{Address: f.PostalAddress, Website: f.Website, Email: f.ContactEmail}
 	if err := denmaKeepPrevContact(tx, denmaContactOf(a.ko.String("denma.center")), newContact); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	a.denmaDesignLogoChanged(oldLogo, f.LogoURL) // the center's design shows its logo (cmd/denma_design.go)
 	// The daily cap applies at once (cmd/denma_daily.go).

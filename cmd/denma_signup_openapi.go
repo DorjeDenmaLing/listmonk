@@ -40,11 +40,11 @@ func (a *App) DenmaSignupOpenAPI(c echo.Context) error {
 	}
 	b, err := a.signupOpenAPI()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	var out bytes.Buffer
 	if err := json.Indent(&out, b, "", "  "); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.Blob(http.StatusOK, echo.MIMEApplicationJSONCharsetUTF8, out.Bytes())
 }

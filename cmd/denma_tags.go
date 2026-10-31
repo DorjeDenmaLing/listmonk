@@ -220,7 +220,7 @@ func (a *App) ViewDenmaTags(c echo.Context) error {
 	}
 	tags, err := a.denmaTags()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.Render(http.StatusOK, "admin-denma-tags", denmaTagsView{adminView: v, Tags: tags})
 }

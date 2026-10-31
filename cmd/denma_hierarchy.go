@@ -134,7 +134,7 @@ func (a *App) denmaHubAccounts() (map[int]bool, error) {
 	var ids []int
 	if err := a.db.Select(&ids, `SELECT s.center_user_id FROM denma.center_superadmins s
 		JOIN denma.centers c ON c.id = s.center_id WHERE c.slug = $1`, slug); err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return nil, denmaInternal(err)
 	}
 	out := make(map[int]bool, len(ids))
 	for _, id := range ids {
@@ -351,7 +351,7 @@ func (a *App) denmaCheckDeleteRole(c echo.Context, id int) error {
 	}
 	var held int
 	if err := a.db.Get(&held, `SELECT COUNT(*) FROM users WHERE list_role_id = $1`, id); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if held > 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(

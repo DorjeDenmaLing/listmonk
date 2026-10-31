@@ -263,7 +263,7 @@ func (a *App) DenmaAutomationReports(c echo.Context) error {
 		Since time.Time `db:"since"`
 	}
 	if err := a.db.Select(&since, `SELECT stat, since FROM denma_stat_starts WHERE stat LIKE 'automation_%'`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	for _, s := range since {
 		out.Since[strings.TrimPrefix(s.Stat, "automation_")] = s.Since
@@ -271,11 +271,11 @@ func (a *App) DenmaAutomationReports(c echo.Context) error {
 
 	var rows []denmaAutoReportRow
 	if err := a.db.Select(&rows, denmaAutoReportSQL, t[0], t[1]); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	autos, err := a.automations()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	byID := map[int]denmaAutomation{}
 	for _, au := range autos {

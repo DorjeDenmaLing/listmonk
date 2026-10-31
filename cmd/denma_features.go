@@ -872,7 +872,7 @@ func (a *App) denmaSetVisualDefault(c echo.Context, id int, typ string) error {
 	}
 	if _, err := a.db.Exec(`INSERT INTO settings (key, value) VALUES ('denma.visual_template', $1::TEXT::JSONB)
 		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`, strconv.Itoa(id)); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return a.GetTemplates(c)
 }

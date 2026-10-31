@@ -1272,7 +1272,7 @@ func (a *App) ViewDenmaAutomations(c echo.Context) error {
 	}
 	autos, err := a.automations()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.Render(http.StatusOK, "admin-denma-automations", denmaAutomationsView{adminView: v, Automations: autos})
 }
@@ -1284,7 +1284,7 @@ func (a *App) DenmaGetAutomations(c echo.Context) error {
 	}
 	autos, err := a.automations()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{autos})
 }
@@ -1305,7 +1305,7 @@ func (a *App) ViewDenmaAutomation(c echo.Context) error {
 			if errors.Is(err, sql.ErrNoRows) {
 				return echo.NewHTTPError(http.StatusNotFound, "That automation doesn't exist.")
 			}
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		out.Title = out.Automation.Name
 		out.StepStats = a.autoStepStats(id) // cmd/denma_auto_series.go
@@ -1314,17 +1314,17 @@ func (a *App) ViewDenmaAutomation(c echo.Context) error {
 		}
 	}
 	if err := a.db.Select(&out.Lists, `SELECT id, name, type::TEXT, optin::TEXT, '' AS subject FROM lists ORDER BY name`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := a.db.Select(&out.Templates, `SELECT id, name, type::TEXT, '' AS optin, subject FROM templates
 		WHERE type = 'campaign_visual' ORDER BY name`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	// The latest campaigns (and the automation's, if it's older).
 	if err := a.db.Select(&out.Campaigns, `SELECT id, name, status::TEXT AS type, '' AS optin, subject FROM campaigns
 		WHERE id IN (SELECT id FROM campaigns ORDER BY created_at DESC LIMIT 200) OR id = $1
 		ORDER BY created_at DESC`, out.Automation.TriggerCampaignID); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.Render(http.StatusOK, "admin-denma-automation", out)
 }
@@ -1350,7 +1350,7 @@ func (a *App) denmaAutoListField(c echo.Context, ids []int) ([]int, error) {
 		return out, nil
 	}
 	if err := a.db.Select(&out, `SELECT id FROM lists WHERE id = ANY($1) ORDER BY id`, pq.Array(ids)); err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return nil, denmaInternal(err)
 	}
 	if len(out) > 100 {
 		return nil, echo.NewHTTPError(http.StatusBadRequest, "Choose at most 100 lists.")
@@ -1427,7 +1427,7 @@ func (a *App) validateAutomation(c echo.Context, f *denmaAutoForm) error {
 		}
 		var other []string
 		if err := a.db.Select(&other, `SELECT name FROM lists WHERE id = ANY($1) AND optin::TEXT <> $2 ORDER BY name`, pq.Array(f.ListIDs), want); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		if len(other) > 0 && want == "single" {
 			return bad(fmt.Sprintf("%s is double opt-in: choose \"someone confirms a double opt-in list\" for it, so that it runs once they've confirmed.", orList(other, "and")))
@@ -1580,7 +1580,7 @@ func denmaAutoLoop(nodes []denmaAutoNode) []string {
 func (a *App) checkAutoLoop(id int, self denmaAutoNode) error {
 	var autos []denmaAutomation
 	if err := a.db.Select(&autos, denmaAutoSelectSQL+` WHERE a.active AND a.id <> $1`, id); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	nodes := []denmaAutoNode{self}
 	for _, x := range autos {
@@ -1637,7 +1637,7 @@ func (a *App) DenmaSaveAutomation(c echo.Context) error {
 			if errors.Is(err, sql.ErrNoRows) {
 				return echo.NewHTTPError(http.StatusNotFound, "That automation doesn't exist.")
 			}
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	}
 	if active {
@@ -1649,7 +1649,7 @@ func (a *App) DenmaSaveAutomation(c echo.Context) error {
 
 	tx, err := a.db.Beginx()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	defer tx.Rollback()
 
@@ -1664,7 +1664,7 @@ func (a *App) DenmaSaveAutomation(c echo.Context) error {
 			f.TriggerType, denmaTextArray(f.TriggerTags), campID, denmaTextArray(f.IfTags), denmaTextArray(f.UnlessTags),
 			denmaTextArray(f.AddTags), denmaTextArray(f.RemoveTags), f.SendEmail, f.EachTime, f.QuietDays)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	} else {
 		if _, err := tx.Exec(`UPDATE denma_automations SET name = $2, template_id = $3, subject = $4,
@@ -1674,17 +1674,17 @@ func (a *App) DenmaSaveAutomation(c echo.Context) error {
 			id, f.Name, tplID, f.Subject, f.FromEmail, f.DelayMinutes, f.TriggerType, denmaTextArray(f.TriggerTags), campID,
 			denmaTextArray(f.IfTags), denmaTextArray(f.UnlessTags), denmaTextArray(f.AddTags), denmaTextArray(f.RemoveTags), f.SendEmail, f.EachTime,
 			f.QuietDays); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	}
 
 	if err := saveAutoSteps(tx, id, f.Steps); err != nil { // cmd/denma_auto_series.go
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if !f.SendEmail { // it sends nothing now: its series end
 		if _, err := tx.Exec(`UPDATE denma_automation_sends SET status = 'done', next_at = NULL
 			WHERE automation_id = $1 AND status IN ('waiting', 'retry')`, id); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	}
 
@@ -1692,15 +1692,15 @@ func (a *App) DenmaSaveAutomation(c echo.Context) error {
 	for kind, ids := range map[string][]int{"trigger": f.ListIDs, "add": f.AddListIDs, "remove": f.RemoveListIDs} {
 		if _, err := tx.Exec(`DELETE FROM denma_automation_lists WHERE automation_id = $1 AND kind = $2 AND NOT (list_id = ANY($3))`,
 			id, kind, pq.Array(ids)); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		if _, err := tx.Exec(`INSERT INTO denma_automation_lists (automation_id, list_id, kind)
 			SELECT $1, UNNEST($3::INT[]), $2 ON CONFLICT DO NOTHING`, id, kind, pq.Array(ids)); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{map[string]int{"id": id}})
 }
@@ -1722,7 +1722,7 @@ func (a *App) DenmaSetAutomationStatus(c echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "That automation doesn't exist.")
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if req.Active {
 		if msg := auto.Broken(); msg != "" {
@@ -1754,7 +1754,7 @@ func (a *App) DenmaSetAutomationStatus(c echo.Context) error {
 	}
 	if _, err := a.db.Exec(`UPDATE denma_automations SET active = $2, updated_at = NOW(),
 		active_since = CASE WHEN $2 AND NOT active THEN NOW() ELSE active_since END WHERE id = $1`, auto.ID, req.Active); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{true})
 }
@@ -1765,7 +1765,7 @@ func (a *App) DenmaDeleteAutomation(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
 	}
 	if _, err := a.db.Exec(`DELETE FROM denma_automations WHERE id = $1`, getID(c)); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{true})
 }
@@ -1821,7 +1821,7 @@ func (a *App) DenmaTestAutomation(c echo.Context) error {
 	}
 	msg.To = []string{email}
 	if err := a.manager.PushMessage(msg); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{true})
 }

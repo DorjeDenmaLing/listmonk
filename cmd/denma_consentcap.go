@@ -113,17 +113,17 @@ CREATE INDEX IF NOT EXISTS denma_consent_requests_created ON denma_consent_reque
 func (a *App) denmaConsentClaim(kind string) (int64, error) {
 	tx, err := a.db.Beginx()
 	if err != nil {
-		return 0, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return 0, denmaInternal(err)
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(current_schema() || '/denma_consent_requests'))`); err != nil {
-		return 0, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return 0, denmaInternal(err)
 	}
 	var used int
 	var told bool
 	if err := tx.QueryRow(`SELECT COUNT(*) FILTER (WHERE kind IN ('optin', 'resubscribe')), COUNT(*) FILTER (WHERE kind = 'notice') > 0
 		FROM denma_consent_requests WHERE created_at > NOW() - INTERVAL '24 hours'`).Scan(&used, &told); err != nil {
-		return 0, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return 0, denmaInternal(err)
 	}
 	if used >= denmaConsentRequestsPerDay {
 		if !told {
@@ -136,7 +136,7 @@ func (a *App) denmaConsentClaim(kind string) (int64, error) {
 	}
 	var id int64
 	if err := tx.Get(&id, `INSERT INTO denma_consent_requests (kind) VALUES ($1) RETURNING id`, kind); err != nil {
-		return 0, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return 0, denmaInternal(err)
 	}
 	return id, tx.Commit()
 }

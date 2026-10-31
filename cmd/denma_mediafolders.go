@@ -156,14 +156,14 @@ func denmaMediaFolderTaken(err error, name string) error {
 	if errors.As(err, &pqErr) && pqErr.Code == "23505" {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("There's already a folder named %q.", name))
 	}
-	return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	return denmaInternal(err)
 }
 
 // DenmaGetMediaFolders returns the folders, with how many files each has.
 func (a *App) DenmaGetMediaFolders(c echo.Context) error {
 	v, err := a.denmaMediaFolders(c, nil)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{v.Folders})
 }
@@ -201,7 +201,7 @@ func (a *App) DenmaRenameMediaFolder(c echo.Context) error {
 func (a *App) DenmaDeleteMediaFolder(c echo.Context) error {
 	var n int
 	if err := a.db.Get(&n, `SELECT COUNT(*) FROM denma_media_folder_files WHERE folder_id = $1`, getID(c)); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if n > 0 {
 		return echo.NewHTTPError(http.StatusBadRequest,
@@ -213,7 +213,7 @@ func (a *App) DenmaDeleteMediaFolder(c echo.Context) error {
 		if errors.As(err, &pqErr) && pqErr.Code == "23503" { // a file put in it since
 			return echo.NewHTTPError(http.StatusBadRequest, "The folder has files now. Move them to another folder, or delete them, first.")
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return echo.NewHTTPError(http.StatusNotFound, "There's no such folder.")
@@ -233,7 +233,7 @@ func (a *App) DenmaMoveMedia(c echo.Context) error {
 	}
 	tx, err := a.db.Beginx()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	defer tx.Rollback()
 	if in.FolderID > 0 {
@@ -242,20 +242,20 @@ func (a *App) DenmaMoveMedia(c echo.Context) error {
 			if errors.Is(err, sql.ErrNoRows) {
 				return echo.NewHTTPError(http.StatusNotFound, "There's no such folder.")
 			}
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	}
 	if _, err := tx.Exec(`DELETE FROM denma_media_folder_files WHERE media_id = ANY($1)`, pq.Array(in.IDs)); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if in.FolderID > 0 {
 		if _, err := tx.Exec(`INSERT INTO denma_media_folder_files (media_id, folder_id)
 			SELECT id, $2 FROM media WHERE id = ANY($1) AND provider = $3`, pq.Array(in.IDs), in.FolderID, a.cfg.MediaUpload.Provider); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{true})
 }

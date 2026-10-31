@@ -357,7 +357,7 @@ func (a *App) signupHook(id int) (denmaSignupHook, error) {
 		if errors.Is(err, sql.ErrNoRows) {
 			return h, echo.NewHTTPError(http.StatusNotFound, "That webhook doesn't exist (any more).")
 		}
-		return h, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return h, denmaInternal(err)
 	}
 	a.signupHookView(&h)
 	return h, nil
@@ -384,7 +384,7 @@ func (a *App) DenmaGetSignupHooks(c echo.Context) error {
 	}
 	out, err := a.signupHooks()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{out})
 }
@@ -423,7 +423,7 @@ func (a *App) checkSignupForm(c echo.Context, kind string) (denmaSignupHookForm,
 	var lists []denmaOption
 	if err := a.db.Select(&lists, `SELECT id, name, optin::TEXT AS optin FROM lists WHERE id = ANY($1)
 		AND NOT ('`+denmaAPIListTag+`' = ANY(COALESCE(tags, '{}')))`, pq.Array(f.ListIDs)); err != nil {
-		return f, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return f, denmaInternal(err)
 	}
 	if len(lists) != len(dedupInts(f.ListIDs)) {
 		return f, echo.NewHTTPError(http.StatusBadRequest, "One of the lists doesn't exist (any more).")
@@ -518,31 +518,31 @@ func (a *App) DenmaCreateSignupHook(c echo.Context) error {
 	}
 	var n int
 	if err := a.db.Get(&n, `SELECT COUNT(*) FROM denma_signup_hooks`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if n >= denmaSignupMaxHooks {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("A center can have at most %d webhooks.", denmaSignupMaxHooks))
 	}
 	tok, hash, hint, err := denmaNewSignupToken(kind)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	tx, err := a.db.Begin()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	defer tx.Rollback()
 	var id int
 	if err := tx.QueryRow(`INSERT INTO denma_signup_hooks (name, kind, token_hash, token_hint, tags, request_tags, per_hour, create_tags, allowed_from, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
 		f.Name, kind, hash, hint, pq.Array(f.Tags), pq.Array(f.RequestTags), f.PerHour, f.CreateTags, pq.Array(f.AllowedFrom), denmaAPIWho(c)).Scan(&id); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := saveSignupLists(tx, id, f.ListIDs); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	h, err := a.signupHook(id)
 	if err != nil {
@@ -577,19 +577,19 @@ func (a *App) DenmaUpdateSignupHook(c echo.Context) error {
 	}
 	tx, err := a.db.Begin()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`UPDATE denma_signup_hooks SET name = $2, tags = $3, request_tags = $4, per_hour = $5,
 		create_tags = $6, allowed_from = $7, updated_at = NOW() WHERE id = $1`,
 		h.ID, f.Name, pq.Array(f.Tags), pq.Array(f.RequestTags), f.PerHour, f.CreateTags, pq.Array(f.AllowedFrom)); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := saveSignupLists(tx, h.ID, f.ListIDs); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if h, err = a.signupHook(h.ID); err != nil {
 		return err
@@ -620,13 +620,13 @@ func (a *App) DenmaNewSignupHookKey(c echo.Context) error {
 	}
 	tok, hash, hint, err := denmaNewSignupToken(h.Kind)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if _, err := a.db.Exec(`UPDATE denma_signup_hooks SET
 		old_token_hash = CASE WHEN $4 > 0 THEN token_hash END,
 		old_token_until = CASE WHEN $4 > 0 THEN NOW() + make_interval(hours => $4) END,
 		token_hash = $2, token_hint = $3, updated_at = NOW() WHERE id = $1`, h.ID, hash, hint, r.OverlapHours); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if h, err = a.signupHook(h.ID); err != nil {
 		return err
@@ -649,7 +649,7 @@ func (a *App) DenmaDeleteSignupHook(c echo.Context) error {
 		return err
 	}
 	if _, err := a.db.Exec(`DELETE FROM denma_signup_hooks WHERE id = $1`, h.ID); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{true})
 }
@@ -1147,7 +1147,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			denmaSignupBadSecrets.add(ip)
 			return echo.NewHTTPError(http.StatusUnauthorized, "This secret isn't in use (any more).")
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if !denmaFromAllowed(ip, h.AllowedFrom) {
 		a.log.Printf("denma: sign-up webhook %d (%s) refused from %s: not one of its addresses", h.ID, h.Name, ip)
@@ -1186,7 +1186,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	}
 	var have []int
 	if err := a.db.Select(&have, `SELECT id FROM lists WHERE id = ANY($1) ORDER BY id`, pq.Array(listIDs)); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if listIDs = have; len(listIDs) == 0 {
 		return echo.NewHTTPError(http.StatusGone, "This webhook has no lists to sign people up to.")
@@ -1213,7 +1213,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	// are the tag (cmd/denma_tagaliases.go).
 	given, err := a.denmaResolveTags(r.Tags)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	var tags, left, newTags []string
 	for _, t := range given {
@@ -1232,7 +1232,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			Mine bool   `db:"mine"`
 		}
 		if err := a.db.Select(&have, `SELECT tag, hook_id IS NOT DISTINCT FROM $2 AS mine FROM denma_tags WHERE tag = ANY($1)`, pq.Array(newTags), h.ID); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		mine := map[string]bool{}
 		for _, x := range have {
@@ -1271,7 +1271,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	created := []string{}
 	if len(newTags) > 0 {
 		if created, err = a.signupNewTags(h, newTags); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		sort.Strings(created)
 		if len(created) > 0 {
@@ -1314,11 +1314,11 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	}
 	if _, err := a.db.Exec(`INSERT INTO subscribers (uuid, email, name, first_name, last_name, status) VALUES (gen_random_uuid(), $1, $2, $3, $4, 'enabled')
 		ON CONFLICT DO NOTHING`, email, newName, first, last); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	var sub models.Subscriber
 	if err := a.db.Get(&sub, `SELECT id, uuid, email, name, first_name, last_name, attribs, status, created_at, updated_at FROM subscribers WHERE LOWER(email) = $1`, email); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 
 	// Vouched for: no confirmation e-mail runs the address's checks.
@@ -1336,7 +1336,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	if blocked {
 		why, err := a.denmaResubRefused(sub)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		if why != "" {
 			outcome = denmaSignupNotSubscribed
@@ -1346,7 +1346,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			var optedOut sql.NullTime
 			if err := a.db.Get(&optedOut, `SELECT MAX(created_at) FROM denma_optouts
 				WHERE email_hash = denma_email_hash($1) OR canon_hash = denma_canon_hash($1)`, email); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+				return denmaInternal(err)
 			}
 			if optedOut.Valid && !consentAt.After(optedOut.Time) {
 				outcome = denmaSignupNotSubscribed
@@ -1357,7 +1357,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			if !optedOut.Valid {
 				var at sql.NullTime
 				if err := a.db.Get(&at, `SELECT MAX(at) FROM denma_blocklisted_at WHERE subscriber_id = $1`, sub.ID); err != nil {
-					return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+					return denmaInternal(err)
 				}
 				if !at.Valid || !consentAt.After(at.Time) {
 					vouched = false
@@ -1368,14 +1368,14 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	}
 
 	if err := a.appendSubscriber(sub.ID, email, name, first, last, r.Attribs, tags); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	// Signing up through another system that vouches for their consent lifts
 	// the API's fence; otherwise it's their sign-up, to confirm
 	// (cmd/denma_noconsent.go).
 	if r.Confirmed {
 		if err := denmaNoConsentLift(a.db, email); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	} else {
 		a.denmaNoConsentSignup(email, listIDs, nil)
@@ -1388,7 +1388,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			var err error
 			slot, err = a.signupResubClaim(h.ID)
 			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+				return denmaInternal(err)
 			}
 			if slot == 0 {
 				a.signupAlert(h, "resub", fmt.Sprintf("re-subscribed %d people in a day", denmaSignupResubPerDay),
@@ -1401,7 +1401,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		if !now {
 			claim, ok, err := a.signupConsentClaim(h)
 			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+				return denmaInternal(err)
 			}
 			if !ok {
 				outcome = denmaSignupConfirmationNotSent
@@ -1417,14 +1417,14 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 				outcome = denmaSignupNotSubscribed
 				return done(fmt.Sprint(he.Message))
 			case err != nil:
-				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+				return denmaInternal(err)
 			}
 			outcome = denmaSignupConfirmationSent
 			return done(status)
 		}
 		fail := func(err error) error {
 			a.signupResubUnclaim(slot)
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		if err := a.db.Select(&resubscribed, `SELECT list_id FROM subscriber_lists
 			WHERE subscriber_id = $1 AND list_id = ANY($2) AND status = 'unsubscribed' ORDER BY list_id`, sub.ID, pq.Array(listIDs)); err != nil {
@@ -1459,7 +1459,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			ELSE EXCLUDED.status END, updated_at = NOW()
 		RETURNING list_id, status::TEXT AS status, (SELECT status FROM was WHERE was.list_id = subscriber_lists.list_id) AS was`,
 		sub.ID, pq.Array(listIDs), r.Confirmed); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	var unconfirmed []int
 	for _, row := range rows {
@@ -1483,7 +1483,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		// within the day's (cmd/denma_consentcap.go).
 		claim, ok, err := a.signupConsentClaim(h)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		if !ok {
 			outcome = denmaSignupConfirmationNotSent

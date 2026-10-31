@@ -488,7 +488,7 @@ func (a *App) DenmaResubscribe(c echo.Context) error {
 		if errors.As(err, &he) {
 			return he
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{map[string]string{"status": status}})
 }

@@ -202,7 +202,7 @@ func (a *App) denmaCheckAPILists(id int) error {
 	var bad bool
 	q := `SELECT EXISTS (` + strings.ReplaceAll(denmaForeignAPIListsSQL, "NEW.id", "$1") + `)`
 	if err := a.db.Get(&bad, q, id); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if bad {
 		return echo.NewHTTPError(http.StatusBadRequest, "A campaign can't go to an API campaign's list: the API added its people without consent. Choose other lists.")

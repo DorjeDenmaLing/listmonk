@@ -608,7 +608,7 @@ func (a *App) mcpCenterID() (int, error) {
 	}
 	var id int
 	if err := a.db.Get(&id, `SELECT id FROM denma.centers WHERE slug = $1`, a.ko.String("denma.center")); err != nil {
-		return 0, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return 0, denmaInternal(err)
 	}
 	return id, nil
 }
@@ -628,7 +628,7 @@ func (a *App) mcpKeys(c echo.Context, id int) ([]denmaMCPKey, error) {
 	out := []denmaMCPKey{}
 	q := denmaMCPKeySQL + ` WHERE k.center_id = $1 AND ($2 = 0 OR k.id = $2) ORDER BY k.id`
 	if err := a.db.Select(&out, q, cid, id); err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return nil, denmaInternal(err)
 	}
 	hub, err := a.denmaHubAccounts()
 	if err != nil {
@@ -758,11 +758,11 @@ func (a *App) ViewDenmaMCP(c echo.Context) error {
 		return err
 	}
 	if view.Users, err = a.mcpUserOptions(c); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	view.Mine = a.mcpGivable(auth.GetUser(c))
 	if err := a.db.Get(&view.Connector, `SELECT EXISTS (SELECT 1 FROM denma.mcp_connector)`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.Render(http.StatusOK, "admin-denma-mcp", view)
 }
@@ -858,7 +858,7 @@ func (a *App) mcpConnectorTaken(cid, userID, id int) error {
 	var taken bool
 	if err := a.db.Get(&taken, `SELECT EXISTS (SELECT 1 FROM denma.mcp_keys WHERE center_id = $1 AND user_id = $2 AND connector AND id <> $3)`,
 		cid, userID, id); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if taken {
 		return echo.NewHTTPError(http.StatusBadRequest, "The user already has a key usable from claude.ai here: untick it on that one first.")
@@ -889,7 +889,7 @@ func (a *App) DenmaCreateMCPKey(c echo.Context) error {
 	}
 	var n int
 	if err := a.db.Get(&n, `SELECT COUNT(*) FROM denma.mcp_keys WHERE center_id = $1`, cid); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if n >= denmaMCPMaxKeys {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("A center can have at most %d MCP keys.", denmaMCPMaxKeys))
@@ -901,13 +901,13 @@ func (a *App) DenmaCreateMCPKey(c echo.Context) error {
 	}
 	key, hash, hint, err := denmaNewMCPSecret(denmaMCPKeyPrefix)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	var id int
 	if err := a.db.Get(&id, `INSERT INTO denma.mcp_keys (center_id, user_id, name, key_hash, key_hint, permissions, personal_data, connector,
 		expires_at, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
 		cid, u.ID, f.Name, hash, hint, pq.Array(f.Permissions), f.PersonalData, f.Connector, f.expiresAt, denmaAPIWho(c)); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	keys, err := a.mcpKeys(c, id)
 	if err != nil || len(keys) == 0 {
@@ -936,7 +936,7 @@ func (a *App) DenmaUpdateMCPKey(c echo.Context) error {
 	}
 	if _, err := a.db.Exec(`UPDATE denma.mcp_keys SET name = $2, permissions = $3, personal_data = $4, connector = $5, expires_at = $6,
 		updated_at = NOW() WHERE id = $1`, k.ID, f.Name, pq.Array(f.Permissions), f.PersonalData, f.Connector, f.expiresAt); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	keys, err := a.mcpKeys(c, k.ID)
 	if err != nil || len(keys) == 0 {
@@ -953,10 +953,10 @@ func (a *App) DenmaNewMCPKey(c echo.Context) error {
 	}
 	key, hash, hint, err := denmaNewMCPSecret(denmaMCPKeyPrefix)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if _, err := a.db.Exec(`UPDATE denma.mcp_keys SET key_hash = $2, key_hint = $3, updated_at = NOW() WHERE id = $1`, k.ID, hash, hint); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	keys, err := a.mcpKeys(c, k.ID)
 	if err != nil || len(keys) == 0 {
@@ -973,7 +973,7 @@ func (a *App) DenmaDeleteMCPKey(c echo.Context) error {
 		return err
 	}
 	if _, err := a.db.Exec(`DELETE FROM denma.mcp_keys WHERE id = $1`, k.ID); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{true})
 }
@@ -1039,12 +1039,12 @@ func (a *App) ViewDenmaHubMCP(c echo.Context) error {
 	case err == nil:
 		view.Connector = &cn
 	case !errors.Is(err, sql.ErrNoRows):
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := d.base.db.Select(&view.Keys, `SELECT c.name AS center, c.slug, k.name, k.user_id, k.permissions, k.personal_data, k.connector,
 		k.expires_at, k.uses, k.last_used_at, k.created_by
 		FROM denma.mcp_keys k JOIN denma.centers c ON c.id = k.center_id ORDER BY c.name, k.name`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	for i, k := range view.Keys {
 		if ctr := d.get(k.Slug); ctr != nil {
@@ -1064,14 +1064,14 @@ func (a *App) DenmaNewMCPConnector(c echo.Context) error {
 	}
 	secret, hash, hint, err := denmaNewMCPSecret(denmaMCPSecretPrefix)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	// A new secret keeps where the old one could be used from.
 	var cn denmaMCPConnector
 	if err := d.base.db.Get(&cn, `INSERT INTO denma.mcp_connector (id, secret_hash, secret_hint, created_by) VALUES (1, $1, $2, $3)
 		ON CONFLICT (id) DO UPDATE SET secret_hash = $1, secret_hint = $2, created_by = $3, created_at = NOW(), uses = 0, last_used_at = NULL
 		RETURNING secret_hint, created_by, created_at, uses, last_used_at, allowed_from`, hash, hint, denmaAPIWho(c)); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	cn.Secret = secret
 	return c.JSON(http.StatusOK, okResp{cn})
@@ -1109,7 +1109,7 @@ func (a *App) DenmaUpdateMCPConnector(c echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusBadRequest, "Make the connector secret first.")
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{cn})
 }
@@ -1122,7 +1122,7 @@ func (a *App) DenmaDeleteMCPConnector(c echo.Context) error {
 		return err
 	}
 	if _, err := d.base.db.Exec(`DELETE FROM denma.mcp_connector`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{true})
 }

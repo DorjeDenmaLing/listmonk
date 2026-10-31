@@ -35,7 +35,7 @@ func (a *App) denmaListsInUseMatching(query, typ, optin, status string, tags []s
 	var ids []int
 	if err := a.db.Select(&ids, denmaListsMatchSQL, strings.Join(strings.Fields(query), " "), typ, optin, status,
 		pq.StringArray(tags), all, pq.Array(permitted)); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return a.denmaListsInUse(ids)
 }
@@ -62,7 +62,7 @@ func (a *App) denmaListsInUse(ids []int) error {
 		if errors.As(err, &pe) && pe.Code == "42P01" {
 			return nil // no automations or webhooks here (undefined table)
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if len(uses) == 0 {
 		return nil

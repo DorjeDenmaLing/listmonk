@@ -229,7 +229,7 @@ func (a *App) DenmaStatProviders(c echo.Context) error {
 		N        int    `db:"n"`
 	}
 	if err := a.db.Select(&rows, q, pq.Array(ids), pq.Array(listIDs)); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 
 	out := map[string]any{"active": map[string]int{}, "unsub": map[string]int{}}
@@ -263,7 +263,7 @@ func (a *App) DenmaUntrackedCampaigns(c echo.Context) error {
 		SELECT campaign_id AS id FROM campaign_views GROUP BY 1 HAVING COUNT(subscriber_id) = 0
 		UNION SELECT id FROM campaigns WHERE started_at < (SELECT since FROM denma_stat_starts WHERE stat = '`+denmaAnalyticsDeleted+`')
 	) u ORDER BY 1`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{ids})
 }

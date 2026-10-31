@@ -112,7 +112,7 @@ func (a *App) denmaNoAPIList(listIDs []int) error {
 	var n int
 	if err := a.db.Get(&n, `SELECT COUNT(*) FROM lists WHERE id = ANY($1) AND '`+denmaAPIListTag+`' = ANY(COALESCE(tags, '{}'))`,
 		pq.Array(listIDs)); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if n > 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "An API campaign's list can't be used here: it's the campaign's own, and goes with it. Choose other lists.")

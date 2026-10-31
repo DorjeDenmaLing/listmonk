@@ -949,7 +949,7 @@ func (a *App) ViewDenmaActivity(c echo.Context) error {
 	}
 	centers := []denmaNamedSlug{}
 	if err := a.db.Select(&centers, `SELECT slug, name FROM denma.centers ORDER BY name`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.Render(http.StatusOK, "admin-denma-activity", denmaActivityView{
 		adminView: newAdminView(c, "Activity", "", "denma.activity"),

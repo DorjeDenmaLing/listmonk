@@ -294,10 +294,10 @@ func (a *App) DenmaAPIEvents(c echo.Context) error {
 	out := []denmaAPIEvent{}
 	k := apiKeyOf(c)
 	if err := a.apiPublishEvents(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := a.db.Select(&out, denmaAPIKeyEventsSQL, denmaAPIKeyEventsArgs(after, limit, k.ID, k.Can)...); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	next := after
 	if len(out) > 0 {

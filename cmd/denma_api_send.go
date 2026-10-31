@@ -169,7 +169,7 @@ func (a *App) apiTemplate(name string, kind string, types ...string) (int, strin
 	}
 	if err := a.db.Select(&rows, `SELECT id, type::TEXT AS type FROM templates WHERE name = $1 AND type::TEXT = ANY($2) ORDER BY id`,
 		strings.TrimSpace(name), pq.Array(types)); err != nil {
-		return 0, "", echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return 0, "", denmaInternal(err)
 	}
 	switch len(rows) {
 	case 1:
@@ -177,7 +177,7 @@ func (a *App) apiTemplate(name string, kind string, types ...string) (int, strin
 	case 0:
 		var names []string
 		if err := a.db.Select(&names, `SELECT name FROM templates WHERE type::TEXT = ANY($1) ORDER BY name`, pq.Array(types)); err != nil {
-			return 0, "", echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return 0, "", denmaInternal(err)
 		}
 		have := "The center has none yet: make one under Campaigns -> Templates."
 		if len(names) > 0 {
@@ -219,7 +219,7 @@ func (a *App) apiReplyToOK(addr string) error {
 	dom := denmaSenderDomain(addr)
 	doms, err := a.denmaCenterDomains()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if len(doms) == 0 {
 		if dom == denmaSenderDomain(a.cfg.FromEmail) || a.denmaCenterOf() == nil || !denmaDomainsOn() {
@@ -263,7 +263,7 @@ func (a *App) apiCapErr(n int) error {
 func (a *App) DenmaAPIStatus(c echo.Context) error {
 	st, err := a.apiState()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	k := apiKeyOf(c)
 	out := map[string]any{
@@ -295,7 +295,7 @@ func (a *App) DenmaAPIStatus(c echo.Context) error {
 func (a *App) DenmaAPITemplates(c echo.Context) error {
 	out, err := a.apiTemplates()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{out})
 }
@@ -354,7 +354,7 @@ func (a *App) apiIdem(c echo.Context, table string) (id int64, done json.RawMess
 		if errors.Is(err, sql.ErrNoRows) {
 			var res json.RawMessage
 			if err := a.db.Get(&res, `SELECT result FROM denma_api_messages WHERE key_id = $1 AND idempotency_key = $2`, k.ID, idem); err != nil {
-				return 0, nil, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+				return 0, nil, denmaInternal(err)
 			}
 			if string(res) == "{}" {
 				return 0, nil, echo.NewHTTPError(http.StatusConflict, "A request with this Idempotency-Key is still being handled.")
@@ -363,7 +363,7 @@ func (a *App) apiIdem(c echo.Context, table string) (id int64, done json.RawMess
 		}
 	}
 	if err != nil {
-		return 0, nil, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return 0, nil, denmaInternal(err)
 	}
 	return id, nil, nil
 }
@@ -454,7 +454,7 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 		seen[email] = true
 		sub, why, err := a.apiTxRecipient(apiKeyOf(c).ID, email, name, first, last, skip)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		if why != "" {
 			res.Skipped = append(res.Skipped, denmaAPISkip{email, why})
@@ -693,7 +693,7 @@ func (a *App) apiCampaign(c echo.Context, id int) (denmaAPICampaign, error) {
 		if errors.Is(err, sql.ErrNoRows) {
 			return out, echo.NewHTTPError(http.StatusNotFound, "This key has no campaign with that ID.")
 		}
-		return out, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return out, denmaInternal(err)
 	}
 	return out, nil
 }
@@ -732,7 +732,7 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 			return c.JSON(http.StatusOK, okResp{out})
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	}
 
@@ -780,7 +780,7 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 	listID, err := a.apiNewCampaignList("API: "+name,
 		fmt.Sprintf("The recipients of a campaign sent through the API (key %q). Deleted %d days after the campaign is done.", k.Name, denmaAPIListKeepDays))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	defer func() {
 		if !keep {
@@ -796,11 +796,11 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 		// Who it won't go to, said only once it's sent: a draft's answer
 		// mustn't tell a key who the center has blocklisted for free.
 		if skipped, err = a.apiNotSent(listID, skipped); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		n, err := a.apiListRecipients(listID)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		if n == 0 {
 			return c.JSON(http.StatusBadRequest, map[string]any{"message": denmaAPINoRecipients, "skipped": skipped})
@@ -881,7 +881,7 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 		if errors.As(err, &pe) && pe.Code == "23505" { // the same Idempotency-Key, at the same time
 			return echo.NewHTTPError(http.StatusConflict, "A request with this Idempotency-Key is still being handled.")
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	keep = true
 	if start {
@@ -1274,7 +1274,7 @@ func (a *App) DenmaAPIAddRecipients(c echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusConflict, "The campaign has started; recipients can only be added before.")
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if x.State != "draft" || !x.ListID.Valid {
 		return echo.NewHTTPError(http.StatusConflict, "The campaign has started; recipients can only be added before.")
@@ -1348,10 +1348,10 @@ func (a *App) DenmaAPIStartCampaign(c echo.Context) error {
 	}
 	var listID int
 	if err := a.db.Get(&listID, `SELECT COALESCE(list_id, 0) FROM denma_api_campaigns WHERE campaign_id = $1`, id); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if out.Skipped, err = a.apiNotSent(listID, []denmaAPISkip{}); err != nil { // who it won't go to
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	a.apiLog(c, "campaign %d starting", id)
 	return c.JSON(http.StatusOK, okResp{out})
@@ -1395,7 +1395,7 @@ func (a *App) apiCancelCampaign(id int, status string) error {
 		}
 	}
 	if _, err := a.db.Exec(`UPDATE denma_api_campaigns SET state = 'started' WHERE campaign_id = $1`, id); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return nil
 }

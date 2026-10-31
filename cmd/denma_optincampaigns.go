@@ -36,7 +36,7 @@ func (a *App) denmaCheckOptinStart(id int) error {
 	if err := a.db.Get(&typ, `SELECT type::TEXT FROM campaigns WHERE id = $1`, id); errors.Is(err, sql.ErrNoRows) {
 		return nil // listmonk's own handling answers for a campaign that isn't there
 	} else if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return denmaNoOptinCampaign(typ)
 }

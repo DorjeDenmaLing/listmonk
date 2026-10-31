@@ -61,14 +61,14 @@ func (a *App) DenmaCampaignOutcomes(c echo.Context) error {
 		Results     []denmaCampaignOutcome `json:"results"`
 	}{Results: []denmaCampaignOutcome{}}
 	if err := a.db.Get(&out.UnsubsSince, `SELECT (SELECT since FROM denma_stat_starts WHERE stat = 'campaign_unsubs')`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := a.db.Select(&out.Results, `SELECT c.id AS campaign_id,
 		(SELECT COUNT(*) FROM bounces b WHERE b.campaign_id = c.id AND b.type <> 'complaint') AS bounces,
 		(SELECT COUNT(*) FROM bounces b WHERE b.campaign_id = c.id AND b.type = 'complaint') AS complaints,
 		(SELECT COUNT(*) FROM denma_campaign_unsubs u WHERE u.campaign_id = c.id) AS unsubscribes
 		FROM campaigns c WHERE c.id = ANY($1) ORDER BY c.id`, pq.Array(ids)); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{out})
 }
@@ -109,7 +109,7 @@ func (a *App) DenmaCampaignPeopleStats(c echo.Context) error {
 		LEFT JOIN (SELECT campaign_id, %[1]s AS n FROM link_clicks
 			WHERE campaign_id = ANY($1) AND created_at >= $2::TIMESTAMP AND created_at <= $3::TIMESTAMP GROUP BY campaign_id) k ON k.campaign_id = c.id
 		WHERE c.id = ANY($1) ORDER BY c.id`, count), pq.Array(ids), from, to); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{out})
 }

@@ -374,7 +374,7 @@ func (a *App) apiKey(id int) (denmaAPIKey, error) {
 		if errors.Is(err, sql.ErrNoRows) {
 			return k, echo.NewHTTPError(http.StatusNotFound, "That key doesn't exist (any more).")
 		}
-		return k, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return k, denmaInternal(err)
 	}
 	denmaAPIKeyView(&k)
 	return k, nil
@@ -422,17 +422,17 @@ func (a *App) ViewDenmaAPI(c echo.Context) error {
 		Super: v.Profile.UserRole.ID == auth.SuperAdminRoleID, PerMinute: denmaAPIPerMinute,
 		Sender: a.cfg.FromEmail, KeepDays: denmaAPIKeepDeletedDays}
 	if view.Keys, err = a.apiKeys(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	view.Domains = a.apiOwnLinkDomains()
 	if view.Templates, err = a.apiTemplates(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if view.State, err = a.apiState(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if view.Spec, err = a.apiOpenAPI(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	// The last week's sending, a day at a time.
 	if err := a.db.Select(&view.Recent, `WITH d AS (
@@ -445,7 +445,7 @@ func (a *App) ViewDenmaAPI(c echo.Context) error {
 		)
 		SELECT day, SUM(messages)::INT AS messages, SUM(campaigns)::INT AS campaigns, SUM(sent)::INT AS sent
 		FROM d GROUP BY day ORDER BY day DESC`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.Render(http.StatusOK, "admin-denma-api", view)
 }
@@ -465,7 +465,7 @@ func (a *App) DenmaGetAPIKeys(c echo.Context) error {
 	}
 	out, err := a.apiKeys()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{out})
 }
@@ -623,22 +623,22 @@ func (a *App) DenmaCreateAPIKey(c echo.Context) error {
 	}
 	n, err := a.apiKeysInUse()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if n >= denmaAPIMaxKeys {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("A center can have at most %d keys.", denmaAPIMaxKeys))
 	}
 	key, hash, hint, err := denmaNewAPIKey()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	secret, err := utils.GenerateRandomString(32)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	tx, err := a.db.Begin()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	defer tx.Rollback()
 	var id int
@@ -648,10 +648,10 @@ func (a *App) DenmaCreateAPIKey(c echo.Context) error {
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT COALESCE(event_seq, 0) FROM denma_api_state), $9, $10, $11, $12) RETURNING id`,
 		f.Name, hash, hint, pq.Array(f.Can), pq.Array(f.AllowedFrom), pq.Array(f.LinkDomains), f.WebhookURL, "whsec_"+secret,
 		f.Sender, f.DailyLimit, f.expiresAt, denmaAPIWho(c)).Scan(&id); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	k, err := a.apiKey(id)
 	if err != nil {
@@ -684,13 +684,13 @@ func (a *App) DenmaUpdateAPIKey(c echo.Context) error {
 	if old.WebhookURL == "" && f.WebhookURL != "" {
 		r, err := utils.GenerateRandomString(32)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		secret = "whsec_" + r
 	}
 	tx, err := a.db.Begin()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	defer tx.Rollback()
 	// A new webhook address starts after the current events; a new expiry
@@ -705,10 +705,10 @@ func (a *App) DenmaUpdateAPIKey(c echo.Context) error {
 		expiry_notice = CASE WHEN expires_at IS DISTINCT FROM $9 THEN '' ELSE expiry_notice END, expires_at = $9
 		WHERE id = $1`, id, f.Name, pq.Array(f.AllowedFrom), f.WebhookURL, f.WebhookURL != old.WebhookURL, pq.Array(f.Can),
 		f.Sender, f.DailyLimit, f.expiresAt, pq.Array(f.LinkDomains), secret); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	k, err := a.apiKey(id)
 	if err != nil {
@@ -736,7 +736,7 @@ func (a *App) DenmaNewAPIKey(c echo.Context) error {
 	}
 	key, hash, hint, err := denmaNewAPIKey()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	res, err := a.db.Exec(`UPDATE denma_api_keys SET
 		old_key_hash = CASE WHEN $4 > 0 THEN key_hash END,
@@ -744,7 +744,7 @@ func (a *App) DenmaNewAPIKey(c echo.Context) error {
 		key_hash = $2, key_hint = $3, updated_at = NOW()
 		WHERE id = $1 AND deleted_at IS NULL`, id, hash, hint, r.OverlapHours)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return echo.NewHTTPError(http.StatusNotFound, "That key doesn't exist (any more).")
@@ -766,11 +766,11 @@ func (a *App) DenmaNewAPIWebhookSecret(c echo.Context) error {
 	id, _ := strconv.Atoi(c.Param("id"))
 	secret, err := utils.GenerateRandomString(32)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	res, err := a.db.Exec(`UPDATE denma_api_keys SET webhook_secret = $2, updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`, id, "whsec_"+secret)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return echo.NewHTTPError(http.StatusNotFound, "That key doesn't exist (any more).")
@@ -802,7 +802,7 @@ func (a *App) DenmaDeleteAPIKey(c echo.Context) error {
 		old_key_hash = NULL, old_key_until = NULL, updated_at = NOW() WHERE id = $1 AND (deleted_at IS NULL OR $3)`, id, denmaAPIWho(c), leaked)
 	l.Unlock()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return echo.NewHTTPError(http.StatusNotFound, "That key doesn't exist (any more).")
@@ -875,7 +875,7 @@ func (a *App) DenmaRestoreAPIKey(c echo.Context) error {
 	}
 	n, err := a.apiKeysInUse()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if n >= denmaAPIMaxKeys {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("A center can have at most %d keys: delete another first.", denmaAPIMaxKeys))
@@ -883,13 +883,13 @@ func (a *App) DenmaRestoreAPIKey(c echo.Context) error {
 	key, hash, hint := "", "", ""
 	if k.Leaked {
 		if key, hash, hint, err = denmaNewAPIKey(); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	}
 	if _, err := a.db.Exec(`UPDATE denma_api_keys SET deleted_at = NULL, deleted_by = '', leaked = FALSE, updated_at = NOW(),
 		key_hash = CASE WHEN $2 <> '' THEN $2 ELSE key_hash END, key_hint = CASE WHEN $2 <> '' THEN $3 ELSE key_hint END
 		WHERE id = $1 AND deleted_at IS NOT NULL`, id, hash, hint); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if k, err = a.apiKey(id); err != nil {
 		return err
@@ -1024,7 +1024,7 @@ func (a *App) apiAuth(next echo.HandlerFunc) echo.HandlerFunc {
 				denmaAPIBadKeys.add(ip)
 				return echo.NewHTTPError(http.StatusUnauthorized, "This key isn't in use (any more).")
 			}
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		if k.ExpiresAt != nil && !k.ExpiresAt.After(time.Now()) {
 			return echo.NewHTTPError(http.StatusUnauthorized, fmt.Sprintf(
@@ -1116,7 +1116,7 @@ func (a *App) apiLimitClaim(c echo.Context, kind, what string, n int) error {
 	k := apiKeyOf(c)
 	ok, used, err := a.apiClaim(k.ID, kind, n, k.DailyLimit)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if ok {
 		return nil
@@ -1135,7 +1135,7 @@ func (a *App) apiSendClaim(c echo.Context, n int) error {
 	k := apiKeyOf(c)
 	ok, used, err := a.apiClaim(k.ID, denmaAPIUseSend, n, k.DailyLimit)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if ok {
 		return nil
@@ -1201,7 +1201,7 @@ func (a *App) apiState() (denmaAPIState, error) {
 func (a *App) apiCanSend() error {
 	s, err := a.apiState()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if s.PausedAt != nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable,
@@ -1244,7 +1244,7 @@ func (a *App) DenmaResumeAPI(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "Only a superadmin can resume the API's sending.")
 	}
 	if _, err := a.db.Exec(`UPDATE denma_api_state SET paused_at = NULL, paused_reason = '', resumed_at = NOW()`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	// The campaigns the pause stopped, as they were (cmd/denma_api_events.go).
 	var camps []struct {
@@ -1256,7 +1256,7 @@ func (a *App) DenmaResumeAPI(c echo.Context) error {
 		FROM denma_api_campaigns x WHERE x.campaign_id = c.id AND c.status IN ('paused', 'draft')
 			AND COALESCE(c.attribs->>'denma_api_paused', '') <> ''
 		RETURNING c.id, (SELECT attribs->>'denma_api_paused' FROM campaigns o WHERE o.id = c.id) AS was, c.send_at`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	for _, cm := range camps {
 		status := "running"

@@ -1201,11 +1201,11 @@ func (a *App) ViewDenmaDomain(c echo.Context) error {
 func (d *denmaCenters) domainsView(c echo.Context, only, title string) (denmaDomainsView, error) {
 	rows, err := d.domainRows(only)
 	if err != nil {
-		return denmaDomainsView{}, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaDomainsView{}, denmaInternal(err)
 	}
 	v := denmaDomainsView{adminView: newAdminView(c, title, "", "denma.domains"), Domains: rows, Centers: []denmaOtherCenter{}}
 	if err := d.db().Select(&v.Centers, `SELECT slug, name FROM denma.centers ORDER BY LOWER(name)`); err != nil {
-		return v, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return v, denmaInternal(err)
 	}
 	s, why := d.ses()
 	if s == nil {
@@ -1225,7 +1225,7 @@ func (d *denmaCenters) domainParam(c echo.Context) (string, error) {
 	dom := strings.ToLower(c.Param("domain"))
 	var ok bool
 	if err := d.db().Get(&ok, `SELECT EXISTS (SELECT 1 FROM denma.sending_domains WHERE domain = $1)`, dom); err != nil {
-		return "", echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return "", denmaInternal(err)
 	}
 	if !ok {
 		return "", echo.NewHTTPError(http.StatusNotFound, "That isn't one of the sending domains.")
@@ -1273,7 +1273,7 @@ func (a *App) DenmaAddDomain(c echo.Context) error {
 	}
 	var exists bool
 	if err := d.db().Get(&exists, `SELECT EXISTS (SELECT 1 FROM denma.sending_domains WHERE domain = $1)`, dom); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if exists {
 		return echo.NewHTTPError(http.StatusConflict, dom+" is already one of the sending domains.")
@@ -1281,7 +1281,7 @@ func (a *App) DenmaAddDomain(c echo.Context) error {
 	var ids []int
 	if len(req.Centers) > 0 {
 		if err := d.db().Select(&ids, `SELECT id FROM denma.centers WHERE slug = ANY($1)`, pq.Array(req.Centers)); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	}
 	if s, why := d.ses(); s == nil {
@@ -1311,7 +1311,7 @@ func (a *App) DenmaCheckDomain(c echo.Context) error {
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 30*time.Second)
 	defer cancel()
 	if _, err := d.checkDomain(ctx, s, dom); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return d.domainResp(c, dom, nil)
 }
@@ -1350,7 +1350,7 @@ func (a *App) DenmaFixDomain(c echo.Context) error {
 	ref := d.domainRef(ctx, s)
 	var mailFrom string
 	if err := d.db().Get(&mailFrom, `SELECT mail_from FROM denma.sending_domains WHERE domain = $1`, dom); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 
 	switch req.Action {
@@ -1403,7 +1403,7 @@ func (a *App) DenmaFixDomain(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadGateway, "Amazon SES: "+err.Error())
 	}
 	if _, err := d.checkDomain(ctx, s, dom); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return d.domainResp(c, dom, nil)
 }
@@ -1427,7 +1427,7 @@ func (a *App) DenmaAddDomainCenter(c echo.Context) error {
 	res, err := d.db().Exec(`INSERT INTO denma.sending_domain_centers (domain, center_id)
 		SELECT $1, id FROM denma.centers WHERE slug = $2 ON CONFLICT DO NOTHING`, dom, req.Slug)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "That center is already on it, or isn't a center.")
@@ -1450,7 +1450,7 @@ func (a *App) DenmaRemoveDomainCenter(c echo.Context) error {
 	slug := c.Param("slug")
 	senders, err := d.centerSenders()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	for _, s := range senders {
 		if s.Slug == slug && s.Domain == dom {
@@ -1459,14 +1459,14 @@ func (a *App) DenmaRemoveDomainCenter(c echo.Context) error {
 	}
 	camps, err := d.domainCampaigns(dom, slug)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := denmaCampaignsOnDomain(camps, dom); err != nil {
 		return err
 	}
 	if _, err := d.db().Exec(`DELETE FROM denma.sending_domain_centers WHERE domain = $1
 		AND center_id = (SELECT id FROM denma.centers WHERE slug = $2)`, dom, slug); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return d.domainResp(c, dom, nil)
 }
@@ -1490,7 +1490,7 @@ func (a *App) DenmaDeleteDomain(c echo.Context) error {
 	}
 	senders, err := d.centerSenders()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	var using []string
 	for _, s := range senders {
@@ -1506,7 +1506,7 @@ func (a *App) DenmaDeleteDomain(c echo.Context) error {
 	}
 	camps, err := d.domainCampaigns(dom, "")
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if err := denmaCampaignsOnDomain(camps, dom); err != nil {
 		return err
@@ -1515,7 +1515,7 @@ func (a *App) DenmaDeleteDomain(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "The hub can't delete domains from Amazon SES: delete it in the SES console (Identities).")
 	}
 	if _, err := d.db().Exec(`DELETE FROM denma.sending_domains WHERE domain = $1`, dom); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{true})
 }
@@ -1564,7 +1564,7 @@ func (a *App) denmaCheckSender(from string) error {
 	}
 	doms, err := a.denmaCenterDomains()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	names := make([]string, 0, len(doms))
 	for _, d := range doms {
@@ -1705,7 +1705,7 @@ func (a *App) denmaCheckHubSender(from string) error {
 	dom := denmaSenderDomain(from)
 	var ok bool
 	if err := a.db.Get(&ok, `SELECT EXISTS (SELECT 1 FROM denma.sending_domains WHERE domain = $1)`, dom); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if !ok {
 		return fmt.Errorf("%s isn't one of the sending domains. Add it on the Sending domains page first.", dom)

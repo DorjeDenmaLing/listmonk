@@ -61,7 +61,7 @@ func (a *App) denmaNoBlocklistedDelete(ids []int, req *subQueryReq, listIDs []in
 	var n int
 	if req == nil {
 		if err := a.db.Get(&n, `SELECT COUNT(*) FROM subscribers WHERE id = ANY($1) AND status = 'blocklisted'`, pq.Array(ids)); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 	} else {
 		var err error

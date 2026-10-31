@@ -212,7 +212,7 @@ func (a *App) DenmaLogin(c echo.Context) error {
 
 	var hubUser bool
 	if err := a.db.Get(&hubUser, `SELECT EXISTS (SELECT 1 FROM users WHERE LOWER(username) = LOWER($1) AND type = 'user')`, username); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if hubUser {
 		// listmonk's own sign-in, which counts their guesses too (cmd/auth.go).
@@ -258,7 +258,7 @@ func (a *App) denmaSignedIn(c echo.Context, personID int, next string) error {
 	}
 	ms, err := d.centersOf(personID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if len(ms) == 0 {
 		a.clearLoginState(c)
@@ -358,7 +358,7 @@ func (a *App) DenmaLoginCenters(c echo.Context) error {
 	}
 	ms, err := denmaHub.centersOf(st.PersonID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if c.Request().Method == http.MethodPost {
 		slug := c.FormValue("center")

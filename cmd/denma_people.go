@@ -598,7 +598,7 @@ func (a *App) denmaMemberOf(userID int) (*denmaPerson, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return nil, denmaInternal(err)
 	}
 	return &p, nil
 }
@@ -626,7 +626,7 @@ func (a *App) denmaCheckUserUnique(u auth.User, id int) error {
 	}
 	var taken bool
 	if err := a.db.Get(&taken, `SELECT EXISTS (SELECT 1 FROM denma.people WHERE LOWER(username) = LOWER($1))`, u.Username); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if taken {
 		return errDenmaUsernameTaken
@@ -786,17 +786,17 @@ func (a *App) denmaUpdateOwnAccount(c echo.Context) (bool, error) {
 		return tx.Commit()
 	}()
 	if err != nil {
-		return true, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return true, denmaInternal(err)
 	}
 	if password != "" {
 		if err := denmaHub.setPassword(p.ID, password, auth.GetSessionID(c)); err != nil {
-			return true, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return true, denmaInternal(err)
 		}
 	}
 	// Taken or not, the link is sent: the answer doesn't say whose an address is.
 	if newEmail {
 		if err := a.denmaSendEmailChange(p, email); err != nil {
-			return true, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return true, denmaInternal(err)
 		}
 	}
 
@@ -882,7 +882,7 @@ func (a *App) denmaEnableTOTP(c echo.Context, secret, code string) (bool, error)
 		return true, echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("users.invalidTOTPCode"))
 	}
 	if err := denmaHub.setTwofa(p.ID, secret); err != nil {
-		return true, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return true, denmaInternal(err)
 	}
 	return true, c.JSON(http.StatusOK, okResp{true})
 }
@@ -901,7 +901,7 @@ func (a *App) denmaDisableTOTP(c echo.Context, password string) (bool, error) {
 		return true, err
 	}
 	if err := denmaHub.setTwofa(p.ID, ""); err != nil {
-		return true, echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return true, denmaInternal(err)
 	}
 	return true, c.JSON(http.StatusOK, okResp{true})
 }
@@ -916,7 +916,7 @@ func (a *App) denmaPersonPassword(personID int, password string, wrong error) er
 		if errors.As(err, &he) {
 			return he
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	case !ok:
 		return wrong
 	}
@@ -979,7 +979,7 @@ func (a *App) DenmaSwitchCenter(c echo.Context) error {
 	}
 	ms, err := denmaHub.centersOf(p.ID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	for _, m := range ms {
 		if m.Slug == c.Param("slug") {
@@ -1077,7 +1077,7 @@ func (a *App) ViewDenmaPeople(c echo.Context) error {
 	}
 	var people []denmaPerson
 	if err := d.db().Select(&people, `SELECT `+denmaPersonCols+` FROM denma.people p ORDER BY LOWER(p.name), p.id`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 
 	// Their accounts, from every center that has people: one query.
@@ -1089,7 +1089,7 @@ func (a *App) ViewDenmaPeople(c echo.Context) error {
 	}
 	if err := d.db().Select(&centers, `SELECT c.id, c.slug, c.name, c.schema_name FROM denma.centers c
 		WHERE EXISTS (SELECT 1 FROM denma.memberships m WHERE m.center_id = c.id)`); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	byPerson := map[int][]denmaPersonCenter{}
 	if len(centers) > 0 {
@@ -1104,7 +1104,7 @@ func (a *App) ViewDenmaPeople(c echo.Context) error {
 			denmaPersonCenter
 		}
 		if err := d.db().Select(&rows, strings.Join(parts, " UNION ALL ")); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		for _, r := range rows {
 			byPerson[r.PersonID] = append(byPerson[r.PersonID], r.denmaPersonCenter)
@@ -1132,13 +1132,13 @@ func (a *App) DenmaPersonTwofaOff(c echo.Context) error {
 	}
 	p, err := d.person(getID(c))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	if p == nil {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
 	}
 	if err := d.setTwofa(p.ID, ""); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{true})
 }

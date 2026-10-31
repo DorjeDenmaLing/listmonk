@@ -235,7 +235,7 @@ func (a *App) DenmaAutoScheduleDay(c echo.Context) error {
 		}
 		var autos []denmaAutomation
 		if err := a.db.Select(&autos, denmaAutoSelectSQL+` WHERE a.id = ANY($1)`, pq.Array(ids)); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
 		}
 		for i := range groups {
 			for _, x := range autos {
