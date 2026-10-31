@@ -26,6 +26,8 @@ function denmaMCPKeys() {
     keys: window._denmaMCPKeys || [],
     users: window._denmaMCPUsers || [],
     groups: window._denmaMCPGroups || [],
+    labels: window._denmaPermLabels || {},
+    groupLabels: window._denmaPermGroupLabels || {},
     mine: window._denmaMCPMine || [],
     edit: { id: 0 },
     newKey: '',
@@ -98,9 +100,9 @@ function denmaMCPKeys() {
 
     permsText(k) {
       if (k.permissions.every(reads)) {
-        return `Reads only: ${k.permissions.join(', ')}`;
+        return `Reads only: ${k.permissions.map((p) => this.labels[p] || p).join(', ')}`;
       }
-      return k.permissions.join(', ');
+      return k.permissions.map((p) => this.labels[p] || p).join(', ');
     },
 
     seesText(k) {

@@ -30,7 +30,7 @@
 				</label>
 
 				<div data-field>
-					<label>{{ .L.T "globals.terms.list" }}</label>
+					<div class="hstack gap-1"><label>{{ .L.T "globals.terms.list" }}</label>{{ template "denma-list-perm-help" $d.DenmaListPerms }}</div>{{/* denma */}}
 					<fieldset class="group">
 						<select aria-label="{{ .L.Tc "globals.terms.list" 1 }}" x-model.number="form.curList" :disabled="disabled || filteredLists.length < 1">
 							<template x-for="l in filteredLists" :key="l.id">

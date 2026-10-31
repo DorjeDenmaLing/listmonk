@@ -1,0 +1,32 @@
+{{- /* denma: a permission's name and its explanation (cmd/denma_perminfo.go). */ -}}
+{{ define "denma-perm" -}}
+<div class="hstack gap-1 denma-perm">
+	<label>
+		<input type="checkbox" value="{{ .Key }}" x-model="form.permissions" :disabled="disabled" />
+		<span{{ if .Risky }} class="text-danger"{{ end }}>{{ .Label }}</span>
+	</label>
+	{{ template "denma-perm-help" . }}
+</div>
+{{- end }}
+
+{{ define "denma-perm-help" -}}
+<ot-dropdown class="denma-perm-help">
+	<button type="button" class="ghost small icon" popovertarget="denma-perm-{{ .Key }}" aria-label="What {{ .Label }} does" title="What this does" data-testid="perm-help-{{ .Key }}">{{ Icon "help-circle" }}</button>
+	<div popover id="denma-perm-{{ .Key }}">
+		<p><strong>{{ .Label }}</strong></p>
+		<p>{{ .What }}</p>
+		<p><small class="text-light"><code>{{ .Key }}</code></small></p>
+	</div>
+</ot-dropdown>
+{{- end }}
+
+{{ define "denma-list-perm-help" -}}
+<ot-dropdown class="denma-perm-help">
+	<button type="button" class="ghost small icon" popovertarget="denma-perm-list" aria-label="What View and Manage do" title="What these do" data-testid="perm-help-list">{{ Icon "help-circle" }}</button>
+	<div popover id="denma-perm-list">
+		{{- range . }}
+		<p><strong>{{ if eq .Key "list:get" }}View{{ else }}Manage{{ end }}:</strong> {{ .What }}</p>
+		{{- end }}
+	</div>
+</ot-dropdown>
+{{- end }}

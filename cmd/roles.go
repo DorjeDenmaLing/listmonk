@@ -123,7 +123,7 @@ func (a *App) ViewUserRole(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	groups, locked := denmaRoleForm(c, groups, role, isNew) // denma: only their own permissions to give
+	groups, locked := denmaRoleForm(c, denmaPermShown(groups), role, isNew) // denma: only their own permissions to give
 
 	title := a.i18n.T("users.newUserRole")
 	if !isNew {

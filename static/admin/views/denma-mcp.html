@@ -9,6 +9,8 @@
 	window._denmaMCPKeys = {{ ToJSON $d.Keys }};
 	window._denmaMCPUsers = {{ ToJSON $d.Users }};
 	window._denmaMCPGroups = {{ ToJSON $d.Groups }};
+	window._denmaPermLabels = {{ ToJSON $d.Labels }};
+	window._denmaPermGroupLabels = {{ ToJSON $d.GroupLabels }};
 	window._denmaMCPMine = {{ ToJSON $d.Mine }};
 	window._denmaMCPMe = {{ $d.Profile.ID }};
 </script>
@@ -116,11 +118,11 @@
 						</div>
 						<template x-for="g in groups" :key="g.group">
 							<div class="vstack gap-1">
-								<strong class="text-8" x-text="g.group"></strong>
+								<strong class="text-8" x-text="groupLabels[g.group] || g.group"></strong>
 								<template x-for="p in g.permissions" :key="p">
 									<label class="hstack gap-2">
 										<input type="checkbox" :value="p" x-model="edit.permissions" :disabled="!givable(p)" :data-testid="`mcp-perm-${p}`" />
-										<code x-text="p"></code>
+										<span x-text="labels[p] || p" :title="p"></span>
 										<small class="text-light" x-text="permNote(p)"></small>
 									</label>
 								</template>

@@ -2867,3 +2867,44 @@ small[data-hint]:empty {
 .media-files #media-upload form > .hstack {
   display: none;
 }
+
+/* The ? beside a permission, and what it does. */
+.denma-perm > label {
+  margin: 0;
+}
+
+.denma-perm-help {
+  display: inline-block;
+  vertical-align: middle;
+
+  > button {
+    color: var(--muted-foreground);
+
+    svg {
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  [popover] {
+    width: min(22rem, calc(100vw - 2rem));
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-7);
+    font-weight: normal;
+    color: var(--foreground);
+
+    p {
+      margin: 0;
+    }
+
+    p + p {
+      margin-top: var(--space-2);
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .denma-perm-help [popover] {
+    left: 1rem !important;
+  }
+}

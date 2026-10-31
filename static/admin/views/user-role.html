@@ -46,26 +46,11 @@
 					<tbody>
 						{{- range $d.PermGroups }}
 							<tr>
-								<td>{{ $.L.T (printf "globals.terms.%s" .Group) }}</td>
+								<td>{{ $d.DenmaPermGroup .Group }}</td>{{/* denma: cmd/denma_perminfo.go */}}
 								<td>
 									<div class="vstack gap-1">
 										{{- range .Permissions }}
-											<label>
-												<input type="checkbox" value="{{ . }}" x-model="form.permissions" :disabled="disabled" />
-												{{- if eq . "subscribers:sql_query" }}
-													<span class="text-danger">{{ . }}</span>
-													<a href="https://listmonk.app/docs/roles-and-permissions/#subscriberssql_query" target="_blank" rel="noopener noreferrer" class="text-danger" aria-label="Warning: high risk permission">
-														{{ Icon "alert-triangle" }}
-													</a>
-												{{- else if eq . "users:manage" }}
-													<span class="text-danger">{{ . }}</span>
-													<a href="https://listmonk.app/docs/roles-and-permissions/#:~:text=users:manage" target="_blank" rel="noopener noreferrer" class="text-danger" aria-label="Warning: high risk permission">
-														{{ Icon "alert-triangle" }}
-													</a>
-												{{ else }}
-													{{ . }}
-												{{- end }}
-											</label>
+											{{ template "denma-perm" ($d.DenmaPerm .) }}{{/* denma */}}
 										{{- end }}
 									</div>
 								</td>

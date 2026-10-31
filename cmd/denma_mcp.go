@@ -742,14 +742,16 @@ func (a *App) mcpUserOptions(c echo.Context) ([]denmaMCPUserOption, error) {
 // denmaMCPView is Config -> MCP.
 type denmaMCPView struct {
 	adminView
-	Keys       []denmaMCPKey
-	Users      []denmaMCPUserOption
-	Groups     []denmaMCPPermGroup
-	Mine       []string // the permissions c's user can give ("*": all)
-	MCPURL     string   // where the gateway is
-	Connector  bool     // the hub has a connector secret
-	PerMinute  int
-	CenterSlug string
+	Keys        []denmaMCPKey
+	Users       []denmaMCPUserOption
+	Groups      []denmaMCPPermGroup
+	Labels      map[string]string // each permission's name (cmd/denma_perminfo.go)
+	GroupLabels map[string]string
+	Mine        []string // the permissions c's user can give ("*": all)
+	MCPURL      string   // where the gateway is
+	Connector   bool     // the hub has a connector secret
+	PerMinute   int
+	CenterSlug  string
 }
 
 // ViewDenmaMCP renders Config -> MCP.
@@ -758,7 +760,7 @@ func (a *App) ViewDenmaMCP(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	view := denmaMCPView{adminView: v, Groups: a.mcpPermGroups(), PerMinute: denmaMCPPerMinute,
+	view := denmaMCPView{adminView: v, Groups: a.mcpPermGroups(), Labels: denmaPermLabels(), GroupLabels: denmaPermGroupLabels, PerMinute: denmaMCPPerMinute,
 		CenterSlug: a.ko.String("denma.center"), MCPURL: strings.TrimSuffix(denmaHub.current().urlCfg.RootURL, "/") + denmaMCPPath}
 	if view.Keys, err = a.mcpKeys(c, 0); err != nil {
 		return err
