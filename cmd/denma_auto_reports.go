@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS denma_automation_views (
     subscriber_id INTEGER NULL REFERENCES subscribers(id) ON DELETE SET NULL,
     created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS denma_automation_views_sub ON denma_automation_views (subscriber_id);
 CREATE INDEX IF NOT EXISTS denma_automation_views_auto ON denma_automation_views (automation_id, created_at);
 CREATE INDEX IF NOT EXISTS denma_automation_views_sub ON denma_automation_views (automation_id, subscriber_id);
 ALTER TABLE denma_automation_clicks ADD COLUMN IF NOT EXISTS step INTEGER NULL; -- NULL: before steps were recorded

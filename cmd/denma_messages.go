@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS denma_messages (
     error         TEXT NOT NULL DEFAULT '',
     sent_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS denma_messages_campaign ON denma_messages (campaign_id);
 CREATE INDEX IF NOT EXISTS denma_messages_sub ON denma_messages (subscriber_id, sent_at);
 CREATE INDEX IF NOT EXISTS denma_messages_at ON denma_messages (sent_at);
 

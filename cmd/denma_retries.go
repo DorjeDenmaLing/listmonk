@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS denma_send_failures (
     failed_at     TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     PRIMARY KEY (campaign_id, subscriber_id)
 );
+CREATE INDEX IF NOT EXISTS denma_send_failures_sub ON denma_send_failures (subscriber_id);
 ALTER TABLE denma_send_failures ADD COLUMN IF NOT EXISTS uncertain BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_retry_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_sent_ahead INTEGER[] NOT NULL DEFAULT '{}';

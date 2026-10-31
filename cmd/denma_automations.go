@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS denma_automation_clicks (
     subscriber_id INTEGER NULL REFERENCES subscribers(id) ON DELETE SET NULL,
     created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS denma_automation_clicks_sub ON denma_automation_clicks (subscriber_id);
 CREATE INDEX IF NOT EXISTS denma_automation_clicks_auto ON denma_automation_clicks (automation_id);
 
 -- Triggers, conditions and actions besides the e-mail.
