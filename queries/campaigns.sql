@@ -388,7 +388,7 @@ subs AS (
         -- denma. And the active subscribers with any of the campaign's tags
         -- (cmd/denma_tags.go).
         (SELECT s.id FROM subscribers s
-        WHERE $2 != 'optin' AND s.attribs->'tags' ?| (SELECT denma_tags FROM campaigns WHERE id = $1)
+        WHERE $2 != 'optin' AND (SELECT CARDINALITY(denma_tags) FROM campaigns WHERE id = $1) > 0 AND s.attribs->'tags' ?| (SELECT denma_tags FROM campaigns WHERE id = $1)
             AND s.id > $3 AND s.id <= $4
             AND s.status != 'blocklisted' AND EXISTS (
             SELECT 1 FROM subscriber_lists dsl JOIN lists dl ON dl.id = dsl.list_id WHERE dsl.subscriber_id = s.id

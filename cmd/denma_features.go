@@ -838,7 +838,6 @@ CREATE TRIGGER denma_subscriber_tags
     BEFORE INSERT OR UPDATE OF attribs ON subscribers
     FOR EACH ROW EXECUTE FUNCTION denma_subscriber_tags();
 CREATE INDEX IF NOT EXISTS denma_subscribers_tags ON subscribers USING GIN ((attribs->'tags'));
-UPDATE subscribers SET attribs = attribs WHERE jsonb_typeof(attribs) = 'object' AND attribs ? 'tags';
 
 -- The tags a campaign is sent to, besides its lists.
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';
