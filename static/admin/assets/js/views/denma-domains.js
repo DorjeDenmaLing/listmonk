@@ -1,3 +1,4 @@
+import { denmaAgo } from '../denma-ago.js';
 // denma: the hub's Sending domains pages (views/denma-domains.html, a list,
 // and views/denma-domain.html, one domain; cmd/denma_domains.go).
 import Alpine from 'alpinejs';
@@ -27,19 +28,7 @@ const FIX_WORDS = {
 const RECORD_WORDS = { ok: 'In place', missing: 'Not found yet', wrong: 'Different', conflict: 'To fix' };
 const RECORD_BADGES = { ok: 'status-finished', missing: 'status-scheduled', wrong: 'status-paused', conflict: 'status-cancelled' };
 
-// How long ago an ISO time was: "4 minutes ago".
-function ago(iso) {
-  if (!iso) return 'Never';
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  const units = [[86400, 'day'], [3600, 'hour'], [60, 'minute']];
-  for (const [n, name] of units) {
-    if (s >= n) {
-      const v = Math.floor(s / n);
-      return `${v} ${name}${v === 1 ? '' : 's'} ago`;
-    }
-  }
-  return 'Just now';
-}
+const ago = (iso) => (iso ? denmaAgo(iso) : 'Never');
 
 const domainURL = (domain) => `${urls.admin}/domains/${encodeURIComponent(domain)}`;
 

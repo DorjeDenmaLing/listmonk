@@ -1,3 +1,4 @@
+import { denmaAgo } from '../denma-ago.js';
 // denma: the MCP pages (cmd/denma_mcp.go): a center's Config -> MCP, its
 // keys for Claude, each a user's, saved as they're changed and shown once
 // when made; and the hub's MCP page, the claude.ai connector's secret.
@@ -6,17 +7,7 @@ import Alpine from 'alpinejs';
 import { api } from '../main.js';
 import * as u from '../utils.js';
 
-// How long ago an ISO time was: "4 minutes ago".
-function ago(iso) {
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  for (const [n, name] of [[86400, 'day'], [3600, 'hour'], [60, 'minute']]) {
-    if (s >= n) {
-      const v = Math.floor(s / n);
-      return `${v} ${name}${v === 1 ? '' : 's'} ago`;
-    }
-  }
-  return 'just now';
-}
+const ago = denmaAgo;
 
 // A date as YYYY-MM-DD (UTC).
 const ymd = (d) => d.toISOString().slice(0, 10);

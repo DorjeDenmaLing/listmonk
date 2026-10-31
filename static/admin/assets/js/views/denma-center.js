@@ -1,3 +1,5 @@
+import { denmaAgo } from '../denma-ago.js';
+import { denmaUnsaved } from '../denma-unsaved.js';
 // denma: a center's Config pages, General (views/denma-center.html),
 // Webhooks (views/denma-webhooks.html), cmd/denma_center.go, and API
 // (views/denma-api.html, cmd/denma_api.go). Saving General reloads the
@@ -82,17 +84,7 @@ function denmaCenter() {
   };
 }
 
-// How long ago an ISO time was: "4 minutes ago".
-function ago(iso) {
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  for (const [n, name] of [[86400, 'day'], [3600, 'hour'], [60, 'minute']]) {
-    if (s >= n) {
-      const v = Math.floor(s / n);
-      return `${v} ${name}${v === 1 ? '' : 's'} ago`;
-    }
-  }
-  return 'just now';
-}
+const ago = denmaAgo;
 
 // Config -> Webhooks: the sign-up webhooks (cmd/denma_signup.go), saved as
 // they're changed: Form webhooks (the center's admins') and Server webhooks
