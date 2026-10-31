@@ -28,7 +28,7 @@
 					<dd data-testid="start-recipients">
 						<template x-if="startConfirm.loading"><span class="text-light">Counting…</span></template>
 						<template x-if="!startConfirm.loading && startConfirm.check">
-							<span><strong x-text="startConfirm.check.recipients.toLocaleString()"></strong> <span x-text="startConfirm.check.recipients === 1 ? 'person' : 'people'"></span> <span class="text-light">(not counting unsubscribed or blocklisted)</span></span>
+							<span><strong x-text="startConfirm.check.recipients.toLocaleString()"></strong> <span x-text="startConfirm.check.recipients === 1 ? 'person' : 'people'"></span> <span class="text-light">(not counting unsubscribed, blocklisted or unconfirmed)</span></span>
 						</template>
 						<template x-if="!startConfirm.loading && !startConfirm.check"><span class="text-light">Couldn't count them.</span></template>
 					</dd>
