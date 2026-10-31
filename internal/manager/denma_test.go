@@ -6,6 +6,7 @@ package manager
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net/textproto"
@@ -27,6 +28,9 @@ type mockStore struct {
 
 	failures   map[int]bool        // failed sends: subscriber ID -> temporary
 	retries    []models.Subscriber // returned by the first DenmaRetrySubscribers call
+	gone       map[int]bool        // no longer sent the campaign (DenmaStillSent)
+	goneErr    error               // returned by DenmaStillSent
+	checked    []int               // who DenmaStillSent was asked about
 	retryAll   []bool              // DenmaRetrySubscribers' all
 	retrySent  []int               // DenmaRetrySent's subscribers
 	retryLater bool                // DenmaRetryLater's answer
@@ -42,6 +46,12 @@ func (s *mockStore) DenmaSendFailed(campID, subID int, reason string, temporary,
 	}
 	s.failures[subID] = temporary
 	return nil
+}
+func (s *mockStore) DenmaStillSent(campID, subID int) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.checked = append(s.checked, subID)
+	return !s.gone[subID], s.goneErr
 }
 func (s *mockStore) DenmaRetrySent(campID, subID int) error {
 	s.mu.Lock()
@@ -715,20 +725,53 @@ func TestDenmaWaitsGiveBack(t *testing.T) {
 	}
 	paced := false
 	DenmaPaceWait = func(func() bool) bool { log = append(log, "pace"); return paced }
-	if m.denmaWaits(func() bool { return false }) {
+	if m.denmaWaits(func() bool { return false }, nil, nil) {
 		t.Fatal("went with the pace given up")
 	}
 	if got := fmt.Sprint(log); got != "[cap hub c pace cap back hub back]" {
 		t.Fatalf("waits %v, want the cap, the hub's and the pace, and both counts given back", got)
 	}
 	log, paced = nil, true
-	if !m.denmaWaits(func() bool { return false }) || fmt.Sprint(log) != "[cap hub c pace]" {
+	if !m.denmaWaits(func() bool { return false }, nil, nil) || fmt.Sprint(log) != "[cap hub c pace]" {
 		t.Fatalf("waits %v, want them all, nothing given back", log)
 	}
 	// The hub's wait giving up gives the cap's back, and the pace isn't reached.
 	log = nil
 	DenmaDailyWait = func(string, func() bool) (bool, func()) { log = append(log, "hub"); return false, nil }
-	if m.denmaWaits(func() bool { return false }) || fmt.Sprint(log) != "[cap hub cap back]" {
+	if m.denmaWaits(func() bool { return false }, nil, nil) || fmt.Sprint(log) != "[cap hub cap back]" {
 		t.Fatalf("waits %v, want the cap's count given back", log)
+	}
+}
+
+func TestDenmaWaitsForRecheck(t *testing.T) {
+	newPipe := func(st *mockStore, age time.Duration) (*Manager, *CampaignMessage) {
+		m := &Manager{store: st, log: log.New(io.Discard, "", 0)}
+		p := &pipe{camp: &models.Campaign{Base: models.Base{ID: 1}}, m: m, wg: &sync.WaitGroup{}}
+		p.denmaFetchedAt.Store(time.Now().Add(-age).UnixNano())
+		return m, &CampaignMessage{Campaign: p.camp, Subscriber: models.Subscriber{Base: models.Base{ID: 7}}, pipe: p, denmaRetry: true}
+	}
+
+	st := &mockStore{gone: map[int]bool{7: true}}
+	m, msg := newPipe(st, time.Second)
+	if !m.denmaWaitsFor(msg) || len(st.checked) != 0 {
+		t.Errorf("a new batch's message: checked %v, want it sent unchecked", st.checked)
+	}
+
+	st = &mockStore{gone: map[int]bool{7: true}}
+	m, msg = newPipe(st, 2*denmaRecheckAfter)
+	if m.denmaWaitsFor(msg) || len(st.checked) != 1 {
+		t.Errorf("someone gone after a wait: checked %v, want them passed over", st.checked)
+	}
+
+	st = &mockStore{}
+	m, msg = newPipe(st, 2*denmaRecheckAfter)
+	if !m.denmaWaitsFor(msg) || len(st.checked) != 1 {
+		t.Errorf("someone still subscribed after a wait: checked %v, want them sent", st.checked)
+	}
+
+	st = &mockStore{goneErr: errors.New("no database")}
+	m, msg = newPipe(st, 2*denmaRecheckAfter)
+	if m.denmaWaitsFor(msg) {
+		t.Error("when the check fails: sent, want held back")
 	}
 }

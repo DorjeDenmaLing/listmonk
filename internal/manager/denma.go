@@ -223,7 +223,7 @@ func (m *Manager) DenmaSetCenterWait(center string, wait DenmaCountWait) {
 // hours, its daily cap, the hub's daily limit, its turn at the send rate. A
 // wait that gives up gives back what the earlier ones counted. Hours that
 // closed during the daily waits give the counts back and wait again.
-func (m *Manager) denmaWaits(stopped func() bool) bool {
+func (m *Manager) denmaWaits(stopped, gone func() bool, kept *[]func()) bool {
 	for {
 		if m.denmaWindowWait != nil && !m.denmaWindowWait(stopped) {
 			return false
@@ -253,12 +253,59 @@ func (m *Manager) denmaWaits(stopped func() bool) bool {
 			giveBack()
 			continue
 		}
+		if gone != nil && gone() {
+			giveBack()
+			return false
+		}
 		if DenmaPaceWait != nil && !DenmaPaceWait(stopped) {
 			giveBack()
 			return false
 		}
+		if kept != nil {
+			*kept = back
+		}
 		return true
 	}
+}
+
+// denmaGiveBack gives back what a message's waits counted, if its send failed
+// before it could have reached the mail server.
+func (m *CampaignMessage) denmaGiveBack(err error) {
+	if err == nil || DenmaUncertain(err) {
+		return
+	}
+	for _, f := range m.denmaCounted {
+		f()
+	}
+}
+
+// denmaRecheckAfter is how long after its batch was fetched a message is
+// checked again before it goes.
+const denmaRecheckAfter = time.Minute
+
+// denmaWaitsFor runs a campaign message's waits, and says whether it goes. If
+// it has waited, its subscriber is checked again; one no longer sent the
+// campaign is passed over.
+func (m *Manager) denmaWaitsFor(msg *CampaignMessage) bool {
+	p := msg.pipe
+	passed := false
+	ok := m.denmaWaits(p.stopped.Load, func() bool {
+		if time.Since(time.Unix(0, p.denmaFetchedAt.Load())) < denmaRecheckAfter {
+			return false
+		}
+		still, err := m.store.DenmaStillSent(msg.Campaign.ID, msg.Subscriber.ID)
+		if err != nil {
+			m.log.Printf("denma: error checking subscriber %d for campaign %s: %v", msg.Subscriber.ID, msg.Campaign.Name, err)
+			p.denmaFailed(msg.Subscriber.ID, "Couldn't check that they're still subscribed: "+err.Error(), true, false)
+			still = false
+		}
+		passed = !still
+		return passed
+	}, &msg.denmaCounted)
+	if passed && !msg.denmaRetry {
+		p.denmaFinished(msg.Subscriber.ID)
+	}
+	return ok
 }
 
 // Failed sends (cmd/denma_retries.go). Each is recorded with its reason and

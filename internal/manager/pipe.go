@@ -11,14 +11,15 @@ import (
 )
 
 type pipe struct {
-	camp       *models.Campaign
-	rate       *ratecounter.RateCounter
-	wg         *sync.WaitGroup
-	sent       atomic.Int64
-	lastID     atomic.Uint64
-	errors     atomic.Uint64
-	stopped    atomic.Bool
-	withErrors atomic.Bool
+	camp           *models.Campaign
+	rate           *ratecounter.RateCounter
+	wg             *sync.WaitGroup
+	sent           atomic.Int64
+	denmaFetchedAt atomic.Int64 // denma: when the last batch was fetched (denma.go)
+	lastID         atomic.Uint64
+	errors         atomic.Uint64
+	stopped        atomic.Bool
+	withErrors     atomic.Bool
 
 	// denma: the fetch cursor (upstream PR #3222), and the queued messages for
 	// the resume checkpoint, lastID (denma.go).
@@ -109,6 +110,8 @@ func (m *Manager) newPipe(c *models.Campaign) (*pipe, error) {
 // in the current batch or not. A false indicates that all subscribers
 // have been processed, or that a campaign has been paused or cancelled.
 func (p *pipe) NextSubscribers() (bool, error) {
+	p.denmaFetchedAt.Store(time.Now().UnixNano()) // denma: denma.go
+
 	// denma: a stopped campaign (paused for errors, or a shutdown) fetches no
 	// more; its workers would only skip them. Its checkpoint stays before
 	// the first message not sent, so resuming sends the rest.

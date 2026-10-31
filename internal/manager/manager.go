@@ -63,6 +63,7 @@ type Store interface {
 	DenmaSendFailed(campID, subID int, reason string, temporary, uncertain bool) error
 	DenmaRetrySent(campID, subID int) error
 	DenmaRetrySubscribers(campID, afterID, limit int, all bool) ([]models.Subscriber, error)
+	DenmaStillSent(campID, subID int) (bool, error)
 	DenmaRetryLater(campID int) (bool, error)
 
 	// denma: those sent ahead of the checkpoint by a pipe that stopped (denma.go).
@@ -148,7 +149,8 @@ type CampaignMessage struct {
 
 	pipe *pipe
 
-	denmaRetry bool // denma: a failed send tried again (denma.go)
+	denmaCounted []func() // denma: gives back what its waits counted
+	denmaRetry   bool     // denma: a failed send tried again (denma.go)
 }
 
 // Config has parameters for configuring the manager.
@@ -537,7 +539,7 @@ func (m *Manager) worker() {
 			}
 
 			// denma: the center's sending hours, daily cap and the hub's daily limit, then its turn at the send rate (denma.go).
-			if msg.pipe != nil && !m.denmaWaits(msg.pipe.stopped.Load) {
+			if msg.pipe != nil && !m.denmaWaitsFor(&msg) {
 				msg.pipe.wg.Done()
 				continue
 			}
@@ -588,6 +590,7 @@ func (m *Manager) worker() {
 			err := m.messengers[msg.Campaign.Messenger].Push(out)
 			if err != nil {
 				m.log.Printf("error sending message in campaign %s: subscriber %d: %v", msg.Campaign.Name, msg.Subscriber.ID, err)
+				msg.denmaGiveBack(err) // denma: denma.go
 			}
 
 			// Increment the send rate or the error counter if there was an error.

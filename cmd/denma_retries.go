@@ -87,6 +87,14 @@ const denmaStillSentSQL = `(EXISTS (SELECT 1 FROM campaign_lists cl JOIN lists l
 		SELECT 1 FROM subscriber_lists dsl JOIN lists dl ON dl.id = dsl.list_id WHERE dsl.subscriber_id = s.id
 		AND NOT ('` + denmaAPIListTag + `' = ANY(COALESCE(dl.tags, '{}'))) AND CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status != 'unsubscribed' END)))`
 
+// DenmaStillSent says whether a subscriber would still be sent a campaign.
+func (s *store) DenmaStillSent(campID, subID int) (bool, error) {
+	var still bool
+	err := s.core.DenmaDB().Get(&still, `SELECT EXISTS (SELECT 1 FROM subscribers s, (SELECT $1::INT AS campaign_id) f
+		WHERE s.id = $2 AND s.status <> 'blocklisted' AND `+denmaStillSentSQL+`)`, campID, subID)
+	return still, err
+}
+
 // DenmaRetrySubscribers returns the next batch (after afterID) of a
 // campaign's failed sends to try again: temporary ones, or all of them, that
 // haven't been retried as often as they may be, to subscribers who haven't
