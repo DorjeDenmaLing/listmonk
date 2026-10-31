@@ -54,6 +54,7 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	g.GET("/api/denma/hub/stats", a.DenmaHubStats, middleware.Gzip())
 	g.GET("/api/denma/hub/analytics", a.DenmaHubAnalytics, middleware.Gzip())
 	g.POST("/api/denma/centers", a.DenmaCreateCenter)
+	g.POST("/api/denma/shared-blocklist/remove", a.DenmaSharedUnblock) // cmd/denma_blocklist_admin.go
 	g.PUT("/api/denma/centers/:slug/status", a.DenmaSetCenterStatus)
 	initDenmaCenterAPIHandlers(g, a)
 	initDenmaAutomationAPIHandlers(g, a)

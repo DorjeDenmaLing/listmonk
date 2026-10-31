@@ -101,6 +101,7 @@ var denmaHubRoutes = []string{
 	"POST /api/denma/domains/:domain/check",
 	"POST /api/denma/domains/:domain/fix",
 	"POST /api/denma/mcp/connector",
+	"POST /api/denma/shared-blocklist/remove",
 	"POST /api/denma/media/folders",
 	"POST /api/logout",
 	"POST /api/media",
