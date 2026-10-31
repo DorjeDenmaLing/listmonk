@@ -18,6 +18,12 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// The page for a link whose subscriber is no longer in the center (hasSub).
+const (
+	denmaNotSubscribedTitle = "You're not subscribed"
+	denmaNotSubscribedText  = "You're not on this center's lists, so you won't get its e-mails."
+)
+
 // denmaUnsubscribe is listmonk's unsubscribe (public.go), for any e-mail:
 // campUUID may be a campaign's, an automation's or none (an opt-in's). In a
 // center, their opt-out (cmd/denma_optouts.go) is recorded first and they're

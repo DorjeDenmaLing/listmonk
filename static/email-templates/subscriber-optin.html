@@ -8,6 +8,9 @@
 <p>
     <a href="{{ .OptinURL }}" class="button">{{ L.Ts "email.optin.confirmSub" }}</a>
 </p>
+{{- if .LinkDays }}
+<p>This link works for {{ .LinkDays }} days.</p>
+{{- end }}
 <p>If you didn&#39;t sign up, you can ignore this email and you won&#39;t hear from us.</p>
 
 {{ template "footer" }}

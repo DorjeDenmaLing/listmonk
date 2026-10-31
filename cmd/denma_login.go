@@ -424,7 +424,7 @@ func (a *App) denmaSendReset(p *denmaPerson) {
 		a.log.Printf("error compiling notification template '%s': %v", notifs.TplForgotPassword, err)
 		return
 	}
-	subject, body := notifs.GetTplSubject(a.i18n.T("email.forgotPassword.subject"), msg.Bytes())
+	subject, body := notifs.GetTplSubject(a.i18n.T("email.forgotPassword.subject")+": "+a.ko.String("app.site_name"), msg.Bytes())
 	m := models.Message{
 		To:      []string{p.Email},
 		Subject: subject,
@@ -444,7 +444,9 @@ func (a *App) DenmaLoginReset(c echo.Context) error {
 		email = strings.ToLower(strings.TrimSpace(c.QueryParam("email")))
 	)
 	invalid := func() error {
-		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
+		msg := makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink"))
+		msg.DenmaLinkURL, msg.DenmaLinkText = denmaForgotPath, "Forgot password"
+		return c.Render(http.StatusBadRequest, tplMessage, msg)
 	}
 	p, err := denmaHub.tokenPerson(email, token)
 	if err != nil || p == nil {

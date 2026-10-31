@@ -444,7 +444,7 @@ func (a *App) hasSub(next echo.HandlerFunc) echo.HandlerFunc {
 		if _, err := a.core.GetSubscriber(0, subUUID, ""); err != nil {
 			if er, ok := err.(*echo.HTTPError); ok && er.Code == http.StatusBadRequest {
 				return c.Render(http.StatusNotFound, tplMessage,
-					makeMsgTpl(a.i18n.T("public.notFoundTitle"), "", er.Message.(string)))
+					makeMsgTpl(denmaNotSubscribedTitle, "", denmaNotSubscribedText)) // denma: cmd/denma_unsubscribe.go
 			}
 
 			a.log.Printf("error checking subscriber existence: %v", err)

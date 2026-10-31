@@ -58,6 +58,7 @@ type subOptin struct {
 	OptinURL string
 	UnsubURL string
 	Lists    []models.List
+	LinkDays int // denma: how long the link works, if it expires (cmd/denma_resubscribe.go)
 }
 
 var (

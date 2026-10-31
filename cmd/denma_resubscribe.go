@@ -249,10 +249,11 @@ func (a *App) denmaSendResub(sub models.Subscriber, lists []models.List) error {
 	}
 	out := subOptin{Subscriber: sub, Lists: lists,
 		OptinURL: denmaOptinTokenURL(fmt.Sprintf(a.urlCfg.OptinURL, sub.UUID, q.Encode()), sub.UUID),
-		UnsubURL: fmt.Sprintf(a.urlCfg.UnsubURL, dummyUUID, sub.UUID)}
+		UnsubURL: fmt.Sprintf(a.urlCfg.UnsubURL, dummyUUID, sub.UUID),
+		LinkDays: int(denmaResubTTL.Hours() / 24)}
 	hdr := textproto.MIMEHeader{}
 	hdr.Set(models.EmailHeaderSubscriberUUID, sub.UUID)
-	return a.notifs.Notify([]string{sub.Email}, a.i18n.T("subscribers.optinSubject"), notifs.TplSubscriberOptin, out, hdr)
+	return a.notifs.Notify([]string{sub.Email}, a.i18n.T("subscribers.optinSubject")+": "+a.ko.String("app.site_name"), notifs.TplSubscriberOptin, out, hdr)
 }
 
 // denmaResubPending is a blocklisted subscriber's pending re-subscription's
@@ -277,7 +278,8 @@ func (a *App) denmaResubPending(subID int) ([]models.List, models.JSON, error) {
 
 // denmaResubOptin is listmonk's opt-in page (OptinPage) for a blocklisted
 // subscriber with a pending re-subscription: its lists to confirm, and
-// confirming. done is false for anyone else, whom listmonk's page handles.
+// confirming, or that the link is out of date. done is false for anyone else,
+// whom listmonk's page handles.
 func (a *App) denmaResubOptin(c echo.Context, subUUID string, confirm bool) (bool, error) {
 	if !reUUID.MatchString(subUUID) {
 		return false, nil
@@ -293,7 +295,8 @@ func (a *App) denmaResubOptin(c echo.Context, subUUID string, confirm bool) (boo
 	}
 	// Only with the e-mail's own link: admins see the UUID.
 	if len(lists) == 0 || !denmaOptinTokenOK(a.db, sub.ID, c.FormValue("t")) {
-		return false, nil
+		return true, c.Render(http.StatusOK, tplMessage, makeMsgTpl("This link has expired", "",
+			"This link has expired or has been used. To get a new one, sign up again where you first signed up."))
 	}
 
 	if !confirm {

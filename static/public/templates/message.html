@@ -5,6 +5,10 @@
     <div>
         {{ .Data.Message }}
     </div>
+    {{- /* denma: a next step */}}
+    {{- with .Data.DenmaLinkURL }}
+    <p><a href="{{ . }}">{{ $.Data.DenmaLinkText }}</a></p>
+    {{- end }}
 
     {{ template "footer" .}}
 {{ end }}

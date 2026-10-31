@@ -123,8 +123,10 @@ type optinTpl struct {
 
 type msgTpl struct {
 	publicTpl
-	MessageTitle string
-	Message      string
+	MessageTitle  string
+	Message       string
+	DenmaLinkURL  string // denma: a link under the message
+	DenmaLinkText string
 }
 
 type subFormTpl struct {

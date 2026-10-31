@@ -1,5 +1,6 @@
 {
   "denma.contacts": "Contacts",
+  "users.invalidResetLink": "This link has expired or has been used. Ask for a new one with Forgot password on the sign-in page.",
   "denma.notFound": "There's nothing at this address. If a link in an e-mail brought you here, it may be out of date.",
   "dashboard.orphanSubs": "On no list",
   "forms.noPublicLists": "No public double opt-in lists to make a form for.",
