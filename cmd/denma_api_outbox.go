@@ -52,6 +52,19 @@ CREATE TABLE IF NOT EXISTS denma_api_outbox (
     created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS denma_api_outbox_sub ON denma_api_outbox (subscriber_id);
+-- A waiting e-mail ends with its subscriber: its key is told.
+CREATE OR REPLACE FUNCTION denma_api_outbox_gone() RETURNS TRIGGER
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+BEGIN
+    INSERT INTO denma_api_events (type, key_id, email, reason)
+        SELECT 'message_failed', key_id, email, 'The address was removed from the center before the e-mail could go.'
+        FROM denma_api_outbox WHERE subscriber_id = OLD.id;
+    RETURN OLD;
+END $$;
+DROP TRIGGER IF EXISTS denma_api_outbox_gone ON subscribers;
+CREATE TRIGGER denma_api_outbox_gone BEFORE DELETE ON subscribers
+    FOR EACH ROW EXECUTE FUNCTION denma_api_outbox_gone();
 CREATE INDEX IF NOT EXISTS denma_api_outbox_retry ON denma_api_outbox (next_at) WHERE status = 'retry';
 CREATE INDEX IF NOT EXISTS denma_api_outbox_open ON denma_api_outbox (updated_at) WHERE status <> 'retry';
 `
