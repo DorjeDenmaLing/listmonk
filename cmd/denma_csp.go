@@ -128,8 +128,7 @@ func denmaSandbox(app *App, h http.Header, p string) {
 	}
 	h.Set("X-Content-Type-Options", "nosniff")
 	if upload {
-		switch strings.ToLower(path.Ext(p)) {
-		case ".js", ".mjs", ".cjs":
+		if !denmaUploadShown[strings.ToLower(path.Ext(p))] {
 			h.Set("Content-Type", "text/plain; charset=utf-8")
 		}
 	}
@@ -144,6 +143,13 @@ func denmaSandbox(app *App, h http.Header, p string) {
 	h.Set("Content-Security-Policy", denmaSandboxPolicy)
 }
 
+// denmaUploadShown are the uploads served as what they are; any other is plain text.
+var denmaUploadShown = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".avif": true, ".bmp": true, ".ico": true, ".svg": true,
+	".pdf": true, ".mp4": true, ".webm": true, ".mov": true, ".mp3": true, ".m4a": true, ".wav": true, ".ogg": true,
+	".zip": true, ".doc": true, ".docx": true, ".xls": true, ".xlsx": true, ".ppt": true, ".pptx": true,
+}
+
 // denmaUploadPath reports whether p is one of app's uploads, served by it
 // (filesystem, or S3 through it).
 func denmaUploadPath(app *App, p string) bool {
@@ -153,7 +159,7 @@ func denmaUploadPath(app *App, p string) bool {
 	var uri string
 	switch app.ko.String("upload.provider") {
 	case "filesystem":
-		uri = app.ko.String("upload.filesystem.upload_uri")
+		uri = path.Join("/", app.ko.String("upload.filesystem.upload_uri"))
 	case "s3":
 		if u := app.ko.String("upload.s3.public_url"); strings.HasPrefix(u, "/") {
 			uri = u
