@@ -60,6 +60,9 @@ type denmaDomainVerdict struct {
 	at     time.Time
 }
 
+// denmaDomainsPruneAt is the cache's size from which old lookups are dropped.
+const denmaDomainsPruneAt = 10000
+
 // denmaDomains caches lookups, for every center: good for 6 hours, bad for 1.
 var denmaDomains = struct {
 	sync.Mutex
@@ -83,6 +86,14 @@ func denmaCheckDomain(domain string) (bad bool, reason string, known bool) {
 	bad, reason, known = denmaLookupDomain(domain)
 	if known {
 		denmaDomains.Lock()
+		// Those past any verdict's life go, now and then.
+		if len(denmaDomains.m) >= denmaDomainsPruneAt {
+			for d, old := range denmaDomains.m {
+				if time.Since(old.at) >= 6*time.Hour {
+					delete(denmaDomains.m, d)
+				}
+			}
+		}
 		denmaDomains.m[domain] = denmaDomainVerdict{bad: bad, reason: reason, at: time.Now()}
 		denmaDomains.Unlock()
 	}
