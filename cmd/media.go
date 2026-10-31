@@ -96,6 +96,9 @@ func (a *App) getMedia(c echo.Context) ([]media.Media, models.PageProps, error) 
 
 // UploadMedia handles media file uploads.
 func (a *App) UploadMedia(c echo.Context) error {
+	if err := a.denmaCheckUploadRoom(); err != nil { // denma: cmd/denma_uploadroom.go
+		return err
+	}
 	file, err := c.FormFile("file")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest,
