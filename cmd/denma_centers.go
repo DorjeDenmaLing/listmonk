@@ -32,11 +32,14 @@ import (
 	"path"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/gdgvda/cron"
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/koanf/providers/confmap"
 	"github.com/knadh/koanf/v2"
@@ -443,13 +446,25 @@ func denmaEveryMinute(a *App, at int, job string, fn func()) (int, error) {
 	center := a.ko.String("denma.center")
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(center))
-	offset := time.Duration((int(h.Sum32()%30)+at)%60) * time.Second
+	offset := time.Duration((int(h.Sum32()%60)+at)%60) * time.Second
+
+	var sched cron.Schedule = denmaMinuteAt(offset)
+	if denmaFastJobs(os.Getenv("DENMA_FAST_JOBS"), center) {
+		sched = denmaFastAt(time.Duration(at/10) * time.Second)
+	}
+
+	// A run still going when the next is due lets that one pass.
+	var running atomic.Bool
 
 	// A job added to a cron that has since stopped (a replaced app) never runs.
-	if _, err := a.crons.Schedule(denmaMinuteAt(offset), func() {
+	if _, err := a.crons.Schedule(sched, func() {
 		if a.manager.DenmaScanHeld() { // a reload's new App waits for the old (cmd/denma_lifecycle.go)
 			return
 		}
+		if !running.CompareAndSwap(false, true) {
+			return
+		}
+		defer running.Store(false)
 		fn()
 		denmaJobRan(job, center)
 	}); err != nil {
@@ -465,6 +480,24 @@ func (m denmaMinuteAt) Next(t time.Time) time.Time {
 	next := t.Truncate(time.Minute).Add(time.Duration(m))
 	if !next.After(t) {
 		next = next.Add(time.Minute)
+	}
+	return next
+}
+
+// denmaFastJobs says whether a center is in the comma-separated list of
+// centers whose jobs run every 10 seconds: DENMA_FAST_JOBS, set only by the dev
+// stack, for its tests.
+func denmaFastJobs(list, center string) bool {
+	return center != "" && slices.Contains(strings.Split(list, ","), center)
+}
+
+// denmaFastAt is a cron schedule: at its second of every 10 seconds.
+type denmaFastAt time.Duration
+
+func (f denmaFastAt) Next(t time.Time) time.Time {
+	next := t.Truncate(10 * time.Second).Add(time.Duration(f))
+	if !next.After(t) {
+		next = next.Add(10 * time.Second)
 	}
 	return next
 }
