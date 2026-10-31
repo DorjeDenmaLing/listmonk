@@ -39,7 +39,7 @@ function onlyKnown(e) {
   }
   e.preventDefault();
   e.stopPropagation();
-  input.setCustomValidity(`There's no tag ${typed}. Pick one from the list, or add it under Subscribers -> Tags.`);
+  input.setCustomValidity(`There's no tag ${typed}. Pick one from the list, or add it under Contacts -> Tags.`);
   input.reportValidity();
 }
 

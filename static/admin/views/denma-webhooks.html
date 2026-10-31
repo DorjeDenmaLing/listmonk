@@ -141,7 +141,7 @@
 						<small data-hint x-show="edit.kind === 'form'">Double opt-in lists only, so everyone confirms first. An automation can move them on to another list once they have.</small>
 						<small data-hint x-show="edit.kind === 'server'">A request can name some of them by ID; otherwise it signs people up to all.</small>
 					</fieldset>
-					{{ template "denma-tag-picker" dict "Model" "edit.tags" "ID" "hook-tags" "Label" "Tags for everyone (optional)" "Hint" "Given to everyone who signs up through it. New tags are added under Subscribers -> Tags." }}
+					{{ template "denma-tag-picker" dict "Model" "edit.tags" "ID" "hook-tags" "Label" "Tags for everyone (optional)" "Hint" "Given to everyone who signs up through it. New tags are added under Contacts -> Tags." }}
 					{{ template "denma-tag-picker" dict "Model" "edit.request_tags" "ID" "hook-request-tags" "Label" "Tags a request may give (optional)" "Hint" "Tags a request names are given only if they're among these." }}
 					<template x-if="edit.kind === 'form'">
 						<label data-field>

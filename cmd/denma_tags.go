@@ -154,7 +154,7 @@ func (a *App) denmaUnknownTags(tags []string) error {
 	if len(missing) > 1 {
 		s, it = "s", "them"
 	}
-	return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("There's no tag%s %s. Pick from the center's tags, or add %s under Subscribers -> Tags first.",
+	return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("There's no tag%s %s. Pick from the center's tags, or add %s under Contacts -> Tags first.",
 		s, strings.Join(missing, ", "), it))
 }
 
