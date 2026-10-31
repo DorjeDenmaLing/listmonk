@@ -278,8 +278,8 @@ func (a *App) DenmaAPIStatus(c echo.Context) error {
 	if denmaAPISends(k.Can) {
 		var used int
 		if err := a.db.Get(&used, `SELECT COALESCE(SUM(n), 0)::INT FROM denma_api_usage
-			WHERE key_id = $1 AND kind = $2 AND created_at > NOW() - INTERVAL '24 hours'`, k.ID, denmaAPIUseSend); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			WHERE key_id = $1 AND kind = $2 AND created_at > NOW() - INTERVAL '24 hours' AND created_at <= NOW()`, k.ID, denmaAPIUseSend); err != nil {
+			return denmaInternal(err)
 		}
 		from := k.Sender
 		if from == "" {
@@ -439,6 +439,13 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 	if err := a.apiLimitClaim(c, denmaAPIUseNamed, "addresses", len(named)); err != nil {
 		return err
 	}
+	// Given back if the request fails.
+	namedKept := false
+	defer func() {
+		if !namedKept {
+			a.apiUnclaim(apiKeyOf(c).ID, denmaAPIUseNamed, len(named))
+		}
+	}()
 	var subs []models.Subscriber
 	seen := map[string]bool{}
 	for _, to := range r.To {
@@ -542,7 +549,7 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 	if idemID != 0 {
 		_, err = a.db.Exec(`UPDATE denma_api_messages SET template_id = $2, sent = $3, skipped = $4, result = $5 WHERE id = $1`,
 			idemID, tplID, len(res.Sent), len(res.Skipped), string(b))
-		stored = err == nil
+		stored = err == nil || len(res.Sent) > 0 // kept once any went: a retry mustn't send them again
 	} else {
 		_, err = a.db.Exec(`INSERT INTO denma_api_messages (key_id, template_id, sent, skipped, result) VALUES ($1, $2, $3, $4, $5)`,
 			k.ID, tplID, len(res.Sent), len(res.Skipped), string(b))
@@ -550,6 +557,7 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 	if err != nil {
 		a.log.Printf("denma: error recording an API e-mail: %v", err)
 	}
+	namedKept = true
 	a.apiLog(c, "transactional e-mail %q: %d sent, %d skipped", r.Template, len(res.Sent), len(res.Skipped))
 	return c.JSON(http.StatusOK, okResp{res})
 }
@@ -791,6 +799,12 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	// Its addresses' claim goes back if the campaign isn't made.
+	defer func() {
+		if !keep {
+			a.apiUnclaim(k.ID, denmaAPIUseNamed, len(r.Recipients)-len(skipped))
+		}
+	}()
 	claimed := 0
 	if start {
 		// Who it won't go to, said only once it's sent: a draft's answer
@@ -806,13 +820,14 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 			return c.JSON(http.StatusBadRequest, map[string]any{"message": denmaAPINoRecipients, "skipped": skipped})
 		}
 		// Its recipients, of the key's daily limit.
-		if err := a.apiSendClaim(c, n); err != nil {
+		at := apiClaimTime(r.SendAt)
+		if err := a.apiSendClaimAt(c, n, at); err != nil {
 			return err
 		}
 		claimed = n
 		defer func() {
 			if !keep {
-				a.apiUnclaim(k.ID, denmaAPIUseSend, claimed)
+				a.apiUnclaimAt(k.ID, denmaAPIUseSend, claimed, at)
 			}
 		}()
 	}
@@ -1154,15 +1169,17 @@ func (a *App) apiStart(id int) {
 		var back struct {
 			KeyID   sql.NullInt64 `db:"key_id"`
 			Claimed int           `db:"claimed"`
+			SendAt  *time.Time    `db:"send_at"`
 		}
 		if e := a.db.Get(&back, `UPDATE denma_api_campaigns x SET state = 'draft', error = $2, claimed = 0
 			FROM (SELECT campaign_id, claimed FROM denma_api_campaigns WHERE campaign_id = $1 FOR UPDATE) o
-			WHERE x.campaign_id = o.campaign_id AND x.state = 'starting' RETURNING x.key_id, o.claimed`,
+			WHERE x.campaign_id = o.campaign_id AND x.state = 'starting'
+			RETURNING x.key_id, o.claimed, (SELECT send_at FROM campaigns WHERE id = $1) AS send_at`,
 			id, err.Error()); e != nil && !errors.Is(e, sql.ErrNoRows) {
 			a.log.Printf("denma: error recording API campaign %d's failure: %v", id, e)
 		}
 		if back.KeyID.Valid {
-			a.apiUnclaim(int(back.KeyID.Int64), denmaAPIUseSend, back.Claimed)
+			a.apiUnclaimAt(int(back.KeyID.Int64), denmaAPIUseSend, back.Claimed, apiClaimTime(back.SendAt))
 		}
 	}
 	var x struct {
@@ -1320,21 +1337,31 @@ func (a *App) DenmaAPIStartCampaign(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest,
 			"No one can be sent this campaign: it has no recipients, or every one was skipped. Add recipients first, or cancel it.")
 	}
-	// Claim its recipients from the key's daily limit.
+	// Claim those it would go to from the key's daily limit.
+	at := apiClaimTime(cur.SendAt)
+	sendable := cur.Recipients
 	if cur.Status == models.CampaignStatusDraft {
-		if err := a.apiSendClaim(c, cur.Recipients); err != nil {
+		var listID int
+		err := a.db.Get(&listID, `SELECT COALESCE(list_id, 0) FROM denma_api_campaigns WHERE campaign_id = $1`, id)
+		if err == nil {
+			sendable, err = a.apiListRecipients(listID)
+		}
+		if err != nil {
+			return denmaInternal(err)
+		}
+		if err := a.apiSendClaimAt(c, sendable, at); err != nil {
 			return err
 		}
 	}
 	res, err := a.db.Exec(`UPDATE denma_api_campaigns x SET state = 'starting', error = '', claimed = $2 FROM campaigns c
-		WHERE c.id = x.campaign_id AND x.campaign_id = $1 AND x.state = 'draft' AND c.status = 'draft'`, id, cur.Recipients)
+		WHERE c.id = x.campaign_id AND x.campaign_id = $1 AND x.state = 'draft' AND c.status = 'draft'`, id, sendable)
 	if err != nil {
-		a.apiUnclaim(apiKeyOf(c).ID, denmaAPIUseSend, cur.Recipients)
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		a.apiUnclaimAt(apiKeyOf(c).ID, denmaAPIUseSend, sendable, at)
+		return denmaInternal(err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		if cur.Status == models.CampaignStatusDraft {
-			a.apiUnclaim(apiKeyOf(c).ID, denmaAPIUseSend, cur.Recipients)
+			a.apiUnclaimAt(apiKeyOf(c).ID, denmaAPIUseSend, sendable, at)
 		}
 		if cur.Status == models.CampaignStatusCancelled {
 			return echo.NewHTTPError(http.StatusConflict, "The campaign is cancelled.")
@@ -1381,6 +1408,27 @@ func (a *App) DenmaAPICancelCampaign(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
+// apiUnclaimScheduled gives back what a cancelled scheduled campaign claimed
+// of its key's limit.
+func (a *App) apiUnclaimScheduled(id int) {
+	var back struct {
+		KeyID   sql.NullInt64 `db:"key_id"`
+		Claimed int           `db:"claimed"`
+		SendAt  *time.Time    `db:"send_at"`
+	}
+	err := a.db.Get(&back, `UPDATE denma_api_campaigns x SET claimed = 0
+		FROM (SELECT campaign_id, claimed FROM denma_api_campaigns WHERE campaign_id = $1 FOR UPDATE) o
+		WHERE x.campaign_id = o.campaign_id
+		RETURNING x.key_id, o.claimed, (SELECT send_at FROM campaigns WHERE id = $1) AS send_at`, id)
+	if err != nil {
+		a.log.Printf("denma: error giving back API campaign %d's claim: %v", id, err)
+		return
+	}
+	if back.KeyID.Valid {
+		a.apiUnclaimAt(int(back.KeyID.Int64), denmaAPIUseSend, back.Claimed, apiClaimTime(back.SendAt))
+	}
+}
+
 // apiCancelCampaign cancels an API campaign in the given status.
 func (a *App) apiCancelCampaign(id int, status string) error {
 	switch status {
@@ -1391,7 +1439,10 @@ func (a *App) apiCancelCampaign(id int, status string) error {
 		a.manager.StopCampaign(id)
 	default: // a draft (or starting), or scheduled
 		if _, err := a.db.Exec(`UPDATE campaigns SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND status IN ('draft', 'scheduled')`, id); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return denmaInternal(err)
+		}
+		if status == models.CampaignStatusScheduled {
+			a.apiUnclaimScheduled(id)
 		}
 	}
 	if _, err := a.db.Exec(`UPDATE denma_api_campaigns SET state = 'started' WHERE campaign_id = $1`, id); err != nil {

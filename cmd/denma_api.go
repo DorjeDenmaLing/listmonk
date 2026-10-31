@@ -309,7 +309,7 @@ const denmaAPIKeySQL = `SELECT k.id, k.name, k.key_hint, k.can, k.allowed_from, 
 	k.created_by, k.expires_at, k.sender, k.daily_limit, k.deleted_at, k.deleted_by, k.leaked,
 	CASE WHEN k.old_key_until > NOW() THEN k.old_key_until END AS old_key_until,
 	(SELECT COALESCE(SUM(n), 0) FROM denma_api_usage u WHERE u.key_id = k.id AND u.kind = 'send'
-		AND u.created_at > NOW() - INTERVAL '24 hours')::INT AS sent_24h
+		AND u.created_at > NOW() - INTERVAL '24 hours' AND u.created_at <= NOW())::INT AS sent_24h
 	FROM denma_api_keys k`
 
 func initDenmaAPIAdminHandlers(g *echo.Group, a *App) {
@@ -1065,6 +1065,12 @@ func apiKeyOf(c echo.Context) denmaAPIAuthed {
 // apiClaim takes n of a key's 24-hour allowance of a kind, if limit leaves
 // room, returning whether it did and how many were used before.
 func (a *App) apiClaim(keyID int, kind string, n, limit int) (bool, int, error) {
+	return a.apiClaimAt(keyID, kind, n, limit, time.Now())
+}
+
+// apiClaimAt is apiClaim for e-mails going at a time: what's claimed for the
+// 24 hours either side of it counts, so no 24 hours go over the limit.
+func (a *App) apiClaimAt(keyID int, kind string, n, limit int, at time.Time) (bool, int, error) {
 	tx, err := a.db.Beginx()
 	if err != nil {
 		return false, 0, err
@@ -1076,13 +1082,14 @@ func (a *App) apiClaim(keyID int, kind string, n, limit int) (bool, int, error) 
 	}
 	var used int
 	if err := tx.Get(&used, `SELECT COALESCE(SUM(n), 0)::INT FROM denma_api_usage
-		WHERE key_id = $1 AND kind = $2 AND created_at > NOW() - INTERVAL '24 hours'`, keyID, kind); err != nil {
+		WHERE key_id = $1 AND kind = $2 AND created_at > $3::TIMESTAMPTZ - INTERVAL '24 hours'
+			AND created_at < $3::TIMESTAMPTZ + INTERVAL '24 hours'`, keyID, kind, at); err != nil {
 		return false, 0, err
 	}
 	if used+n > limit {
 		return false, used, nil
 	}
-	if _, err := tx.Exec(`INSERT INTO denma_api_usage (key_id, kind, n) VALUES ($1, $2, $3)`, keyID, kind, n); err != nil {
+	if _, err := tx.Exec(`INSERT INTO denma_api_usage (key_id, kind, n, created_at) VALUES ($1, $2, $3, $4)`, keyID, kind, n, at); err != nil {
 		return false, 0, err
 	}
 	return true, used, tx.Commit()
@@ -1090,10 +1097,30 @@ func (a *App) apiClaim(keyID int, kind string, n, limit int) (bool, int, error) 
 
 // apiUnclaim gives back n of a claim that wasn't used.
 func (a *App) apiUnclaim(keyID int, kind string, n int) {
+	a.apiUnclaimAt(keyID, kind, n, time.Now())
+}
+
+// apiClaimTime is when a campaign's e-mails count: at its send_at, if that's
+// to come, or now.
+func apiClaimTime(sendAt *time.Time) time.Time {
+	if now := time.Now(); sendAt == nil || !sendAt.After(now) {
+		return now
+	}
+	return *sendAt
+}
+
+// apiUnclaimAt gives back n of a claim made for a time.
+func (a *App) apiUnclaimAt(keyID int, kind string, n int, at time.Time) {
 	if n <= 0 {
 		return
 	}
-	if _, err := a.db.Exec(`INSERT INTO denma_api_usage (key_id, kind, n) VALUES ($1, $2, $3)`, keyID, kind, -n); err != nil {
+	// Off the claim itself: a row of its own would outlast it, and leave room
+	// over the limit when the claim ages out.
+	if _, err := a.db.Exec(`WITH claim AS (
+			SELECT id FROM denma_api_usage WHERE key_id = $1 AND kind = $2 AND n >= $3 AND created_at > $4::TIMESTAMPTZ - INTERVAL '1 day'
+			ORDER BY created_at = $4::TIMESTAMPTZ DESC, id DESC LIMIT 1
+		), upd AS (UPDATE denma_api_usage SET n = n - $3 WHERE id = (SELECT id FROM claim) RETURNING 1)
+		INSERT INTO denma_api_usage (key_id, kind, n, created_at) SELECT $1, $2, -$3::INT, $4::TIMESTAMPTZ WHERE NOT EXISTS (SELECT 1 FROM claim)`, keyID, kind, n, at); err != nil {
 		a.log.Printf("denma: error giving back API key %d's use: %v", keyID, err)
 	}
 }
@@ -1131,8 +1158,13 @@ func (a *App) apiLimitClaim(c echo.Context, kind, what string, n int) error {
 // apiSendClaim claims n e-mails of the key's daily limit, or answers 429 and
 // alerts the admins.
 func (a *App) apiSendClaim(c echo.Context, n int) error {
+	return a.apiSendClaimAt(c, n, time.Now())
+}
+
+// apiSendClaimAt is apiSendClaim for e-mails going at a time (apiClaimAt).
+func (a *App) apiSendClaimAt(c echo.Context, n int, at time.Time) error {
 	k := apiKeyOf(c)
-	ok, used, err := a.apiClaim(k.ID, denmaAPIUseSend, n, k.DailyLimit)
+	ok, used, err := a.apiClaimAt(k.ID, denmaAPIUseSend, n, k.DailyLimit, at)
 	if err != nil {
 		return denmaInternal(err)
 	}
@@ -1140,10 +1172,10 @@ func (a *App) apiSendClaim(c echo.Context, n int) error {
 		return nil
 	}
 	a.apiAlert(k.ID, k.Name, denmaAPIUseSend, fmt.Sprintf("reached its daily limit of %d e-mails", k.DailyLimit),
-		fmt.Sprintf("It asked to send %d more after %d in the last 24 hours, and was refused. If that's more than the system using it should send, "+
+		fmt.Sprintf("It asked to send %d more after %d within 24 hours of then, and was refused. If that's more than the system using it should send, "+
 			"the key may have leaked: delete it as leaked, which cancels its campaigns too. If it isn't, raise its daily limit.", n, used))
 	return echo.NewHTTPError(http.StatusTooManyRequests, fmt.Sprintf(
-		"This key's daily limit of %d e-mails leaves room for %d more now (%d in the last 24 hours), not %d. Send fewer, try again later, or ask the center's admins to raise the key's limit.",
+		"This key's daily limit of %d e-mails leaves room for %d more then (%d within 24 hours of then, scheduled campaigns included), not %d. Send fewer, try again later, or ask the center's admins to raise the key's limit.",
 		k.DailyLimit, max(k.DailyLimit-used, 0), used, n))
 }
 
