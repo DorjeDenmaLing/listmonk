@@ -803,6 +803,8 @@ func (a *App) TestCampaign(c echo.Context) error {
 	camp.ContentType = req.ContentType
 	camp.Headers = req.Headers
 	camp.TemplateID = req.TemplateID
+	camp.PreviewText = req.PreviewText // denma: as unsaved
+	camp.ReplyTo = req.ReplyTo         // denma: as unsaved
 	for _, id := range req.MediaIDs {
 		if id > 0 {
 			camp.MediaIDs = append(camp.MediaIDs, int64(id))
