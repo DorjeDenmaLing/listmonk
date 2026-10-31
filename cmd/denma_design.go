@@ -97,7 +97,7 @@ func renderDenmaDesign(body string, generic template.FuncMap, ko *koanf.Koanf) (
 	funcs := denmaDesignFuncs(generic, ko)
 	marker := reDenmaContent.FindString(body)
 	body = reDenmaContent.ReplaceAllLiteralString(body, denmaDesignSlot)
-	tpl, err := models.DenmaNoLoopHTML(template.New("design").Funcs(funcs).Parse(reDenmaTrackLink.ReplaceAllString(body, "$1")))
+	tpl, err := models.DenmaTplGuardHTML(template.New("design").Funcs(funcs).Parse(reDenmaTrackLink.ReplaceAllString(body, "$1")))
 	if err != nil {
 		return nil, fmt.Errorf("the design's template has an error: %v", err)
 	}

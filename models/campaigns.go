@@ -221,7 +221,7 @@ func (c *Campaign) CompileTemplate(f template.FuncMap) error {
 		}
 
 		var txtFuncs map[string]any = f
-		subjTpl, err := DenmaNoLoopText(txttpl.New(ContentTpl).Funcs(txtFuncs).Parse(subj)) // denma: refuses loops (denma_template.go)
+		subjTpl, err := DenmaTplGuardText(txttpl.New(ContentTpl).Funcs(txtFuncs).Parse(subj)) // denma: limits (denma_template.go)
 		if err != nil {
 			return fmt.Errorf("error compiling subject: %v", err)
 		}
@@ -262,12 +262,12 @@ func (c *Campaign) CompileTemplate(f template.FuncMap) error {
 		body = r.regExp.ReplaceAllString(body, r.replace)
 	}
 
-	msgTpl, err := DenmaNoLoopHTML(template.New(ContentTpl).Funcs(f).Parse(body)) // denma: refuses loops (denma_template.go)
+	msgTpl, err := DenmaTplGuardHTML(template.New(ContentTpl).Funcs(f).Parse(body)) // denma: limits (denma_template.go)
 	if err != nil {
 		return fmt.Errorf("error compiling message: %v", err)
 	}
 
-	out, err := DenmaNoLoopHTML(baseTPL.AddParseTree(ContentTpl, msgTpl.Tree)) // denma: refuses loops (denma_template.go)
+	out, err := DenmaTplGuardHTML(baseTPL.AddParseTree(ContentTpl, msgTpl.Tree)) // denma: limits (denma_template.go)
 	if err != nil {
 		return fmt.Errorf("error inserting child template: %v", err)
 	}
@@ -277,7 +277,7 @@ func (c *Campaign) CompileTemplate(f template.FuncMap) error {
 		for _, r := range regTplFuncs {
 			b = r.regExp.ReplaceAllString(b, r.replace)
 		}
-		bTpl, err := DenmaNoLoopHTML(template.New(ContentTpl).Funcs(f).Parse(b)) // denma: refuses loops (denma_template.go)
+		bTpl, err := DenmaTplGuardHTML(template.New(ContentTpl).Funcs(f).Parse(b)) // denma: limits (denma_template.go)
 		if err != nil {
 			return fmt.Errorf("error compiling alt plaintext message: %v", err)
 		}
@@ -304,7 +304,7 @@ func (c *Campaign) CompileTemplate(f template.FuncMap) error {
 				if !hasTplExpr(val) {
 					continue
 				}
-				tpl, err := DenmaNoLoopText(txttpl.New(ContentTpl).Funcs(txtFuncs).Parse(val)) // denma: refuses loops (denma_template.go)
+				tpl, err := DenmaTplGuardText(txttpl.New(ContentTpl).Funcs(txtFuncs).Parse(val)) // denma: limits (denma_template.go)
 				if err != nil {
 					return fmt.Errorf("error compiling header %q: %v", hdr, err)
 				}

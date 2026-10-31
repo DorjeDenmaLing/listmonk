@@ -4,8 +4,11 @@ import (
 	"errors"
 	"html/template"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	txttpl "text/template"
+	"time"
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/knadh/listmonk/models"
@@ -13,7 +16,7 @@ import (
 
 func denmaRender(t *testing.T, body string, data any) (string, error) {
 	t.Helper()
-	tpl, err := template.New("t").Funcs(denmaTemplateFuncs(sprig.GenericFuncMap())).Parse(body)
+	tpl, err := models.DenmaTplGuardHTML(template.New("t").Funcs(denmaTemplateFuncs(sprig.GenericFuncMap())).Parse(body))
 	if err != nil {
 		return "", err
 	}
@@ -86,7 +89,7 @@ func TestDenmaTemplateValueLimit(t *testing.T) {
 }
 
 func TestDenmaTemplateOutputLimit(t *testing.T) {
-	if _, err := denmaRender(t, `{{ range 2000000000 }}xxxxxxxx{{ end }}`, nil); !errors.Is(err, models.ErrDenmaTplOutput) {
+	if _, err := denmaRender(t, `{{ range 2000000000 }}`+strings.Repeat("x", 1<<16)+`{{ end }}`, nil); !errors.Is(err, models.ErrDenmaTplOutput) {
 		t.Errorf("got %v, want the output limit", err)
 	}
 	b := models.DenmaTplBuffer{}
@@ -106,7 +109,7 @@ func TestDenmaTemplateLoops(t *testing.T) {
 		`{{ define "a" }}x{{ end }}{{ template "a" . }}{{ template "a" . }}`:                                                                  false,
 		`{{ template "content" . }}`: false,
 	} {
-		_, err := models.DenmaNoLoopHTML(template.New("t").Funcs(funcs).Parse(body))
+		_, err := models.DenmaTplGuardHTML(template.New("t").Funcs(funcs).Parse(body))
 		if got := errors.Is(err, models.ErrDenmaTplLoop); got != loop || (!loop && err != nil) {
 			t.Errorf("%s: %v, want a loop: %v", body, err, loop)
 		}
@@ -120,7 +123,79 @@ func TestDenmaTemplateLoops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := models.DenmaNoLoopHTML(base.AddParseTree("content", content.Tree)); !errors.Is(err, models.ErrDenmaTplLoop) {
+	if _, err := models.DenmaTplGuardHTML(base.AddParseTree("content", content.Tree)); !errors.Is(err, models.ErrDenmaTplLoop) {
 		t.Errorf("across a base and its content: %v", err)
+	}
+}
+
+func TestDenmaTemplateTimeLimit(t *testing.T) {
+	chain := `{{ define "t0" }}{{ end }}`
+	for i := 1; i <= 60; i++ {
+		n, prev := strconv.Itoa(i), strconv.Itoa(i-1)
+		chain += `{{ define "t` + n + `" }}{{ template "t` + prev + `" . }}{{ template "t` + prev + `" . }}{{ end }}`
+	}
+	for name, body := range map[string]string{
+		"a loop writing nothing": `{{ range 100000000000 }}{{ end }}`,
+		"loops inside loops":     `{{ range 100000 }}{{ range 100000 }}{{ range 100000 }}{{ end }}{{ end }}{{ end }}`,
+		"a loop over an if":      `{{ range 100000000000 }}{{ if false }}x{{ end }}{{ end }}`,
+		"a loop over a value":    `{{ range .N }}{{ range $.N }}{{ range $.N }}{{ end }}{{ end }}{{ end }}`,
+		"parts calling twice":    chain + `{{ template "t60" . }}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			start := time.Now()
+			_, err := denmaRender(t, body, map[string]any{"N": make([]int, 100000)})
+			if !errors.Is(err, models.ErrDenmaTplTime) {
+				t.Errorf("got %v, want the time limit", err)
+			}
+			if d := time.Since(start); d > models.DenmaTplTimeMax+2*time.Second {
+				t.Errorf("stopped after %v", d)
+			}
+		})
+	}
+
+	t.Run("a text template", func(t *testing.T) {
+		t.Parallel()
+		tpl, err := models.DenmaTplGuardText(txttpl.New("t").Parse(`{{ range 100000000000 }}{{ end }}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		b := models.DenmaTplBuffer{}
+		if err := tpl.Execute(&b, nil); !errors.Is(err, models.ErrDenmaTplTime) {
+			t.Errorf("got %v, want the time limit", err)
+		}
+	})
+}
+
+// The checks change nothing a template writes, in any HTML context.
+func TestDenmaTemplateChecksChangeNothing(t *testing.T) {
+	body := `<a href="/x?a={{ .N }}" title="{{ range .L }}{{ . }},{{ end }}">{{ if .N }}<b>{{ .N }}</b>{{ else }}no{{ end }}</a>` +
+		`<script>var a = {{ .N }};{{ range .L }}f({{ . }});{{ end }}</script>{{ with .N }}{{ . }}{{ end }}` +
+		`{{ range .L }}{{ if eq . "b" }}{{ break }}{{ end }}{{ . }}{{ else }}none{{ end }}`
+	data := map[string]any{"N": `<&">`, "L": []string{"a", "b", "c"}}
+
+	plain, err := template.New("t").Parse(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want strings.Builder
+	if err := plain.Execute(&want, data); err != nil {
+		t.Fatal(err)
+	}
+
+	// Guarded twice, as a campaign's are.
+	guarded, err := models.DenmaTplGuardHTML(models.DenmaTplGuardHTML(template.New("t").Parse(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, was := len(guarded.Tree.Root.Nodes), len(plain.Tree.Root.Nodes); got != was+1 {
+		t.Errorf("guarding twice: %d nodes, was %d", got, was)
+	}
+	b := models.DenmaTplBuffer{}
+	if err := guarded.Execute(&b, data); err != nil {
+		t.Fatal(err)
+	}
+	if b.String() != want.String() {
+		t.Errorf("got %s\nwant %s", b.String(), want.String())
 	}
 }

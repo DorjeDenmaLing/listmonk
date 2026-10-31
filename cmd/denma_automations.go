@@ -1094,7 +1094,7 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 	}
 
 	var b models.DenmaTplBuffer // limits the output
-	subj, err := models.DenmaNoLoopText(txttpl.New(models.BaseTpl).Funcs(txttpl.FuncMap(funcs)).Parse(auto.Subject))
+	subj, err := models.DenmaTplGuardText(txttpl.New(models.BaseTpl).Funcs(txttpl.FuncMap(funcs)).Parse(auto.Subject))
 	if err != nil {
 		return models.Message{}, fmt.Errorf("error in the subject: %v", err)
 	}
@@ -1104,7 +1104,7 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 	subject := strings.TrimSpace(b.String())
 	b.Reset()
 
-	body, err := models.DenmaNoLoopHTML(template.New(models.BaseTpl).Funcs(funcs).Parse(models.DenmaTrackHTML(models.DenmaWithTrackView(models.DenmaFooter(reDenmaTrackLink.ReplaceAllString(tpl.Body, "$1"))))))
+	body, err := models.DenmaTplGuardHTML(template.New(models.BaseTpl).Funcs(funcs).Parse(models.DenmaTrackHTML(models.DenmaWithTrackView(models.DenmaFooter(reDenmaTrackLink.ReplaceAllString(tpl.Body, "$1"))))))
 	if err != nil {
 		return models.Message{}, fmt.Errorf("error in the template: %v", err)
 	}
