@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"archive/zip"
 	"bytes"
 	"context"
@@ -145,18 +146,18 @@ func TestDenmaImportOpen(t *testing.T) {
 
 // One preview at a time, and one waiting leaves when its request ends.
 func TestDenmaPreviewTurn(t *testing.T) {
-	release, err := denmaPreviewWait(context.Background())
+	release, err := denmaPreviewWait(context.Background(), "c")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	if _, err := denmaPreviewWait(ctx); err == nil {
+	if _, err := denmaPreviewWait(ctx, "c"); err == nil {
 		t.Fatal("a second preview didn't wait")
 	}
 	got := make(chan error, 1)
 	go func() {
-		r, err := denmaPreviewWait(context.Background())
+		r, err := denmaPreviewWait(context.Background(), "c")
 		if err == nil {
 			r()
 		}
@@ -238,13 +239,13 @@ func TestDenmaKeptFiles(t *testing.T) {
 
 	k.ttl = time.Minute
 	for i := 0; i < denmaKeptMax+3; i++ {
-		k.put(denmaKeptKey("halifax", 100+i), "x.csv", strings.NewReader("x"))
+		k.put(denmaKeptKey(fmt.Sprintf("center-%d", i), 100+i), "x.csv", strings.NewReader("x"))
 		time.Sleep(time.Millisecond)
 	}
 	if len(k.files) != denmaKeptMax {
 		t.Errorf("%d files kept, want %d", len(k.files), denmaKeptMax)
 	}
-	if k.files[denmaKeptKey("halifax", 100)] != nil || k.files[denmaKeptKey("halifax", 100+denmaKeptMax+2)] == nil {
+	if k.files[denmaKeptKey("center-0", 100)] != nil || k.files[denmaKeptKey(fmt.Sprintf("center-%d", denmaKeptMax+2), 100+denmaKeptMax+2)] == nil {
 		t.Error("the oldest wasn't the one dropped")
 	}
 	for key := range k.files {

@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,20 +31,35 @@ const (
 	denmaKeptFor = 10 * time.Minute
 	// denmaKeptMax is how many files are kept at once, for all centers.
 	denmaKeptMax = 20
+	// denmaKeptCenterMax is how many of them one center can have.
+	denmaKeptCenterMax = 5
+	// denmaPreviewsMax is how many previews are made at once, for all centers.
+	denmaPreviewsMax = 2
 	// denmaPreviewParamsMax is the most a preview's settings can be.
 	denmaPreviewParamsMax = 1 << 20
 )
 
-// denmaPreviewTurn is the turn to make a preview: one at a time.
-var denmaPreviewTurn = make(chan struct{}, 1)
+// A center makes one preview at a time, and the process denmaPreviewsMax.
+var (
+	denmaPreviewTurns sync.Map // center -> chan struct{}
+	denmaPreviewSlots = make(chan struct{}, denmaPreviewsMax)
+)
 
-// denmaPreviewWait waits for the turn, and gives the way to end it, or the
-// context's error if it ends first.
-func denmaPreviewWait(ctx context.Context) (func(), error) {
+// denmaPreviewWait waits for the center's turn, and gives the way to end it, or
+// the context's error if it ends first.
+func denmaPreviewWait(ctx context.Context, center string) (func(), error) {
+	t, _ := denmaPreviewTurns.LoadOrStore(center, make(chan struct{}, 1))
+	turn := t.(chan struct{})
 	select {
-	case denmaPreviewTurn <- struct{}{}:
-		return func() { <-denmaPreviewTurn }, nil
+	case turn <- struct{}{}:
 	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case denmaPreviewSlots <- struct{}{}:
+		return func() { <-denmaPreviewSlots; <-turn }, nil
+	case <-ctx.Done():
+		<-turn
 		return nil, ctx.Err()
 	}
 }
@@ -119,18 +135,32 @@ func (k *denmaKeptFiles) put(key, name string, src io.Reader) (string, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k.dropLocked(key)
-	for len(k.files) >= denmaKeptMax {
-		oldest := ""
+	center, _, _ := strings.Cut(key, "/")
+	for {
+		// The center's own oldest if it has its share, else the oldest of all.
+		oldest, oldestOwn, own := "", "", 0
 		for key, o := range k.files {
 			if oldest == "" || o.at.Before(k.files[oldest].at) {
 				oldest = key
 			}
+			if c, _, _ := strings.Cut(key, "/"); c == center {
+				own++
+				if oldestOwn == "" || o.at.Before(k.files[oldestOwn].at) {
+					oldestOwn = key
+				}
+			}
 		}
-		k.dropLocked(oldest)
+		switch {
+		case own >= denmaKeptCenterMax:
+			k.dropLocked(oldestOwn)
+		case len(k.files) >= denmaKeptMax:
+			k.dropLocked(oldest)
+		default:
+			f.timer = time.AfterFunc(k.ttl, func() { k.expire(key, f) })
+			k.files[key] = f
+			return f.token, nil
+		}
 	}
-	f.timer = time.AfterFunc(k.ttl, func() { k.expire(key, f) })
-	k.files[key] = f
-	return f.token, nil
 }
 
 // open opens the file kept for key with the token (and keeps it longer), or

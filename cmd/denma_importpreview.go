@@ -209,7 +209,7 @@ func (a *App) DenmaImportPreview(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	release, err := denmaPreviewWait(ctx)
+	release, err := denmaPreviewWait(ctx, a.ko.String("denma.center"))
 	if err != nil {
 		return err
 	}
