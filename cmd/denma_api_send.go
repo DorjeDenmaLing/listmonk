@@ -1658,27 +1658,37 @@ func denmaCheckRendered(allowed []string, tpl string, texts ...string) error {
 	return nil
 }
 
+// denmaAPICampLinksFor is how long an API campaign's allowed link domains are
+// kept before being read again.
+const denmaAPICampLinksFor = time.Minute
+
+// denmaCampLinks is an API campaign's allowed link domains, and when they were read.
+type denmaCampLinks struct {
+	allowed []string
+	at      time.Time
+}
+
 // denmaAPICampLinks caches each API campaign's allowed link domains, by
 // center and campaign ID; nil for a campaign that isn't one.
 var denmaAPICampLinks sync.Map
 
 // denmaCheckCampaignLinks checks an API campaign's e-mail, as it's sent, as
 // denmaCheckRendered: one with a link elsewhere isn't sent, and is a failed
-// send (cmd/denma_retries.go), so that a template's logic can't send the
-// center's e-mails with someone else's links.
+// send (cmd/denma_retries.go). A campaign whose key has gone keeps to the
+// center's own domains.
 func denmaCheckCampaignLinks(slug string, m models.Message) error {
 	if m.Campaign == nil || denmaHub == nil {
 		return nil
 	}
 	key := slug + "/" + strconv.Itoa(m.Campaign.ID)
 	v, ok := denmaAPICampLinks.Load(key)
-	if !ok {
+	if !ok || time.Since(v.(denmaCampLinks).at) >= denmaAPICampLinksFor {
 		ctr := denmaHub.get(slug)
 		if ctr == nil {
 			return nil
 		}
 		var doms pq.StringArray
-		err := ctr.app.db.Get(&doms, `SELECT k.link_domains FROM denma_api_campaigns x JOIN denma_api_keys k ON k.id = x.key_id
+		err := ctr.app.db.Get(&doms, `SELECT COALESCE(k.link_domains, '{}') FROM denma_api_campaigns x LEFT JOIN denma_api_keys k ON k.id = x.key_id
 			WHERE x.campaign_id = $1`, m.Campaign.ID)
 		var allowed []string
 		switch {
@@ -1688,9 +1698,10 @@ func denmaCheckCampaignLinks(slug string, m models.Message) error {
 		default:
 			allowed = append(ctr.app.apiOwnLinkDomains(), doms...)
 		}
-		v, _ = denmaAPICampLinks.LoadOrStore(key, allowed)
+		v = denmaCampLinks{allowed, time.Now()}
+		denmaAPICampLinks.Store(key, v)
 	}
-	allowed := v.([]string)
+	allowed := v.(denmaCampLinks).allowed
 	if allowed == nil {
 		return nil
 	}
