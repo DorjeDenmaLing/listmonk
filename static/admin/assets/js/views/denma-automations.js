@@ -1,6 +1,4 @@
-// denma: a center's automations (views/denma-automations.html), with their
-// schedule, and an automation's page (views/denma-automation.html);
-// cmd/denma_automations.go, cmd/denma_auto_schedule.go.
+// denma: a center's automations and an automation's page (cmd/denma_automations.go).
 import Alpine from 'alpinejs';
 import { api, urls, ListTag } from '../main.js';
 import * as u from '../utils.js';
@@ -32,8 +30,7 @@ function denmaAutomations() {
   };
 }
 
-// A chosen list's ID. A list picked from the suggestions is a ListTag; one
-// typed out and entered is its name.
+// A chosen list's ID (a ListTag when picked from the suggestions, else its typed name).
 function listID(tag) {
   if (tag && tag.id) {
     return tag.id;
@@ -137,8 +134,7 @@ function denmaAutomation() {
       };
     },
 
-    // The trigger's list picker suggests only lists of its kind: double
-    // opt-in ones for "confirms", single opt-in ones for "joins".
+    // The trigger's list picker suggests double opt-in lists for "confirms", single for "joins".
     triggerListAutocomplete(el) {
       const optin = this.form.trigger_type === 'confirms' ? 'double' : 'single';
       const chosen = new Set(this.form.lists.map((l) => l.id));
@@ -237,8 +233,7 @@ function niceMax(v) {
   return [1, 2, 5, 10].map((m) => m * p).find((m) => m >= v);
 }
 
-// The chart: a column per day, what ran (from the baseline) and what's
-// coming up (above it, past a 2px gap). Each day is a button that chooses it.
+// The chart: a column per day, what ran and what's coming up; each day is a button that chooses it.
 function scheduleChart(days, today, selected, width, onPick) {
   const W = Math.max(300, Math.round(width || 900));
   const H = W < 500 ? 170 : 200;

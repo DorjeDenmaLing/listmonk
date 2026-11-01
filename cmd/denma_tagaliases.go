@@ -1,14 +1,6 @@
 package main
 
-// denma: other names for a center's tags (Subscribers -> Tags, Other
-// names), for tags another system names its own way: Retreat Guru's category
-// slugs (on-land, self-guided-and-group-retreats) for DDL's tags (on land,
-// self-guided and solitary retreats). A tag given by another name is the tag
-// itself: the trigger maps a subscriber's (denma_subscriber_tags,
-// cmd/denma_features.go), so imports, the admin API and sign-ups all get the
-// tag; sign-up webhooks map a request's before checking it against their
-// request tags; an import's preview shows the tag. Campaigns, automations
-// and webhooks' settings take the tags themselves.
+// denma: other names for a center's tags, for tags another system names its own way.
 
 import (
 	"fmt"
@@ -24,8 +16,7 @@ import (
 
 const denmaTagAliasesMax = 20 // other names a tag can have
 
-// denmaTagAliasesSQL is the other names (features 47), each another name
-// for one tag only, never a tag's own.
+// denmaTagAliasesSQL is the other names, each another name for one tag only.
 const denmaTagAliasesSQL = `
 CREATE TABLE IF NOT EXISTS denma_tag_aliases (
     alias      TEXT PRIMARY KEY,
@@ -35,8 +26,7 @@ CREATE TABLE IF NOT EXISTS denma_tag_aliases (
 CREATE INDEX IF NOT EXISTS denma_tag_aliases_tag ON denma_tag_aliases (tag);
 `
 
-// denmaResolveTags tidies tags and gives those named by another name as the
-// tag. A tag's own name wins (should one be added while it's another's).
+// denmaResolveTags tidies tags and gives those named by another name as the tag; a tag's own name wins.
 func (a *App) denmaResolveTags(tags []string) ([]string, error) {
 	tags = denmaNormTags(tags)
 	if len(tags) == 0 {
@@ -52,9 +42,7 @@ func (a *App) denmaResolveTags(tags []string) ([]string, error) {
 	return out, nil
 }
 
-// denmaLockTags makes changes to the center's tags and their other names wait
-// for each other, so that a name can't become both, and two changes can't
-// deadlock.
+// denmaLockTags makes changes to the center's tags and their other names wait for each other.
 func denmaLockTags(tx *sqlx.Tx) error {
 	_, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(current_schema() || '/denma_tags'))`)
 	return err

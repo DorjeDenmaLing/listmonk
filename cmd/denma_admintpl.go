@@ -1,9 +1,6 @@
 package main
 
-// denma: a center's admin templates are parsed on its first admin page, not
-// when it loads: they're most of a center's memory (2.7 MB), and most
-// centers' admins are seldom opened. The hub's are parsed at once, so a
-// broken template still stops the server when it starts.
+// denma: a center's admin templates are parsed on its first admin page; the hub's at once.
 
 import (
 	"html/template"
@@ -14,8 +11,7 @@ import (
 	"github.com/knadh/stuffbin"
 )
 
-// denmaAdminTplNames are the admin templates' names, from the first parse;
-// every app reads the same files.
+// denmaAdminTplNames are the admin templates' names, from the first parse.
 var denmaAdminTplNames atomic.Pointer[map[string]bool]
 
 // denmaAdminTpl is an app's admin template set, parsed once when first used.
@@ -26,8 +22,7 @@ type denmaAdminTpl struct {
 	err   error
 }
 
-// denmaAdminTemplates returns app's admin templates (paths in fs): the hub's
-// parsed now, a center's on first use (or now, if no names are known yet).
+// denmaAdminTemplates returns app's admin templates: the hub's parsed now, a center's on first use.
 func denmaAdminTemplates(app *App, funcs template.FuncMap, fs stuffbin.FileSystem, paths []string) (*denmaAdminTpl, error) {
 	return denmaAdminTemplatesWith(app, func() (*template.Template, error) { return stuffbin.ParseTemplates(funcs, fs, paths...) })
 }

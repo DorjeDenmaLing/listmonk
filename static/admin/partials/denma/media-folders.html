@@ -1,14 +1,6 @@
-{{/*
-	denma: Media's folders and preview (cmd/denma_mediafolders.go,
-	assets/js/denma-media.js), hooked into listmonk's gallery
-	(partials/media-gallery.html). Takes Root, Mode (manage or picker) and
-	CanManage.
-*/}}
+{{/* denma: Media's folders and preview (cmd/denma_mediafolders.go); takes Root, Mode and CanManage. */}}
 
-{{/* The folders: all files and those in none, then each folder; on the
-     Media page, a new folder, the one shown (named above the files) renamed
-     or deleted, and files dragged onto a folder (or "Not in a folder") moved
-     there. */}}
+{{/* The folders: all files and those in none, then each folder. */}}
 {{ define "denma-media-folders" -}}
 {{- $root := .Root -}}
 {{- $d := $root.Data -}}
@@ -75,8 +67,7 @@
 {{- end }}
 {{- end }}
 
-{{/* A file, larger, with its details, the files before and after it on the
-     page, and moving it, opening it and deleting it. */}}
+{{/* A file, larger, with its details and neighbours. */}}
 {{ define "denma-media-preview" -}}
 {{- $root := .Root -}}
 <dialog x-ref="denmaPreview" class="denma-media-preview" @keydown.left.prevent="denmaStep(-1)" @keydown.right.prevent="denmaStep(1)" @close="denmaPreviewClosed()" data-testid="media-preview">

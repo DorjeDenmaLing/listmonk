@@ -1,10 +1,7 @@
 {{ define "admin-denma-people" -}}
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
-{{/* denma: the hub's People page: everyone who signs in at /login, the
-	centers they're users of and their role in each (cmd/denma_people.go,
-	assets/js/views/denma-people.js). Centers manage their own users; here
-	superadmins can turn off someone's two-factor sign-in. */}}
+{{/* denma: the hub's People page (cmd/denma_people.go, assets/js/views/denma-people.js). */}}
 <section class="denma-people" x-data="denmaPeople" x-cloak>
 	<header class="page-header">
 		<h1 class="page-title">People <span class="text-light">({{ len $d.People }})</span></h1>

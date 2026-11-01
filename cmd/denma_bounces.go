@@ -1,39 +1,6 @@
 package main
 
-// denma: bounces for all centers, taken by the hub. Every center sends
-// through the same mail provider (the hub's settings), which reports bounces
-// to one place: one SES/SNS topic, webhook URL or bounce mailbox. So only the
-// hub has a bounce manager (cmd/main.go): it receives the webhooks, at the
-// same /webhooks/service/<service> as a single install (a center's
-// /c/<slug>/webhooks/service/… is passed to it too), and is the only one to
-// scan the mailbox. Each bounce is recorded in the center whose mail it was:
-//
-//  1. the center with the bounce's campaign (its X-Listmonk-Campaign header;
-//     SES includes headers only if the identity's notifications are set to
-//     include the original headers);
-//  2. else the one with its subscriber (X-Listmonk-Subscriber, from mailbox
-//     bounces);
-//  3. else the only center with the address.
-//
-// A hard bounce goes on the shared blocklist whatever happens (the address
-// can't receive mail from any center, cmd/denma_blocklist.go), except SES's
-// for mail it didn't send (denmaSuppressedBounce). A complaint
-// for an address in several centers with neither header is recorded in the
-// one that last sent to it (denma_messages), and one for an address no center
-// has in the one that last sent to it before it was deleted
-// (denma_forgotten_sends); with no e-mail recorded to say, it can't be
-// placed and is only logged.
-// A soft bounce that can't be placed is only logged, as it may concern one
-// center's mail only.
-//
-// A complaint lost would leave someone who reported spam able to be mailed
-// again, so every bounce is kept in denma.pending_bounces before it's
-// recorded: a webhook's before the provider is answered (a 500 if it can't
-// be, so the provider sends it again), and the mailbox's as it's read. Each
-// is recorded at once (retryBounces); one that can't be, because its center
-// isn't running (still starting after a restart, disabled, or failed to
-// load) or the database failed, stays kept and is recorded when its center
-// has loaded, or every minute.
+// denma: bounces for all centers, taken by the hub and recorded in the center whose mail it was.
 
 import (
 	"context"
@@ -59,9 +26,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// denmaBounceCB is the hub's bounce recorder: its own (own) on a single
-// install, else one that keeps each bounce (the mailbox's; webhooks' are kept
-// by denmaKeepBounces), trying until it can.
+// denmaBounceCB is the hub's bounce recorder: its own on a single install, else one that keeps each bounce.
 func denmaBounceCB(own func(models.Bounce) error, ko *koanf.Koanf, db *sqlx.DB) func(models.Bounce) error {
 	webhooks.DenmaSESTopicAllowed = func(arn string) bool { return denmaSESTopicAllowed(ko, arn) }
 	if !ko.Bool("denma.multi_center") {
@@ -85,9 +50,7 @@ func denmaBounceCB(own func(models.Bounce) error, ko *koanf.Koanf, db *sqlx.DB) 
 // denmaBouncesKeeping counts the mailbox's bounces being kept, for shutdown.
 var denmaBouncesKeeping atomic.Int64
 
-// denmaKeepBounces keeps a webhook's bounces before the provider is answered,
-// with centers: a 500 if they can't be, so the provider sends them again.
-// Kept, they're taken from bounces, so listmonk doesn't queue them too.
+// denmaKeepBounces keeps a webhook's bounces before the provider is answered (a 500 if it can't).
 func (a *App) denmaKeepBounces(bounces *[]models.Bounce) error {
 	if !a.ko.Bool("denma.multi_center") || len(*bounces) == 0 {
 		return nil
@@ -129,10 +92,7 @@ func denmaBounceKick() {
 	}
 }
 
-// denmaDrainBounces waits for the mailbox's bounces read to be kept, within
-// a time limit, so none is lost at shutdown (they've been deleted from the
-// mailbox). Idle is seen twice, as a bounce is briefly neither queued nor
-// being kept.
+// denmaDrainBounces waits, within a time limit, for the mailbox's bounces read to be kept.
 func denmaDrainBounces(app *App, within time.Duration) bool {
 	if denmaHub != nil {
 		app = denmaHub.current()
@@ -151,10 +111,7 @@ func denmaDrainBounces(app *App, within time.Duration) bool {
 	return false
 }
 
-// denmaSESTopics are the SNS topics SES notifications are taken from
-// (internal/bounce/webhooks/denma_ses.go): denma.ses_topics in config.toml,
-// and those SES sends the hub's sender's domain's and the sending domains'
-// bounces and complaints to. An unknown topic looks again, at most every 10 s.
+// denmaSESTopics are the SNS topics SES notifications are taken from (denma.ses_topics and SES's own).
 var denmaSESTopics struct {
 	sync.Mutex
 	set map[string]bool
@@ -200,8 +157,7 @@ func denmaSESTopicAllowed(ko *koanf.Koanf, arn string) bool {
 	return set[arn]
 }
 
-// denmaCenterCache remembers which center a UUID is in, up to a limit (it's
-// emptied when full).
+// denmaCenterCache remembers which center a UUID is in, up to a limit.
 type denmaCenterCache struct {
 	mu sync.Mutex
 	m  map[string]string
@@ -241,8 +197,7 @@ var (
 // errDenmaNotRunning is a bounce's center not running.
 var errDenmaNotRunning = errors.New("its center isn't running")
 
-// recordBounce records a bounce in its center. If it can't be now, it returns
-// why, and the center if it's known.
+// recordBounce records a bounce in its center, or returns why not and the center if known.
 func (d *denmaCenters) recordBounce(b models.Bounce) (string, error) {
 	slugs, err := d.bounceCenters(b)
 	if err != nil {
@@ -251,8 +206,7 @@ func (d *denmaCenters) recordBounce(b models.Bounce) (string, error) {
 	slug := ""
 	if len(slugs) == 1 {
 		slug = slugs[0]
-		// One that never e-mailed them isn't the one complained about, if one
-		// that did has since deleted them.
+		// One that never e-mailed them isn't the one complained about.
 		if b.Type == models.BounceTypeComplaint {
 			if sent, err := d.lastSentCenter(slugs, b.Email); err == nil && sent == "" {
 				if gone, err := d.lastSentCenterDeleted(b.Email); err == nil && gone != "" {
@@ -288,12 +242,10 @@ func (d *denmaCenters) recordBounce(b models.Bounce) (string, error) {
 	return "", nil
 }
 
-// denmaSuppressedSubtypes are SES's hard bounces of mail it didn't send: the
-// address was on a suppression list or failed its validation.
+// denmaSuppressedSubtypes are SES's hard bounces of mail it didn't send.
 var denmaSuppressedSubtypes = []string{"Suppressed", "OnAccountSuppressionList", "OnTenantSuppressionList", "EmailValidationSuppressed"}
 
-// denmaSuppressedBounce is a bounce of mail SES didn't send, recorded in its
-// center only.
+// denmaSuppressedBounce is a bounce of mail SES didn't send, recorded in its center only.
 func denmaSuppressedBounce(b models.Bounce) bool {
 	if b.Source != "ses" {
 		return false
@@ -306,8 +258,7 @@ func denmaSuppressedBounce(b models.Bounce) bool {
 	return json.Unmarshal(b.Meta, &m) == nil && slices.Contains(denmaSuppressedSubtypes, m.Bounce.SubType)
 }
 
-// lastSentCenter returns the one of the centers (slugs) that last e-mailed
-// the address, by what denma_messages records ("" if none has).
+// lastSentCenter returns the center that last e-mailed the address, by denma_messages.
 func (d *denmaCenters) lastSentCenter(slugs []string, email string) (string, error) {
 	if email == "" {
 		return "", nil
@@ -332,8 +283,7 @@ func (d *denmaCenters) lastSentCenter(slugs []string, email string) (string, err
 	return slug, nil
 }
 
-// lastSentCenterDeleted returns the center that last e-mailed an address
-// whose subscriber was deleted, by denma_forgotten_sends ("" if none has).
+// lastSentCenterDeleted returns the center that last e-mailed a deleted subscriber's address.
 func (d *denmaCenters) lastSentCenterDeleted(email string) (string, error) {
 	if email == "" {
 		return "", nil
@@ -358,8 +308,7 @@ func (d *denmaCenters) lastSentCenterDeleted(email string) (string, error) {
 	return slug, nil
 }
 
-// recordIn records a bounce in a center, if it's running. A bounce listmonk
-// refuses (a type it doesn't know) is logged and not kept.
+// recordIn records a bounce in a center, if it's running.
 func (d *denmaCenters) recordIn(slug string, b models.Bounce) error {
 	ctr := d.get(slug)
 	if ctr == nil {
@@ -370,7 +319,7 @@ func (d *denmaCenters) recordIn(slug string, b models.Bounce) error {
 			return err
 		}
 	}
-	err := denmaRecordBounce(ctr.app.db, b, ctr.app.core.RecordBounce) // and its automation's (cmd/denma_auto_reports.go)
+	err := denmaRecordBounce(ctr.app.db, b, ctr.app.core.RecordBounce) // cmd/denma_auto_reports.go
 	var httpErr *echo.HTTPError
 	if errors.As(err, &httpErr) {
 		lo.Printf("denma: %s bounce in center %s not recorded: %s", b.Type, slug, reDenmaLogAddress.ReplaceAllString(err.Error(), "[address]"))
@@ -379,11 +328,7 @@ func (d *denmaCenters) recordIn(slug string, b models.Bounce) error {
 	return err
 }
 
-// denmaComplaintOptOut makes a complaint final in a center, by the address
-// (its subscriber's, and the one complaining), before listmonk records it:
-// its "delete" action would leave no subscriber for denma_record_complaint
-// (cmd/denma_optouts.go) to find, as would one deleted before, and an
-// unsubscribe's opt-out becomes a complaint's. It blocklists them too.
+// denmaComplaintOptOut makes a complaint final in a center, before listmonk records it.
 func denmaComplaintOptOut(db *sqlx.DB, b models.Bounce) error {
 	tx, err := db.Beginx()
 	if err != nil {
@@ -433,20 +378,16 @@ var denmaBounceRetries sync.Mutex
 // denmaBounceBatch is how many kept bounces are read at a time.
 const denmaBounceBatch = 500
 
-// retryBounces records the kept bounces that can be now: those due (tried
-// again with a growing wait if the database fails), and all of a center that
-// has started. Those for a center that isn't running wait for it. Only a
-// bounce that waited is logged as recorded.
+// retryBounces records the kept bounces that can be now; those for a center not running wait.
 func (d *denmaCenters) retryBounces() {
 	denmaBounceRetries.Lock()
 	defer denmaBounceRetries.Unlock()
-	// A burst is read in batches; at most 20 at a time, the rest next time.
+	// A burst is read in batches of at most 20 per run.
 	for i := 0; i < 20 && d.retryBatch() == denmaBounceBatch; i++ {
 	}
 }
 
-// retryBatch records a batch of kept bounces, and returns how many it read,
-// or -1 if a recorded one couldn't be deleted (it would be recorded again).
+// retryBatch records a batch of kept bounces and returns how many it read, or -1 on a failed delete.
 func (d *denmaCenters) retryBatch() int {
 	running := []string{}
 	for _, c := range d.loaded() {
@@ -519,8 +460,7 @@ func (d *denmaCenters) watchPendingBounces() {
 	}
 }
 
-// bounceCenters returns the slugs of the centers the bounce may be for: the
-// one with its campaign, else its subscriber, else every one with its address.
+// bounceCenters returns the slugs of the centers the bounce may be for.
 func (d *denmaCenters) bounceCenters(b models.Bounce) ([]string, error) {
 	if id, err := uuid.FromString(b.CampaignUUID); err == nil {
 		slugs, err := d.centersWithUUID(&denmaBounceCampaigns, "campaigns", id.String())
@@ -540,9 +480,7 @@ func (d *denmaCenters) bounceCenters(b models.Bounce) ([]string, error) {
 	return d.findInCenters(`SELECT %s FROM %s.subscribers WHERE LOWER(email) = $1`, b.Email)
 }
 
-// centersWithUUID returns the centers with a row of table (campaigns or
-// subscribers) with that UUID. A center in the cache is asked whether it
-// still has it, rather than all of them.
+// centersWithUUID returns the centers with a row of table with that UUID.
 func (d *denmaCenters) centersWithUUID(cache *denmaCenterCache, table, id string) ([]string, error) {
 	if slug, ok := cache.get(id); ok {
 		if has, err := d.centerHasUUID(slug, table, id); err == nil && has {
@@ -557,8 +495,7 @@ func (d *denmaCenters) centersWithUUID(cache *denmaCenterCache, table, id string
 	return slugs, err
 }
 
-// centerHasUUID reports whether a registered center has a row of table with
-// that UUID.
+// centerHasUUID reports whether a registered center has a row of table with that UUID.
 func (d *denmaCenters) centerHasUUID(slug, table, id string) (bool, error) {
 	db := d.current().db
 	var schema string
@@ -579,9 +516,7 @@ type denmaCenterSchema struct {
 	Schema string `db:"schema_name"`
 }
 
-// denmaCenterSchemas returns the registered centers (only slugs, if given)
-// whose schemas have all the tables (a center that failed to install may
-// have none).
+// denmaCenterSchemas returns the registered centers whose schemas have all the tables.
 func denmaCenterSchemas(db *sqlx.DB, slugs []string, tables ...string) ([]denmaCenterSchema, error) {
 	where := ""
 	for _, t := range tables {
@@ -592,9 +527,7 @@ func denmaCenterSchemas(db *sqlx.DB, slugs []string, tables ...string) ([]denmaC
 	return cs, err
 }
 
-// findInCenters runs a query (with %s for the slug literal and the schema)
-// in every registered center at once, running or not, and returns the slugs
-// of those where it finds a row.
+// findInCenters runs a query in every registered center and returns the slugs where it finds a row.
 func (d *denmaCenters) findInCenters(q, arg string) ([]string, error) {
 	db := d.current().db
 	cs, err := denmaCenterSchemas(db, nil, "campaigns", "subscribers")

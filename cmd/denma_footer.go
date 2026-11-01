@@ -1,26 +1,6 @@
 package main
 
-// denma: what every campaign and automation e-mail must have in its footer:
-// the center's postal address (cmd/denma_address.go), its website and contact
-// e-mail (Config -> General, denma.website and denma.contact_email; asked for
-// when a center is made), an unsubscribe link and a "view in browser" link.
-// Canada's anti-spam law (CASL) requires the address, a way to get in touch
-// and the unsubscribe link.
-//
-//   - {{ CenterWebsite }} and {{ CenterEmail }} show the website and the
-//     e-mail address, as links; {{ CenterFooter }} writes the two links
-//     (models/denma_footer.go), in campaigns and automations.
-//   - A campaign or visual template isn't saved without them all (the
-//     center's details may be written in), and Config lists those that lack
-//     any. A campaign isn't started, scheduled or tested, nor an automation
-//     saved, turned on or run, unless the center has its details, its e-mail
-//     has the links (their tags) and, as rendered, shows the details. Each
-//     campaign and automation e-mail is checked for the details again as it's
-//     sent (denmaCountedMessenger, cmd/denma_daily.go).
-//   - Every campaign gets the open-tracking pixel ({{ TrackView }}), so the
-//     tracking settings alone decide whether opens are counted.
-//
-// Transactional e-mails and notices don't need any of it.
+// denma: the footer every campaign and automation e-mail must have (address, website, contact, links).
 
 import (
 	"encoding/json"
@@ -57,8 +37,7 @@ func (c denmaContact) complete() bool {
 
 var errDenmaNoContact = errors.New("Enter the center's postal address, website and contact e-mail on Config → General first. Every campaign and automation e-mail shows them (Canada's anti-spam law, CASL, requires the address and a way to get in touch), so none is sent without them.")
 
-// denmaContacts holds each center's details (by slug), changed at once on a
-// save.
+// denmaContacts holds each center's details by slug.
 var denmaContacts sync.Map // slug -> *atomic.Pointer[denmaContact]
 
 func denmaContactPtr(slug string) *atomic.Pointer[denmaContact] {
@@ -84,9 +63,7 @@ func denmaSetContact(slug string, c denmaContact) {
 	}
 }
 
-// denmaFooterFuncs sets a center's details from its settings (ko) and adds
-// their tags to its e-mails' template functions (the campaign manager's,
-// which campaigns, automations, transactional templates and the design use).
+// denmaFooterFuncs sets a center's details from its settings and adds their template tags.
 func denmaFooterFuncs(funcs template.FuncMap, ko *koanf.Koanf) {
 	slug := ko.String("denma.center")
 	denmaSetContact(slug, denmaContact{Address: ko.String("denma.postal_address"),
@@ -104,9 +81,7 @@ func denmaFooterFuncs(funcs template.FuncMap, ko *koanf.Koanf) {
 
 var errDenmaFooterOnlyCampaigns = errors.New(denmaFooterTag + " is for campaign and visual templates. Other e-mails can use {{ CenterAddress }}, {{ CenterWebsite }} and {{ CenterEmail }}.")
 
-// denmaWebsiteHost is a center's website's host, lowercase, or "": its
-// e-mails link to it ({{ CenterWebsite }}), so it's one of the center's own
-// link domains (cmd/denma_api_send.go).
+// denmaWebsiteHost is a center's website's host, lowercase, or "" (cmd/denma_api_send.go).
 func denmaWebsiteHost(slug string) string {
 	u, err := url.Parse(denmaContactOf(slug).Website)
 	if err != nil {
@@ -123,8 +98,7 @@ func denmaLinkHTML(href, text string) template.HTML {
 	return template.HTML(`<a href="` + html.EscapeString(href) + `" style="color:inherit;">` + html.EscapeString(text) + `</a>`)
 }
 
-// denmaWebsiteText is a website as e-mails show it: without its scheme or a
-// trailing slash.
+// denmaWebsiteText is a website without its scheme or trailing slash.
 func denmaWebsiteText(u string) string {
 	if _, rest, ok := strings.Cut(u, "://"); ok {
 		u = rest
@@ -132,8 +106,7 @@ func denmaWebsiteText(u string) string {
 	return strings.TrimSuffix(u, "/")
 }
 
-// denmaCheckWebsiteInput tidies a website entered for a center (adding
-// https://) and checks it's one.
+// denmaCheckWebsiteInput tidies a website entered for a center and checks it.
 func denmaCheckWebsiteInput(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -150,8 +123,7 @@ func denmaCheckWebsiteInput(s string) (string, error) {
 	return u.String(), nil
 }
 
-// denmaCheckContactEmailInput tidies a contact e-mail entered for a center and
-// checks it's an address.
+// denmaCheckContactEmailInput tidies a center's contact e-mail and checks it's an address.
 func denmaCheckContactEmailInput(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -182,8 +154,7 @@ var (
 	reDenmaEmailUse   = regexp.MustCompile(`\{\{-?\s*CenterEmail\s*-?\}\}`)
 )
 
-// denmaLinksMissing is the links an e-mail's source (its template's and its
-// own HTML) hasn't.
+// denmaLinksMissing is the links an e-mail's source hasn't.
 func denmaLinksMissing(src string) []string {
 	if reDenmaFooterUse.MatchString(src) {
 		return nil
@@ -198,8 +169,7 @@ func denmaLinksMissing(src string) []string {
 	return miss
 }
 
-// denmaDetailsMissing is the center's details that HTML (or plain text)
-// doesn't show, by their text.
+// denmaDetailsMissing is the center's details that the HTML doesn't show.
 func denmaDetailsMissing(body string, isHTML bool, c denmaContact) []string {
 	words := denmaPlainWords(body, isHTML)
 	var miss []string
@@ -224,8 +194,7 @@ func denmaSiteWord(s string) string {
 	return strings.TrimRight(s, "/.:!?)")
 }
 
-// denmaHasWord reports whether words (denmaPlainWords) have want as a word,
-// with or without its scheme, www., a trailing slash or punctuation.
+// denmaHasWord reports whether words have want, with or without scheme, www. or slash.
 func denmaHasWord(words, want string) bool {
 	if want == "" {
 		return false
@@ -238,8 +207,7 @@ func denmaHasWord(words, want string) bool {
 	return false
 }
 
-// denmaFooterMissing is what a campaign or visual template's HTML lacks of
-// the footer: the links by their tags, the details by theirs or written in.
+// denmaFooterMissing is what a campaign or visual template's HTML lacks of the footer.
 func denmaFooterMissing(body string, c denmaContact) []string {
 	miss := denmaLinksMissing(body)
 	unshown := denmaDetailsMissing(body, true, c)
@@ -263,8 +231,7 @@ func denmaHas(list []string, s string) bool {
 	return false
 }
 
-// denmaFooterError says what's missing (what: "The template", "The e-mail")
-// and how to fix it.
+// denmaFooterError says what's missing and how to fix it.
 func denmaFooterError(what string, miss []string) error {
 	where := "its template's footer (Campaigns → Templates), or a visual campaign's own,"
 	if what == "The template" {
@@ -282,8 +249,7 @@ func denmaAnd(s []string) string {
 	return strings.Join(s[:len(s)-1], ", ") + " and " + s[len(s)-1]
 }
 
-// denmaFooterCheck refuses an e-mail of a center (slug; none for the hub),
-// as rendered, that doesn't show its details, or if it hasn't them all.
+// denmaFooterCheck refuses an e-mail, as rendered, that lacks the center's details.
 func denmaFooterCheck(slug string, body []byte) error {
 	if slug == "" {
 		return nil
@@ -298,13 +264,10 @@ func denmaFooterCheck(slug string, body []byte) error {
 	return nil
 }
 
-// denmaPrevContactDays is how long a center's e-mails being sent may still
-// show its details as they were before a change on Config: campaigns
-// already running go on, rather than stop at the next e-mail.
+// denmaPrevContactDays is how long a sending e-mail may show a center's previous details.
 const denmaPrevContactDays = 30
 
-// denmaPrevContactsSQL keeps the details a center had before each change
-// (in denmaFeaturesSQL, version 50).
+// denmaPrevContactsSQL keeps the details a center had before each change.
 const denmaPrevContactsSQL = `
 CREATE TABLE IF NOT EXISTS denma_previous_contacts (
     id          SERIAL PRIMARY KEY,
@@ -315,9 +278,7 @@ CREATE TABLE IF NOT EXISTS denma_previous_contacts (
 );
 `
 
-// denmaKeepPrevContact records a center's details as they were (old) when a
-// Config save changes them, and forgets those older than
-// denmaPrevContactDays.
+// denmaKeepPrevContact records a center's details as they were when a save changes them.
 func denmaKeepPrevContact(tx *sqlx.Tx, old, cur denmaContact) error {
 	if old == cur || old == (denmaContact{}) {
 		return nil
@@ -330,8 +291,7 @@ func denmaKeepPrevContact(tx *sqlx.Tx, old, cur denmaContact) error {
 	return err
 }
 
-// denmaPrevContacts holds each center's previous details (by slug), read
-// again after a minute or a Config save.
+// denmaPrevContacts holds each center's previous details by slug, re-read after a minute.
 var denmaPrevContacts sync.Map // slug -> denmaPrevContactsAt
 
 type denmaPrevContactsAt struct {
@@ -339,8 +299,7 @@ type denmaPrevContactsAt struct {
 	list []denmaContact
 }
 
-// denmaPrevContactsOf is a center's details as they were before its
-// changes of the last denmaPrevContactDays.
+// denmaPrevContactsOf is a center's details before its changes of the last denmaPrevContactDays.
 func denmaPrevContactsOf(slug string) []denmaContact {
 	if v, ok := denmaPrevContacts.Load(slug); ok && time.Since(v.(denmaPrevContactsAt).at) < time.Minute {
 		return v.(denmaPrevContactsAt).list
@@ -362,10 +321,7 @@ func denmaPrevContactsOf(slug string) []denmaContact {
 	return list
 }
 
-// denmaFooterCheckSent is denmaFooterCheck for an e-mail as it's sent: a
-// detail it shows as it was before a change of the last
-// denmaPrevContactDays is accepted too. Starting, testing and saving check
-// the details as they are now.
+// denmaFooterCheckSent is denmaFooterCheck for an e-mail as it's sent, accepting previous details.
 func denmaFooterCheckSent(slug string, body []byte) error {
 	err := denmaFooterCheck(slug, body)
 	if err == nil || errors.Is(err, errDenmaNoContact) {
@@ -381,8 +337,7 @@ func denmaFooterCheckSent(slug string, body []byte) error {
 	return nil
 }
 
-// denmaDetailsMissingSince is the details (of cur) an e-mail's HTML doesn't
-// show, as they are or as one of prevs had them.
+// denmaDetailsMissingSince is the details an e-mail's HTML doesn't show, now or as before.
 func denmaDetailsMissingSince(body string, cur denmaContact, prevs []denmaContact) []string {
 	var left []string
 	for _, part := range denmaDetailsMissing(body, true, cur) {
@@ -400,8 +355,7 @@ func denmaDetailsMissingSince(body string, cur denmaContact, prevs []denmaContac
 	return left
 }
 
-// denmaCheckFooter refuses an e-mail (its body as sent) of a's center that
-// doesn't show the center's details.
+// denmaCheckFooter refuses an e-mail (as sent) that doesn't show the center's details.
 func (a *App) denmaCheckFooter(body []byte) error {
 	if !a.ko.Bool("denma.multi_center") {
 		return nil
@@ -409,8 +363,7 @@ func (a *App) denmaCheckFooter(body []byte) error {
 	return denmaFooterCheck(a.ko.String("denma.center"), body)
 }
 
-// denmaCheckLinks refuses a campaign or automation e-mail of a's center whose
-// source (its template's and its own HTML) hasn't the footer's links.
+// denmaCheckLinks refuses a campaign or automation e-mail whose source lacks the footer's links.
 func (a *App) denmaCheckLinks(src string) error {
 	if !a.ko.Bool("denma.multi_center") || a.ko.String("denma.center") == "" {
 		return nil
@@ -421,8 +374,7 @@ func (a *App) denmaCheckLinks(src string) error {
 	return nil
 }
 
-// denmaCheckSample refuses a campaign's test e-mail (msg, as rendered) that
-// hasn't the footer or fails denmaCheckMessage.
+// denmaCheckSample refuses a campaign's test e-mail that lacks the footer or fails denmaCheckMessage.
 func (a *App) denmaCheckSample(camp *models.Campaign, msg []byte) error {
 	if err := a.denmaCheckLinks(denmaCampaignSource(camp)); err != nil {
 		return denmaBadRequest(err)
@@ -430,8 +382,7 @@ func (a *App) denmaCheckSample(camp *models.Campaign, msg []byte) error {
 	return a.denmaCheckMessage(msg)
 }
 
-// denmaCampaignSource is a campaign's HTML as its e-mail is made from it:
-// its template's and its own (a visual campaign's own only).
+// denmaCampaignSource is a campaign's HTML as its e-mail is made: its template's and its own.
 func denmaCampaignSource(c *models.Campaign) string {
 	if c.ContentType == models.CampaignContentTypeVisual {
 		return c.Body
@@ -439,8 +390,7 @@ func denmaCampaignSource(c *models.Campaign) string {
 	return c.TemplateBody + c.Body
 }
 
-// denmaCheckTemplateFooter refuses a campaign or visual template of a center
-// without the footer, and {{ CenterFooter }} in any other.
+// denmaCheckTemplateFooter refuses a campaign or visual template without the footer.
 func (a *App) denmaCheckTemplateFooter(o models.Template) error {
 	if !a.denmaInCenter() {
 		return nil
@@ -457,15 +407,13 @@ func (a *App) denmaCheckTemplateFooter(o models.Template) error {
 	return nil
 }
 
-// denmaFooterTemplate is a template that lacks some of the footer, for the
-// Config page.
+// denmaFooterTemplate is a template that lacks some of the footer, for Config.
 type denmaFooterTemplate struct {
 	Name    string
 	Missing string
 }
 
-// denmaFooterTemplates is the center's campaign and visual templates that
-// lack some of the footer.
+// denmaFooterTemplates is the center's campaign and visual templates lacking some of the footer.
 func (a *App) denmaFooterTemplates() []denmaFooterTemplate {
 	var tpls []struct {
 		Name string `db:"name"`
@@ -484,15 +432,13 @@ func (a *App) denmaFooterTemplates() []denmaFooterTemplate {
 	return out
 }
 
-// The stock footer's website and contact e-mail, after its address (put there
-// by features version 39).
+// The stock footer's website and contact e-mail, after its address.
 const (
 	denmaContactAnchor = denmaAddressAnchor + "<br>" + denmaAddressTag
 	denmaContactLine   = "<br>{{ CenterWebsite }} · {{ CenterEmail }}"
 )
 
-// denmaWithContact is a template's HTML with the website and contact e-mail
-// after its stock footer's address, and whether they were put there.
+// denmaWithContact is a template's HTML with the website and contact e-mail after the address.
 func denmaWithContact(body string) (string, bool) {
 	if strings.Contains(body, "CenterWebsite") || strings.Contains(body, "CenterFooter") || !strings.Contains(body, denmaContactAnchor) {
 		return body, false
@@ -500,10 +446,7 @@ func denmaWithContact(body string) (string, bool) {
 	return strings.Replace(body, denmaContactAnchor, denmaContactAnchor+denmaContactLine, 1), true
 }
 
-// denmaAddContactToTemplates adds the website and contact e-mail to the
-// footer of the center's campaign and visual templates that have the stock
-// one, and to its default design, if it's the stock layout. Returns how many
-// it changed.
+// denmaAddContactToTemplates adds the contact lines to stock-footer templates and the default design.
 func denmaAddContactToTemplates(tx *sqlx.Tx) (int, error) {
 	n, err := denmaEditStockFooters(tx, denmaContactAnchor, denmaWithContact)
 	if err != nil {
@@ -516,8 +459,7 @@ func denmaAddContactToTemplates(tx *sqlx.Tx) (int, error) {
 	return n, err
 }
 
-// The default design's website and contact e-mail, a block below its address
-// (denmaDesignLayout), which then has less space below it.
+// The default design's website and contact e-mail, a block below its address.
 const (
 	denmaDesignContactBlock = "block-denma-design-contact"
 	denmaDesignContactText  = "{{ CenterWebsite }} · {{ CenterEmail }}"
@@ -525,8 +467,7 @@ const (
 		`<div style="color:#888888;font-size:12px;text-align:center;padding:0px 40px 30px 40px">` + denmaDesignContactText + `</div>`
 )
 
-// denmaDesignFooter is the design's address and contact blocks, for its
-// source.
+// denmaDesignFooter is the design's address and contact blocks.
 func denmaDesignFooter(pad func(t, r, b, l int) map[string]int) map[string]map[string]any {
 	text := func(s string, bottom int) map[string]any {
 		return map[string]any{"type": "Text", "data": map[string]any{
@@ -537,9 +478,7 @@ func denmaDesignFooter(pad func(t, r, b, l int) map[string]int) map[string]map[s
 	return map[string]map[string]any{denmaDesignAddrBlock: text(denmaAddressTag, 4), denmaDesignContactBlock: text(denmaDesignContactText, 30)}
 }
 
-// denmaAddContactToDesign adds the website and contact e-mail below the
-// center's default design's address, if it's still the stock layout (features
-// version 39's) and hasn't them.
+// denmaAddContactToDesign adds the contact lines below the default design's address, if stock.
 func denmaAddContactToDesign(tx *sqlx.Tx) (bool, error) {
 	var t struct {
 		ID     int    `db:"id"`

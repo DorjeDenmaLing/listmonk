@@ -1,7 +1,6 @@
 package webhooks
 
-// denma: subscriptions and notifications are taken only from the hub's topics
-// (cmd/denma_bounces.go), as well as having a valid signature.
+// denma: only the hub's topics are accepted (cmd/denma_bounces.go).
 
 import (
 	"crypto/x509"
@@ -36,9 +35,7 @@ func denmaSigAlg(version string) (x509.SignatureAlgorithm, error) {
 	return 0, fmt.Errorf("unknown SNS signature version %q", version)
 }
 
-// denmaSESRecipient is who bounced or complained (bouncedRecipients,
-// complainedRecipients), else the e-mail's first recipient: an e-mail with
-// several (a Bcc) mustn't have one's bounce recorded against another.
+// denmaSESRecipient is who bounced or complained, else the e-mail's first recipient.
 func denmaSESRecipient(msg, first string) string {
 	var m struct {
 		Bounce struct {

@@ -1,6 +1,4 @@
-// denma: every admin API request says which center its page was loaded for
-// (X-Denma-Center), so that one from a tab left on another center is refused
-// rather than served by the center opened since (cmd/denma_place.go).
+// denma: every admin API request says which center its page was loaded for (X-Denma-Center).
 const center = window._LM_CONFIG?.denma_center ?? '';
 const fetchAPI = window.fetch.bind(window);
 

@@ -1,9 +1,6 @@
 {{ define "admin-denma-centers" -}}
 {{ template "admin-header" . }}
-{{/* denma: the hub's Centers page: every center, with its sending for a
-	period, to open, enable or disable (assets/js/views/denma-hub-centers.js,
-	cmd/denma_hub.go). The dashboard (partials/denma/hub.html) has their
-	figures together. */}}
+{{/* denma: the hub's Centers page (assets/js/views/denma-hub-centers.js, cmd/denma_hub.go). */}}
 <section class="denma-hub denma-dash" x-data="denmaHubCenters" x-cloak>
 	<header class="page-header hstack justify-between">
 		<h1 class="page-title">Centers <span class="text-light" x-text="centers.length ? `(${centers.length})` : ''"></span></h1>

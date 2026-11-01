@@ -1,6 +1,4 @@
-// denma: a subscriber who opted out (views/subscriber.html,
-// cmd/denma_optouts.go): sending them, when they've asked, the confirmation
-// to subscribe again (cmd/denma_resubscribe.go).
+// denma: sends a subscriber who opted out the re-subscription e-mail (cmd/denma_resubscribe.go).
 import Alpine from 'alpinejs';
 import { api } from '../main.js';
 import * as u from '../utils.js';

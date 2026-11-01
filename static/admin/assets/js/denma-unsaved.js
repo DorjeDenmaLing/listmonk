@@ -1,10 +1,4 @@
-// denma: asks before leaving an editor with unsaved changes. A link in the
-// admin opens a dialog (save, don't save, or stay); closing the tab or going
-// back gets the browser's own question. What an editor does to the body as it
-// loads (the visual editor rewrites it) isn't a change. Spread into
-// views/templates.js and views/campaign.js; utils.js's redirect and reload
-// (the page's own buttons) leave without asking, but Unschedule and Resend
-// ask first (denmaUnsavedFirst).
+// denma: asks before leaving an editor with unsaved changes (views/templates.js, views/campaign.js).
 
 const BODY = ['body', 'body_source', 'altbody'];
 
@@ -99,8 +93,7 @@ export function denmaUnsaved({ skip = [], save }) {
       saved = this._denmaSnapshot();
     },
 
-    // Before a button that reloads the page (WHAT: "unscheduling"): true to go
-    // on, having saved or not as chosen. Unchanged, it's OTHERWISE's answer.
+    // Before a button that reloads the page: true to go on, having saved or not as chosen.
     async denmaUnsavedFirst(what, otherwise = () => true) {
       if (!this.denmaDirty()) {
         return otherwise();
@@ -120,8 +113,7 @@ export function denmaUnsaved({ skip = [], save }) {
     denmaUnsavedInit() {
       this.$nextTick(() => this.denmaSaved());
 
-      // An editor's own rewrite of an unchanged body is taken as saved: until
-      // the person does something, and for a second after it's ready.
+      // An editor's own rewrite of an unchanged body counts as saved.
       this.$root.addEventListener('editor-ready', () => {
         readyAt = Date.now();
         touched = false;

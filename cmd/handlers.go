@@ -309,7 +309,7 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		}
 
 		// Public APIs.
-		// denma: no GET /api/public/lists: lists are internal, so nothing public names them (cmd/denma_signupanswers.go)
+		// denma: no GET /api/public/lists: nothing public names lists (cmd/denma_signupanswers.go)
 		g.POST("/api/public/subscription", a.PublicSubscription)
 		g.GET("/api/public/captcha/altcha", a.AltchaChallenge)
 		if a.cfg.EnablePublicArchive {

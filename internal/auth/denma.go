@@ -1,8 +1,6 @@
 package auth
 
-// denma: a user the request's context already carries: an MCP key's
-// (cmd/denma_mcp.go), checked before the request reached the center, with
-// only the key's permissions. Clients can't set it.
+// denma: a user the request's context already carries (cmd/denma_mcp.go).
 
 import (
 	"context"

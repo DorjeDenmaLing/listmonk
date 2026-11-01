@@ -29,8 +29,7 @@ var denmaAllowedSprig = []string{
 	"get", "hasKey", "dig", "first", "last", "join",
 }
 
-// denmaTemplateFuncs returns the functions templates get from sprig: those
-// allowed, and Go's own text functions, with a limit on the text each handles.
+// denmaTemplateFuncs returns the allowed sprig functions and Go's text functions, with a text limit.
 func denmaTemplateFuncs(sprigFuncs template.FuncMap) template.FuncMap {
 	out := make(template.FuncMap, len(denmaAllowedSprig)+7)
 	for _, name := range denmaAllowedSprig {
@@ -64,8 +63,7 @@ func denmaReplace(old, repl, src string) (string, error) {
 	return strings.ReplaceAll(src, old, repl), nil
 }
 
-// denmaLimitFunc wraps f so that it fails on text over denmaTplValueMax, in
-// its arguments or its result.
+// denmaLimitFunc wraps f to fail on text over denmaTplValueMax in its arguments or result.
 func denmaLimitFunc(f any) any {
 	v := reflect.ValueOf(f)
 	t := v.Type()

@@ -1,11 +1,4 @@
-{{- /* denma: the search box and filter builder for subscribers, lists and
-   campaigns (views/subscribers.html, lists.html, campaigns.html), in place of
-   their plain search box (and the subscribers' SQL query editor). The builder
-   writes the search language (cmd/denma_search.go) into the box;
-   assets/js/views/denma-search.js.
-
-   dict "Root" . "Kind" subscribers|lists|campaigns "Name" the search param
-   "Value" the current search "Placeholder" the box's placeholder */ -}}
+{{- /* denma: the search box and filter builder; dict "Root" "Kind" "Name" "Value" "Placeholder". */ -}}
 {{ define "denma-search" -}}
 <ot-dropdown x-data="denmaSearch('{{ .Kind }}')">
 	<fieldset class="group">

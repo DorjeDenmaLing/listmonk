@@ -1,10 +1,6 @@
 package main
 
-// denma: the sending API's OpenAPI 3.1 description (denma_api_openapi.json),
-// served by each center at <center>/v1/openapi.json, without a key, with the
-// center's own address in "servers". Its Config -> API page shows it as the
-// API's reference (views/denma-api.html). TestDenmaAPIOpenAPI checks it
-// against the API's routes (denmaAPIRoutes) and what each needs of a key.
+// denma: the sending API's OpenAPI 3.1 description, served at <center>/v1/openapi.json.
 
 import (
 	"bytes"
@@ -20,8 +16,7 @@ import (
 //go:embed denma_api_openapi.json
 var denmaAPIOpenAPIDoc []byte
 
-// apiOpenAPI is the description with the center's address, its keys in the
-// file's order.
+// apiOpenAPI is the description with the center's address, keys in the file's order.
 func (a *App) apiOpenAPI() ([]byte, error) {
 	servers := []map[string]string{{
 		"url":         strings.TrimSuffix(a.urlCfg.RootURL, "/") + "/v1",
@@ -46,8 +41,7 @@ func (a *App) DenmaAPIOpenAPI(c echo.Context) error {
 	return c.Blob(http.StatusOK, echo.MIMEApplicationJSONCharsetUTF8, out.Bytes())
 }
 
-// denmaJSONSet returns a JSON object with key's value replaced by val,
-// keeping the order of its keys.
+// denmaJSONSet returns a JSON object with key's value replaced by val, keeping key order.
 func denmaJSONSet(obj []byte, key string, val any) ([]byte, error) {
 	dec := json.NewDecoder(bytes.NewReader(obj))
 	if t, err := dec.Token(); err != nil || t != json.Delim('{') {

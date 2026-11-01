@@ -1,27 +1,10 @@
-{{/*
-	denma: the sidebar, in place of listmonk's partials/sidebar.html (in
-	views/base.html), looking and working as in listmonk v6.2.0 with the JS
-	add-on (listmonk-js/admin-custom.js), which production runs: its icons
-	(assets/static/denma-icons.svg), one group open at a time, and Calendar,
-	Automations, Media and Analytics as top-level items. listmonk's items and
-	permissions are kept; Media and Analytics keep their page IDs.
-
-	In the hub (superadmins): Dashboard, Centers, People, Sending domains,
-	Analytics, Activity, MCP (cmd/denma_mcp.go), Media (its own, for its branding),
-	Users, Settings and System. In a center: listmonk's items and ours; its settings are the
-	hub's, and it has Activity (its own log) and Config, with General (its own
-	details), Webhooks, API and MCP (cmd/denma_center.go). Superadmins go back to the hub with the top
-	bar's button.
-
-	On phones it's the menu under the top bar's menu button, with Refresh and
-	the user's items below (as 6.2.0's).
-*/}}
+{{/* denma: the sidebar in place of listmonk's; the hub and each center show their own items. */}}
 {{ define "denma-sidebar" }}
 {{- $u := .Data.Profile }}
 {{- $p := .Data.PageID }}
 <nav class="denma-menu">
 	<ul>
-		{{- if DenmaHubURL }}{{/* the center (or the hub) the admin shows: they're all at /admin (cmd/denma_place.go) */}}
+		{{- if DenmaHubURL }}{{/* the center or hub shown (cmd/denma_place.go) */}}
 		<li class="denma-menu-place" data-testid="place-name">{{ .SiteName }}</li>
 		{{- end }}
 		<li>
@@ -223,9 +206,7 @@
 </nav>
 {{ end }}
 
-{{/* At the bottom of the sidebar (views/base.html's footer): listmonk's
-	credit, linking to this fork's source. The AGPL v3 requires offering the
-	running version's source to everyone who uses it over the network. */}}
+{{/* At the bottom of the sidebar: listmonk's credit, linking to this fork's source (AGPL v3). */}}
 {{ define "denma-powered-by" }}
 <p class="denma-powered-by">{{ .L.T "public.poweredBy" }} <a href="{{ DenmaSourceURL }}" target="_blank" rel="noopener" title="Source code (AGPL v3)">listmonk</a></p>
 {{ end }}
@@ -233,8 +214,7 @@
 {{/* An icon of listmonk v6.2.0 (assets/static/denma-icons.svg), by name. */}}
 {{ define "denma-icon" }}{{ Icon . "denma-icons.svg" }}{{ end }}
 
-{{/* Under the Settings heading (views/settings.html): in multi-center mode
-	these are the hub's, for every center (cmd/denma_centers.go). */}}
+{{/* Under the Settings heading: in multi-center mode these are the hub's, for every center. */}}
 {{ define "denma-settings-note" }}
 {{- if and DenmaHubURL DenmaIsHub }}
 <p class="denma-settings-note" role="note">{{ Icon "info" }} These settings apply to every center, except what each sets on its Config page (name, logo, language, sender, admin e-mails). Saving reloads the centers one at a time.</p>

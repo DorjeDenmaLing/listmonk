@@ -1,11 +1,9 @@
-// denma: each center's log lines carry its address first ("boulder: ...",
-// cmd/denma_logs.go). The hub's Logs page (views/logs.html, views/logs.js)
-// shows them all, and can show one center's, or the hub's own.
+// denma: each center's log lines carry its address first; the hub's Logs page can filter by center.
 import { centerPicker } from './denma-hub-ui.js';
 
 const reTag = /^([a-z0-9]+(?:-[a-z0-9]+)*): /;
 
-// Mixed into the Logs page's view; nothing changes without centers.
+// Mixed into the Logs page's view.
 export function denmaLogs() {
   const centers = window._denmaCenters || [];
   const slugs = new Set(centers.map((c) => c.slug));

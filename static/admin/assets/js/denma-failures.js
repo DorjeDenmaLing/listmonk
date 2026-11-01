@@ -1,6 +1,4 @@
-// denma: a campaign's failed sends (cmd/denma_retries.go,
-// partials/denma/failures.html): resending a finished campaign to them.
-// Spread into the campaign page's component.
+// denma: a campaign's failed sends and resending to them (cmd/denma_retries.go).
 import { api } from './main.js';
 import * as u from './utils.js';
 

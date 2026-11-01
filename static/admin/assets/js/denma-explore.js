@@ -1,7 +1,4 @@
-// denma: automations on Analytics -> Explore (views/analytics.js, hooks), as
-// well as campaigns: picked in the same field, sent as ?auto= rather than
-// ?id= (views/analytics.html), and drawn beside campaigns
-// (denma-campaign-charts.js). cmd/denma_auto_reports.go adds their figures.
+// denma: automations on Analytics -> Explore, picked as ?auto= beside campaigns (cmd/denma_auto_reports.go).
 import { getJSON } from './denma-stats.js';
 
 const explore = () => window._denmaExplore || {};
@@ -24,8 +21,7 @@ export const denmaChosenAutos = () => (explore().automations || []).map((a) => n
 
 let all = null;
 
-// The field's suggestions for the automations matching what's typed and not
-// chosen (ti, the field), for users who can see automations.
+// The field's suggestions for automations matching what's typed and not chosen (ti, the field).
 export async function denmaAutoOptions(query, ti) {
   if (!explore().can) return [];
   if (!all) {

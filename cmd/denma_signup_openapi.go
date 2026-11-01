@@ -1,11 +1,6 @@
 package main
 
-// denma: the sign-up webhooks' OpenAPI 3.1 description
-// (denma_signup_openapi.json), served by each center at
-// <center>/signup/openapi.json, with the center's own address in "servers".
-// Its Config -> Webhooks page shows it as the webhooks' reference
-// (views/denma-webhooks.html). TestDenmaSignupOpenAPI checks it against the
-// fields the webhooks read.
+// denma: the sign-up webhooks' OpenAPI 3.1 description, served at <center>/signup/openapi.json.
 
 import (
 	"bytes"

@@ -2,9 +2,7 @@
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
 
-{{/* denma: a center's Config -> Webhooks page, its sign-up webhooks
-	(cmd/denma_signup.go, cmd/denma_center.go), saved as they're changed:
-	Form webhooks, the center admins', and Server webhooks, the superadmins'. */}}
+{{/* denma: a center's Config -> Webhooks page: its Form and Server sign-up webhooks (cmd/denma_signup.go). */}}
 <script nonce="{{ .CSPNonce }}">
 	window._denmaSignupHooks = {{ ToJSON $d.SignupHooks }};
 	window._denmaSignupLists = {{ ToJSON $d.SignupLists }};
@@ -109,8 +107,7 @@
 			</div>
 		</fieldset>
 
-		{{/* The webhooks' reference, made from their OpenAPI description
-			(cmd/denma_signup_openapi.json) by denmaAPIDocs. */}}
+		{{/* The webhooks' reference, from cmd/denma_signup_openapi.json (denmaAPIDocs). */}}
 		<details class="card denma-reference" x-data="denmaAPIDocs('_denmaSignupSpec', 'SECRET')" data-testid="signup-docs">
 			<summary>Reference, for developers</summary>
 			<div class="vstack gap-3 denma-signup-help">

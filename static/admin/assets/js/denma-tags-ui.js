@@ -1,11 +1,8 @@
-// denma: subscriber tags in the admin (cmd/denma_tags.go): the tag picker's
-// suggestions (partials/denma/tags.html), and the Subscribers page's bulk
-// "Tags" action. Spread into the page components that use them.
+// denma: subscriber tags in the admin (cmd/denma_tags.go): the tag picker and the bulk Tags action.
 import { api, urls } from './main.js';
 import * as u from './utils.js';
 
-// The center's tags, fetched once per page (without a toast for users who
-// can't list them: they get no suggestions, and the server checks theirs).
+// The center's tags, fetched once per page.
 let names = null;
 let known = null;
 function tagNames() {
@@ -21,9 +18,7 @@ function tagNames() {
   return names;
 }
 
-// onlyKnown stops a picker adding typed text (Enter or a comma) that isn't
-// one of the center's tags: tags are added under Subscribers -> Tags. A
-// listener on the picker, capturing, so it runs before the picker's own.
+// onlyKnown stops a picker adding typed text that isn't one of the center's tags.
 function onlyKnown(e) {
   if ((e.key !== 'Enter' && e.key !== ',') || e.target.tagName !== 'INPUT' || !known) {
     return;
@@ -43,8 +38,7 @@ function onlyKnown(e) {
   input.reportValidity();
 }
 
-// denmaTagAutocomplete fills a tag picker's suggestions: the center's tags
-// not already chosen that contain what's typed. Only those can be picked.
+// denmaTagAutocomplete fills a tag picker's suggestions with the center's unchosen tags.
 export async function denmaTagAutocomplete(el) {
   el.setCustomValidity('');
   const ti = el.closest('ot-taginput');
@@ -62,9 +56,7 @@ export async function denmaTagAutocomplete(el) {
     .map((t) => new Option(t)));
 }
 
-// denmaBulkTags is the Subscribers page's Tags dialog: adding or removing
-// tags for the subscribers picked, or every one matching the search. It uses
-// the page's _queryBody().
+// denmaBulkTags is the Subscribers page's Tags dialog: adds or removes tags.
 export function denmaBulkTags() {
   return {
     denmaTagAutocomplete,
@@ -103,8 +95,7 @@ export function denmaBulkTags() {
   };
 }
 
-// denmaWithTags puts a subscriber form's tags (form.tags) into its attributes,
-// with any typed into the attributes themselves.
+// denmaWithTags puts a subscriber form's tags into its attributes.
 export function denmaWithTags(attribs, tags) {
   const a = { ...attribs };
   const typed = Array.isArray(a.tags) ? a.tags : [];
@@ -116,7 +107,7 @@ export function denmaWithTags(attribs, tags) {
   return a;
 }
 
-// denmaSplitTags takes a subscriber's tags out of its attributes, for the form.
+// denmaSplitTags takes a subscriber's tags out of its attributes.
 export function denmaSplitTags(attribs) {
   const a = { ...(attribs || {}) };
   const tags = Array.isArray(a.tags) ? a.tags.map(String) : [];

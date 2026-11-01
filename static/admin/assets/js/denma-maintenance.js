@@ -1,7 +1,4 @@
-// denma: the hub's Maintenance page acts on one center or on all of them
-// (cmd/denma_maintenance.go). Mixed into listmonk's maintenance view
-// (views/maintenance.js); centers come from the page (window._denmaCenters),
-// and there are none without centers, where it changes nothing.
+// denma: the hub's Maintenance page acts on one center or all (cmd/denma_maintenance.go).
 import { centerPicker } from './denma-hub-ui.js';
 
 export function denmaMaintenance() {

@@ -47,7 +47,7 @@ const (
 // Store represents a data backend, such as a database,
 // that provides subscriber and campaign records.
 type Store interface {
-	// denma: lastSubIDs and lastFetchedID (upstream PR #3222).
+	// denma: lastSubIDs and lastFetchedID.
 	NextCampaigns(currentIDs []int64, sentCounts []int64, lastSubIDs []int64) ([]*models.Campaign, error)
 	NextSubscribers(campID, lastFetchedID, limit int) ([]models.Subscriber, error)
 	GetCampaign(campID int) (*models.Campaign, error)
@@ -538,7 +538,7 @@ func (m *Manager) worker() {
 				continue
 			}
 
-			// denma: the center's sending hours, daily cap and the hub's daily limit, then its turn at the send rate (denma.go).
+			// denma: sending hours, daily caps, then its turn at the send rate (denma.go).
 			if msg.pipe != nil && !m.denmaWaitsFor(&msg) {
 				msg.pipe.wg.Done()
 				continue
@@ -595,15 +595,7 @@ func (m *Manager) worker() {
 
 			// Increment the send rate or the error counter if there was an error.
 			if msg.pipe != nil {
-				// denma: the message is marked as done (wg.Done) last, below, once
-				// all of this is recorded: the last one releases cleanup(), which
-				// saves the sent count and the checkpoint, and checks for failed
-				// sends to try again.
-
-				// denma: the resume checkpoint (lastID) moves past it, sent or
-				// failed, once every message before it has too (denma.go). A
-				// retry is behind the checkpoint already. And the failed sends
-				// are recorded (denma.go).
+				// denma: moves the resume checkpoint and records failed sends (denma.go); wg.Done is last, below.
 				if !msg.denmaRetry {
 					msg.pipe.denmaFinished(msg.Subscriber.ID)
 				}
@@ -635,8 +627,8 @@ func (m *Manager) worker() {
 }
 
 // getCurrentCampaigns returns the IDs of campaigns currently being processed
-// and their sent counts. denma: and their resume checkpoints (pipe.lastID),
-// which, unlike the counts, aren't reset.
+// and their sent counts.
+// denma: and their resume checkpoints (pipe.lastID).
 func (m *Manager) getCurrentCampaigns() ([]int64, []int64, []int64) {
 	// Needs to return an empty slice in case there are no campaigns.
 	m.pipesMut.RLock()

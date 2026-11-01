@@ -1,10 +1,6 @@
 package main
 
-// denma: every hour, expired sign-in sessions are deleted in the hub and every
-// running center, and e-mails sent more than denmaMessageDays ago from the
-// centers' records (cmd/denma_messages.go). listmonk deletes a schema's
-// expired sessions only when its app starts (internal/auth: its loop runs
-// once).
+// denma: every hour, expired sessions and old e-mail records are deleted in the hub and every center.
 
 import (
 	"context"
@@ -13,8 +9,7 @@ import (
 	"time"
 )
 
-// denmaSessionTTL is how long a sign-in session lasts: simplesessions'
-// default, which listmonk's session store uses.
+// denmaSessionTTL is how long a sign-in session lasts (simplesessions' default).
 const denmaSessionTTL = 24 * time.Hour
 
 // pruneCenters deletes what's expired, every hour.
@@ -26,8 +21,7 @@ func (d *denmaCenters) pruneCenters() {
 	}
 }
 
-// denmaPruneTimeout is how long one app's pruning may take before it's given
-// up on and the next one's starts.
+// denmaPruneTimeout is how long one app's pruning may take before the next one's starts.
 const denmaPruneTimeout = 2 * time.Minute
 
 // denmaExecer is the database as pruning uses it.
@@ -35,8 +29,7 @@ type denmaExecer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
-// pruneOnce deletes expired sessions and old e-mail records, in the hub and
-// each running center, by slug.
+// pruneOnce deletes expired sessions and old e-mail records in the hub and each running center.
 func (d *denmaCenters) pruneOnce() {
 	apps := []*App{}
 	if hub := d.current(); hub != nil {
@@ -60,8 +53,7 @@ func (d *denmaCenters) pruneOnce() {
 	}
 }
 
-// denmaPruneDB prunes one app's database (a center's, or the hub's), giving up
-// after timeout, and returns how many sessions and e-mail records it deleted.
+// denmaPruneDB prunes one app's database, giving up after timeout; it returns the counts deleted.
 func denmaPruneDB(db denmaExecer, center bool, timeout time.Duration, logf func(string, ...any)) (sessions, messages int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

@@ -1,18 +1,6 @@
 package main
 
-// denma: the hub's Analytics page (views/denma-hub-analytics.html,
-// assets/js/views/denma-hub-analytics.js): audience growth and mailbox
-// providers for every center, together or one at a time. The figures are the
-// centers' Analytics' (cmd/denma_stats.go, views/denma-analytics.js), added
-// up over the period rather than per campaign, and computed here in a few
-// queries per center instead of one request per figure. They're added up here
-// too: the page gets each center's totals and one center's (or all centers')
-// full figures, not every center's day by day.
-//
-// Mailbox providers count every campaign that started in the period and was
-// sent with individual tracking (denmaTrackedCampSQL, as on the hub's
-// dashboard, cmd/denma_hub.go),
-// not only a center's latest.
+// denma: the hub's Analytics page (views/denma-hub-analytics.html): audience growth and mailbox providers.
 
 import (
 	"fmt"
@@ -27,9 +15,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// denmaProviders are the mailbox providers, by address domain (* is any
-// ending), for both Analytics pages; their names are PROVIDERS in
-// denma-stats.js. Every other address is "other".
+// denmaProviders are the mailbox providers by address domain (* is any ending); others are "other".
 var denmaProviders = []struct {
 	Key     string
 	Domains []string
@@ -40,8 +26,7 @@ var denmaProviders = []struct {
 	{"apple", []string{"icloud.com", "me.com", "mac.com"}},
 }
 
-// denmaProviderSQL is the provider of the address in col, by its domain, as
-// the search's domain: matches it (cmd/denma_search.go).
+// denmaProviderSQL is the provider of the address in col, by its domain.
 func denmaProviderSQL(col string) string {
 	dom := "LOWER(SPLIT_PART(" + col + ", '@', -1))"
 	var b strings.Builder
@@ -57,8 +42,7 @@ func denmaProviderSQL(col string) string {
 	return b.String()
 }
 
-// In the queries below, S. is the center's schema (denmaInSchema) and P(x)
-// the provider of address x (denmaProviderSQL).
+// In the queries below, S. is the center's schema (denmaInSchema) and P(x) the provider of x.
 
 // Active subscribers now, by provider (the "active" figure).
 const denmaActiveSQL = `SELECT P(s.email) AS provider, COUNT(*) AS n FROM S.subscribers s
@@ -67,15 +51,10 @@ const denmaActiveSQL = `SELECT P(s.email) AS provider, COUNT(*) AS n FROM S.subs
 		AND ` + denmaHubListActive + `)
 	GROUP BY 1`
 
-// denmaHubListActive leaves out API campaigns' lists (alias l), which are no
-// consent to the center's mail (cmd/denma_noconsent.go): those the API adds
-// count as subscribers once they've signed up themselves.
+// denmaHubListActive leaves out API campaigns' lists (alias l), which hold no consent.
 const denmaHubListActive = `NOT ('` + denmaAPIListTag + `' = ANY(COALESCE(l.tags, '{}')))`
 
-// Subscribers gained and lost from $1 to $2 (the "new", "unsub" and "removed"
-// figures), by day in time zone $3 and provider. Each counts once: an
-// unsubscribe (their own opt-out) on its day, a removal on the day of the
-// first bounce in the period.
+// Subscribers gained and lost from $1 to $2, by day in time zone $3 and provider; each counts once.
 const denmaGrowthSQL = `WITH bounced AS (
 	SELECT subscriber_id, MIN(created_at) AS at FROM S.bounces
 	WHERE subscriber_id IS NOT NULL AND created_at >= $1 AND created_at < $2 GROUP BY subscriber_id
@@ -93,10 +72,7 @@ const denmaGrowthSQL = `WITH bounced AS (
 SELECT ev.kind, TO_CHAR(ev.at AT TIME ZONE $3, 'YYYY-MM-DD') AS day, P(s.email) AS provider, COUNT(*) AS n
 	FROM ev JOIN S.subscribers s ON s.id = ev.id GROUP BY 1, 2, 3`
 
-// The tracked campaigns that started from $1 to $2 (not opt-in
-// confirmations): who received them, opened and clicked (unique per
-// campaign; the "received", "opens" and "clicks" figures), by provider, and
-// how many campaigns.
+// The tracked campaigns that started from $1 to $2: who received, opened and clicked them, by provider.
 const denmaReachSQL = `WITH camp AS (
 	SELECT c.id, c.started_at, c.max_subscriber_id FROM S.campaigns c
 	WHERE c.started_at >= $1 AND c.started_at < $2 AND c.sent > 0 AND c.type <> 'optin'
@@ -119,8 +95,7 @@ SELECT seen.kind, p.provider, COUNT(*) FROM seen JOIN prov p ON p.id = seen.subs
 UNION ALL
 SELECT 'campaigns', '', COUNT(*) FROM camp`
 
-// denmaGotSQL is who was on each campaign (camp) when it started, by their
-// lists: the "received" figure before the blocklisted are left out (prov).
+// denmaGotSQL is who was on each campaign (camp) when it started, by their lists.
 const denmaGotSQL = `SELECT DISTINCT camp.id AS campaign_id, sl.subscriber_id, camp.started_at FROM camp
 	JOIN S.campaign_lists cl ON cl.campaign_id = camp.id
 	JOIN S.subscriber_lists sl ON sl.list_id = cl.list_id AND sl.created_at <= camp.started_at
@@ -182,8 +157,7 @@ func denmaSum(m map[string]int) int {
 	return n
 }
 
-// denmaHubAnalytics is one center on the hub's Analytics page: its totals,
-// for the By center table.
+// denmaHubAnalytics is one center on the hub's Analytics page: its totals.
 type denmaHubAnalytics struct {
 	Slug   string `json:"slug"`
 	Name   string `json:"name"`
@@ -210,11 +184,7 @@ func (a *App) ViewDenmaHubAnalytics(c echo.Context) error {
 	return c.Render(http.StatusOK, "admin-denma-hub-analytics", newAdminView(c, "Analytics", "", "denma.analytics"))
 }
 
-// DenmaHubAnalytics returns the figures for a period (from, to) and the
-// previous one (prev_from, prev_to), RFC 3339 times; days are in the time
-// zone tz (an IANA name; UTC if Postgres doesn't know it). Every center's
-// totals ("centers"), and the full figures ("total") of one (center, a slug)
-// or of all of them added up.
+// DenmaHubAnalytics returns the figures for a period and the previous one, per center and in total.
 func (a *App) DenmaHubAnalytics(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -339,9 +309,7 @@ func (a *App) DenmaHubAnalytics(c echo.Context) error {
 	}})
 }
 
-// denmaFiguresTTL is how long the hub keeps each center's figures for a
-// period: superadmins move between its pages, pick centers and reload, and
-// each fresh answer is a few queries in each of hundreds of centers.
+// denmaFiguresTTL is how long the hub keeps each center's figures for a period.
 const denmaFiguresTTL = time.Minute
 
 var denmaFigures = struct {
@@ -356,8 +324,7 @@ type denmaFigure struct {
 	v   any
 }
 
-// denmaCached returns what's kept under key if it's fresh, or else f's
-// result, which it keeps unless f failed.
+// denmaCached returns what's kept under key if fresh, or else f's result (kept unless f failed).
 func denmaCached[T any](key string, f func() (T, error)) (T, error) {
 	return denmaCachedFor(key, denmaFiguresTTL, f)
 }
@@ -418,8 +385,7 @@ type denmaCenterRef struct {
 	Path     string `db:"-"` // its address, e.g. /c/ddl/
 }
 
-// registered returns every registered center, by name: its name is the
-// running center's site name.
+// registered returns every registered center, by name.
 func (d *denmaCenters) registered() ([]denmaCenterRef, error) {
 	var reg []denmaCenterRef
 	if err := d.base.db.Select(&reg, `SELECT slug, name, schema_name, status FROM denma.centers ORDER BY name`); err != nil {

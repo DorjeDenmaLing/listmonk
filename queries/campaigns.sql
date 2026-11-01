@@ -188,8 +188,7 @@ WITH camps AS (
     LEFT JOIN templates ON (templates.id = campaigns.template_id)
     WHERE (status='running' OR (status='scheduled' AND NOW() >= campaigns.send_at))
     AND NOT(campaigns.id = ANY($1::INT[]))
-    -- denma. A campaign trying its failed sends again waits until it's time
-    -- (cmd/denma_retries.go).
+    -- denma. A campaign retrying failed sends waits until its time (cmd/denma_retries.go).
     AND (campaigns.denma_retry_at IS NULL OR campaigns.denma_retry_at <= NOW())
 ),
 campLists AS (
@@ -205,8 +204,7 @@ campMedia AS (
     GROUP BY campaign_id
 ),
 counts AS (
-    -- denma. The subscribers on the campaign's lists, and the active ones with
-    -- any of its tags (cmd/denma_tags.go), once each.
+    -- denma. The list subscribers and the active ones with its tags, once each (cmd/denma_tags.go).
     SELECT campaign_id, COUNT(*) AS to_send, COALESCE(MAX(subscriber_id), 0) AS max_subscriber_id FROM (
     SELECT camps.id AS campaign_id, sl.subscriber_id
     FROM camps
@@ -229,8 +227,7 @@ counts AS (
     GROUP BY campaign_id
 ),
 updateCounts AS (
-    -- denma. And the running campaigns' resume checkpoints ($3), which only
-    -- move forward (upstream PR #3222).
+    -- denma. And the running campaigns' resume checkpoints ($3), which only move forward.
     WITH uc (campaign_id, sent_count, last_sub_id) AS (SELECT * FROM unnest($1::INT[], $2::INT[], $3::INT[]))
     UPDATE campaigns
     SET sent = sent + uc.sent_count,
@@ -245,8 +242,7 @@ u AS (
         max_subscriber_id = co.max_subscriber_id,
         started_at=(CASE WHEN ca.started_at IS NULL THEN NOW() ELSE ca.started_at END)
     FROM (SELECT * FROM counts) co
-    -- denma. Not a retry run, which sends only to the failed sends (people
-    -- who joined since don't get it), so its counts stay.
+    -- denma. Not a retry run, which keeps its counts.
     WHERE ca.id = co.campaign_id AND ca.denma_retry_at IS NULL
 )
 SELECT camps.*, campMedia.media_id FROM camps LEFT JOIN campMedia ON (campMedia.campaign_id = camps.id);
@@ -337,10 +333,8 @@ SELECT campaigns.id AS campaign_id, campaigns.type as campaign_type, last_subscr
     WHERE campaigns.id = $1 AND campaigns.status='running';
 
 -- name: next-campaign-subscribers
--- Returns a batch of subscribers in a given campaign after $3, the campaign pipe's
--- fetch cursor (kept in memory, starting from the last_subscriber_id checkpoint).
--- denma. Fetching no longer moves the checkpoint (upstream PR #3222); it moved
--- before the batch was sent, so a restart skipped the fetched but unsent subscribers.
+-- Returns a batch of subscribers in a given campaign after $3, the campaign pipe's fetch cursor.
+-- denma. Fetching doesn't move the last_subscriber_id checkpoint.
 --
 -- In previous versions, get-running-campaign + this was a single query spread across multiple
 -- CTEs, but despite numerous permutations and combinations, Postgres query planner simply would not use
@@ -385,8 +379,7 @@ subs AS (
             )
         ORDER BY s.id LIMIT $6)
         UNION
-        -- denma. And the active subscribers with any of the campaign's tags
-        -- (cmd/denma_tags.go).
+        -- denma. And the active subscribers with any of its tags (cmd/denma_tags.go).
         (SELECT s.id FROM subscribers s
         WHERE $2 != 'optin' AND (SELECT CARDINALITY(denma_tags) FROM campaigns WHERE id = $1) > 0 AND s.attribs->'tags' ?| (SELECT denma_tags FROM campaigns WHERE id = $1)
             AND s.id > $3 AND s.id <= $4

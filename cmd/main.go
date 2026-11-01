@@ -212,7 +212,7 @@ func main() {
 	)
 
 	// Star the update checker.
-	if false && ko.Bool("app.check_updates") { // denma: no update checks: upstream's releases aren't the fork's
+	if false && ko.Bool("app.check_updates") { // denma: no update checks
 		go app.checkUpdates(versionString, time.Hour*24)
 	}
 
@@ -249,9 +249,7 @@ func main() {
 	})
 }
 
-// buildApp initializes the App and its components from a config, DB and
-// queries, and starts its background workers (campaign manager, bounces, cron).
-// denma: moved out of main() so that each center is built the same way.
+// denma: buildApp builds an App from a config, DB and queries, and starts its workers; one per center.
 func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs bool) *App {
 	lo := denmaLog(ko) // denma: the app's own log lines (cmd/denma_logs.go)
 	var (
@@ -270,7 +268,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 		// Initialize all messengers, SMTP and postback.
 		msgrs = append(initSMTPMessengers(ko), initPostbackMessengers(ko)...)
 
-		// denma: this app's admin/sub e-mail notifier (was process-wide, set up below).
+		// denma: this app's admin/sub e-mail notifier.
 		emailMsgr = denmaEmailMessenger(msgrs)
 		nf        = initNotifs(fs, i18n, emailMsgr, urlCfg, ko)
 
@@ -280,7 +278,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 		core = initCore(fbOptinNotify, queries, db, i18n, ko)
 
 		// Campaign manager.
-		mgr = initCampaignManager(denmaCountSending(denmaLimitSending(msgrs, ko), ko), queries, urlCfg, core, media, i18n, ko) // denma: one send limit for all centers (cmd/denma_sending.go), and each center's cap (cmd/denma_daily.go)
+		mgr = initCampaignManager(denmaCountSending(denmaLimitSending(msgrs, ko), ko), queries, urlCfg, core, media, i18n, ko) // denma: shared send limit and caps (cmd/denma_sending.go)
 
 		// Bulk importer.
 		importer = initImporter(queries, db, core, i18n, ko, nf)
@@ -313,13 +311,11 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 	// Initialize and cache tx templates in memory.
 	initTxTemplates(mgr, core)
 
-	// denma: the invite e-mail, added before the templates are first used
-	// (cmd/denma_people.go); and a center's design frames its e-mails
-	// (cmd/denma_design.go).
+	// denma: the invite e-mail, added before the templates are used (cmd/denma_people.go).
 	if err := denmaAddInviteTpl(nf.Tpls); err != nil {
 		lo.Printf("denma: error adding the invite e-mail template: %v", err)
 	}
-	if err := denmaAddAPITpls(nf); err != nil { // cmd/denma_api_events.go
+	if err := denmaAddAPITpls(nf); err != nil { // denma: cmd/denma_api_events.go
 		lo.Printf("denma: error adding the API's e-mail template: %v", err)
 	}
 	design := loadDenmaDesign(db, ko, mgr, lo)
@@ -332,7 +328,7 @@ func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs 
 
 	// Initialize the bounce manager that processes bounces from webhooks and
 	// POP3 mailbox scanning.
-	if bounce != nil { // denma: was ko.Bool("bounce.enabled"); not in centers
+	if bounce != nil { // denma: not in centers
 		go bounce.Run()
 	}
 

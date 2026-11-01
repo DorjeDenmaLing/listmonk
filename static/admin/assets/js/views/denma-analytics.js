@@ -1,16 +1,4 @@
-// DDL: the sections of a center's Analytics pages (partials/denma/analytics.html,
-// cmd/denma_analytics.go), for the dashboard's date range:
-//   Campaign reports    each campaign sent in the period, with unique opens and
-//                       clicks, click-to-open, unsubscribes, bounces and
-//                       complaints (cmd/denma_campaign_stats.go)
-//   Automation reports  the same for automations' e-mails sent in the period,
-//                       with a row per e-mail of a series
-//                       (cmd/denma_auto_reports.go)
-//   Audience growth     subscribers gained and lost, with a chart
-//   Mailbox providers   open and click rates per provider, to spot one sending
-//                       the newsletter to spam (its rate drops while the
-//                       others hold)
-// Ported from the production admin add-on (listmonk-js/admin-custom.js).
+// denma: the sections of a center's Analytics pages (partials/denma/analytics.html).
 import Alpine from 'alpinejs';
 import { urls } from '../main.js';
 import * as s from '../denma-stats.js';
@@ -18,9 +6,7 @@ import * as s from '../denma-stats.js';
 const { pct, PROVIDERS } = s;
 const campaignURL = (c) => `${urls.admin}/campaigns/${encodeURIComponent(c.id)}`;
 
-// A campaign's analytics (Campaigns -> Analytics), from the day before it
-// started to tomorrow: the page reads dates in the server's time zone, and
-// shows only the last 7 days without them.
+// A campaign's analytics (Campaigns -> Analytics), from the day before it started to tomorrow.
 const analyticsURL = (c) => {
   const day = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T00:00`;
   const from = new Date(c.started_at);
@@ -31,8 +17,7 @@ const analyticsURL = (c) => {
 };
 const campaignName = (c) => c.name || c.subject || 'Untitled';
 
-// An automation's page, and its figures on Explore from the period's start
-// to tomorrow (opens and clicks come after the e-mails).
+// An automation's page, and its figures on Explore from the period's start to tomorrow.
 const automationURL = (id) => `${urls.admin}/automations/${encodeURIComponent(id)}`;
 const exploreURL = (id, p) => {
   const day = (d) => `${s.isoDay(d)}T00:00`;
@@ -43,17 +28,10 @@ const focusID = () => parseInt(new URLSearchParams(window.location.search).get('
 
 // ---- Audience growth ----
 
-// The figures (new, unsub, removed, active, ...) are computed on the server
-// (cmd/denma_stats.go); the cells and chart are shared with the hub's
-// Analytics (denma-stats.js).
+// The figures are computed on the server (cmd/denma_stats.go); cells and chart are shared (denma-stats.js).
 
 // ---- Mailbox providers ----
-//
-// listmonk doesn't record who each campaign went to, so "received" is rebuilt
-// from list memberships as listmonk picks recipients: on the campaign's lists
-// when it started, subscription confirmed on double opt-in lists, not
-// unsubscribed or blocklisted then. The server counts every figure in one
-// request (cmd/denma_stats.go), for the latest PROVIDER_MAX_CAMPAIGNS.
+// "Received" is rebuilt from list memberships as listmonk picks recipients (cmd/denma_stats.go).
 
 const PROVIDER_MAX_CAMPAIGNS = 20;
 const PROVIDER_MIN_CAMPAIGN = 20;
@@ -66,8 +44,7 @@ function campaignWarning(rows, key, m) {
   return s.lowVersus(m, s.providerBaseline(rows, key, atCampaign(m.c.id)), PROVIDER_MIN_CAMPAIGN);
 }
 
-// Why a provider is flagged, or null: over the period (denma-stats.js), or on
-// its latest campaign. Apple is never flagged.
+// Why a provider is flagged (over the period, or on its latest campaign), or null; never Apple.
 function providerWarning(rows, key) {
   const period = s.providerWarning(rows, key);
   if (period || key === 'apple' || key === 'all') return period;
@@ -215,10 +192,7 @@ function component(opts) {
 
     // ---- Automation reports ----
 
-    // Each automation that sent in the period, its total and, for a series,
-    // a row per e-mail; rates are shares of the people reached, opens and
-    // clicks unique people (with individual tracking; else every one, as
-    // shares of the e-mails delivered).
+    // Each automation that sent in the period: its total and, for a series, a row per e-mail.
     renderAutomations(p, d) {
       const ind = d.individual_tracking;
       const off = d.tracking_disabled;

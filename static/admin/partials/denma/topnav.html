@@ -1,15 +1,4 @@
-{{/*
-	denma: the top bar, in place of listmonk's (views/base.html), looking and
-	working as in listmonk v6.2.0: the logo (the favicon on narrow screens,
-	with the center's or hub's name on phones), Refresh, and the user's round avatar opening Profile and Logout (and, ours,
-	the theme, and for someone who's a user of more than one center, their
-	other centers, to switch to: cmd/denma_people.go). On phones a menu button on the right opens the sidebar
-	(partials/denma/sidebar.html) below it, as 6.2.0's menu.
-
-	The logo is listmonk's unless the hub's settings give another
-	(denma-admin-logo-settings), in the hub and every center; its icon on
-	narrow screens is then the one given, or the logo itself.
-*/}}
+{{/* denma: the top bar in place of listmonk's: logo, Refresh, avatar menu, theme and center switch. */}}
 {{ define "denma-topnav" }}
 {{- $logo := DenmaAdminLogo }}
 <nav data-topnav class="denma-topnav">
@@ -53,9 +42,7 @@
 </nav>
 {{ end }}
 
-{{/* Under the hub's Settings -> General (partials/settings/general.html): the
-	top bar's logo, for the hub and every center. Centers' own logos (their
-	Config pages) are for their public pages and e-mails. */}}
+{{/* Under the hub's Settings -> General: the top bar's logo, for the hub and every center. */}}
 {{ define "denma-admin-logo-settings" }}
 {{- if DenmaIsHub }}
 <fieldset class="card" data-keywords="admin logo top bar nav navigation branding icon">
@@ -85,8 +72,7 @@
 {{- end }}
 {{ end }}
 
-{{/* The hub's own logo and favicon (Settings -> General, in place of
-	listmonk's fields), with Media. */}}
+{{/* The hub's own logo and favicon (Settings -> General), with Media. */}}
 {{ define "denma-hub-images" }}
 {{ template "denma-image-field" (dict "Key" "app.logo_url" "Kind" "logo" "U" .Data.Profile
 	"Label" (.L.T "settings.general.logoURL") "Placeholder" "https://listmonk.yoursite.com/logo.png" "Hint" (.L.T "settings.general.logoURLHelp")) }}
@@ -94,10 +80,7 @@
 	"Label" (.L.T "settings.general.faviconURL") "Placeholder" "https://listmonk.yoursite.com/favicon.png" "Hint" (.L.T "settings.general.faviconURLHelp")) }}
 {{ end }}
 
-{{/* An image's field in the hub's settings, as a center's Config page has
-	them (views/denma-center.html): its address, a Media button picking from
-	the hub's Media (cmd/denma_hubmedia.go) and the image. The dialog is
-	denma-admin-logo-settings'. Kind is logo or favicon (its size). */}}
+{{/* An image's field in the hub's settings: its address, a Media picker and the image. */}}
 {{ define "denma-image-field" }}
 <label data-field>
 	{{ .Label }}
@@ -118,7 +101,7 @@
 <span class="denma-avatar">{{ if .Avatar.String }}<img src="{{ .Avatar.String }}" alt="" />{{ else }}{{ printf "%.1s" .Username }}{{ end }}</span>
 {{- end }}
 
-{{/* The theme: the system's, light or dark (not in 6.2.0). */}}
+{{/* The theme: the system's, light or dark. */}}
 {{ define "denma-theme-switch" -}}
 <div class="theme-switch denma-theme-switch" role="group" aria-label="Theme">
 	<button type="button" class="ghost small" title="{{ .L.T "globals.terms.system" }}" @click="setTheme('auto')" :class="{ 'is-active': theme === 'auto' }" :aria-pressed="theme === 'auto'">{{ template "denma-icon" "monitor" }}</button>

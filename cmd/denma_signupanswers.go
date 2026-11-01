@@ -1,15 +1,6 @@
 package main
 
-// denma: sign-up answers reveal nothing about the address. listmonk's public
-// subscription page (<center>/subscription/form, /api/public/subscription)
-// and the Form webhooks (cmd/denma_signup.go) give everyone the same answer:
-//
-//   - the public page says "check your e-mail", member or not: it joins
-//     double opt-in lists only (denmaSubFormLists);
-//   - an address whose opt-ins for the day are used up (cmd/denma_optins.go,
-//     counted across centers) gets that answer too, and no e-mail;
-//   - an address whose domain can't receive mail is told so before anything
-//     else, member or not: it says something about the domain, not them.
+// denma: sign-up answers reveal nothing about the address (the same answer for everyone).
 
 import (
 	"errors"
@@ -21,12 +12,10 @@ import (
 	"github.com/lib/pq"
 )
 
-// errDenmaOptinLimited marks the opt-in limit's refusal (denmaCheckOptin),
-// which sign-ups answer as if the e-mail had been sent.
+// errDenmaOptinLimited marks the opt-in limit's refusal, which sign-ups answer as if sent.
 var errDenmaOptinLimited = errors.New("the address's opt-ins for the day are used up")
 
-// denmaSignupDomain refuses an address whose domain can't receive mail, for
-// every sign-up alike (denmaCheckOptin only checks those sent an opt-in).
+// denmaSignupDomain refuses an address whose domain can't receive mail, for every sign-up.
 func (a *App) denmaSignupDomain(email string) error {
 	if bad, reason := denmaEmailBad(email, denmaEmailSkip(a.ko)); bad {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("%s can't receive e-mail: %s. Check the address.", email, reason))
@@ -34,11 +23,7 @@ func (a *App) denmaSignupDomain(email string) error {
 	return nil
 }
 
-// denmaSubFormLists is a public sign-up's lists: the double opt-in ones it
-// names or, if it names none, the center's active public ones, as the page
-// doesn't show them (subscription-form.html). Anyone can type anyone's
-// address, so it joins no single opt-in list, as a Form webhook doesn't
-// (cmd/denma_signup.go).
+// denmaSubFormLists is a public sign-up's lists: double opt-in ones it names, else public ones.
 func (a *App) denmaSubFormLists(uuids []string) []string {
 	out := []string{}
 	if err := a.db.Select(&out, `SELECT uuid::TEXT FROM lists WHERE optin = 'double' AND CASE
@@ -50,8 +35,7 @@ func (a *App) denmaSubFormLists(uuids []string) []string {
 	return out
 }
 
-// denmaDoubleOptin is the double opt-in lists of lists: those a public
-// sign-up joins (denmaSubFormLists), for the Forms page and the public lists.
+// denmaDoubleOptin is the double opt-in lists of lists, which a public sign-up joins.
 func denmaDoubleOptin(lists []models.List) []models.List {
 	out := lists[:0]
 	for _, l := range lists {
@@ -62,9 +46,7 @@ func denmaDoubleOptin(lists []models.List) []models.List {
 	return out
 }
 
-// denmaSubFormAnswer gives the public page's answer (processSubForm's
-// results) from the lists asked for, not the address: the opt-in limit's
-// refusal is no error, and hasOptin is whether a list is double opt-in.
+// denmaSubFormAnswer gives the public page's answer from the lists asked for, not the address.
 func (a *App) denmaSubFormAnswer(listUUIDs []string, hasOptin *bool, err *error) {
 	if *err != nil && !errors.Is(*err, errDenmaOptinLimited) {
 		return

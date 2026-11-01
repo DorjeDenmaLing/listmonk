@@ -1,41 +1,6 @@
 package main
 
-// denma: an automation's follow-up e-mails (a series), and how its e-mails
-// are sent (cmd/denma_automations.go).
-//
-// Series. Besides its e-mail, an automation may send up to
-// denmaAutoMaxSteps more, each a wait after the one before
-// (denma_automation_steps, numbered from 2). Its lists and tags change only
-// once, with the first. Before each follow-up the person must still be
-// someone it may e-mail (not blocklisted, which unsubscribing does; not
-// fenced without consent; subscribed to something) and meet its conditions
-// (if_tags, unless_tags), so "not if they have the tag" ends a series;
-// otherwise it stops there. Turned off, its series wait; turned on again,
-// those due go. An "each time" automation set off again starts its series
-// again.
-//
-// A run's row (denma_automation_sends: one per automation and person) is at
-// a step, with a status:
-//   - done, skipped, failed, sent: finished (sent: its last e-mail went).
-//   - waiting: for e-mail `step`, at next_at.
-//   - queued: its e-mail is being handed to the campaign manager.
-//   - sending: a worker has taken it; the mail server hasn't answered yet.
-//   - retry: e-mail `step` wasn't sent (the server said "try later", or
-//     couldn't be reached), and is tried again at next_at, up to
-//     len(denmaRetryWaits) times, as campaigns' failed sends are.
-//
-// Delivery. An e-mail is handed over only once a worker takes it
-// (manager.DenmaPushTaken), which records it as sending first; until then
-// it can be withdrawn, unsent, and is tried again. The mail server's answer
-// is recorded: sent; or failed (refused for good); or, if the connection was
-// lost before its answer, maybe delivered (uncertain), which isn't sent
-// again, as that could be a second copy. A restart finds the runs it left:
-// queued ones weren't sent and go again; sending ones may have been
-// delivered. A shutdown waits for those being sent (cmd/denma_shutdown.go).
-//
-// History. denma_automation_log keeps every step of every run, with what it
-// did: the subscriber's Activity tab, the schedule and the counts read it.
-// It's kept as long as the person and the automation are.
+// denma: an automation's follow-up e-mails (a series), their history, and how its e-mails are sent.
 
 import (
 	"encoding/json"
@@ -61,13 +26,11 @@ const (
 	denmaAutoMaxSteps = 10
 	// denmaAutoTakeWait is how long an e-mail waits for a worker to take it.
 	denmaAutoTakeWait = 30 * time.Second
-	// denmaAutoUntakenMins is the wait, in minutes, before an e-mail no worker
-	// took is tried again (not counted as a retry).
+	// denmaAutoUntakenMins is the wait, in minutes, before an e-mail no worker took is tried again.
 	denmaAutoUntakenMins = 5
 )
 
-// denmaAutoSeriesSQL makes the series' and history's tables (in
-// denmaAutoTables).
+// denmaAutoSeriesSQL makes the series' and history's tables.
 const denmaAutoSeriesSQL = `
 CREATE TABLE IF NOT EXISTS denma_automation_steps (
     automation_id INTEGER NOT NULL REFERENCES denma_automations(id) ON DELETE CASCADE,
@@ -97,7 +60,7 @@ DO $$ BEGIN
         );
         CREATE INDEX denma_automation_log_auto ON denma_automation_log (automation_id, at);
         CREATE INDEX denma_automation_log_sub ON denma_automation_log (subscriber_id);
-        -- What was recorded before: each person's last run.
+        -- Each person's last run.
         INSERT INTO denma_automation_log (automation_id, subscriber_id, run, step, status, did, error, at)
             SELECT automation_id, subscriber_id, runs, 1, status, did, error, sent_at FROM denma_automation_sends;
     END IF;
@@ -112,8 +75,7 @@ type denmaAutoStep struct {
 	TemplateName string   `json:"template_name"`
 }
 
-// denmaAutoSteps is an automation's follow-ups, read as JSON
-// (denmaAutoStepsSQL).
+// denmaAutoSteps is an automation's follow-ups, read as JSON.
 type denmaAutoSteps []denmaAutoStep
 
 func (s *denmaAutoSteps) Scan(v any) error {
@@ -138,8 +100,7 @@ type denmaAutoStepForm struct {
 	Subject      string `json:"subject"`
 }
 
-// stepEmail is e-mail n's template and subject (1: the automation's own),
-// and whether there's one.
+// stepEmail is e-mail n's template and subject (1: the automation's own), and whether there's one.
 func (d denmaAutomation) stepEmail(n int) (int, string, bool) {
 	if n == 1 {
 		return int(d.TemplateID.Int), d.Subject, d.TemplateID.Valid
@@ -152,8 +113,7 @@ func (d denmaAutomation) stepEmail(n int) (int, string, bool) {
 	return 0, "", false
 }
 
-// validateAutoSteps checks and tidies a saved or tested automation's
-// follow-ups.
+// validateAutoSteps checks and tidies a saved or tested automation's follow-ups.
 func (a *App) validateAutoSteps(f *denmaAutoForm) error {
 	bad := func(msg string) error { return echo.NewHTTPError(http.StatusBadRequest, msg) }
 	if !f.SendEmail {
@@ -223,10 +183,7 @@ func (a *App) autoStop(autoID, subID, run, step int, status, did, errText string
 	}
 }
 
-// autoSend sends e-mail `step` of auto (with its subject) to subs, whose runs
-// are queued, each once a worker has taken it, and returns how many were.
-// Each one's outcome is recorded when the mail server answers (autoOutcome);
-// one no worker took is tried again in denmaAutoUntakenMins.
+// autoSend sends e-mail `step` of auto to subs once a worker has taken each, returning how many.
 func (a *App) autoSend(auto denmaAutomation, step int, tpl denmaAutoTemplate, subs []models.Subscriber, runs map[int]int,
 	did func(int) string, claim, centerClaim int64) int {
 	pushed := 0
@@ -251,8 +208,7 @@ func (a *App) autoSend(auto denmaAutomation, step int, tpl denmaAutoTemplate, su
 			return nil
 		}, func(err error) { a.autoOutcome(auto.ID, s.ID, run, step, sdid, err) })
 		if !taken {
-			// The workers are busy (or stopping): this one and the rest go
-			// later, and its claim on the daily limit is given back.
+			// The workers are busy: this one and the rest go later, their claim given back.
 			rest := make([]int, 0, len(subs)-i)
 			for _, r := range subs[i:] {
 				rest = append(rest, r.ID)
@@ -265,9 +221,7 @@ func (a *App) autoSend(auto denmaAutomation, step int, tpl denmaAutoTemplate, su
 	return pushed
 }
 
-// autoSkipEmail records that e-mail `step` of runs (being started, or
-// queued) wasn't sent, with what it did (did), and moves them on to the next
-// e-mail, if there's one.
+// autoSkipEmail records that e-mail `step` of runs wasn't sent and moves them on to the next.
 func (a *App) autoSkipEmail(autoID, step int, subIDs []int, did string) {
 	if _, err := a.db.Exec(`WITH u AS (UPDATE denma_automation_sends d SET
 			step = COALESCE(s.step, d.step),
@@ -283,8 +237,7 @@ func (a *App) autoSkipEmail(autoID, step int, subIDs []int, did string) {
 	}
 }
 
-// autoRetryLater puts queued runs at e-mail `step` back, to be tried again
-// in denmaAutoUntakenMins (not counted as a retry).
+// autoRetryLater puts queued runs at e-mail `step` back, to be tried again.
 func (a *App) autoRetryLater(autoID int, subIDs []int, step int) {
 	if _, err := a.db.Exec(`UPDATE denma_automation_sends SET status = 'retry', next_at = NOW() + make_interval(mins => $4)
 		WHERE automation_id = $1 AND subscriber_id = ANY($2) AND step = $3 AND status = 'queued'`,
@@ -293,13 +246,10 @@ func (a *App) autoRetryLater(autoID int, subIDs []int, step int) {
 	}
 }
 
-// errDenmaAutoRestart is the outcome of an e-mail that was being sent when
-// the process stopped.
+// errDenmaAutoRestart is the outcome of an e-mail that was being sent when the process stopped.
 var errDenmaAutoRestart = errors.New("the server stopped while it was being sent")
 
-// autoOutcome records the mail server's answer to e-mail `step` of a run:
-// sent (or maybe delivered), and on to the next e-mail, if any; or tried
-// again later; or failed.
+// autoOutcome records the mail server's answer to e-mail `step` of a run.
 func (a *App) autoOutcome(autoID, subID, run, step int, did string, err error) {
 	guard := []any{autoID, subID, run, step}
 	if err == nil || errors.Is(err, errDenmaAutoRestart) || manager.DenmaUncertain(err) {
@@ -323,8 +273,7 @@ func (a *App) autoOutcome(autoID, subID, run, step int, did string, err error) {
 		return
 	}
 
-	// Not sent. Worth trying again (the server said "try later", or
-	// couldn't be reached), a few times, or not.
+	// Not sent; worth trying again a few times, or not.
 	if manager.DenmaRetryable(err) {
 		var status string
 		if e := a.db.Get(&status, `UPDATE denma_automation_sends SET
@@ -350,9 +299,7 @@ func (a *App) autoOutcome(autoID, subID, run, step int, did string, err error) {
 	}
 }
 
-// runAutoDue sends auto's e-mails that are due, up to limit: follow-ups whose
-// wait is over, and e-mails being tried again. Returns how many were handed
-// over.
+// runAutoDue sends auto's due e-mails (follow-ups and retries), up to limit, returning how many.
 func (a *App) runAutoDue(auto denmaAutomation, limit int, claim, centerClaim int64) int {
 	if !auto.SendEmail || limit <= 0 {
 		return 0
@@ -396,7 +343,7 @@ func (a *App) runAutoDue(auto denmaAutomation, limit int, claim, centerClaim int
 		}
 		tplID, subject, ok := auto.stepEmail(n)
 		if !ok {
-			// The series was shortened since: it ends here.
+			// The series was shortened: it ends here.
 			if _, err := a.db.Exec(`UPDATE denma_automation_sends SET status = 'sent', next_at = NULL
 				WHERE automation_id = $1 AND subscriber_id = ANY($2) AND step = $3 AND status = 'queued'`, auto.ID, pq.Array(ids), n); err != nil {
 				a.log.Printf("denma: error recording automation %d's run: %v", auto.ID, err)
@@ -404,8 +351,7 @@ func (a *App) runAutoDue(auto denmaAutomation, limit int, claim, centerClaim int
 			continue
 		}
 
-		// Still someone it may e-mail, and (for a follow-up) meeting its
-		// conditions.
+		// Still someone it may e-mail, and (for a follow-up) meeting its conditions.
 		var rows []struct {
 			ID    int  `db:"id"`
 			OK    bool `db:"ok"`
@@ -439,8 +385,7 @@ func (a *App) runAutoDue(auto denmaAutomation, limit int, claim, centerClaim int
 				send = append(send, r.ID)
 			}
 		}
-		// Those who've had another e-mail lately: this one is skipped, and
-		// their series goes on.
+		// Those who've had another e-mail lately: this one is skipped.
 		if len(recent) > 0 {
 			q := auto.quietSkipped(n)
 			a.autoSkipEmail(auto.ID, n, recent, strings.ToUpper(q[:1])+q[1:]+".")
@@ -469,22 +414,16 @@ func (a *App) runAutoDue(auto denmaAutomation, limit int, claim, centerClaim int
 	return pushed
 }
 
-// denmaAutoRecovered holds the centers whose runs left by the last process
-// have been seen to (denmaAutoRecover).
+// denmaAutoRecovered holds the centers whose left-over runs have been seen to.
 var denmaAutoRecovered sync.Map
 
-// denmaProcessStart is when this process started: runs queued or being sent
-// before then were left by the last one.
+// denmaProcessStart is when this process started.
 var denmaProcessStart = time.Now()
 
-// denmaAutoStale is how long a run may be queued or being sent: longer, and
-// its e-mail was lost on the way (a job that stopped, a write that failed).
+// denmaAutoStale is how long a run may be queued or being sent.
 const denmaAutoStale = time.Hour
 
-// denmaAutoRecover sees to runs left queued or being sent: by the last
-// process (once in this one), or for longer than denmaAutoStale. Queued
-// e-mails weren't sent, and go again; those being sent may have been
-// delivered.
+// denmaAutoRecover sees to runs left queued or being sent by the last process or for too long.
 func (a *App) denmaAutoRecover() {
 	before := time.Now().Add(-denmaAutoStale)
 	if _, done := denmaAutoRecovered.LoadOrStore(a.ko.String("denma.center"), true); !done {

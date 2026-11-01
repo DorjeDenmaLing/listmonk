@@ -1,29 +1,6 @@
 package main
 
-// denma: uploaded images are optimized before they're stored (UploadMedia,
-// cmd/media.go). Phone photos are often 4-12 MB, 4000 px wide and sideways
-// (rotated only by an EXIF tag), with the camera's metadata, including where
-// they were taken. Every subscriber who opens an email downloads them.
-//
-//   - Larger than denmaMediaMaxSize on the longer side: scaled down to fit.
-//     An email is about 600 px wide (1200 px on high-density screens).
-//   - JPEG: turned upright, metadata (EXIF, XMP, IPTC, comments) removed and
-//     the colour profile kept. Re-saved at denmaMediaQuality when that's
-//     clearly smaller (or needed, to scale or turn it); otherwise the
-//     original image data is kept, without the metadata.
-//   - PNG: scaled down, or recompressed (losslessly) when that's smaller.
-//     One over denmaMediaPNGToJPEG without transparency is saved as a JPEG
-//     (.jpg), with its colour profile; one with transparency still over it
-//     once optimized is refused.
-//   - GIF (perhaps animated), animated PNG and SVG are stored as they are.
-//
-// Anything that can't be read is stored as it is, as listmonk would.
-//
-// Decoding takes memory by the pixel (listmonk's thumbnail decodes the
-// whole image too), so an image whose decoding would take more than
-// denmaMediaMaxDecode is refused, from its header, and one upload's images
-// are processed at a time (denmaMediaLimit): a few large photos at once
-// could otherwise take the server's memory.
+// denma: uploaded images are optimized (scaled, upright, metadata removed) before they're stored (UploadMedia).
 
 import (
 	"bytes"
@@ -53,8 +30,7 @@ const (
 // denmaMediaTurn is the turn to process an uploaded image: one at a time.
 var denmaMediaTurn = make(chan struct{}, 1)
 
-// denmaMediaLimit wraps the media upload: an image (by its extension) too
-// large to decode is refused, and images wait for their turn.
+// denmaMediaLimit wraps the media upload: an image too large to decode is refused, and images go one at a time.
 func (a *App) denmaMediaLimit(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		file, err := c.FormFile("file")
@@ -84,8 +60,7 @@ func (a *App) denmaMediaLimit(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// denmaDecodeSize is about how much memory decoding an image takes: its
-// pixels as decoded, and again as imaging's 8-bit RGBA copy.
+// denmaDecodeSize is about how much memory decoding an image takes (its pixels, and imaging's RGBA copy).
 func denmaDecodeSize(cfg image.Config) int64 {
 	bpp := int64(4)
 	switch cfg.ColorModel {
@@ -113,10 +88,7 @@ type denmaMedia struct {
 	heavy         int64 // bytes of a PNG with transparency still over denmaMediaPNGToJPEG: refused
 }
 
-// denmaMediaStore is the name and content type to store an upload under: a
-// PNG saved as a JPEG is named .jpg, made unique as listmonk does (if it
-// can't be, the upload is stored as it is). A PNG with transparency still
-// over denmaMediaPNGToJPEG once optimized is refused.
+// denmaMediaStore is the name and content type to store an upload under (.jpg for a PNG saved as a JPEG).
 func (a *App) denmaMediaStore(fName, contentType string, m denmaMedia) (string, string, denmaMedia, error) {
 	if m.heavy > 0 {
 		return "", "", m, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(
@@ -153,8 +125,7 @@ func (m denmaMedia) size(w, h int) (int, int) {
 	return m.width, m.height
 }
 
-// denmaOptimizeImage optimizes an uploaded image (ext is its lowercase
-// extension). src is left at its start.
+// denmaOptimizeImage optimizes an uploaded image (ext is its lowercase extension), leaving src at its start.
 func (a *App) denmaOptimizeImage(name, ext string, src io.ReadSeeker) denmaMedia {
 	if ext != "jpg" && ext != "jpeg" && ext != "png" {
 		return denmaMedia{}
@@ -255,9 +226,7 @@ func denmaOptimize(orig []byte) (denmaMedia, error) {
 
 // ---- JPEG segments ----
 
-// denmaJPEGSegments calls f with each marker segment before the image data
-// (start of scan): its marker and its bytes, marker included. It returns
-// where the image data starts, or -1 if the file isn't laid out as expected.
+// denmaJPEGSegments calls f with each marker segment before the image data; returns where that starts, or -1.
 func denmaJPEGSegments(b []byte, f func(marker byte, seg []byte)) int {
 	if len(b) < 4 || b[0] != 0xFF || b[1] != 0xD8 {
 		return -1
@@ -285,9 +254,7 @@ func denmaJPEGSegments(b []byte, f func(marker byte, seg []byte)) int {
 	return -1
 }
 
-// denmaJPEGStrip is the JPEG without its metadata: EXIF and XMP (APP1),
-// IPTC (APP13) and comments. Anything else, such as the colour profile
-// (APP2), stays. It's the original if it can't be read.
+// denmaJPEGStrip is the JPEG without its metadata (EXIF, XMP, IPTC, comments), or the original if unreadable.
 func denmaJPEGStrip(b []byte) []byte {
 	out := []byte{0xFF, 0xD8}
 	sos := denmaJPEGSegments(b, func(marker byte, seg []byte) {
@@ -301,8 +268,7 @@ func denmaJPEGStrip(b []byte) []byte {
 	return append(out, b[sos:]...)
 }
 
-// denmaJPEGWithICC adds the original's colour profile (APP2 ICC_PROFILE
-// segments) to a JPEG that has none (Go's encoder writes none).
+// denmaJPEGWithICC adds the original's colour profile to a JPEG that has none.
 func denmaJPEGWithICC(enc, orig []byte) []byte {
 	var icc []byte
 	denmaJPEGSegments(orig, func(marker byte, seg []byte) {
@@ -319,8 +285,7 @@ func denmaJPEGWithICC(enc, orig []byte) []byte {
 	return append(out, enc[2:]...)
 }
 
-// denmaJPEGWithProfile adds a colour profile (nil: none) to a JPEG that has
-// none, as APP2 ICC_PROFILE segments.
+// denmaJPEGWithProfile adds a colour profile (nil: none) to a JPEG that has none, as APP2 segments.
 func denmaJPEGWithProfile(enc, profile []byte) []byte {
 	const most = 0xFFFF - 2 - 14 // a segment's data, after its length and header
 	n := (len(profile) + most - 1) / most
@@ -342,8 +307,7 @@ func denmaJPEGWithProfile(enc, profile []byte) []byte {
 
 // ---- PNG chunks ----
 
-// denmaPNGChunks calls f with each chunk before the image data (IDAT): its
-// type and its data.
+// denmaPNGChunks calls f with each chunk before the image data (IDAT): its type and data.
 func denmaPNGChunks(b []byte, f func(typ string, data []byte)) {
 	if !bytes.HasPrefix(b, []byte("\x89PNG\r\n\x1a\n")) {
 		return

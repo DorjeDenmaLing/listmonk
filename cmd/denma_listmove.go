@@ -1,37 +1,6 @@
 package main
 
-// denma: moving subscribers from one list to another, from the Subscribers
-// page's row menu (one subscriber) or its bulk menu (those picked, or every
-// one matching the search). Removing from a list is listmonk's own
-// (PUT /api/subscribers/lists, action remove).
-//
-// A move never gives anyone more than they had. They keep their status: an
-// unsubscribed person stays unsubscribed. On a double opt-in list only those
-// who confirmed a double opt-in list are confirmed, unless the admin
-// preconfirms them (as listmonk's Add does); someone who hasn't confirmed a
-// double opt-in list isn't moved to a single opt-in one, where they'd get
-// mail. Someone already on the new list keeps their status there.
-//
-// One statement: they leave the old list only once they're on the new one,
-// so a person the triggers keep off it (denma_keep_no_consent) stays where
-// they were.
-//
-// An admin's move, or Add in Manage lists, starts the lists' automations only
-// if they ask (run_automations): otherwise the statement sets
-// denma.quiet_joins, and denma_log_join doesn't log the join. Everything
-// else (sign-ups, imports, confirming, automations' own adds) logs it as
-// before, and so does confirming later. Add without run_automations runs
-// them, as listmonk did.
-//
-// A move of a pending double opt-in to another double opt-in list sends no
-// e-mail: it records the old list in the new subscription's meta, and the
-// old list's link confirms the new one (denmaMovedLists).
-//
-// Lists have no tags: the admin doesn't offer them (the list form, the Lists
-// page, list search), and the database keeps none but the API's own api-send
-// (denma_keep_api_list_tag, cmd/denma_noconsent.go), which features version
-// 34 left as the only one. An API campaign's list can't be moved to or from,
-// nor added to (denmaNoAPIList).
+// denma: moving subscribers between lists, one or many.
 
 import (
 	"net/http"
@@ -47,13 +16,10 @@ func initDenmaListMoveHandlers(g *echo.Group, a *App) {
 	g.PUT("/api/denma/subscribers/move", a.auth.Perm(a.DenmaMoveSubscribers, "subscribers:manage"))
 }
 
-// denmaMovedFrom is the key in a subscription's meta naming (by UUID) the
-// double opt-in lists a pending opt-in was moved from, so that the opt-in
-// page confirms the new list from the old list's link (denmaMovedLists).
+// denmaMovedFrom is the subscription meta key naming the lists a pending opt-in was moved from.
 const denmaMovedFrom = "moved_from"
 
-// denmaMovedLists adds to the lists an opt-in link names (listUUIDs) the
-// unconfirmed lists its person was moved to from them.
+// denmaMovedLists adds the lists their person was moved to from those an opt-in link names.
 func (a *App) denmaMovedLists(subUUID string, listUUIDs *[]string) {
 	if len(*listUUIDs) == 0 {
 		return
@@ -69,9 +35,7 @@ func (a *App) denmaMovedLists(subUUID string, listUUIDs *[]string) {
 	*listUUIDs = append(*listUUIDs, moved...)
 }
 
-// denmaMoveSQL moves the subscribers subs gives (a query of their IDs) from
-// list from to list to, confirming them there if pre, and running its
-// automations if run (SQL parameters).
+// denmaMoveSQL moves the subscribers subs gives from list from to list to.
 func denmaMoveSQL(subs, from, to, pre, run string) string {
 	return `WITH subs AS (` + subs + `),
 quiet AS (
@@ -102,12 +66,10 @@ WHERE sl.list_id = ` + from + `::INT AND sl.subscriber_id IN (SELECT id FROM sub
         OR EXISTS (SELECT 1 FROM subscriber_lists x WHERE x.list_id = ` + to + `::INT AND x.subscriber_id = sl.subscriber_id))`
 }
 
-// denmaQuietOff is logged once if listmonk's add-by-query SQL no longer has
-// its %query% placeholder, so a quiet add can't be made.
+// denmaQuietOff is logged once if listmonk's add-by-query SQL has no %query% placeholder.
 var denmaQuietOff sync.Once
 
-// denmaNoAPIList refuses an API campaign's list among listIDs: its people
-// were added without consent, and it goes with its campaign.
+// denmaNoAPIList refuses an API campaign's list among listIDs.
 func (a *App) denmaNoAPIList(listIDs []int) error {
 	var n int
 	if err := a.db.Get(&n, `SELECT COUNT(*) FROM lists WHERE id = ANY($1) AND '`+denmaAPIListTag+`' = ANY(COALESCE(tags, '{}'))`,
@@ -120,8 +82,7 @@ func (a *App) denmaNoAPIList(listIDs []int) error {
 	return nil
 }
 
-// denmaAddSubscriptions is listmonk's AddSubscriptions (Manage lists -> Add),
-// without the lists' automations unless run is nil or true.
+// denmaAddSubscriptions is listmonk's AddSubscriptions, without automations unless run is nil or true.
 func (a *App) denmaAddSubscriptions(subIDs, listIDs []int, status string, run *bool) error {
 	if err := a.denmaNoAPIList(listIDs); err != nil {
 		return err
@@ -151,9 +112,7 @@ func (a *App) denmaAddSubscriptions(subIDs, listIDs []int, status string, run *b
 	return nil
 }
 
-// denmaAddSubscriptionsByQuery is listmonk's AddSubscriptionsByQuery, without
-// the lists' automations unless run is nil or true: the subscribers' query
-// sets denma.quiet_joins before anyone is added.
+// denmaAddSubscriptionsByQuery is listmonk's AddSubscriptionsByQuery, with the same run rule.
 func (a *App) denmaAddSubscriptionsByQuery(search, query string, sourceListIDs, targetListIDs []int, status, subStatus string, run *bool) error {
 	if err := a.denmaNoAPIList(targetListIDs); err != nil {
 		return err
@@ -179,9 +138,7 @@ func (a *App) denmaAddSubscriptionsByQuery(search, query string, sourceListIDs, 
 	return nil
 }
 
-// DenmaMoveSubscribers moves the subscribers picked (ids), or every one
-// matching a search, from one list to another; for those picked, it says
-// how many moved.
+// DenmaMoveSubscribers moves the subscribers picked, or every one matching a search.
 func (a *App) DenmaMoveSubscribers(c echo.Context) error {
 	user := auth.GetUser(c)
 	var req struct {

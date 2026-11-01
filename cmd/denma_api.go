@@ -1,43 +1,6 @@
 package main
 
-// denma: the sending API, for systems outside listmonk that send their own
-// e-mail through a center: a member database, a booking system, a website.
-// They keep their own people and write their own messages; the center sends
-// them with everything a center's own mail gets (the verified sending domain,
-// the shared blocklist and domain checks, opt-outs, bounces, the daily cap).
-// Each system is a key, made on the center's Config -> API page
-// (views/denma-api.html) by its admins (center:manage), which can do one or
-// more of sending transactional e-mails, sending campaigns and reading the
-// events (denmaAPICanAll). It sends; it doesn't subscribe people: sign-up
-// webhooks do (cmd/denma_signup.go). The API is at <center>/v1/
-// (cmd/denma_api_send.go):
-//
-//   - POST /v1/messages: a transactional e-mail (password reset, receipt,
-//     notice) to one address or a few, from one of the center's
-//     transactional templates, by name, with the caller's data.
-//   - POST /v1/campaigns: a campaign to a list of addresses the caller sends,
-//     from one of the center's campaign templates, by name. Its recipients go
-//     on a list of its own, which is deleted a week after it's done.
-//   - GET /v1/events: unsubscribes, complaints, bounces and blocklistings, and
-//     how its campaigns go, as each key's webhook ("Notifications") is also
-//     sent them (cmd/denma_api_events.go).
-//   - POST /v1/subscribers is gone (410): Server webhooks replace it.
-//
-// Templates are made beforehand, in the center (Campaigns -> Templates); the
-// API only names them. A key is sent as "Authorization: Bearer <key>", is
-// stored as its SHA-256 (it's shown once, when made), and can be limited to
-// requests from some addresses (IPs, networks, or host names). Each key
-// makes at most denmaAPIPerMinute requests a minute.
-//
-// A sending key has a fixed sender, a daily limit of e-mails, and the
-// domains the links it puts in e-mails can go to (link_domains, besides the
-// center's own: denmaAPICheckLinks). Keys can expire,
-// be replaced with an overlap, and be restored for denmaAPIKeepDeletedDays
-// days after they're deleted.
-//
-// The center's sending pauses on its own when its bounce or complaint rate
-// reaches the hub's "At risk" band (cmd/denma_api_events.go); a superadmin
-// resumes it.
+// denma: the sending API (<center>/v1/): keys let outside systems send transactional e-mails and campaigns.
 
 import (
 	"context"
@@ -104,7 +67,7 @@ CREATE TABLE IF NOT EXISTS denma_api_keys (
     created_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
--- The lists POST /v1/subscribers could add people to (dropped since version 22).
+-- The lists POST /v1/subscribers could add people to.
 CREATE TABLE IF NOT EXISTS denma_api_key_lists (
     key_id  INTEGER NOT NULL REFERENCES denma_api_keys(id) ON DELETE CASCADE,
     list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
@@ -122,8 +85,7 @@ CREATE TABLE IF NOT EXISTS denma_api_campaigns (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS denma_api_campaigns_idem ON denma_api_campaigns (key_id, idempotency_key)
     WHERE idempotency_key IS NOT NULL;
--- What its start claimed of the key's daily limit, given back if it fails
--- (since features version 55).
+-- What its start claimed of the key's daily limit, given back if it fails.
 ALTER TABLE denma_api_campaigns ADD COLUMN IF NOT EXISTS claimed INTEGER NOT NULL DEFAULT 0;
 -- Transactional e-mails: one row a request.
 CREATE TABLE IF NOT EXISTS denma_api_messages (
@@ -147,8 +109,7 @@ CREATE TABLE IF NOT EXISTS denma_api_state (
     resumed_at    TIMESTAMP WITH TIME ZONE NULL
 );
 INSERT INTO denma_api_state (id) VALUES (TRUE) ON CONFLICT DO NOTHING;
--- What each key can do (denmaAPICanAll), since features version 20. Keys
--- made before keep what they could: send, and subscribe if they had lists.
+-- What each key can do (denmaAPICanAll).
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns
         WHERE table_schema = current_schema() AND table_name = 'denma_api_keys' AND column_name = 'can') THEN
@@ -158,7 +119,7 @@ DO $$ BEGIN
             WHEN EXISTS (SELECT 1 FROM denma_api_key_lists l WHERE l.key_id = k.id) THEN ARRAY['subscribers'] ELSE '{}' END;
     END IF;
 END $$;
--- Since features version 21.
+-- Expiry reminders.
 ALTER TABLE denma_api_keys ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT '';
 ALTER TABLE denma_api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE NULL;
 ALTER TABLE denma_api_keys ADD COLUMN IF NOT EXISTS expiry_notice TEXT NOT NULL DEFAULT ''; -- the last reminder: 14, 3, expired
@@ -180,8 +141,7 @@ DO $$ BEGIN
         UPDATE denma_api_keys SET can = can || ARRAY['events'];
     END IF;
 END $$;
--- Since features version 22: keys send (and read events); sign-up webhooks
--- subscribe (cmd/denma_signup.go). Each key's link domains.
+-- Each key's link domains.
 DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'denma_api_keys'::regclass AND contype = 'c'
         AND pg_get_constraintdef(oid) LIKE '%subscribers%') THEN
@@ -217,8 +177,7 @@ CREATE TABLE IF NOT EXISTS denma_api_alerts (
 );
 ` + denmaAPIEventsSQL + denmaAPIOutboxSQL
 
-// What a key can do. Each of the API's sending and events endpoints needs
-// one (apiNeeds); the rest (its status, the templates) any key can use.
+// What a key can do; each sending and events endpoint needs one (apiNeeds).
 const (
 	denmaAPICanMessages  = "messages"  // POST /v1/messages
 	denmaAPICanCampaigns = "campaigns" // /v1/campaigns..., and its campaigns' events
@@ -578,8 +537,7 @@ func (a *App) checkAPIKeyForm(c echo.Context) (denmaAPIKeyForm, error) {
 	return f, nil
 }
 
-// denmaCheckAllowedFrom checks an address a key can be used from: an IP
-// address, a network (CIDR), or a host name.
+// denmaCheckAllowedFrom checks an address a key can be used from: an IP, a CIDR or a host name.
 func denmaCheckAllowedFrom(s string) error {
 	if net.ParseIP(s) != nil {
 		return nil
@@ -661,9 +619,7 @@ func (a *App) DenmaCreateAPIKey(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{k})
 }
 
-// DenmaUpdateAPIKey changes a key's name, what it can do, its addresses,
-// link domains, webhook, sender, daily limit or expiry date. A webhook given
-// to a key that had none gets a new signing secret, shown this once.
+// DenmaUpdateAPIKey changes a key's name, abilities, addresses, link domains, webhook, sender, limit or expiry.
 func (a *App) DenmaUpdateAPIKey(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -693,8 +649,7 @@ func (a *App) DenmaUpdateAPIKey(c echo.Context) error {
 		return denmaInternal(err)
 	}
 	defer tx.Rollback()
-	// A new webhook address starts after the current events; a new expiry
-	// date resets its reminders.
+	// A new webhook address starts after the current events; a new expiry date resets its reminders.
 	if _, err := tx.Exec(`UPDATE denma_api_keys SET name = $2, allowed_from = $3, webhook_url = $4, can = $6, updated_at = NOW(),
 		link_domains = $10, webhook_secret = CASE WHEN $11 <> '' THEN $11 ELSE webhook_secret END,
 		webhook_after = CASE WHEN $5 THEN (SELECT COALESCE(event_seq, 0) FROM denma_api_state) ELSE webhook_after END,
@@ -718,8 +673,7 @@ func (a *App) DenmaUpdateAPIKey(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{k})
 }
 
-// DenmaNewAPIKey replaces a key. The old one stops working at once, or after
-// "overlap_hours" (up to a week).
+// DenmaNewAPIKey replaces a key; the old one stops at once or after "overlap_hours".
 func (a *App) DenmaNewAPIKey(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -757,8 +711,7 @@ func (a *App) DenmaNewAPIKey(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{k})
 }
 
-// DenmaNewAPIWebhookSecret replaces a key's webhook signing secret, shown
-// this once.
+// DenmaNewAPIWebhookSecret replaces a key's webhook signing secret, shown once.
 func (a *App) DenmaNewAPIWebhookSecret(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -783,18 +736,14 @@ func (a *App) DenmaNewAPIWebhookSecret(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{k})
 }
 
-// DenmaDeleteAPIKey deletes a key, restorable for denmaAPIKeepDeletedDays
-// days. With ?leaked=true, its unfinished campaigns are cancelled; a deleted
-// key can be marked leaked afterwards, and a second try cancels what the
-// first left.
+// DenmaDeleteAPIKey deletes a key, restorable for denmaAPIKeepDeletedDays; ?leaked=true cancels its campaigns.
 func (a *App) DenmaDeleteAPIKey(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
 	}
 	id, _ := strconv.Atoi(c.Param("id"))
 	leaked := c.QueryParam("leaked") == "true"
-	// Marked under the key's lock, so that a request let in before has made
-	// or started its campaign, and later ones are refused (apiKeyLive).
+	// Marked under the key's lock (apiKeyLive).
 	l := a.apiKeyLock(id)
 	l.Lock()
 	res, err := a.db.Exec(`UPDATE denma_api_keys SET deleted_by = CASE WHEN deleted_at IS NULL THEN $2 ELSE deleted_by END,
@@ -817,9 +766,7 @@ func (a *App) DenmaDeleteAPIKey(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{map[string]any{"cancelled": cancelled}})
 }
 
-// denmaAPIKeyLocks keep marking a key deleted apart from its campaigns being
-// made and started (the process is the only one), with apiKeyLive. Each is
-// held only for that, never while campaigns are cancelled.
+// denmaAPIKeyLocks keep marking a key deleted apart from its campaigns being made and started.
 var denmaAPIKeyLocks [64]sync.Mutex
 
 func (a *App) apiKeyLock(id int) *sync.Mutex {
@@ -828,9 +775,7 @@ func (a *App) apiKeyLock(id int) *sync.Mutex {
 	return &denmaAPIKeyLocks[h.Sum32()%uint32(len(denmaAPIKeyLocks))]
 }
 
-// apiKeyLive reports whether a key can still make and start campaigns: it
-// isn't deleted, or (deleted otherwise) its campaigns go on. Call it with its
-// lock held.
+// apiKeyLive reports whether a key can still make and start campaigns; call it with its lock held.
 func (a *App) apiKeyLive(id int, deletedOK bool) (bool, error) {
 	var live bool
 	err := a.db.Get(&live, `SELECT deleted_at IS NULL OR ($2 AND NOT leaked) FROM denma_api_keys WHERE id = $1`, id, deletedOK)
@@ -840,8 +785,7 @@ func (a *App) apiKeyLive(id int, deletedOK bool) (bool, error) {
 	return live, err
 }
 
-// apiCancelKeyCampaigns cancels a key's campaigns that haven't finished,
-// returning how many.
+// apiCancelKeyCampaigns cancels a key's unfinished campaigns, returning how many.
 func (a *App) apiCancelKeyCampaigns(keyID int) (int, error) {
 	var camps []struct {
 		ID     int    `db:"id"`
@@ -859,8 +803,7 @@ func (a *App) apiCancelKeyCampaigns(keyID int) (int, error) {
 	return len(camps), nil
 }
 
-// DenmaRestoreAPIKey restores a deleted key. One deleted as leaked gets a
-// new key, shown once.
+// DenmaRestoreAPIKey restores a deleted key; one deleted as leaked gets a new key, shown once.
 func (a *App) DenmaRestoreAPIKey(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -898,8 +841,7 @@ func (a *App) DenmaRestoreAPIKey(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{k})
 }
 
-// denmaAPIRate is each key's requests this minute (center/ID), for
-// denmaAPIPerMinute.
+// denmaAPIRate is each key's requests this minute (center/ID).
 var denmaAPIRate = struct {
 	sync.Mutex
 	m map[string]*denmaSignupWindow
@@ -954,8 +896,7 @@ var denmaLookupHost = func(host string) []net.IP {
 	return ips
 }
 
-// denmaFromAllowed reports whether a request from ip may use a key limited
-// to allowed (anyone, if it's empty).
+// denmaFromAllowed reports whether a request from ip may use a key limited to allowed.
 func denmaFromAllowed(ip string, allowed []string) bool {
 	if len(allowed) == 0 {
 		return true
@@ -998,9 +939,7 @@ type denmaAPIAuthed struct {
 	ExpiresAt   *time.Time     `db:"expires_at"`
 }
 
-// apiAuth checks a request's key (or the one it replaced, during its
-// overlap): not deleted or expired, allowed from the client's address, and
-// under its rate limit.
+// apiAuth checks a request's key: not deleted or expired, allowed from its address, under its rate limit.
 func (a *App) apiAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		if err := a.inCenter(); err != nil {
@@ -1045,9 +984,7 @@ func (a *App) apiAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// denmaBearer is the key in an Authorization header: "Bearer <key>", the
-// scheme in any case (HTTP's are case-insensitive), the key with its prefix
-// (an API key's, or a Server webhook's secret's).
+// denmaBearer is the key in an Authorization header (an API key or a Server webhook's secret).
 func denmaBearer(hdr, prefix string) (string, bool) {
 	scheme, key, ok := strings.Cut(strings.TrimSpace(hdr), " ")
 	key = strings.TrimSpace(key)
@@ -1062,14 +999,12 @@ func apiKeyOf(c echo.Context) denmaAPIAuthed {
 
 // ---- Each key's daily limits, and telling the admins ----
 
-// apiClaim takes n of a key's 24-hour allowance of a kind, if limit leaves
-// room, returning whether it did and how many were used before.
+// apiClaim takes n of a key's 24-hour allowance of a kind, returning whether it did and the used count.
 func (a *App) apiClaim(keyID int, kind string, n, limit int) (bool, int, error) {
 	return a.apiClaimAt(keyID, kind, n, limit, time.Now())
 }
 
-// apiClaimAt is apiClaim for e-mails going at a time: what's claimed for the
-// 24 hours either side of it counts, so no 24 hours go over the limit.
+// apiClaimAt is apiClaim for e-mails going at a time: the 24 hours either side of it count.
 func (a *App) apiClaimAt(keyID int, kind string, n, limit int, at time.Time) (bool, int, error) {
 	tx, err := a.db.Beginx()
 	if err != nil {
@@ -1100,8 +1035,7 @@ func (a *App) apiUnclaim(keyID int, kind string, n int) {
 	a.apiUnclaimAt(keyID, kind, n, time.Now())
 }
 
-// apiClaimTime is when a campaign's e-mails count: at its send_at, if that's
-// to come, or now.
+// apiClaimTime is when a campaign's e-mails count: its send_at if to come, or now.
 func apiClaimTime(sendAt *time.Time) time.Time {
 	if now := time.Now(); sendAt == nil || !sendAt.After(now) {
 		return now
@@ -1114,8 +1048,7 @@ func (a *App) apiUnclaimAt(keyID int, kind string, n int, at time.Time) {
 	if n <= 0 {
 		return
 	}
-	// Off the claim itself: a row of its own would outlast it, and leave room
-	// over the limit when the claim ages out.
+	// Off the claim itself.
 	if _, err := a.db.Exec(`WITH claim AS (
 			SELECT id FROM denma_api_usage WHERE key_id = $1 AND kind = $2 AND n >= $3 AND created_at > $4::TIMESTAMPTZ - INTERVAL '1 day'
 			ORDER BY created_at = $4::TIMESTAMPTZ DESC, id DESC LIMIT 1
@@ -1131,10 +1064,7 @@ const (
 	denmaAPIUseCampaign = "campaign" // campaigns made, drafts too
 )
 
-// apiLimitClaim claims n of a key's addresses or campaigns a day (as many as
-// its daily limit of e-mails), before anyone's added. Past it, 429, and the admins are
-// told. Every address given counts, new or not, so the answer doesn't say
-// which the center has.
+// apiLimitClaim claims n of a key's addresses or campaigns a day, before anyone's added; past it, 429.
 func (a *App) apiLimitClaim(c echo.Context, kind, what string, n int) error {
 	if n <= 0 {
 		return nil
@@ -1155,8 +1085,7 @@ func (a *App) apiLimitClaim(c echo.Context, kind, what string, n int) error {
 		k.DailyLimit, what, max(k.DailyLimit-used, 0), used, n))
 }
 
-// apiSendClaim claims n e-mails of the key's daily limit, or answers 429 and
-// alerts the admins.
+// apiSendClaim claims n e-mails of the key's daily limit, or answers 429 and alerts the admins.
 func (a *App) apiSendClaim(c echo.Context, n int) error {
 	return a.apiSendClaimAt(c, n, time.Now())
 }
@@ -1241,8 +1170,7 @@ func (a *App) apiCanSend() error {
 	return nil
 }
 
-// denmaCheckAPIPaused refuses to start or resume a campaign while the center's
-// sending is paused: it resumes with it.
+// denmaCheckAPIPaused refuses to start or resume a campaign while the center's sending is paused.
 func (a *App) denmaCheckAPIPaused(int) error {
 	if err := a.apiCanSend(); err != nil {
 		var he *echo.HTTPError
@@ -1254,8 +1182,7 @@ func (a *App) denmaCheckAPIPaused(int) error {
 	return nil
 }
 
-// DenmaResumeAPI resumes the center's sending after a pause; superadmins only.
-// Its campaigns paused with it are resumed too.
+// DenmaResumeAPI resumes the center's sending after a pause (superadmins); its paused campaigns resume too.
 func (a *App) DenmaResumeAPI(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err

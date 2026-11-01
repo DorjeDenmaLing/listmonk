@@ -1,15 +1,6 @@
 package main
 
-// denma: a limit on opt-in e-mails. Signing up to a double opt-in list sends
-// a confirmation e-mail, and signing the same address up again sends another
-// (upstream #3229). So an address is sent at most denmaOptinLimit opt-ins in
-// denmaOptinWindow, across all centers. After that, a sign-up is told that
-// one was sent already and nothing is sent (denmaCheckOptin,
-// cmd/denma_emailcheck.go); the subscription is kept, unconfirmed. Admins'
-// "Send opt-in e-mail" counts too.
-//
-// denma.optin_sends records each one by the address's SHA-256, not the
-// address, and keeps only the last window's.
+// denma: the limit on opt-in e-mails an address is sent across all centers (denma.optin_sends).
 
 import (
 	"crypto/sha256"
@@ -36,11 +27,7 @@ func denmaInitOptinSends(db *sqlx.DB) error {
 	return err
 }
 
-// denmaOptinAllowed records an opt-in to email from a center and reports
-// whether it may be sent: false once the address has had its limit. Old
-// records are dropped. Without centers (no denma schema) it always may. One
-// count at a time per address (a lock for the transaction), or two at once
-// could both find room.
+// denmaOptinAllowed records an opt-in to email from a center and reports whether it may be sent.
 func denmaOptinAllowed(db *sqlx.DB, email, center string) (bool, error) {
 	if denmaHub == nil {
 		return true, nil

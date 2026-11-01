@@ -1,9 +1,6 @@
 package main
 
-// denma: stopping a center's App when it is reloaded or disabled. The App
-// isn't stopped under lifeMu (it takes up to a minute), and the App that
-// replaces it picks up no campaign until the old one has saved its progress,
-// so that no campaign runs in both.
+// denma: stopping a center's App on reload or disable outside lifeMu; its replacement waits for it.
 
 import (
 	"time"
@@ -12,24 +9,21 @@ import (
 	"github.com/knadh/listmonk/internal/manager"
 )
 
-// denmaHoldScan holds a new App's campaign scanner (denma.hold_scan, set by
-// denmaCenters.load for an App that replaces another).
+// denmaHoldScan holds a new App's campaign scanner (denma.hold_scan) while it replaces another.
 func denmaHoldScan(mgr *manager.Manager, ko *koanf.Koanf) {
 	if ko.Bool("denma.hold_scan") {
 		mgr.DenmaHoldScan()
 	}
 }
 
-// stopsOf returns the stops of center slug's Apps under way now, which end
-// when their channel closes. Call it under lifeMu, where stops begin.
+// stopsOf returns the stops of center slug's Apps under way. Call it under lifeMu.
 func (d *denmaCenters) stopsOf(slug string) []chan struct{} {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return append([]chan struct{}(nil), d.stopping[slug]...)
 }
 
-// beginStop notes that an App of center slug is being stopped, and returns
-// the function that ends it. Call it under lifeMu.
+// beginStop notes that slug's App is being stopped and returns the func that ends it (under lifeMu).
 func (d *denmaCenters) beginStop(slug string) (end func()) {
 	ch := make(chan struct{})
 	d.mu.Lock()
@@ -59,13 +53,10 @@ func removeChan(l []chan struct{}, ch chan struct{}) []chan struct{} {
 	return out
 }
 
-// denmaStragglerWait is how long an App whose campaigns didn't stop in time is
-// waited for to finish them.
+// denmaStragglerWait is how long to wait for an App's campaigns that didn't stop in time.
 const denmaStragglerWait = 10 * time.Minute
 
-// retireThen retires old, once ended outside lifeMu (end, from beginStop),
-// and then lets the App that replaced it, next, pick up campaigns, after the
-// stops before had finished.
+// retireThen retires old once ended, then lets next pick up campaigns after the earlier stops.
 func (d *denmaCenters) retireThen(old, next *App, before []chan struct{}, end func()) {
 	stopped := denmaRetire(old, false)
 	denmaSignalReload(old) // ends its watchReload, if it's waiting

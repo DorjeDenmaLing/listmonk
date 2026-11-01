@@ -9,8 +9,7 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// denmaCheckPlanSchemas fails if the EXPLAIN JSON plan reads a relation of any
-// schema but the transaction's current one (the center's).
+// denmaCheckPlanSchemas fails if the EXPLAIN JSON plan reads a relation outside the current schema.
 func denmaCheckPlanSchemas(tx *sqlx.Tx, plan string) error {
 	var cur string
 	if err := tx.Get(&cur, "SELECT current_schema()"); err != nil {

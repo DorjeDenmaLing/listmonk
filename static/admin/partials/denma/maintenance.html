@@ -1,8 +1,4 @@
-{{/*
-	denma: on the hub's Maintenance page (views/maintenance.html), the center
-	its actions apply to, or all of them (cmd/denma_maintenance.go). Nothing
-	without centers.
-*/}}
+{{/* denma: the center the hub's Maintenance actions apply to (cmd/denma_maintenance.go). */}}
 {{ define "denma-maintenance-centers" -}}
 {{- if .DenmaCenters }}
 <div class="card denma-maintenance-centers" data-testid="maintenance-centers">

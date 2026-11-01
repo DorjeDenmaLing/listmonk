@@ -83,8 +83,7 @@ function listenErrorEvents() {
   const reMatchLog = /(.+?)\.go:\d+:(.+?)$/im;
   const src = new EventSource(`${urls.api}/events?type=error`, { withCredentials: true });
 
-  // denma: close it when leaving the page. Otherwise every page visited keeps
-  // one open, and after six the browser has no connections left for the host.
+  // denma: close it when leaving the page.
   window.addEventListener('pagehide', () => src.close());
 
   let numEv = 0;
@@ -120,9 +119,7 @@ function getStore() {
 
 // ==============================
 // Public constants.
-// denma: the admin's root path: the server's (admin_root: every center's admin
-// is at /admin, cmd/denma_place.go), else the root URL's path, so the admin
-// also works under a subpath.
+// denma: the admin's root path: the server's admin_root (cmd/denma_place.go), else the root URL's.
 export const rootPath = (() => {
   if (typeof window._LM_CONFIG?.admin_root === 'string') {
     return window._LM_CONFIG.admin_root;
@@ -135,8 +132,8 @@ export const rootPath = (() => {
 })();
 
 export const urls = {
-  api: `${rootPath}/api`, // denma: was '/api'
-  admin: `${rootPath}/admin`, // denma: was '/admin'
+  api: `${rootPath}/api`, // denma: root path aware
+  admin: `${rootPath}/admin`, // denma: root path aware
 };
 
 // Server config.

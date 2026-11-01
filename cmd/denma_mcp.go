@@ -1,30 +1,6 @@
 package main
 
-// denma: MCP keys, for Claude through the listmonk MCP server (the mcp/
-// folder beside the fork). A center's admins make them on its Config -> MCP
-// page (views/denma-mcp.html), each for one of the center's users: the key
-// acts as that user, so the activity log says who did what (and that it was
-// through the key), and it can do only what both its own permissions and
-// the user's role allow. Its requests go through the center's admin API, the
-// same handlers and checks as the admin's own:
-//
-//   - GET /mcp/v1/centers: the centers the caller can use, with each key's
-//     user and permissions;
-//   - /mcp/v1/centers/<slug>/api/...: the center's /api/..., as the key's
-//     user.
-//
-// The caller is a key (Authorization: Bearer lmm_...), for Claude Code and
-// scripts; or the hub's connector secret (lmc_..., made on the hub's MCP
-// page by superadmins) with X-Listmonk-Person: the e-mail address someone
-// signed in to claude.ai with (the MCP server checks it with Google), who
-// then uses their own key in the center, if it's ticked "usable from
-// claude.ai".
-//
-// Keys and the secret are kept as SHA-256 and shown once. What hands out
-// secrets or signs people in isn't reachable with a key (denmaMCPBlocked),
-// nor exports of people's data unless the key may show personal data. Each
-// key makes at most denmaMCPPerMinute requests a minute; requests with keys
-// that don't work are limited by address.
+// denma: MCP keys, for Claude through the MCP server (mcp/), made on Config -> MCP (views/denma-mcp.html).
 
 import (
 	"context"
@@ -60,8 +36,7 @@ const (
 	denmaMCPListManage = "list:manage"
 )
 
-// denmaMCPBadKeys limits requests with keys or secrets that don't work, by
-// client address.
+// denmaMCPBadKeys limits requests with keys or secrets that don't work, by client address.
 var denmaMCPBadKeys = newDenmaThrottle(20, 15*time.Minute)
 
 const denmaMCPSQL = `
@@ -130,12 +105,7 @@ type denmaMCPKey struct {
 	Key string `db:"-" json:"key,omitempty"` // only when it's made
 }
 
-// denmaMCPBlocked is the admin API a key can't reach: what hands out keys or
-// secrets, signs in or out, changes a profile or two-factor sign-in, the
-// hub's settings, the server's logs, its event stream and its about page
-// (database size, hostname), the center's activity log, the e-mails that
-// ask someone for consent, people and roles, and maintenance. "{}" is any
-// one path segment.
+// denmaMCPBlocked is the admin API a key can't reach ("{}" is any one path segment).
 var denmaMCPBlocked = []string{
 	"/api/denma/center/api-keys", "/api/denma/center/api", "/api/denma/center/signup-hooks", "/api/denma/center/mcp-keys",
 	"/api/settings", "/api/admin", "/api/logs", "/api/about", "/api/events", "/api/profile", "/api/logout", "/api/login",
@@ -146,12 +116,10 @@ var denmaMCPBlocked = []string{
 // denmaMCPMaxFrom is the most addresses a connector's allowed_from can have.
 const denmaMCPMaxFrom = 50
 
-// denmaMCPWriteBlockedExact is what a key can read but not change: the
-// center's own details (sender, reply-to, postal address).
+// denmaMCPWriteBlockedExact is what a key can read but not change: the center's own details.
 var denmaMCPWriteBlockedExact = []string{"/api/denma/center"}
 
-// denmaMCPExports are the admin API's downloads of people's data, for keys
-// that may show personal data only.
+// denmaMCPExports are the admin API's downloads of people's data, for keys with personal data only.
 var denmaMCPExports = []string{"/api/subscribers/export"}
 
 // denmaMCPMatch is whether p is pattern or under it.
@@ -196,10 +164,7 @@ func denmaMCPAllowed(p, method string, personal bool) string {
 	return ""
 }
 
-// denmaMCPNoKeyPerms are permissions a key can't have: raw SQL is off for
-// everyone, bounce webhooks were API users', settings are the hub's, and
-// people and roles are the admin's (a key could add an admin who keeps its
-// permissions and none of its limits).
+// denmaMCPNoKeyPerms are permissions a key can't have: SQL, bounce webhooks, settings, people, roles.
 var denmaMCPNoKeyPerms = map[string]bool{
 	"subscribers:sql_query": true, "webhooks:post_bounce": true,
 	"settings:get": true, "settings:manage": true, "settings:maintain": true,
@@ -212,8 +177,7 @@ type denmaMCPPermGroup struct {
 	Permissions []string `json:"permissions"`
 }
 
-// mcpPermGroups is what keys can be given, by group: the app's permissions
-// (with ours) but denmaMCPNoKeyPerms, and the lists of a user's list role.
+// mcpPermGroups is what keys can be given, by group, but denmaMCPNoKeyPerms.
 func (a *App) mcpPermGroups() []denmaMCPPermGroup {
 	var groups []denmaMCPPermGroup
 	if err := json.Unmarshal(a.cfg.PermissionsRaw, &groups); err != nil {
@@ -237,9 +201,7 @@ func (a *App) mcpPermGroups() []denmaMCPPermGroup {
 	return out
 }
 
-// denmaMCPUser is the user a key's request runs as: theirs, with only the
-// permissions (and lists) both the key and their role give. A superadmin's
-// account isn't a Super Admin through a key: it has what the key gives.
+// denmaMCPUser is the user a key's request runs as, with only the permissions both key and role give.
 func denmaMCPUser(u auth.User, keyPerms []string, known map[string]struct{}) auth.User {
 	super := u.UserRole.ID == auth.SuperAdminRoleID
 	eff := map[string]struct{}{}
@@ -300,8 +262,7 @@ func denmaMCPUser(u auth.User, keyPerms []string, known map[string]struct{}) aut
 	return u
 }
 
-// denmaMCPReq is what a request through a key carries to the center (in its
-// context), for the activity log.
+// denmaMCPReq is what a request through a key carries to the center, for the activity log.
 type denmaMCPReq struct {
 	KeyID   int
 	KeyName string
@@ -323,14 +284,13 @@ type denmaMCPCaller struct {
 	person string // the connector's: the person's e-mail address, lowercase
 }
 
-// denmaMCPInternal is a plain answer to a failure the caller needn't know
-// about, which is logged.
+// denmaMCPInternal is a plain answer to a failure, which is logged.
 func denmaMCPInternal(err error) error {
 	lo.Printf("denma: MCP gateway: %v", err)
 	return echo.NewHTTPError(http.StatusInternalServerError, "Something went wrong. Try again in a minute.")
 }
 
-// mcpRoute serves /mcp/v1/... (done: it was one).
+// mcpRoute serves /mcp/v1/...
 func (d *denmaCenters) mcpRoute(c echo.Context) (bool, error) {
 	p := c.Request().URL.Path
 	if p != denmaMCPPath && !strings.HasPrefix(p, denmaMCPPath+"/") {
@@ -340,9 +300,7 @@ func (d *denmaCenters) mcpRoute(c echo.Context) (bool, error) {
 }
 
 func (d *denmaCenters) mcpServe(c echo.Context, rest string) error {
-	// Failures are counted by the connector secret when it's right (the hosted
-	// server's one address must not lock everyone out for what a stranger
-	// sends), else by address.
+	// Failures are counted by the connector secret when it's right, else by address.
 	ip := c.RealIP()
 	secret, secretOK := d.mcpConnectorSecret(c, ip)
 	bad := ip
@@ -421,7 +379,7 @@ func (d *denmaCenters) mcpServe(c echo.Context, rest string) error {
 		return echo.NewHTTPError(http.StatusForbidden, "There's no key for this center.")
 	}
 	p := "/" + sub
-	// Counted first: refusals are requests too, each in the activity log.
+	// Counted first; refusals are in the activity log.
 	if n := denmaMCPRateOK(k.ID); n > denmaMCPPerMinute {
 		if n == denmaMCPPerMinute+1 { // once a minute, not every request
 			d.mcpRefused(c, k, ctr, http.StatusTooManyRequests, "over the requests a minute")
@@ -459,8 +417,7 @@ func (d *denmaCenters) mcpServe(c echo.Context, rest string) error {
 	return nil
 }
 
-// mcpConnectorSecret is the connector secret a request brings, hashed, and
-// whether it's the right one, from where it may be used.
+// mcpConnectorSecret is the connector secret a request brings, hashed, and whether it's right.
 func (d *denmaCenters) mcpConnectorSecret(c echo.Context, ip string) (string, bool) {
 	secret, ok := denmaBearer(c.Request().Header.Get(echo.HeaderAuthorization), denmaMCPSecretPrefix)
 	if !ok {
@@ -474,9 +431,7 @@ func (d *denmaCenters) mcpConnectorSecret(c echo.Context, ip string) (string, bo
 	return hash, denmaFromAllowed(ip, from)
 }
 
-// mcpCaller checks a request's key, or the connector secret (secretOK) and
-// the person it's for. A key that's known but expired comes back with the
-// error.
+// mcpCaller checks a request's key, or the connector secret and its person.
 func (d *denmaCenters) mcpCaller(c echo.Context, secret string, secretOK bool) (denmaMCPCaller, error) {
 	unknown := echo.NewHTTPError(http.StatusUnauthorized, "unrecognized key")
 	hdr := c.Request().Header.Get(echo.HeaderAuthorization)
@@ -514,9 +469,7 @@ func (d *denmaCenters) mcpCaller(c echo.Context, secret string, secretOK bool) (
 	return denmaMCPCaller{}, unknown
 }
 
-// mcpRefused records, in the key's center's activity log, a request through
-// the key that was refused: the route, not the query or body (ctr: the
-// center, if it's known).
+// mcpRefused records a refused request (route only) in the key's center's activity log.
 func (d *denmaCenters) mcpRefused(c echo.Context, k denmaMCPKey, ctr *denmaCenter, status int, why string) {
 	var username, name string
 	if ctr == nil {
@@ -537,8 +490,7 @@ func (d *denmaCenters) mcpRefused(c echo.Context, k denmaMCPKey, ctr *denmaCente
 	}
 }
 
-// mcpKeysOf is the caller's keys: a key's own, or the person's keys usable
-// from claude.ai, in a center (slug) or all, in enabled centers.
+// mcpKeysOf is the caller's keys, in a center (slug) or in all enabled centers.
 func (d *denmaCenters) mcpKeysOf(who denmaMCPCaller, slug string) ([]denmaMCPKey, error) {
 	if who.key != nil {
 		if slug != "" && who.key.Slug != slug {
@@ -566,8 +518,7 @@ var denmaMCPRate = struct {
 	m map[int]*denmaSignupWindow
 }{m: map[int]*denmaSignupWindow{}}
 
-// denmaMCPRateOK counts a key's request, returning how many it made this
-// minute.
+// denmaMCPRateOK counts a key's request, returning how many it made this minute.
 func denmaMCPRateOK(id int) int {
 	now := time.Now()
 	denmaMCPRate.Lock()
@@ -624,8 +575,7 @@ const denmaMCPKeySQL = `SELECT k.id, k.center_id, '' AS slug, k.user_id, k.name,
 	COALESCE(u.username, '') AS username, COALESCE(u.name, '') AS user_name
 	FROM denma.mcp_keys k LEFT JOIN users u ON u.id = k.user_id`
 
-// mcpKeys is the center's keys, as c's user sees them: those of the hub's
-// accounts only for superadmins, editable if they can manage the user.
+// mcpKeys is the center's keys as c's user sees them; hub accounts' only for superadmins.
 func (a *App) mcpKeys(c echo.Context, id int) ([]denmaMCPKey, error) {
 	cid, err := a.mcpCenterID()
 	if err != nil {
@@ -688,8 +638,7 @@ func (a *App) mcpKey(c echo.Context) (denmaMCPKey, error) {
 	return keys[0], nil
 }
 
-// mcpMayKey is whether me can make or change a key for u: their own, or a
-// user they see with no more than they have.
+// mcpMayKey is whether me can make or change a key for u (their own, or a user with no more).
 func (a *App) mcpMayKey(me, u auth.User, hub map[int]bool) bool {
 	if u.ID == me.ID {
 		return true
@@ -775,8 +724,7 @@ func (a *App) ViewDenmaMCP(c echo.Context) error {
 	return c.Render(http.StatusOK, "admin-denma-mcp", view)
 }
 
-// mcpGivable is the permissions me can give a key: those they have ("*" for
-// a superadmin), as with roles (cmd/denma_hierarchy.go).
+// mcpGivable is the permissions me can give a key: those they have, as with roles (cmd/denma_hierarchy.go).
 func (a *App) mcpGivable(me auth.User) []string {
 	if !denmaBound(me) {
 		return []string{"*"}
@@ -860,8 +808,7 @@ func (a *App) checkMCPKeyForm(c echo.Context) (denmaMCPKeyForm, error) {
 	return f, nil
 }
 
-// mcpConnectorTaken is a connector error, if the user already has a key
-// usable from claude.ai (but key id) in the center.
+// mcpConnectorTaken is a connector error if the user already has a claude.ai key in the center.
 func (a *App) mcpConnectorTaken(cid, userID, id int) error {
 	var taken bool
 	if err := a.db.Get(&taken, `SELECT EXISTS (SELECT 1 FROM denma.mcp_keys WHERE center_id = $1 AND user_id = $2 AND connector AND id <> $3)`,
@@ -925,9 +872,7 @@ func (a *App) DenmaCreateMCPKey(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{keys[0]})
 }
 
-// DenmaUpdateMCPKey changes a key's name, permissions, whether it shows
-// personal data, whether it's usable from claude.ai, or its expiry date. Its
-// user stays the same.
+// DenmaUpdateMCPKey changes a key's name, permissions, personal data, claude.ai use or expiry.
 func (a *App) DenmaUpdateMCPKey(c echo.Context) error {
 	k, err := a.mcpKey(c)
 	if err != nil {
@@ -986,8 +931,7 @@ func (a *App) DenmaDeleteMCPKey(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
-// denmaNewMCPSecret makes a key or secret with a prefix, returning it, its
-// hash and its hint.
+// denmaNewMCPSecret makes a key or secret with a prefix, returning it, its hash and hint.
 func denmaNewMCPSecret(prefix string) (string, string, string, error) {
 	r, err := utils.GenerateRandomString(40)
 	if err != nil {
@@ -1085,8 +1029,7 @@ func (a *App) DenmaNewMCPConnector(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{cn})
 }
 
-// DenmaUpdateMCPConnector sets where the connector secret can be used from
-// (addresses, networks or host names; none: anywhere).
+// DenmaUpdateMCPConnector sets where the connector secret can be used from.
 func (a *App) DenmaUpdateMCPConnector(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -1122,8 +1065,7 @@ func (a *App) DenmaUpdateMCPConnector(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{cn})
 }
 
-// DenmaDeleteMCPConnector deletes the connector secret: claude.ai's
-// connector stops working, keys don't.
+// DenmaDeleteMCPConnector deletes the connector secret; claude.ai's connector stops, keys don't.
 func (a *App) DenmaDeleteMCPConnector(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {

@@ -28,9 +28,7 @@ type denmaCampaignMoved struct {
 	at   time.Time
 }
 
-// DenmaHealthSending is the hub's /health/sending, for monitoring: how many
-// things in all centers are stuck (countStuck). A count only: anyone can
-// read it. It's worked out at most once a minute.
+// DenmaHealthSending is the hub's /health/sending: a count of stuck things in all centers, once a minute.
 func (a *App) DenmaHealthSending(c echo.Context) error {
 	d := denmaHub
 	if d == nil || a.ko.String("denma.center") != "" {
@@ -45,11 +43,7 @@ func (a *App) DenmaHealthSending(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{map[string]int{"stuck": denmaStuck.count}})
 }
 
-// countStuck counts, over the running centers: running campaigns that haven't
-// sent anything for denmaStuckAfter, while their center's sending hours are
-// open and the daily limit isn't reached; scheduled campaigns that long
-// overdue; campaigns paused for their failed sends in the last day; and the
-// sending API's e-mails queued that long.
+// countStuck counts stuck campaigns and queued API e-mails over the running centers.
 func (d *denmaCenters) countStuck(was map[string]denmaCampaignMoved) (int, map[string]denmaCampaignMoved) {
 	d.mu.RLock()
 	centers := make(map[string]*denmaCenter, len(d.bySlug))

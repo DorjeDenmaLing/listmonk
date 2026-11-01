@@ -1,24 +1,6 @@
 package main
 
-// denma: who can manage whom, among a center's users (and the hub's). Everyone
-// but superadmins (the
-// Super Admin role, 1):
-//
-//   - doesn't see Super Admin users or the Super Admin role;
-//   - can only give out the permissions they have, and the lists they can get
-//     or manage, in roles and list roles they create or edit, and to users;
-//   - can only edit or delete users, roles and list roles with no more than
-//     they have themselves (so their peers, on the same role, and those below).
-//
-// In a center, nobody sees the hub's superadmins' own accounts there (made
-// when they open it, cmd/denma_hub.go): they aren't the center's users.
-// Centers have their own admins (Center Admins) and no Super Admins of their
-// own: the role is only the hub's accounts', and nobody sees it or gives it
-// out there (ownAdmins).
-//
-// Called from listmonk's users and roles handlers (cmd/users.go,
-// cmd/roles.go), at marked lines; the forms offer only what may be given
-// (views/user.html, views/user-role.html, views/list-role.html).
+// denma: who can manage whom among a center's users: non-superadmins see and give no more than they have.
 
 import (
 	"fmt"
@@ -31,31 +13,22 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// denmaBound reports whether u is held to the hierarchy: everyone but
-// superadmins. (A loaded user's role is in UserRole.ID; listmonk zeroes
-// UserRoleID.)
+// denmaBound reports whether u is held to the hierarchy: everyone but superadmins.
 func denmaBound(u auth.User) bool {
 	return u.UserRole.ID != auth.SuperAdminRoleID
 }
 
-// denmaInCenter reports whether a is a center's app (not the hub's, nor a
-// single install's).
+// denmaInCenter reports whether a is a center's app (not the hub's, nor a single install's).
 func (a *App) denmaInCenter() bool {
 	return denmaHub != nil && a.ko.String("denma.center") != ""
 }
 
-// denmaHidesSuper reports whether c's user doesn't see the Super Admin role
-// and its users: everyone in a center, and those who aren't superadmins.
+// denmaHidesSuper reports whether c's user doesn't see the Super Admin role and its users.
 func (a *App) denmaHidesSuper(c echo.Context) bool {
 	return a.denmaInCenter() || denmaBound(auth.GetUser(c))
 }
 
-// ownAdmins keeps a center's Super Admins the hub's. The hub has an account
-// of its own in each center (hub_user_id 0 in denma.center_superadmins,
-// hidden like the superadmins'), as listmonk won't change or delete users
-// unless an enabled Super Admin would remain, and a center starts with only
-// its Center Admin. Anyone else with the role, such as an existing install's
-// admins (DDL's), becomes a Center Admin. On every load (adopt).
+// ownAdmins keeps a center's Super Admins the hub's; others with the role become Center Admins.
 func (d *denmaCenters) ownAdmins(c *denmaCenter, db *sqlx.DB) error {
 	if _, err := d.hubAccount(c.ID, db, 0, "hub", "hub@hub.invalid", "hub@hub.invalid", d.base.ko.String("app.site_name")); err != nil {
 		return fmt.Errorf("creating the hub's account: %v", err)
@@ -82,8 +55,7 @@ func denmaHasPerms(u auth.User, perms []string) bool {
 	return true
 }
 
-// denmaHasLists reports whether u can get every list given list:get on, and
-// manage every list given list:manage on.
+// denmaHasLists reports whether u has every list permission given on lists.
 func denmaHasLists(u auth.User, lists []auth.ListPermission) bool {
 	for _, l := range lists {
 		for _, p := range l.Permissions {
@@ -99,8 +71,7 @@ func denmaHasLists(u auth.User, lists []auth.ListPermission) bool {
 	return true
 }
 
-// denmaWithin reports whether a user has no more than u: not a superadmin
-// (unless u is one), and with no permissions or lists u doesn't have.
+// denmaWithin reports whether a user has no more than u.
 func denmaWithin(u, target auth.User) bool {
 	if !denmaBound(u) {
 		return true
@@ -122,8 +93,7 @@ var (
 	errDenmaNoRole = echo.NewHTTPError(http.StatusNotFound, "role not found")
 )
 
-// denmaHubAccounts returns the IDs of the hub's superadmins' accounts in this
-// center (none in the hub, or without multi-center).
+// denmaHubAccounts returns the IDs of the hub's superadmins' accounts in this center.
 func (a *App) denmaHubAccounts() (map[int]bool, error) {
 	slug := a.ko.String("denma.center")
 	if denmaHub == nil || slug == "" {
@@ -141,8 +111,7 @@ func (a *App) denmaHubAccounts() (map[int]bool, error) {
 	return out, nil
 }
 
-// denmaVisibleUsers drops the users c's user doesn't see: the hub's accounts,
-// and Super Admins (denmaHidesSuper).
+// denmaVisibleUsers drops the users c's user doesn't see.
 func (a *App) denmaVisibleUsers(c echo.Context, users []auth.User) ([]auth.User, error) {
 	hub, err := a.denmaHubAccounts()
 	if err != nil {
@@ -159,8 +128,7 @@ func (a *App) denmaVisibleUsers(c echo.Context, users []auth.User) ([]auth.User,
 	return out, nil
 }
 
-// denmaSeeUser is "not found" for a user c's user doesn't see; one they see
-// is shown as denmaHideTwofa says.
+// denmaSeeUser is "not found" for a user c's user doesn't see.
 func (a *App) denmaSeeUser(c echo.Context, target *auth.User) error {
 	hub, err := a.denmaHubAccounts()
 	if err != nil {
@@ -173,18 +141,14 @@ func (a *App) denmaSeeUser(c echo.Context, target *auth.User) error {
 	return nil
 }
 
-// denmaHideTwofa leaves out whether a center's user has two-factor sign-in,
-// but for c's own: it's their person's, which they manage themselves, and a
-// new person never has it, so it would tell that someone added was a user
-// somewhere else already.
+// denmaHideTwofa leaves out whether a center's user has two-factor sign-in, except for c's own.
 func (a *App) denmaHideTwofa(c echo.Context, u *auth.User) {
 	if a.denmaInCenter() && u.ID != auth.GetUser(c).ID {
 		u.TwofaType = models.TwofaTypeNone
 	}
 }
 
-// denmaCheckUser checks that c's user may edit or delete the user with this
-// ID: one they see, with no more than they have.
+// denmaCheckUser checks that c's user may edit or delete the user with this ID.
 func (a *App) denmaCheckUser(c echo.Context, id int) error {
 	target, err := a.core.GetUser(id, "", "")
 	if err != nil {
@@ -199,9 +163,7 @@ func (a *App) denmaCheckUser(c echo.Context, id int) error {
 	return nil
 }
 
-// denmaCheckAssign checks that c's user may give a user of a type this role
-// and list role (nil for none): ones with no more than they have, and never
-// Super Admin in a center. Nobody makes API users (cmd/denma_noapiusers.go).
+// denmaCheckAssign checks that c's user may give a user of a type this role and list role (nil for none).
 func (a *App) denmaCheckAssign(c echo.Context, typ string, roleID int, listRoleID *int) error {
 	if typ == auth.UserTypeAPI {
 		return errDenmaAPIUser
@@ -249,10 +211,7 @@ func (a *App) denmaListRole(id int) (auth.ListRole, error) {
 	return auth.ListRole{}, errDenmaNoRole
 }
 
-// denmaAssignable keeps the roles c's user may give out (for the user form's
-// selectors), and the ones the user being edited has now (cur, curList), so
-// that their form shows them. Never Super Admin, unless a superadmin gives it
-// in the hub.
+// denmaAssignable keeps the roles c's user may give out, and the ones the user being edited has now.
 func (a *App) denmaAssignable(c echo.Context, roles []auth.Role, lists []auth.ListRole, cur int, curList *int) ([]auth.Role, []auth.ListRole) {
 	if !a.denmaHidesSuper(c) {
 		return roles, lists
@@ -288,9 +247,7 @@ func (a *App) denmaVisibleRoles(c echo.Context, roles []auth.Role) []auth.Role {
 	return out
 }
 
-// denmaCheckRole checks that c's user may save a user role with these
-// permissions, replacing the role with this ID (0 for a new one): both with
-// no more than they have.
+// denmaCheckRole checks that c's user may save a user role with these permissions (id 0 for new).
 func (a *App) denmaCheckRole(c echo.Context, id int, perms []string) error {
 	u := auth.GetUser(c)
 	if !denmaBound(u) {
@@ -332,9 +289,7 @@ func (a *App) denmaCheckListRole(c echo.Context, id int, lists []auth.ListPermis
 	return nil
 }
 
-// denmaCheckDeleteRole checks that c's user may delete the role with this ID,
-// a user or list role: one with no more than they have, and no list role
-// someone has (their account would be deleted with it: ON DELETE CASCADE).
+// denmaCheckDeleteRole checks that c's user may delete the role with this ID (user or list role).
 func (a *App) denmaCheckDeleteRole(c echo.Context, id int) error {
 	if denmaBound(auth.GetUser(c)) {
 		var err error
@@ -358,9 +313,7 @@ func (a *App) denmaCheckDeleteRole(c echo.Context, id int) error {
 	return nil
 }
 
-// denmaRoleForm fits the user role form to c's user: a role with more than
-// they have is read-only (locked), and otherwise only their own permissions
-// are offered.
+// denmaRoleForm fits the user role form to c's user: read-only if the role has more than they do.
 func denmaRoleForm(c echo.Context, groups []permGroup, role auth.Role, isNew bool) ([]permGroup, bool) {
 	u := auth.GetUser(c)
 	if !denmaBound(u) {
@@ -384,9 +337,7 @@ func denmaRoleForm(c echo.Context, groups []permGroup, role auth.Role, isNew boo
 	return out, false
 }
 
-// denmaListRoleForm fits the list role form to c's user: a list role with
-// lists they can't get or manage is read-only (locked), and otherwise only
-// the lists they can get are offered.
+// denmaListRoleForm fits the list role form to c's user: read-only if it has lists they can't reach.
 func denmaListRoleForm(c echo.Context, lists []models.List, role auth.ListRole, isNew bool) ([]models.List, bool) {
 	u := auth.GetUser(c)
 	if !denmaBound(u) {

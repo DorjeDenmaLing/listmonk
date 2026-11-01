@@ -1,27 +1,6 @@
 package main
 
-// denma: a center's design for its automatic e-mails and public pages: its
-// one design template, "Center design (e-mails and pages)" (type "design",
-// edited with the visual editor; denmaTemplateTypeDesign), with an HTML block
-// holding the content's place, where each e-mail's or page's own content
-// goes:
-//
-//	<div data-content>(Page content will appear here)</div>
-//
-// (any element with data-content; the editor and previews show its text).
-// Its e-mails (opt-in confirmations, data exports, and to its
-// staff: invites, password resets, campaign and import notices) and its
-// public pages (unsubscribe, opt-in, the messages, the subscription form, the
-// archive) keep their wording, framed by it: the e-mail and page templates'
-// "header" and "footer", which every one of them starts and ends with, become
-// the design's top and bottom. A center has no other design: one is enough,
-// and the design shown is always the one being edited.
-//
-// The design is rendered when the center loads (saving the template reloads
-// it), with no subscriber or campaign, so campaign-only links
-// ({{ UnsubscribeURL }}, {{ MessageURL }}, ...) and subscriber or campaign
-// fields are refused when it's saved. A design that stops working is left out
-// (the log says why).
+// denma: a center's design frames its automatic e-mails and public pages around its data-content element.
 
 import (
 	"database/sql"
@@ -43,10 +22,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// denmaTemplateTypeDesign is a design's template type, added to listmonk's
-// (template_type) in every center (cmd/denma_features.go). The center's
-// design is edited with the visual editor, like visual campaign templates, and
-// isn't a campaign template: campaigns and automations don't list it.
+// denmaTemplateTypeDesign is a design's template type, added in every center (cmd/denma_features.go).
 const denmaTemplateTypeDesign = "design"
 
 // denmaDesign is a design, rendered and split at the content's place.
@@ -59,30 +35,26 @@ type denmaDesign struct {
 }
 
 var (
-	// The content's place: an element with data-content, and what's in it.
-	// The visual editor's outer background colour (EmailLayout's backdrop).
+	// The content's place (data-content), and the visual editor's outer background colour.
 	reDenmaBackdrop = regexp.MustCompile(`(?is)<body[^>]*>\s*<div style="background-color:\s*(#[0-9a-f]{3,8}|[a-z]+)`)
 	reDenmaContent  = regexp.MustCompile(`(?is)<(div|p|span|section|td)\b[^>]*\sdata-content(?:[\s=/][^>]*)?>.*?</(?:div|p|span|section|td)\s*>`)
 	// What only a campaign's e-mail has.
 	reDenmaCampaignOnly = regexp.MustCompile(`\{\{-?[^}]*?(\b(UnsubscribeURL|ManageURL|OptinURL|MessageURL)\b|\.(Subscriber|Campaign|Tx)\b)`)
 )
 
-// denmaDesignMarker is the content's place, as the Config page and errors
-// suggest it.
+// denmaDesignMarker is the content's place as the Config page and errors suggest it.
 const denmaDesignMarker = `<div data-content>(Page content will appear here)</div>`
 
 // denmaDesignSlot marks the content's place in the rendered design.
 const denmaDesignSlot = "denma-design-content-3f9c1e"
 
-// denmaDesignCSS styles an e-mail's content in a design: listmonk's e-mail
-// templates use these classes (static/email-templates/base.html).
+// denmaDesignCSS styles an e-mail's content in a design (classes of static/email-templates/base.html).
 const denmaDesignCSS = `body { margin: 0; }
 .denma-design-content img { max-width: 100%; }
 .denma-design-content .button { background: #0055d4; color: #fff !important; display: inline-block; border-radius: 3px; padding: 10px 30px; text-align: center; text-decoration: none; font-weight: bold; }
 .denma-design-content .button:hover { background: #222; color: #fff; }`
 
-// renderDenmaDesign renders a design's HTML (a visual template's body) for
-// a center, or says what's wrong with it.
+// renderDenmaDesign renders a design's HTML for a center, or says what's wrong with it.
 func renderDenmaDesign(body string, generic template.FuncMap, ko *koanf.Koanf) (*denmaDesign, error) {
 	switch n := len(reDenmaContent.FindAllString(body, -1)); {
 	case n == 0:
@@ -127,9 +99,7 @@ func renderDenmaDesign(body string, generic template.FuncMap, ko *koanf.Koanf) (
 	return d, nil
 }
 
-// denmaDesignFuncs are what a design can use: listmonk's generic template
-// functions, and the center's address, archive, name and logo. Links are as
-// they are (no tracking).
+// denmaDesignFuncs are what a design can use: listmonk's generic functions, and the center's own.
 func denmaDesignFuncs(generic template.FuncMap, ko *koanf.Koanf) template.FuncMap {
 	root := strings.TrimSuffix(ko.String("app.root_url"), "/")
 	funcs := template.FuncMap{}
@@ -145,8 +115,7 @@ func denmaDesignFuncs(generic template.FuncMap, ko *koanf.Koanf) template.FuncMa
 	return funcs
 }
 
-// denmaDesignBody returns a center's design template id's body, or an error
-// if it isn't one.
+// denmaDesignBody returns a design template's body, or an error if id isn't one.
 func denmaDesignBody(db sqlx.Queryer, id int) (string, error) {
 	var body string
 	err := sqlx.Get(db, &body, `SELECT body FROM templates WHERE id = $1 AND type = 'design'`, id)
@@ -156,8 +125,7 @@ func denmaDesignBody(db sqlx.Queryer, id int) (string, error) {
 	return body, err
 }
 
-// denmaPreviewDesign renders a design template for its preview: the design,
-// with its content's place showing what it says.
+// denmaPreviewDesign renders a design template for its preview, showing its content's place.
 func (a *App) denmaPreviewDesign(body string) ([]byte, error) {
 	d, err := renderDenmaDesign(body, a.manager.GenericTemplateFuncs(), a.ko)
 	if err != nil {
@@ -166,8 +134,7 @@ func (a *App) denmaPreviewDesign(body string) ([]byte, error) {
 	return []byte(d.head + d.body + d.marker + d.bottom), nil
 }
 
-// loadDenmaDesign renders a center's design (ko's denma.default_design)
-// when it loads, or returns nil: none, or one that doesn't work (logged).
+// loadDenmaDesign renders a center's design (denma.default_design) on load, or returns nil.
 func loadDenmaDesign(db *sqlx.DB, ko *koanf.Koanf, mgr *manager.Manager, lo *log.Logger) *denmaDesign {
 	id := ko.Int("denma.default_design")
 	if id == 0 || ko.String("denma.center") == "" {
@@ -184,8 +151,7 @@ func loadDenmaDesign(db *sqlx.DB, ko *koanf.Koanf, mgr *manager.Manager, lo *log
 	return nil
 }
 
-// applyMail frames the center's e-mails: the e-mail templates' header and
-// footer (static/email-templates/base.html) become the design's.
+// applyMail frames the center's e-mails: the design replaces the e-mail templates' header and footer.
 func (d *denmaDesign) applyMail(tpls *template.Template) error {
 	top := template.HTML(d.head + "<style>" + denmaDesignCSS + "</style>" + d.body + `<div class="denma-design-content">`)
 	bottom := template.HTML(`</div>` + d.bottom)
@@ -197,9 +163,7 @@ func (d *denmaDesign) applyMail(tpls *template.Template) error {
 	return err
 }
 
-// applyPages frames the center's public pages: the public templates' header
-// and footer (static/public/templates/index.html) become the design's, with
-// the pages' title, stylesheets and icon added to its head.
+// applyPages frames the public pages: the design replaces the public templates' header and footer.
 func (d *denmaDesign) applyPages(tpls *template.Template) error {
 	tpls.Funcs(template.FuncMap{
 		"DenmaDesignHead":   func() template.HTML { return template.HTML(d.head) },
@@ -226,9 +190,7 @@ func (d *denmaDesign) applyPages(tpls *template.Template) error {
 	return err
 }
 
-// denmaDesignPageCSS fits the public pages' content (static/public/static/
-// style.css, whose .button they keep) in a design: the page is the design's
-// backdrop colour throughout (added after this).
+// denmaDesignPageCSS fits the public pages' content in a design (static/public/static/style.css).
 const denmaDesignPageCSS = `
 html, body { background: none; }
 .denma-design-content { text-align: left; }
@@ -241,14 +203,7 @@ func (a *App) denmaIsDesign(id int) bool {
 	return id != 0 && a.denmaInCenter() && a.ko.Int("denma.default_design") == id
 }
 
-// Every center has a design of its own, "Center design (e-mails and pages)"
-// (denma.default_design), made when it first loads (cmd/denma_features.go):
-// listmonk's public pages' look, as
-// production's (a white card with a thin border on light grey, the center's
-// logo above a line), as a visual template the center can edit. It can't be
-// deleted or copied: its content's place carries data-default-design, which
-// no other template may have, and it must keep it. Its logo follows the
-// Config page's.
+// Every center has a default design (denma.default_design), made on first load; it can't be copied.
 
 // denmaDefaultDesignName is its name.
 const denmaDefaultDesignName = "Center design (e-mails and pages)"
@@ -258,8 +213,7 @@ const denmaDefaultDesignMarker = `<div data-content data-default-design>(Page co
 
 var reDenmaDefaultDesign = regexp.MustCompile(`(?i)\sdata-default-design[\s=/>]`)
 
-// denmaDefaultDesign returns the default design's HTML and visual editor
-// source for a center with this logo and name, as the editor renders them.
+// denmaDefaultDesign returns the default design's HTML and visual editor source for a logo and name.
 func denmaDefaultDesign(logo, name string) (body, source string) {
 	return denmaDesignLayout(logo, name, denmaDefaultDesignMarker)
 }
@@ -307,8 +261,7 @@ func denmaDesignLayout(logo, name, marker string) (body, source string) {
 	return body, string(b)
 }
 
-// denmaDesignLogo is the logo a center's default design shows: its own, or
-// listmonk's.
+// denmaDesignLogo is the logo a center's default design shows: its own, or listmonk's.
 func denmaDesignLogo(logoURL, rootURL string) string {
 	if logoURL != "" {
 		return logoURL
@@ -316,8 +269,7 @@ func denmaDesignLogo(logoURL, rootURL string) string {
 	return strings.TrimSuffix(rootURL, "/") + "/public/static/logo.svg"
 }
 
-// denmaAddDefaultDesign makes a center's design (in tx, its schema) if it
-// has none.
+// denmaAddDefaultDesign makes a center's design (in tx, its schema) if it has none.
 func denmaAddDefaultDesign(tx *sqlx.Tx) error {
 	var id int
 	if err := tx.Get(&id, `SELECT COALESCE((SELECT t.id FROM settings s JOIN templates t ON t.id = (s.value #>> '{}')::INT
@@ -350,11 +302,7 @@ func (a *App) denmaDefaultDesignID() int {
 	return a.ko.Int("denma.default_design")
 }
 
-// denmaCheckTemplate refuses a template (id, or 0 for a new one) that would
-// copy the default design, a change to the default design that drops what
-// makes it one, and a design that couldn't be used; any other design, and
-// designs outside centers; and campaign templates without the footer
-// (cmd/denma_footer.go).
+// denmaCheckTemplate refuses templates that copy or break the default design, or lack the footer.
 func (a *App) denmaCheckTemplate(id int, o models.Template) error {
 	if err := a.denmaCheckTemplateFooter(o); err != nil { // cmd/denma_footer.go
 		return err
@@ -381,8 +329,7 @@ func (a *App) denmaCheckTemplate(id int, o models.Template) error {
 	return nil
 }
 
-// denmaDesignLogoChanged puts a center's new logo in its default design, in
-// place of the old.
+// denmaDesignLogoChanged puts a center's new logo in its default design.
 func (a *App) denmaDesignLogoChanged(oldLogo, newLogo string) {
 	id := a.denmaDefaultDesignID()
 	root := a.urlCfg.RootURL

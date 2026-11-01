@@ -1,8 +1,4 @@
-{{/*
-	denma: "Campaign performance" and "Bounces and complaints" at the top of the
-	dashboard, included in views/dashboard.html (assets/js/views/denma-dashboard.js).
-	Each section shows only to users with the permissions its figures need.
-*/}}
+{{/* denma: "Campaign performance" and "Bounces and complaints", included in views/dashboard.html. */}}
 {{ define "denma-dashboard" }}
 {{- $d := .Data -}}
 {{- $perf := and ($d.Can "campaigns:get" "campaigns:get_all") ($d.Can "campaigns:get_analytics") ($d.Can "subscribers:get" "subscribers:get_all") -}}

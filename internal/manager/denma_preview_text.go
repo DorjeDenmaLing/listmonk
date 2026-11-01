@@ -8,21 +8,14 @@ import (
 	"github.com/knadh/listmonk/models"
 )
 
-// denma: a campaign's preview text, the sentence inbox apps show after the
-// subject (campaigns.denma_preview_text, set from the campaign form,
-// static/admin/partials/campaign-form.html, and cmd/denma_tags.go). It's
-// added to every HTML message, hidden, straight after <body>, so it works
-// with any template or format without editing them.
+// denma: a campaign's preview text, added hidden after <body> in HTML messages.
 
 var denmaBodyTag = regexp.MustCompile(`(?i)<body\b[^>]*>`)
 
-// denmaPreviewFill follows the text so that inbox apps, which fill the rest
-// of the preview with the email's first words, show blank space instead.
+// denmaPreviewFill follows the text to blank the rest of the inbox preview.
 var denmaPreviewFill = strings.Repeat("&#847;&zwnj;&nbsp;", 90)
 
-// denmaAddPreviewText returns the rendered HTML body with the campaign's
-// preview text in it, hidden; unchanged for plain-text campaigns or without
-// preview text. With no <body> tag, it goes first.
+// denmaAddPreviewText puts the hidden preview text after <body> (first without one).
 func denmaAddPreviewText(c *models.Campaign, body []byte) []byte {
 	text := strings.TrimSpace(c.PreviewText)
 	if text == "" || c.ContentType == models.CampaignContentTypePlain {

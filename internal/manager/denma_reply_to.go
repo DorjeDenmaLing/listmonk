@@ -6,13 +6,9 @@ import (
 	"github.com/knadh/listmonk/models"
 )
 
-// denma: where replies to a campaign's e-mails go (cmd/denma_reply_to.go):
-// the campaign's own reply-to, else a Reply-To it has as a custom header
-// (the sending API's, before campaigns had their own), else the center's
-// default; with none, there's no Reply-To and replies go to the sender.
+// denma: a campaign's reply-to, else its Reply-To header, else the center's default (cmd/denma_reply_to.go).
 
-// DenmaSetReplyTo sets the center's default reply-to address ("" for none).
-// Call it before Run.
+// DenmaSetReplyTo sets the center's default reply-to address ("" for none); call it before Run.
 func (m *Manager) DenmaSetReplyTo(addr string) {
 	m.denmaReplyTo = addr
 }

@@ -1,50 +1,6 @@
 package main
 
-// denma: features from the old production add-on's database triggers
-// (listmonk-js/sql, installed by hand in DDL's database with DDL's lists,
-// template and domains written in), here for every center, each set on its
-// Config page (cmd/denma_center.go):
-//
-//   - Unsubscribe everywhere (denma.unsubscribe_everywhere): unsubscribing
-//     from any list blocklists the subscriber and unsubscribes them from every
-//     list, whatever path did it (the admin, an import, the API; a
-//     subscriber's own unsubscribe always does, cmd/denma_unsubscribe.go).
-//     On unless a superadmin turns it off (cmd/denma_center.go).
-//   - Automatic plain text (denma.plain_text_auto): every campaign's plain-
-//     text version is made from the email as sent (its template included) on
-//     each save, unless the campaign's "Edit the plain-text version by hand"
-//     is ticked (attribs.plain_text_manual, views/campaign.html).
-//   - UTM tags (denma.utm_domains): when a campaign is scheduled or starts,
-//     links to these domains (and their subdomains) get utm_source=newsletter,
-//     utm_medium=email and utm_campaign=<the campaign's name>. Links to the
-//     app's own address, with template tags, or with their own utm_ tags are
-//     left alone.
-//   - Website signups were a setting here (a holding list, double opt-in,
-//     and the list people moved to once they'd confirmed it); they're an
-//     automation now (cmd/denma_automations.go), which version 16 made from
-//     the setting.
-//   - A default visual template (denma.visual_template): new campaigns are
-//     Visual and start from it, and it can't be deleted (as listmonk's default
-//     template), nor can the center's design (denma.default_design,
-//     cmd/denma_design.go). Every center has a default visual template:
-//     listmonk's sample one, unless it chose another (denmaAddVisualDefault).
-//   - Imports are marked (always): subscribers an import adds get
-//     attribs.imported_at, a record; an import starts automations only if
-//     asked (cmd/denma_imports.go).
-//   - Subscriber tags (always, cmd/denma_tags.go): the center's tags
-//     (denma_tags), attribs.tags kept tidy and to those, and a campaign's
-//     tags to send to (campaigns.denma_tags).
-//   - Failed sends (always, cmd/denma_retries.go): who a campaign couldn't
-//     send to, and when it tries them again.
-//
-// The triggers and functions are installed in each center's schema when it
-// loads, if they've changed (denmaFeaturesVersion), and read the settings when
-// they run, so changing one needs no reinstall. Each function keeps the
-// center's schema as its search path, so it works whatever the session's (the
-// shared blocklist changes every center's subscribers from one connection). The first time, the old add-
-// on's triggers on the center's tables (DDL's, in production) are read for
-// their settings and dropped; their functions, owned by the database
-// superuser, are left in public, unused.
+// denma: features installed in each center's schema as database triggers, set on its Config page.
 
 import (
 	"database/sql"
@@ -62,12 +18,10 @@ import (
 	"github.com/lib/pq"
 )
 
-// denmaFeaturesVersion is the version of denmaFeaturesSQL; a center with an
-// older one gets it again when it loads.
+// denmaFeaturesVersion is the version of denmaFeaturesSQL.
 const denmaFeaturesVersion = 64
 
-// denmaFeatureDefaults are the settings' values in a center that doesn't
-// have them yet.
+// denmaFeatureDefaults are the settings' values in a center that doesn't have them yet.
 var denmaFeatureDefaults = map[string]any{
 	"denma.unsubscribe_everywhere": true,
 	"denma.plain_text_auto":        true,
@@ -82,8 +36,7 @@ var denmaFeatureDefaults = map[string]any{
 	"denma.contact_email":          "",
 }
 
-// features installs the features' triggers in a center (db, its schema)
-// if needed, with its settings (and the old add-on's, the first time).
+// features installs the features' triggers in a center, with its settings.
 func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	var ver int
 	if err := db.Get(&ver, `SELECT COALESCE((SELECT value::INT FROM settings WHERE key = 'denma.features_version'), 0)`); err != nil {
@@ -92,13 +45,12 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver == denmaFeaturesVersion {
 		return nil
 	}
-	// An older build, after a newer one: it leaves the newer SQL as it is.
+	// An older build leaves newer SQL as it is.
 	if ver > denmaFeaturesVersion {
 		lo.Printf("denma: center %s: its features are at version %d, newer than this build's %d; left as they are", c.Slug, ver, denmaFeaturesVersion)
 		return nil
 	}
-	// Version 11 added designs' template type (cmd/denma_design.go), outside
-	// the transaction: a new enum value can't be used in the one adding it.
+	// Designs' template type (cmd/denma_design.go), outside the transaction.
 	if ver < 11 {
 		if _, err := db.Exec(`ALTER TYPE template_type ADD VALUE IF NOT EXISTS 'design'`); err != nil {
 			return fmt.Errorf("adding the design template type: %w", err)
@@ -133,8 +85,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 			return err
 		}
 	}
-	// Version 7 turned unsubscribe everywhere on for every center, once; since,
-	// only a superadmin can turn it off.
+	// Unsubscribe everywhere is turned on for every center, once.
 	if ver < 7 {
 		if _, err := tx.Exec(`UPDATE settings SET value = 'true'::JSONB WHERE key = 'denma.unsubscribe_everywhere'`); err != nil {
 			return err
@@ -143,26 +94,26 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if _, err := tx.Exec(denmaFeaturesSQL); err != nil {
 		return fmt.Errorf("installing the triggers: %w", err)
 	}
-	// Version 9 gave every center its own design (cmd/denma_design.go).
+	// Every center gets its own design (cmd/denma_design.go).
 	if ver < 9 {
 		if err := denmaAddDefaultDesign(tx); err != nil {
 			return fmt.Errorf("adding the center's design: %w", err)
 		}
 	}
-	// Version 10 gave every center without one a default visual template.
+	// Every center without one gets a default visual template.
 	if ver < 10 {
 		if err := denmaAddVisualDefault(tx); err != nil {
 			return fmt.Errorf("adding the default visual template: %w", err)
 		}
 	}
-	// Version 11: the center's designs, made as visual templates, are designs.
+	// The center's designs, made as visual templates, become designs.
 	if ver < 11 {
 		if _, err := tx.Exec(`UPDATE templates SET type = 'design' WHERE type = 'campaign_visual' AND id IN (
 			SELECT (value #>> '{}')::INT FROM settings WHERE key IN ('denma.default_design', 'denma.design_template'))`); err != nil {
 			return fmt.Errorf("making the designs designs: %w", err)
 		}
 	}
-	// Version 16: the Website signups setting is an automation.
+	// The Website signups setting becomes an automation.
 	if ver < 16 {
 		moved, err := denmaMigrateSignupSetting(tx)
 		if err != nil {
@@ -172,8 +123,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 			lo.Printf("denma: center %s: its Website signups setting is now an automation", c.Slug)
 		}
 	}
-	// Version 22: those the API added before have no consent
-	// (cmd/denma_noconsent.go).
+	// Those the API added before have no consent (cmd/denma_noconsent.go).
 	if ver < 22 {
 		res, err := tx.Exec(denmaNoConsentMigrateSQL)
 		if err != nil {
@@ -182,8 +132,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		if n, _ := res.RowsAffected(); n > 0 {
 			lo.Printf("denma: center %s: %d subscribers the API added have no consent", c.Slug, n)
 		}
-		// Keys that only subscribed people can do nothing now: sign-up
-		// webhooks do it (cmd/denma_signup.go).
+		// Keys that only subscribed people are cleared: sign-up webhooks do it (cmd/denma_signup.go).
 		var idle []string
 		if err := tx.Select(&idle, `SELECT name FROM denma_api_keys WHERE can = '{}' AND deleted_at IS NULL ORDER BY id`); err != nil {
 			return fmt.Errorf("reading the API keys: %w", err)
@@ -192,14 +141,13 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 			lo.Printf("denma: center %s: API key %q only subscribed people, which keys don't any more; a superadmin can make it a Server webhook", c.Slug, k)
 		}
 	}
-	// Version 23: no API users (cmd/denma_noapiusers.go).
+	// No API users (cmd/denma_noapiusers.go).
 	if ver < 23 {
 		if err := denmaDeleteAPIUsers(tx, "center "+c.Slug); err != nil {
 			return fmt.Errorf("deleting the API users: %w", err)
 		}
 	}
-	// Version 35: first and last names, from the names subscribers had
-	// (cmd/denma_names.go).
+	// First and last names, from the names subscribers had (cmd/denma_names.go).
 	if ver < 35 {
 		res, err := tx.Exec(denmaSplitNamesSQL)
 		if err != nil {
@@ -209,8 +157,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 			lo.Printf("denma: center %s: %d subscribers' names split into first and last names", c.Slug, n)
 		}
 	}
-	// Version 39: the stock templates' footers and the default design show the
-	// center's postal address (cmd/denma_address.go).
+	// The stock templates' footers and the default design show the postal address (cmd/denma_address.go).
 	if ver < 39 {
 		n, err := denmaAddAddressToTemplates(tx)
 		if err != nil {
@@ -220,8 +167,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 			lo.Printf("denma: center %s: %d of its templates show its postal address", c.Slug, n)
 		}
 	}
-	// Version 42: links to its files at the hub's uploads address (DDL's from
-	// before the cutover) point to its own (cmd/denma_images.go).
+	// Links to its files at the hub's uploads address point to its own (cmd/denma_images.go).
 	if hub := d.current(); ver < 42 && hub != nil && hub.ko.String("upload.provider") == "filesystem" {
 		root := strings.TrimSuffix(hub.urlCfg.RootURL, "/")
 		uri := "/" + strings.Trim(hub.ko.String("upload.filesystem.upload_uri"), "/")
@@ -237,7 +183,7 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 			lo.Printf("denma: center %s: %d templates and campaigns link its own uploads instead of the hub's address", c.Slug, n)
 		}
 	}
-	// Version 43: no opt-in campaigns (cmd/denma_optincampaigns.go).
+	// No opt-in campaigns (cmd/denma_optincampaigns.go).
 	if ver < 43 {
 		res, err := tx.Exec(denmaCancelOptinCampaignsSQL)
 		if err != nil {
@@ -247,22 +193,19 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 			lo.Printf("denma: center %s: %d opt-in campaigns cancelled", c.Slug, n)
 		}
 	}
-	// Version 45: pgcrypto's functions in a center not made by the hub (DDL,
-	// moved in), which adding a user needs.
+	// pgcrypto's functions in a center not made by the hub.
 	if ver < 45 {
 		if err := denmaCryptoFuncs(tx); err != nil {
 			return err
 		}
 	}
-	// Version 46: which Server webhook created each tag, from the activity
-	// log, so it can still give them (cmd/denma_signup.go).
+	// Which Server webhook created each tag, from the activity log (cmd/denma_signup.go).
 	if ver < 46 {
 		if _, err := tx.Exec(denmaTagHooksSQL, c.Slug); err != nil {
 			return fmt.Errorf("finding the tags webhooks created: %w", err)
 		}
 	}
-	// Version 48: the stock templates' footers and the default design show
-	// the center's website and contact e-mail (cmd/denma_footer.go).
+	// The stock footers and default design show the website and contact e-mail (cmd/denma_footer.go).
 	if ver < 48 {
 		n, err := denmaAddContactToTemplates(tx)
 		if err != nil {
@@ -272,15 +215,13 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 			lo.Printf("denma: center %s: %d of its templates show its website and contact e-mail", c.Slug, n)
 		}
 	}
-	// Version 49: a center has one design, its own (cmd/denma_design.go);
-	// the setting that chose another, or none, goes.
+	// A center has one design, its own; the setting that chose another goes (cmd/denma_design.go).
 	if ver < 49 {
 		if _, err := tx.Exec(`DELETE FROM settings WHERE key = 'denma.design_template'`); err != nil {
 			return fmt.Errorf("removing the design setting: %w", err)
 		}
 	}
-	// Version 51: an import's joins and tags start automations only if
-	// asked; those imports logged before are left out (cmd/denma_imports.go).
+	// An import's joins and tags start automations only if asked (cmd/denma_imports.go).
 	if ver < 51 {
 		if _, err := tx.Exec(denmaImportEventsSQL); err != nil {
 			return fmt.Errorf("leaving out imports' automation events: %w", err)
@@ -313,8 +254,7 @@ var (
 	reOldQuoted   = regexp.MustCompile(`'([^']+)'`)
 )
 
-// denmaOldAddon reads the settings the old add-on's triggers on this schema's
-// tables had written in, and drops the triggers.
+// denmaOldAddon reads the settings the old add-on's triggers had written in, and drops them.
 func denmaOldAddon(tx *sqlx.Tx) (map[string]any, []string, error) {
 	var trigs []struct {
 		Name  string `db:"tgname"`
@@ -379,9 +319,7 @@ func denmaHasString(list []string, s string) bool {
 	return false
 }
 
-// denmaFeaturesSQL installs (or updates) the features' functions and
-// triggers in the current schema. Trigger names sort in the order they must
-// run: the default visual template, then the plain text, then the UTM tags.
+// denmaFeaturesSQL installs the features' functions and triggers; their names sort in run order.
 const denmaFeaturesSQL = `
 CREATE OR REPLACE FUNCTION denma_setting(k TEXT) RETURNS JSONB
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$ SELECT value FROM settings WHERE key = k $$;
@@ -425,7 +363,7 @@ BEGIN
         t := replace(t, '&#' || m[1] || m[2] || ';',
             chr(CASE WHEN m[1] = '' THEN m[2]::INT ELSE ('x' || lpad(m[2], 8, '0'))::BIT(32)::INT END));
     END LOOP;
-    RETURN replace(t, '&amp;', '&');  -- last, so "&amp;lt;" stays "&lt;"
+    RETURN replace(t, '&amp;', '&');  -- last, keeping "&amp;lt;" as "&lt;"
 END;
 $$;
 
@@ -450,9 +388,7 @@ DECLARE
     acts TEXT[] := '{}';
 BEGIN
     t := regexp_replace(t, '\{\{\s*TrackView\s*\}\}', '', 'g');
-    -- Template actions are set aside, and put back as they were, so that the
-    -- HTML around them reads as HTML (one in an href has quotes of its own)
-    -- and they stay whole.
+    -- Template actions are set aside and put back whole.
     LOOP
         m := regexp_match(t, '\{\{.*?\}\}');
         EXIT WHEN m IS NULL;
@@ -500,8 +436,7 @@ BEGIN
 END;
 $$;
 
--- The email a campaign sends, as plain text: richtext, HTML and markdown in
--- their template.
+-- The email a campaign sends, as plain text: richtext, HTML and markdown in their template.
 CREATE OR REPLACE FUNCTION denma_campaign_text(content_type TEXT, body TEXT, template_id INT) RETURNS TEXT
 LANGUAGE plpgsql STABLE SET search_path FROM CURRENT AS $$
 DECLARE
@@ -577,8 +512,7 @@ BEGIN
 END;
 $$;
 
--- Rewrites every link in body that matches pattern, whose first group is the
--- text before the URL and whose second is the URL.
+-- Rewrites every link in body matching pattern (group 1: text before the URL; group 2: the URL).
 CREATE OR REPLACE FUNCTION denma_utm_rewrite(body TEXT, pattern TEXT, campaign TEXT, domains TEXT[], own TEXT) RETURNS TEXT
 LANGUAGE plpgsql IMMUTABLE SET search_path FROM CURRENT AS $$
 DECLARE
@@ -645,8 +579,7 @@ CREATE TRIGGER denma_campaign_utm
 DROP TRIGGER IF EXISTS denma_confirm_signup ON subscriber_lists;
 DROP FUNCTION IF EXISTS denma_confirm_signup();
 
--- The default visual template: new visual campaigns start from it, and it
--- can't be deleted.
+-- The default visual template: new visual campaigns start from it; it can't be deleted.
 CREATE OR REPLACE FUNCTION denma_campaign_add_template() RETURNS trigger
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
@@ -682,9 +615,7 @@ DROP TRIGGER IF EXISTS denma_protect_visual_template ON templates;
 CREATE TRIGGER denma_protect_visual_template
     BEFORE DELETE ON templates FOR EACH ROW EXECUTE FUNCTION denma_protect_visual_template();
 
--- Imports are marked (attribs.imported_at), a record. The importer is
--- recognised by its queries (listmonk's upsert-subscriber, and
--- upsert-blocklist-subscriber for a blocklist import).
+-- Imports are marked (attribs.imported_at); the importer is recognised by its queries.
 CREATE OR REPLACE FUNCTION denma_is_import() RETURNS BOOLEAN
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     SELECT strpos(current_query(), 'INSERT INTO subscribers as s (uuid, email, name, attribs, status)') > 0
@@ -704,15 +635,14 @@ LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$
 $$;
 ` + denmaImportsSQL + ` -- (before the triggers that use them, cmd/denma_imports.go)
 
--- The attributes the center keeps itself (denmaReservedAttribs but tags,
--- cmd/denma_signup.go).
+-- The attributes the center keeps itself (denmaReservedAttribs but tags, cmd/denma_signup.go).
 CREATE OR REPLACE FUNCTION denma_is_center_attrib(k TEXT) RETURNS BOOLEAN
 LANGUAGE sql IMMUTABLE AS $$
     SELECT k IN ('consent_at', 'consent_source', 'consent_confirmed_at', 'consents', 'resubscribed_at', 'imported_at', 'consent_import')
         OR k LIKE 'auto\_blocklist\_%' OR k LIKE 'denma\_%';
 $$;
 
--- new's attributes, but the center's, which are old's.
+-- new's attributes, with the center's attributes taken from old.
 CREATE OR REPLACE FUNCTION denma_keep_center_attribs(new JSONB, old JSONB) RETURNS JSONB
 LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$
     SELECT COALESCE((SELECT jsonb_object_agg(key, value) FROM jsonb_each(CASE WHEN jsonb_typeof(new) = 'object' THEN new ELSE '{}' END)
@@ -721,11 +651,7 @@ LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$
             WHERE denma_is_center_attrib(key)), '{}'::JSONB);
 $$;
 
--- New subscribers from an import are marked. An import can't give the
--- center's attributes, and its "overwrite" keeps a subscriber's (an earlier
--- mark too); but one keeping the file's consent records gives theirs to
--- those without one, and one of addresses that bounced marks them so
--- (cmd/denma_imports.go).
+-- New subscribers from an import are marked (cmd/denma_imports.go).
 CREATE OR REPLACE FUNCTION denma_mark_imported_subscriber() RETURNS trigger
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
@@ -765,13 +691,7 @@ CREATE TRIGGER denma_mark_imported_subscription
     AFTER INSERT ON subscriber_lists
     FOR EACH ROW EXECUTE FUNCTION denma_mark_imported_subscription();
 
--- Subscriber tags (cmd/denma_tags.go): attribs.tags is a list of tags, kept
--- lowercase, trimmed, without duplicates and in order however it's set (the
--- admin, the API, an import); a string is split at commas and |. An import
--- keeps the tags a subscriber has and adds its own. A subscriber can only
--- have the center's tags (denma_tags, added under Subscribers -> Tags);
--- one given by another of its names is given as the tag (denma_tag_aliases,
--- cmd/denma_tagaliases.go); others, say from an import, are left out.
+-- Subscriber tags (cmd/denma_tags.go): lowercase, trimmed, unique, ordered, and only the center's.
 CREATE OR REPLACE FUNCTION denma_norm_tags(t JSONB) RETURNS JSONB
 LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$
     SELECT COALESCE(jsonb_agg(DISTINCT x ORDER BY x), '[]'::JSONB) FROM (
@@ -789,8 +709,7 @@ CREATE TABLE IF NOT EXISTS denma_tags (
     tag        TEXT PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );` + denmaTagAliasesSQL + `
--- (The tags subscribers had before there was a list of them; never a tag's
--- other name.)
+-- Existing subscribers' tags become the center's tags.
 INSERT INTO denma_tags (tag) SELECT DISTINCT t FROM subscribers,
     jsonb_array_elements_text(denma_norm_tags(attribs->'tags')) t
     WHERE jsonb_typeof(attribs) = 'object' AND attribs ? 'tags'
@@ -811,7 +730,7 @@ BEGIN
     IF NOT NEW.attribs ? 'tags' THEN
         RETURN NEW;
     END IF;
-    -- (Nested lists, from the import above, are flattened one level.)
+    -- Nested lists are flattened one level.
     IF jsonb_typeof(NEW.attribs->'tags') = 'array' THEN
         SELECT COALESCE(jsonb_agg(f), '[]'::JSONB) INTO tags
             FROM jsonb_array_elements(NEW.attribs->'tags') e,
@@ -845,9 +764,7 @@ INSERT INTO denma_tags (tag) SELECT DISTINCT t FROM campaigns, unnest(denma_tags
     WHERE NOT EXISTS (SELECT 1 FROM denma_tag_aliases a WHERE a.alias = t) ON CONFLICT DO NOTHING;
 ` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaSharedAppliedSQL + denmaOptinTokenSQL + denmaNamesSQL + denmaCampaignStatsSQL + denmaMessagesSQL + denmaConsentCapSQL + denmaPrevContactsSQL + denmaImportBlocklistSQL + denmaTrigramSQL
 
-// denmaVisualTemplate is the center's default visual template's ID (0 for
-// none), from the database: Templates -> Set default changes it without
-// reloading the center.
+// denmaVisualTemplate is the center's default visual template's ID (0 for none), from the database.
 func (a *App) denmaVisualTemplate() int {
 	var id int
 	err := a.db.Get(&id, `SELECT COALESCE((SELECT (value #>> '{}')::INT FROM settings WHERE key = 'denma.visual_template'), 0)`)
@@ -864,10 +781,7 @@ func (a *App) denmaTemplateType(id int) string {
 	return typ
 }
 
-// denmaSetVisualDefault makes visual template id (of type typ) the center's
-// default visual template (Templates -> Set default), answering with the
-// templates. Only campaign templates (listmonk's) and visual ones can be a
-// default: listmonk's query, given another, would leave no default at all.
+// denmaSetVisualDefault makes template id the default; only campaign and visual templates can be.
 func (a *App) denmaSetVisualDefault(c echo.Context, id int, typ string) error {
 	switch {
 	case typ == "":
@@ -884,10 +798,7 @@ func (a *App) denmaSetVisualDefault(c echo.Context, id int, typ string) error {
 	return a.GetTemplates(c)
 }
 
-// denmaAddVisualDefault makes listmonk's sample visual template the center's
-// default visual template (in tx, its schema) if it has none: the one
-// listmonk installed, or a new one from the same files. listmonk's own
-// default template stays the one for rich text, HTML and Markdown.
+// denmaAddVisualDefault makes listmonk's sample visual template the center's default if it has none.
 func denmaAddVisualDefault(tx *sqlx.Tx) error {
 	var id int
 	if err := tx.Get(&id, `SELECT COALESCE((SELECT t.id FROM settings s JOIN templates t ON t.id = (s.value #>> '{}')::INT AND t.type = 'campaign_visual'
@@ -916,8 +827,7 @@ func denmaAddVisualDefault(tx *sqlx.Tx) error {
 	return err
 }
 
-// denmaNewCampaignFormat is a new campaign's format: Visual if the center has
-// a default visual template (it then starts from it), else listmonk's.
+// denmaNewCampaignFormat is a new campaign's format: Visual if there's a default visual template.
 func (a *App) denmaNewCampaignFormat(tpls []models.Template) string {
 	if id := a.denmaVisualTemplate(); id != 0 {
 		for _, t := range tpls {
@@ -929,16 +839,14 @@ func (a *App) denmaNewCampaignFormat(tpls []models.Template) string {
 	return models.CampaignContentTypeRichtext
 }
 
-// denmaPlainAuto reports whether the center makes campaigns' plain text
-// automatically (always without centers: false).
+// denmaPlainAuto reports whether the center makes campaigns' plain text automatically.
 func (a *App) denmaPlainAuto() bool {
 	return a.ko.String("denma.center") != "" && a.ko.Bool("denma.plain_text_auto")
 }
 
 var reDenmaDomain = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$`)
 
-// denmaCheckFeatures checks and tidies the Config page's feature settings:
-// domains as bare hostnames, and templates that exist.
+// denmaCheckFeatures checks the Config page's feature settings: bare hostnames, templates that exist.
 func (a *App) denmaCheckFeatures(f *denmaCenterForm) error {
 	domains := []string{}
 	for _, d := range f.UTMDomains {

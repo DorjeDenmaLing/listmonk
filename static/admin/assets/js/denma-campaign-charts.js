@@ -1,10 +1,4 @@
-// denma: Analytics -> Explore's views, clicks and bounces charts, in place
-// of listmonk's (views/analytics.js, one hook; links are a table,
-// partials/denma/analytics.html): bars per day or hour from zero, with every
-// day or hour of the range on the axis, dates as the server buckets them, the
-// admin's theme colours (redrawn when the theme changes), and a legend and
-// the totals donut only for more than one campaign or automation. Automations
-// chosen (denma-explore.js) are drawn as campaigns are.
+// denma: Analytics -> Explore's views, clicks and bounces charts, in place of listmonk's.
 import Chart from 'chart.js/auto';
 
 const SERIES = 8;
@@ -32,8 +26,7 @@ function themeColors() {
   return c;
 }
 
-// The bucket a count is in: hours for a range under 7 days, else days, as
-// the server's query (get-campaign-analytics-counts) does.
+// The bucket a count is in: hours for a range under 7 days, else days (as the server's query does).
 function bucketing(d) {
   const from = document.querySelector('input[name=from]')?.value;
   const to = document.querySelector('input[name=to]')?.value;
@@ -102,8 +95,7 @@ function draw(canvas, cfg) {
 // A row's campaign or automation, as the series' keys.
 const rowKey = (r) => (r.automation_id ? `a${r.automation_id}` : `c${r.campaign_id}`);
 
-// Bars of one figure per bucket, stacked by campaign or automation (camps:
-// { key, label }), and its totals donut.
+// Bars of one figure per bucket, stacked by camp (camps: { key, label }), and its totals donut.
 function renderCounts(key, camps, rows, b, c) {
   const canvas = document.getElementById(`chart-${key}`);
   if (!canvas) return;

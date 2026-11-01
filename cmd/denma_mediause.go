@@ -1,12 +1,6 @@
 package main
 
-// denma: deleting a Media file is checked against what shows it: scheduled,
-// running and paused campaigns (their own content, their template's, or as an
-// attachment), active automations (through their templates), templates, the
-// center's design, and the logo and icon settings. If anything does, the
-// delete is refused with the list until it's confirmed (?confirm=true); the
-// Media page asks first (assets/js/denma-media.js). Found by the file's name
-// in their links, so a file with the same name elsewhere also counts.
+// denma: deleting a Media file is checked against what shows it, and refused until confirmed (?confirm=true).
 
 import (
 	"database/sql"
@@ -25,8 +19,7 @@ import (
 // denmaMediaUsesShown is how many of each kind a list names.
 const denmaMediaUsesShown = 8
 
-// denmaFileLink matches any of a file's names (as written or in a URL) as the
-// end of a link.
+// denmaFileLink matches any of a file's names as the end of a link.
 func denmaFileLink(names []string) *regexp.Regexp {
 	var alts []string
 	for _, n := range names {
@@ -62,8 +55,7 @@ type denmaUseRow struct {
 	Text     string `db:"text"`
 }
 
-// denmaMediaUses lists, in words, what shows Media file id (none if it isn't
-// there).
+// denmaMediaUses lists, in words, what shows Media file id.
 func (a *App) denmaMediaUses(id int) ([]string, error) {
 	var m struct {
 		Filename string `db:"filename"`
@@ -201,9 +193,7 @@ func (a *App) DenmaMediaUses(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{map[string][]string{"uses": uses}})
 }
 
-// denmaMediaGuard is a media file's delete, refused with what shows the file
-// unless confirmed (?confirm=true), and with the automations' remembered
-// checks forgotten after it (cmd/denma_automations.go).
+// denmaMediaGuard is a media file's delete, refused with what shows it unless confirmed.
 func (a *App) denmaMediaGuard(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		if c.QueryParam("confirm") != "true" {

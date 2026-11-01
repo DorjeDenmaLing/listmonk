@@ -1,19 +1,6 @@
 package main
 
-// denma: a center's admins send at most denmaConsentRequestsPerDay e-mails
-// asking for consent a day: "Send opt-in e-mail" (SubscriberSendOptin) and
-// "Send a confirmation to subscribe again" (DenmaResubscribe). Nobody is
-// e-mailed to ask for consent unless they asked; each of these is an admin
-// saying someone did. Past the cap they're refused, and
-// the center's admins and the superadmins are told once a day. Sign-ups'
-// own opt-ins aren't counted (they have the per-address limit,
-// cmd/denma_optins.go). MCP keys can't send either (cmd/denma_mcp.go).
-// Server webhooks' have their own cap, denmaServerConsentPerDay.
-//
-// An admin's add or save of a subscriber (the admin API, MCP keys too)
-// sends no opt-in, even to a double opt-in list without "preconfirm": they
-// stay unconfirmed, as imports leave them, until an admin sends "Send
-// opt-in e-mail" because they asked (denmaNoOptin).
+// denma: the daily cap on e-mails asking for consent that a center's admins send, and the quiet admin save.
 
 import (
 	"fmt"
@@ -27,9 +14,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// denmaQuietOptins is the subscribers (center and ID, or center and
-// address) an admin's save is being made for, whom listmonk's opt-in hook
-// sends nothing; each with how many saves are under way.
+// denmaQuietOptins is the subscribers an admin's save is being made for, with the saves under way.
 var denmaQuietOptins = struct {
 	sync.Mutex
 	m map[string]int
@@ -46,9 +31,7 @@ func denmaQuietKeys(slug string, id int, email string) []string {
 	return keys
 }
 
-// denmaNoOptin keeps listmonk from sending an opt-in to the subscriber
-// (id, or 0 and their address for a new one) during an admin's save, until
-// the function it returns is called.
+// denmaNoOptin silences listmonk's opt-in for a subscriber until the returned function is called.
 func (a *App) denmaNoOptin(id int, email string) func() {
 	keys := denmaQuietKeys(a.ko.String("denma.center"), id, email)
 	q := &denmaQuietOptins
@@ -68,9 +51,7 @@ func (a *App) denmaNoOptin(id int, email string) func() {
 	}
 }
 
-// denmaOptinQuiet wraps listmonk's opt-in hook: nothing is sent to a
-// subscriber an admin's save is being made for (denmaNoOptin). Called by
-// buildApp.
+// denmaOptinQuiet wraps listmonk's opt-in hook to send nothing during an admin's save (buildApp).
 func denmaOptinQuiet(ko *koanf.Koanf, send func(models.Subscriber, []int) (int, error)) func(models.Subscriber, []int) (int, error) {
 	slug := ko.String("denma.center")
 	return func(sub models.Subscriber, listIDs []int) (int, error) {
@@ -93,9 +74,7 @@ const (
 	denmaServerConsentPerDay   = 100 // the center's Server webhooks' (confirmations, re-subscription e-mails)
 )
 
-// denmaConsentCapSQL makes the count's table, in a center (denmaFeaturesSQL,
-// version 44): one row per e-mail, and one per notice ('notice'). Kept two
-// days (apiHousekeeping).
+// denmaConsentCapSQL makes the count's table in a center: a row per e-mail and per notice, kept two days.
 const denmaConsentCapSQL = `
 CREATE TABLE IF NOT EXISTS denma_consent_requests (
     id         BIGSERIAL PRIMARY KEY,
@@ -105,9 +84,7 @@ CREATE TABLE IF NOT EXISTS denma_consent_requests (
 CREATE INDEX IF NOT EXISTS denma_consent_requests_created ON denma_consent_requests (created_at);
 `
 
-// denmaConsentClaim takes one of the day's e-mails asking for consent
-// (kind: optin or resubscribe), returning its row to give back if none is
-// sent (denmaConsentUnclaim), or a 429 past the cap.
+// denmaConsentClaim takes one of the day's consent e-mails, returning its row (denmaConsentUnclaim), or a 429.
 func (a *App) denmaConsentClaim(kind string) (int64, error) {
 	tx, err := a.db.Beginx()
 	if err != nil {
@@ -139,10 +116,7 @@ func (a *App) denmaConsentClaim(kind string) (int64, error) {
 	return id, tx.Commit()
 }
 
-// signupConsentClaim takes one of the day's e-mails asking for consent that
-// the center's Server webhooks send, returning its row to give back if none
-// is sent (denmaConsentUnclaim), or false past the cap, when the admins are
-// told (once a day for the webhook).
+// signupConsentClaim takes one of the day's consent e-mails for the Server webhooks, or false past the cap.
 func (a *App) signupConsentClaim(h denmaSignupHook) (int64, bool, error) {
 	tx, err := a.db.Beginx()
 	if err != nil {
@@ -176,8 +150,7 @@ func (a *App) denmaConsentUnclaim(id int64) {
 	}
 }
 
-// denmaAdminOptin is SubscriberSendOptin's e-mail (fnOptinNotify), within
-// the day's cap.
+// denmaAdminOptin is SubscriberSendOptin's e-mail (fnOptinNotify), within the day's cap.
 func (a *App) denmaAdminOptin(sub models.Subscriber) (int, error) {
 	id, err := a.denmaConsentClaim("optin")
 	if err != nil {
@@ -190,8 +163,7 @@ func (a *App) denmaAdminOptin(sub models.Subscriber) (int, error) {
 	return n, err
 }
 
-// denmaConsentNotify tells the center's admins and the superadmins that the
-// cap was reached; no one is named.
+// denmaConsentNotify tells the admins and superadmins the cap was reached, naming no one.
 func (a *App) denmaConsentNotify() {
 	center := a.ko.String("app.site_name")
 	a.log.Printf("denma: the center's admins reached their %d e-mails asking for consent a day", denmaConsentRequestsPerDay)

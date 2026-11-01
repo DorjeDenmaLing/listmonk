@@ -4,11 +4,7 @@
 {{- $s := $d.System -}}
 {{- $a := $d.About -}}
 
-{{/* denma: System (cmd/denma_system.go). The Resources card is upstream's
-     System card from the dashboard (views/dashboard.html), moved here; the
-     listmonk, Database and Host cards are what listmonk collects for
-     /api/about. In the hub ($h), the centers' use of them: connections and
-     sizes, uploads, and background jobs. */}}
+{{/* denma: System (cmd/denma_system.go). */}}
 {{- $h := $d.Hub -}}
 <section class="denma-system">
 	<header class="page-header">

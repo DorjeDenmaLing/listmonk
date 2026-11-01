@@ -2,8 +2,7 @@ package models
 
 import "github.com/jmoiron/sqlx"
 
-// denmaListsChunk is how many subscribers' lists are loaded at a time. The
-// query's cost grows with the square of the number it's given.
+// denmaListsChunk is how many subscribers' lists are loaded at a time.
 const denmaListsChunk = 1000
 
 func (subs Subscribers) denmaLoadListsChunks(stmt *sqlx.Stmt) error {

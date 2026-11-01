@@ -1,7 +1,5 @@
 import { denmaAgo } from '../denma-ago.js';
-// denma: the MCP pages (cmd/denma_mcp.go): a center's Config -> MCP, its
-// keys for Claude, each a user's, saved as they're changed and shown once
-// when made; and the hub's MCP page, the claude.ai connector's secret.
+// denma: the MCP pages (cmd/denma_mcp.go): a center's Config -> MCP keys, and the hub's MCP page.
 
 import Alpine from 'alpinejs';
 import { api } from '../main.js';
@@ -52,7 +50,7 @@ function denmaMCPKeys() {
       return this.users.find((x) => x.id === this.edit.user_id);
     },
 
-    // Whether the one editing can give a permission, and the key's user has it.
+    // Whether the editor can give a permission and the key's user has it.
     givable(p) {
       if (!this.mine.includes('*') && !this.mine.includes(p)) {
         return false;

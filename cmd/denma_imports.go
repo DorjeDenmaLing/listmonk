@@ -1,34 +1,6 @@
 package main
 
-// denma: an import's own options, on the import page (Subscribers ->
-// Import), and the record of each import (denma_imports, kept for good).
-//
-//   - Run automations (run_automations): an import's joins and tags start
-//     the center's automations only if it's ticked. Otherwise
-//     denma_log_join and denma_log_tags (cmd/denma_automations.go) don't log
-//     them. People imported are like anyone else afterwards: what happens
-//     to them later starts automations, e-mails included.
-//   - Why they're blocklisted (blocklist_reason, blocklist mode): an admin's
-//     choice ("", which an admin can undo), "unsubscribed" (an opt-out, as
-//     their own unsubscribe: only they can subscribe again;
-//     cmd/denma_optouts.go), or "bounced" (marked so in this center only,
-//     as a bounce is; an admin can still enable one on purpose). The file's
-//     unsubscribed_at or bounced_at dates it, or else the import's day.
-//     Someone the center has who consented here after the file's
-//     unsubscribed_at is left as they are (denma_import_blocklist_status).
-//   - Keep the consent dates in the file (keep_consent): a row whose
-//     attributes give consent_at (a date that reads, not after the import)
-//     and consent_source keeps them as the subscriber's consent record, with
-//     consent_import, the import's number. A subscriber the center has gets
-//     it only if they have none, and only with "Update names and attributes" (the
-//     importer writes their attributes only then). Rows without a good one
-//     are still imported, without it. Not in blocklist mode, nor through an
-//     MCP key.
-//
-// Each batch of the import's rows is written with the import's number in
-// denma.import_id (internal/subimporter/denma.go), which the triggers read
-// (denma_import_opt). Without it, an import's rows get the defaults: no
-// automations, no consent records.
+// denma: an import's own options (automations, blocklist reason, consent dates) and the record of each import.
 
 import (
 	"database/sql"
@@ -43,9 +15,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// denmaImportsSQL makes the record of imports, and the functions the
-// triggers read an import's options and consent records with (in
-// denmaFeaturesSQL, before the triggers).
+// denmaImportsSQL makes the record of imports and the functions the triggers read its options with.
 const denmaImportsSQL = `
 CREATE TABLE IF NOT EXISTS denma_imports (
     id          SERIAL PRIMARY KEY,
@@ -60,8 +30,7 @@ ALTER TABLE denma_imports ADD COLUMN IF NOT EXISTS consent BOOLEAN NOT NULL DEFA
     ADD COLUMN IF NOT EXISTS consents INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS blocklist_reason TEXT NOT NULL DEFAULT '';
 
--- An option of the import being written (denma.import_id); false outside
--- one.
+-- An option of the import being written (denma.import_id); false outside one.
 CREATE OR REPLACE FUNCTION denma_import_opt(opt TEXT) RETURNS BOOLEAN
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     SELECT denma_is_import() AND COALESCE((
@@ -69,16 +38,14 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
         FROM denma_imports i WHERE i.id = NULLIF(current_setting('denma.import_id', true), '')::INT), false);
 $$;
 
--- Why the import being written blocklists them: '' (an admin's choice),
--- 'unsubscribed' or 'bounced'.
+-- Why the import being written blocklists them: '', 'unsubscribed' or 'bounced'.
 CREATE OR REPLACE FUNCTION denma_import_reason() RETURNS TEXT
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     SELECT CASE WHEN denma_is_import() THEN COALESCE((SELECT i.blocklist_reason FROM denma_imports i
         WHERE i.id = NULLIF(current_setting('denma.import_id', true), '')::INT), '') ELSE '' END;
 $$;
 
--- A date as an import's file gives it (2019-03-04, 2019-03-04 15:22:10,
--- with or without a zone; without, UTC), or NULL.
+-- A date as an import's file gives it (with or without a zone; without, UTC), or NULL.
 CREATE OR REPLACE FUNCTION denma_import_date(v TEXT) RETURNS TIMESTAMPTZ
 LANGUAGE plpgsql STABLE SET TimeZone = 'UTC' AS $$
 BEGIN
@@ -91,8 +58,7 @@ EXCEPTION WHEN others THEN
 END;
 $$;
 
--- An imported consent date as kept, or NULL if it doesn't read, is after
--- now or before 1990.
+-- An imported consent date as kept, or NULL if it doesn't read, is after now or before 1990.
 CREATE OR REPLACE FUNCTION denma_import_consent_at(v TEXT) RETURNS TEXT
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     SELECT CASE WHEN t IS NULL OR t > NOW() OR t < '1990-01-01'::TIMESTAMPTZ THEN NULL
@@ -100,8 +66,7 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     FROM denma_import_date(v) t;
 $$;
 
--- The consent record an imported row's attributes give, with the import's
--- number, or {} unless both its date and its source are good.
+-- The consent record an imported row's attributes give, or {} unless date and source are good.
 CREATE OR REPLACE FUNCTION denma_import_consent(a JSONB) RETURNS JSONB
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     SELECT CASE WHEN jsonb_typeof(a) = 'object' AND jsonb_typeof(a->'consent_at') = 'string'
@@ -114,9 +79,7 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
         ELSE '{}'::JSONB END;
 $$;
 
--- The attributes recording a bounce, for an import of addresses that
--- bounced, dated by the file's bounced_at (attributes a) if it's good; {}
--- for another import.
+-- The attributes recording a bounce, dated by the file's bounced_at if good; {} for another import.
 CREATE OR REPLACE FUNCTION denma_import_bounced(a JSONB) RETURNS JSONB
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     SELECT CASE WHEN denma_import_reason() = 'bounced' THEN jsonb_build_object(
@@ -137,9 +100,7 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     ) d WHERE jsonb_typeof(a) = 'object';
 $$;
 
--- The file's date for the reason, of the subscriber a blocklist import is
--- updating (denma.import_file, from upsert-blocklist-subscriber,
--- cmd/denma_queries.go), as kept, or NULL.
+-- The file's date for the reason, of the subscriber a blocklist import is updating, or NULL.
 CREATE OR REPLACE FUNCTION denma_import_file_date() RETURNS TEXT
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     SELECT denma_import_consent_at(f->>CASE denma_import_reason()
@@ -149,14 +110,7 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
 $$;
 `
 
-// denmaImportBlocklistSQL records why a blocklist import blocklists them (at
-// the end of denmaFeaturesSQL, after the opt-outs): a subscriber the center
-// had is marked bounced, if it isn't already (one it adds is, by
-// denma_mark_imported_subscriber); and someone who unsubscribed gets their
-// opt-out (cmd/denma_optouts.go), dated by the file's unsubscribed_at if
-// it's good, unless they have one. A subscriber the center had is dated by
-// denma_import_file_date, and left as they are if the file says they
-// unsubscribed and they consented here since.
+// denmaImportBlocklistSQL records why a blocklist import blocklists them (bounced or opt-out).
 const denmaImportBlocklistSQL = `
 CREATE OR REPLACE FUNCTION denma_import_blocklist_status() RETURNS trigger
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
@@ -197,10 +151,7 @@ CREATE TRIGGER denma_import_optout
     FOR EACH ROW WHEN (NEW.status = 'blocklisted') EXECUTE FUNCTION denma_import_optout();
 `
 
-// denmaImportEventsSQL leaves out, once (features version 51), the joins and
-// tags imports logged before they could start automations only if asked:
-// those logged in the second the subscriber was marked imported, by the
-// same statement.
+// denmaImportEventsSQL removes, once, the joins and tags logged by imports before the automations option.
 const denmaImportEventsSQL = `
 DO $$ BEGIN
     IF to_regclass('denma_list_joins') IS NOT NULL THEN
@@ -217,12 +168,10 @@ DO $$ BEGIN
     END IF;
 END $$;`
 
-// denmaImportBounced is a blocklist import's reason for addresses that
-// bounced.
+// denmaImportBounced is a blocklist import's reason for addresses that bounced.
 const denmaImportBounced = "bounced"
 
-// denmaImportStart records an import (opt, as POST /api/import/subscribers
-// takes it) in denma_imports, and gives its session the number.
+// denmaImportStart records an import in denma_imports and gives its session the number.
 func (a *App) denmaImportStart(c echo.Context, opt *subimporter.SessionOpt) error {
 	if opt.Mode != subimporter.ModeSubscribe {
 		if opt.DenmaConsent {
@@ -253,9 +202,7 @@ func (a *App) denmaImportStart(c echo.Context, opt *subimporter.SessionOpt) erro
 	return nil
 }
 
-// denmaImportAutomations are the names of the active automations an import
-// would start: those joining its lists (listIDs, with the subscription
-// status it gives) or getting its tags start.
+// denmaImportAutomations are the names of the active automations an import would start.
 func (a *App) denmaImportAutomations(listIDs []int, status string, tags []string) ([]string, error) {
 	names := []string{}
 	var ok bool
@@ -289,8 +236,7 @@ func denmaImportConsentOf(attribs map[string]any) denmaImportConsentGiven {
 	return c
 }
 
-// denmaImportConsents is what an import keeping the file's consent records
-// does with them: how many people keep theirs, and why the rest don't.
+// denmaImportConsents counts the people keeping their consent records, and why the rest don't.
 type denmaImportConsents struct {
 	Kept    int                  `json:"kept"`
 	LeftOut []denmaImportLeftOut `json:"left_out"`
@@ -313,9 +259,7 @@ const (
 	denmaConsentNotOverwritten = `already in the center: only "Update names and attributes" gives them one`
 )
 
-// denmaImportConsentsPreview fills in the consent records the import would
-// keep (p.Consent), and each sample row's, as denma_import_consent and
-// denma_mark_imported_subscriber (cmd/denma_features.go) would.
+// denmaImportConsentsPreview fills in the consent records the import would keep, per sample row too.
 func (a *App) denmaImportConsentsPreview(p *denmaImportPreview, addrs []string, entries map[string]*denmaImportEntry, overwrite bool) error {
 	dates := []string{}
 	for _, e := range entries {
@@ -415,8 +359,7 @@ func denmaIsImportConsentKey(k string) bool {
 	return k == "consent_at" || k == "consent_source"
 }
 
-// denmaImportDates is how a blocklist import with a reason dates them: by
-// the file's date (Key), or the import's day.
+// denmaImportDates is how a blocklist import with a reason dates them: the file's date, or the import's day.
 type denmaImportDates struct {
 	Key     string `json:"key"`
 	Dated   int    `json:"dated" db:"dated"`
@@ -424,8 +367,7 @@ type denmaImportDates struct {
 	Kept    int    `json:"kept" db:"kept"`       // the center's, who consented here since: left as they are
 }
 
-// denmaImportDateKeys are the attributes dating a blocklist import's
-// reasons.
+// denmaImportDateKeys are the attributes dating a blocklist import's reasons.
 var denmaImportDateKeys = map[string]string{denmaOptOutUnsubscribed: "unsubscribed_at", denmaImportBounced: "bounced_at"}
 
 func denmaImportDatesOf(attribs map[string]any) map[string]string {
@@ -438,8 +380,7 @@ func denmaImportDatesOf(attribs map[string]any) map[string]string {
 	return out
 }
 
-// denmaImportDatesPreview fills in p.BlockDates, as
-// denma_import_blocklist_status and denma_import_optout would date them.
+// denmaImportDatesPreview fills in p.BlockDates.
 func (a *App) denmaImportDatesPreview(p *denmaImportPreview, addrs []string, entries map[string]*denmaImportEntry, reason string) error {
 	key := denmaImportDateKeys[reason]
 	vals := make([]string, len(addrs))

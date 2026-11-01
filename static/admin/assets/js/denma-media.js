@@ -1,11 +1,4 @@
-// denma: Media's folders and preview (partials/denma/media-folders.html,
-// cmd/denma_mediafolders.go), mixed into listmonk's mediaView
-// (views/media.js). A file's thumbnail opens it in a preview, larger, with
-// its details, the files before and after it on the page (← →), and moving
-// it to a folder, opening it in a new tab and deleting it; a click with a
-// modifier key still opens it in a new tab. A file dragged onto a folder is
-// moved there. The page's data:
-// window._denmaMedia { files, folders, folder_of, folder, manage }.
+// denma: Media's folders and preview, mixed into listmonk's mediaView (data in window._denmaMedia).
 import { api } from './main.js';
 import * as u from './utils.js';
 
@@ -18,8 +11,7 @@ const niceSize = (n) => {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 };
 
-// denmaToFolder puts files just uploaded (their IDs; failed ones null) in
-// the folder shown, if one is.
+// denmaToFolder puts files just uploaded (IDs; null if failed) in the folder shown, if any.
 export async function denmaToFolder(ids) {
   const folder = parseInt(data().folder, 10);
   const got = (ids || []).filter((id) => id);
@@ -38,16 +30,14 @@ export function denmaUploadFailed(file, err) {
   return null;
 }
 
-// denmaUploaded is an uploaded file's ID (null if none), noting a PNG saved
-// as a JPEG.
+// denmaUploaded is an uploaded file's ID (null if none), noting a PNG saved as a JPEG.
 export function denmaUploaded(file, m) {
   if (!m) return null;
   if (/\.png$/i.test(file.name) && /\.jpg$/i.test(m.filename || '')) converted.push([file.name, m.filename]);
   return m.id;
 }
 
-// denmaUploadToast is the toast after an upload naming the files that failed
-// and the PNGs saved as JPEGs, or null.
+// denmaUploadToast is the toast after an upload, naming failures and PNGs saved as JPEGs, or null.
 export function denmaUploadToast() {
   const lines = [...failed];
   if (converted.length === 1) {
@@ -96,8 +86,7 @@ export function denmaMedia() {
       const w = m.meta && m.meta.width;
       const h = m.meta && m.meta.height;
       this.shownInfo = { dims: w && h ? `${w} × ${h} px` : '', size: '' };
-      // Its size, from the server (S3 may not say, cross-origin). Uploads
-      // aren't served to HEAD; the image is in the browser's cache anyway.
+      // Its size from the server (S3 may not say, cross-origin).
       fetch(m.url).then((r) => (r.ok ? r.blob() : null)).then((b) => {
         if (b && b.size > 0 && this.shown === m) this.shownInfo.size = niceSize(b.size);
       }).catch(() => {});
@@ -202,8 +191,7 @@ export function denmaMedia() {
       }
     },
 
-    // Asks before a file is deleted, saying what shows it, if anything does
-    // (cmd/denma_mediause.go).
+    // Asks before a file is deleted, saying what shows it (cmd/denma_mediause.go).
     async denmaConfirmDelete(id) {
       let uses;
       try {

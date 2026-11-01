@@ -1,10 +1,7 @@
-/* denma: Dorje Denma Ling admin styles. Uses the admin's theme tokens
-   (assets/css/style.css, Oat) so light and dark themes both work.
-   Linked from views/base.html. */
+/* denma: Dorje Denma Ling admin styles, on the admin's theme tokens (assets/css/style.css, Oat). */
 
 /* ---- Fields that can't be edited don't look editable ---- */
-/* A fixed value, shown as text under its label (a center's address, a
-   person's e-mail address in a center). */
+/* A fixed value, shown as text under its label. */
 .denma-static-label {
   display: block;
   font-size: var(--text-7);
@@ -17,8 +14,7 @@
   line-height: var(--leading-normal);
   overflow-wrap: anywhere;
 }
-/* Read-only inputs, there to be read or copied (an invite link, the OIDC
-   callback, the automatic plain text): no field border or text cursor. */
+/* Read-only inputs, to be read or copied: no field border or text cursor. */
 :where(input, textarea)[readonly] {
   background-color: var(--muted);
   border-color: transparent;
@@ -262,9 +258,7 @@ svg.denma-logo {
     overflow-x: auto;
 }
 
-/* The page and fieldsets shrink to the window rather than to their widest
-   content (grid items and fieldsets don't by default), and long addresses
-   wrap. */
+/* The page and fieldsets shrink to the window; long addresses wrap. */
 #app > main,
 fieldset {
     min-width: 0;
@@ -602,8 +596,7 @@ section.analytics {
         }
     }
 
-    /* Narrower than a wide screen: the campaigns and the dates one under
-       the other, and the dates and View wrapping when they don't fit. */
+    /* Narrower than a wide screen: the campaigns and the dates one under the other. */
     @media (max-width: 1100px) {
         form.card .row > * {
             grid-column: 1 / -1;
@@ -704,8 +697,7 @@ section.analytics {
         }
     }
 
-    /* Automation reports: a series' e-mails under its total, and the one
-       its page linked to. */
+    /* Automation reports: a series' e-mails under its total. */
     tr.denma-step {
         font-size: var(--text-8);
 
@@ -797,8 +789,7 @@ section.analytics {
     }
 }
 
-/* Hub: its dashboard (partials/denma/hub.html) and new center form
-   (views/denma-center-new.html). */
+/* Hub: its dashboard (partials/denma/hub.html) and new center form (views/denma-center-new.html). */
 .denma-hub .denma-center-error {
   max-width: 28ch;
   overflow-wrap: anywhere;
@@ -840,8 +831,7 @@ section.analytics {
   padding-left: var(--space-6);
 }
 
-/* The hub's center picker and center tables, for hundreds of centers
-   (partials/denma/hub-ui.html). */
+/* The hub's center picker and center tables (partials/denma/hub-ui.html). */
 .denma-picker {
   position: relative;
 
@@ -982,8 +972,7 @@ section.analytics {
   }
 }
 
-/* A superadmin in a center: who they are, and the way back to the hub
-   (partials/denma/superadmin-notice.html). */
+/* A superadmin in a center: who they are, and the way back to the hub. */
 .denma-superadmin-notice {
   display: flex;
   align-items: center;
@@ -1012,7 +1001,7 @@ section.analytics {
   display: none;
 }
 
-/* Phones: just "< Superadmin", so the top bar keeps the logo and avatar. */
+/* Phones: just "< Superadmin". */
 @media (max-width: 700px) {
   .denma-superadmin-notice {
     margin-right: var(--space-2);
@@ -1047,8 +1036,7 @@ section.analytics {
   }
 }
 
-/* An image's field with Media: a center's Config page (views/denma-center.html)
-   and the hub's Settings -> General (partials/denma/topnav.html). */
+/* An image's field with Media (views/denma-center.html, partials/denma/topnav.html). */
 .denma-center-image input {
   flex: 1;
   min-width: 0;
@@ -1132,8 +1120,7 @@ section.analytics {
   }
 }
 
-/* Config -> API: the sending API's keys (cmd/denma_api.go), with the
-   webhooks' styles. */
+/* Config -> API: the sending API's keys (cmd/denma_api.go), with the webhooks' styles. */
 .denma-api {
   .denma-api-url {
     font-family: var(--font-mono, monospace);
@@ -1165,10 +1152,7 @@ section.analytics {
   }
 }
 
-/* The automations' schedule (views/denma-automations.html,
-   cmd/denma_auto_schedule.go): a column per day, what ran and what's coming
-   up; the colors are one blue in two steps, checked for color blindness and
-   contrast against the card in both themes. */
+/* The automations' schedule (cmd/denma_auto_schedule.go): a column per day, what ran and what's next. */
 .denma-auto-schedule {
   --denma-ran: light-dark(#0055d4, #5a93ea);
   --denma-up: light-dark(#4d8ef0, #2b5dc6);
@@ -1454,8 +1438,7 @@ section.analytics {
   }
 }
 
-/* Subscribers search filter builder (partials/denma/search.html). It's
-   positioned as listmonk's SQL editor was (.sql-editor). */
+/* Subscribers search filter builder (partials/denma/search.html). */
 .denma-filter.sql-editor:popover-open {
     width: min(94vw, 44rem);
     max-height: 80vh;
@@ -1572,10 +1555,7 @@ section.analytics {
     white-space: nowrap;
 }
 
-/* ---- Top bar and sidebar (partials/denma/topnav.html,
-   partials/denma/sidebar.html): listmonk v6.2.0's layout, a white bar and a
-   white 240px column, in the admin's own type, colours and menus. Overrides
-   listmonk's layout (assets/css/style.css) and Oat's sidebar. ---- */
+/* ---- Top bar and sidebar (partials/denma/topnav.html, sidebar.html) ---- */
 :root {
   --denma-nav-bg: var(--card);
   --denma-nav-text: var(--muted-foreground);
@@ -1730,8 +1710,7 @@ section.analytics {
     }
   }
 
-  /* The user's menu: under the bar, against its right edge, as the admin's
-     other menus (Oat's ot-dropdown). */
+  /* The user's menu: under the bar, against its right edge. */
   .denma-user menu[popover] {
     min-width: 0;
     margin-top: var(--space-1);
@@ -1826,7 +1805,7 @@ section.analytics {
   }
 }
 
-/* The menu button (phones), drawn as 6.2.0's: three lines, an X when open. */
+/* The menu button (phones): three lines, an X when open. */
 .denma-burger {
   position: relative;
   display: none;
@@ -1881,8 +1860,7 @@ section.analytics {
   background: var(--denma-nav-bg);
   box-shadow: none;
 
-  /* At the bottom: the credit and source link (denma-powered-by), without
-     listmonk's page render time (not in 6.2.0). */
+  /* At the bottom: the credit and source link (denma-powered-by). */
   > footer {
     padding: var(--space-3) var(--space-6);
     border-top: 1px solid var(--denma-nav-line);
@@ -2027,7 +2005,7 @@ section.analytics {
   }
 }
 
-/* Narrower: the favicon in place of the logo, as 6.2.0. */
+/* Narrower: the favicon in place of the logo. */
 @media (max-width: 1100px) {
   #app > nav.denma-topnav .denma-brand {
     padding-left: 10px;
@@ -2046,8 +2024,7 @@ section.analytics {
   }
 }
 
-/* Phones: no sidebar. The menu button opens it under the bar, full width,
-   with Refresh and the user's items, as 6.2.0's menu. */
+/* Phones: no sidebar. The menu button opens it under the bar, full width. */
 @media (max-width: 768px) {
   #app[data-sidebar-layout] {
     grid-template-columns: minmax(0, 1fr);
@@ -2165,8 +2142,7 @@ section.analytics {
     margin-top: var(--space-3);
 }
 
-/* Subscriber tags (cmd/denma_tags.go): the Tags page (views/denma-tags.html),
-   and tags shown on the subscriber and campaign pages. */
+/* Subscriber tags (cmd/denma_tags.go): the Tags page and tags on the subscriber and campaign pages. */
 .denma-tag {
   display: inline-block;
   padding: 0 var(--space-2);
@@ -2257,8 +2233,7 @@ section.analytics {
   }
 }
 
-/* The daily sending limit, on the hub's dashboard (partials/denma/hub.html)
-   and Settings -> Performance (cmd/denma_daily.go). */
+/* The daily sending limit, on the hub's dashboard and Settings -> Performance (cmd/denma_daily.go). */
 .denma-daily {
   display: flex;
   flex-wrap: wrap;
@@ -2438,9 +2413,7 @@ section.analytics {
   }
 }
 
-/* A visual template or design (views/template.html): the builder as wide and
-   tall as the campaign editor's, edge to edge in the card (through its
-   padding, --space-6) and as tall as the screen. */
+/* A visual template or design (views/template.html): the builder as large as the campaign editor's. */
 section.templates .editor-body:has(> visual-editor) {
   margin-inline: calc(-1 * var(--space-6));
 
@@ -2516,8 +2489,7 @@ section.templates .editor-body:has(> visual-editor) {
   }
 }
 
-/* Media's folders and preview (partials/denma/media-folders.html): All
-   media and Not in a folder as tabs, the folders as tiles. */
+/* Media's folders and preview (partials/denma/media-folders.html): tabs, then folder tiles. */
 .denma-media-folders {
   display: grid;
   gap: var(--space-4);
@@ -2658,9 +2630,7 @@ section.templates .editor-body:has(> visual-editor) {
   color: var(--muted-foreground);
 }
 
-/* Files: square tiles showing the whole image on a light checkerboard (for
-   transparent and odd-shaped ones), names on up to two lines, no date (it's
-   in the preview). */
+/* Files: square tiles showing the whole image on a light checkerboard, names on up to two lines. */
 .media-files .gallery {
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
 
@@ -2702,8 +2672,7 @@ section.templates .editor-body:has(> visual-editor) {
   }
 }
 
-/* The preview fits the window on a desktop: the image shrinks, nothing
-   scrolls. Head, details and footer take about 260px. */
+/* The preview fits the window on a desktop: the image shrinks, nothing scrolls. */
 dialog.denma-media-preview {
   width: min(960px, calc(100vw - 2 * var(--space-4)));
   max-width: none;
@@ -2863,7 +2832,7 @@ small[data-hint]:empty {
   display: none;
 }
 
-/* Media's upload: files upload as they're chosen, so no second button. */
+/* Media's upload: files upload as they're chosen. */
 .media-files #media-upload form > .hstack {
   display: none;
 }

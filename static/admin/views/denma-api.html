@@ -2,8 +2,7 @@
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
 
-{{/* denma: a center's Config -> API page: the sending API's keys
-	(cmd/denma_api.go), saved as they're changed, and how to use it. */}}
+{{/* denma: a center's Config -> API page (cmd/denma_api.go). */}}
 <script nonce="{{ .CSPNonce }}">
 	window._denmaAPIKeys = {{ ToJSON $d.Keys }};
 	window._denmaAPIDomains = {{ ToJSON $d.Domains }};
@@ -142,8 +141,7 @@
 			{{- end }}
 		</fieldset>
 
-		{{/* The API's reference, made from its OpenAPI description
-			(cmd/denma_api_openapi.json) by denmaAPIDocs. */}}
+		{{/* The API's reference, made from cmd/denma_api_openapi.json by denmaAPIDocs. */}}
 		<details class="card denma-reference" x-data="denmaAPIDocs" data-testid="api-docs">
 			<summary>Reference, for developers</summary>
 			<div class="vstack gap-3 denma-signup-help">

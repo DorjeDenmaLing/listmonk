@@ -1,10 +1,4 @@
-// denma: the campaign editor's plain-text version when the center makes it
-// automatically (cmd/denma_features.go, denma.plain_text_auto; the page sets
-// window._denmaPlainAuto). It's made from the email on every save unless
-// "Edit the plain-text version by hand" is ticked, which sets
-// "plain_text_manual": true in the campaign's attributes (Attributes tab).
-// Mixed into listmonk's campaign view (views/campaign.js), with
-// partials/denma/plain-text.html in place of listmonk's plain-text switch.
+// denma: the campaign editor's automatic plain-text version (denma.plain_text_auto).
 
 const FLAG = 'plain_text_manual';
 

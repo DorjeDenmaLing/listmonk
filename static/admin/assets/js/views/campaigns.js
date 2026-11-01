@@ -50,8 +50,7 @@ function component() {
       u.reload({ message: i18n.ts('campaigns.statusChanged', { name, status }) });
     },
 
-    // denma: Start and Schedule show what's about to be sent, and to how many
-    // (denma-start.js), in place of onChangeStatus's plain confirmation.
+    // denma: Start and Schedule show what's about to be sent, and to how many (denma-start.js).
     async denmaStart(id, status) {
       const c = await api('campaigns', `/campaigns/${id}`);
       if (!(await this.denmaConfirmStart(c, status === 'scheduled'))) {

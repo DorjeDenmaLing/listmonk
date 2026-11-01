@@ -89,8 +89,7 @@ func Check(id string) (any, error) {
 	return token.Data, nil
 }
 
-// Peek retrieves a token by ID without deleting it or counting a check (denma:
-// for tokens whose ID is itself the secret, and whose use is limited elsewhere).
+// denma: Peek retrieves a token by ID without deleting it or counting a check.
 func Peek(id string) (any, error) {
 	mu.Lock()
 	defer mu.Unlock()

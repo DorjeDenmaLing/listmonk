@@ -11,16 +11,9 @@ import (
 	"github.com/lib/pq"
 )
 
-// denma: the Subscribers page's filters for its bulk actions (select all →
-// delete, blocklist, manage lists, tags, move) and export as its list
-// shows them: its status (?status=), which listmonk's by-query endpoints
-// don't take, and subscribers on no list (?subscription_status=none).
-//
-// Bulk delete refuses blocklisted subscribers, as Maintenance does
-// (DenmaGCSubscribers); one at a time is allowed.
+// denma: the Subscribers page's filters for bulk actions and export (status, subscribers on no list).
 
-// denmaBulkSearch is denmaSearch for a bulk action's request, with its
-// subscriber status (subscriber_status) and subscribers on no list.
+// denmaBulkSearch is denmaSearch for a bulk action's request, with its subscriber status and no-list filter.
 func (a *App) denmaBulkSearch(user auth.User, req *subQueryReq) error {
 	if err := a.denmaSearch(user, &req.Search, &req.Query); err != nil {
 		return err
@@ -32,18 +25,15 @@ func (a *App) denmaBulkSearch(user auth.User, req *subQueryReq) error {
 	return denmaWithSubStatus(req.SubscriberStatus, &req.Query)
 }
 
-// denmaStatusSubscribed is the status filter for those who get mail, which
-// is no status of a subscriber's own.
+// denmaStatusSubscribed is the status filter for those who get mail.
 const denmaStatusSubscribed = "subscribed"
 
-// denmaSubscribedSQL is those who get mail: enabled, and on a list as the
-// hub's figures count it (denmaActiveSQL).
+// denmaSubscribedSQL is those who get mail: enabled, and on a list as denmaActiveSQL counts it.
 const denmaSubscribedSQL = `subscribers.status = 'enabled' AND EXISTS (SELECT 1 FROM subscriber_lists sl JOIN lists l ON l.id = sl.list_id
 	WHERE sl.subscriber_id = subscribers.id AND sl.status <> 'unsubscribed' AND NOT (l.optin = 'double' AND sl.status = 'unconfirmed')
 	AND ` + denmaHubListActive + `)`
 
-// denmaStatusFilter moves the status filter for those who get mail into
-// query, for the queries that take a subscriber's own status.
+// denmaStatusFilter moves the status filter for those who get mail into query.
 func denmaStatusFilter(status, query string) (string, string) {
 	if status == denmaStatusSubscribed {
 		return "", denmaAndSQL(query, denmaSubscribedSQL)
@@ -62,8 +52,7 @@ func denmaSubsNav(c echo.Context) string {
 	return "subscribers.all"
 }
 
-// denmaWithSubStatus adds a subscriber status to query, the condition
-// denmaSearch made.
+// denmaWithSubStatus adds a subscriber status to query.
 func denmaWithSubStatus(status string, query *string) error {
 	switch status {
 	case "":
@@ -87,9 +76,7 @@ func denmaAndSQL(query, cond string) string {
 	return cond
 }
 
-// denmaNoBlocklistedDelete refuses a bulk delete, of ids or else of req's
-// subscribers, if it would take blocklisted ones: they include everyone who
-// unsubscribed, and deleting them would forget that they opted out.
+// denmaNoBlocklistedDelete refuses a bulk delete that would take blocklisted subscribers (cmd/denma_optouts.go).
 func (a *App) denmaNoBlocklistedDelete(ids []int, req *subQueryReq, listIDs []int) error {
 	var n int
 	if req == nil {

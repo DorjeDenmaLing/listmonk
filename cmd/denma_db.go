@@ -1,28 +1,6 @@
 package main
 
-// denma: database connections that work through PgBouncer in transaction
-// mode, so that hundreds of centers share a few Postgres connections. Each
-// center keeps its own pool, with its schema as the search path (a startup
-// parameter, which PgBouncer must track: track_extra_parameters =
-// search_path); PgBouncer gives each transaction any free server connection.
-//
-// So every statement must be parsed on the server connection that runs it,
-// with the center's search path, in one round trip:
-//
-//   - Nothing is prepared on the server. listmonk prepares its queries once
-//     per pool; here a prepared statement only keeps its text, and each run
-//     sends it with its arguments. (Server-side prepared statements, shared
-//     through PgBouncer's max_prepared_statements, are parsed with the search
-//     path of whichever center prepared them first: argument types are then
-//     another center's, and its tables are only found again by re-parsing.)
-//   - lib/pq sends a query with arguments in two round trips (parse, then
-//     execute), which PgBouncer may run on different server connections, so
-//     connections use lib/pq's binary_parameters, which sends both at once.
-//     That sends []byte arguments in binary, which Postgres rejects for text
-//     and JSON (listmonk passes JSON as []byte), so they're sent as text, as
-//     lib/pq otherwise does; listmonk has no bytea columns.
-//
-// Multi-center mode only, with or without PgBouncer.
+// denma: database connections through PgBouncer in transaction mode, nothing prepared on the server.
 
 import (
 	"context"
@@ -77,8 +55,7 @@ type denmaPQConn struct {
 	pqConn
 }
 
-// CheckNamedValue converts an argument as database/sql otherwise would, and
-// a []byte (JSON, text) to a string.
+// CheckNamedValue converts an argument as database/sql does, and a []byte to a string.
 func (denmaPQConn) CheckNamedValue(nv *driver.NamedValue) error {
 	v, err := driver.DefaultParameterConverter.ConvertValue(nv.Value)
 	if err != nil {

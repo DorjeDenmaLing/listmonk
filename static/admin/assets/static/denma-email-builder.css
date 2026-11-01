@@ -1,7 +1,4 @@
-/* denma: the visual e-mail builder (listmonk's email-builder, in an iframe),
-   for campaigns, templates and designs: the Text block's Markdown help link
-   and formatting bar, and phones. Loaded into its frame by
-   assets/js/denma-visual-editor.js. */
+/* denma: the visual e-mail builder's Markdown help and bar, and phones (assets/js/denma-visual-editor.js). */
 
 /* The ? by the Text block's Markdown switch. */
 .denma-md-help {
@@ -48,15 +45,9 @@
   outline: 2px solid #1976d2;
 }
 
-/* Phones. The settings panel (Styles / Inspect) is 320px wide and pushes the
-   e-mail aside, which leaves a phone almost nothing: here it opens over the
-   e-mail instead, under the toolbar, and its button (top right) closes it.
-   The toolbar keeps the Edit, Preview, HTML and JSON tabs; the JSON download
-   and upload and the desktop / phone preview switch don't fit, and aren't
-   needed on a phone. */
+/* Phones: the settings panel opens over the e-mail. */
 @media (max-width: 600px) {
-  /* The closed panel waits off to the right, out of sight (iOS Safari
-     ignores overflow on html and body). */
+  /* The closed panel waits off to the right. */
   #visual-editor-container {
     position: relative;
     overflow-x: clip;

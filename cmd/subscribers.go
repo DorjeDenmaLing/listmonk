@@ -1154,7 +1154,7 @@ func maskRestrictedSubLists(user auth.User, sub *models.Subscriber) {
 
 // hasSubPerm checks whether the current user has permission to access the given list
 // of subscriber IDs.
-func (a *App) hasSubPerm(u auth.User, types auth.PermType, subIDs []int) error { // denma: types, as upstream's a7af420f
+func (a *App) hasSubPerm(u auth.User, types auth.PermType, subIDs []int) error { // denma: takes the permission types
 	allPerm, listIDs := u.GetPermittedLists(types)
 
 	// User has blanket get_all|manage_all permission.

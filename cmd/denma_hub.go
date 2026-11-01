@@ -1,17 +1,6 @@
 package main
 
-// denma: the superadmins' hub, Listmonk Shambhala, at / (multi-center mode).
-// Its dashboard (partials/denma/hub.html) shows every center's sending
-// figures, together or one at a time. Its Centers page
-// (views/denma-centers.html) lists the centers; from there superadmins create
-// centers, enable and disable them, and open any center without another
-// login.
-//
-// Superadmins are the hub's users with the Super Admin role. In each center
-// they open, they get a Super Admin account of their own (no password login),
-// recorded in denma.center_superadmins so that it can't be confused with a
-// center user of the same name. Centers have no Super Admins of their own
-// (cmd/denma_hierarchy.go).
+// denma: the superadmins' hub at / (multi-center mode): dashboard, Centers page, opening any center.
 
 import (
 	"database/sql"
@@ -36,8 +25,7 @@ import (
 	null "gopkg.in/volatiletech/null.v6"
 )
 
-// initDenmaHubHandlers registers the hub's pages (on the admin group). The
-// hub's home is its dashboard (views/dashboard.html).
+// initDenmaHubHandlers registers the hub's pages (on the admin group).
 func initDenmaHubHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/centers"), a.ViewDenmaCenters)
 	g.GET(path.Join(uriAdmin, "/centers/new"), a.ViewDenmaNewCenter)
@@ -50,7 +38,7 @@ func initDenmaHubHandlers(g *echo.Group, a *App) {
 
 // initDenmaAPIHandlers registers the hub's API (on the /api group).
 func initDenmaAPIHandlers(g *echo.Group, a *App) {
-	// Compressed: with hundreds of centers, these are hundreds of kilobytes.
+	// Gzipped.
 	g.GET("/api/denma/hub/stats", a.DenmaHubStats, middleware.Gzip())
 	g.GET("/api/denma/hub/analytics", a.DenmaHubAnalytics, middleware.Gzip())
 	g.POST("/api/denma/centers", a.DenmaCreateCenter)
@@ -75,8 +63,7 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	initDenmaMaintenanceHandlers(g, a) // cmd/denma_maintenance.go
 }
 
-// hub returns the centers if this App is the hub and the user is a
-// superadmin, or an HTTP error.
+// hub returns the centers if this App is the hub and the user is a superadmin, or an HTTP error.
 func (a *App) hub(c echo.Context) (*denmaCenters, error) {
 	if denmaHub == nil || a.ko.String("denma.center") != "" {
 		return nil, echo.NewHTTPError(http.StatusNotFound, "not found")
@@ -87,8 +74,7 @@ func (a *App) hub(c echo.Context) (*denmaCenters, error) {
 	return denmaHub, nil
 }
 
-// denmaHubCenter is one center on the hub's dashboard: its state now, and its
-// sending figures for a period and the one before it.
+// denmaHubCenter is one center on the hub's dashboard: its state and sending figures.
 type denmaHubCenter struct {
 	Slug        string    `json:"slug"`
 	Name        string    `json:"name"`
@@ -107,13 +93,7 @@ type denmaHubCenter struct {
 	Prev *denmaPeriod `json:"prev"`
 }
 
-// denmaPeriod is a center's sending in a period, defined as on the centers'
-// dashboards (assets/js/denma-stats.js): campaigns count in the period they
-// started sending; opens and clicks are unique people per campaign, from
-// campaigns sent with individual tracking (denmaTrackedCampSQL), and
-// unlinked is those campaigns' views without a subscriber; unsubscribes
-// leave out bounce removals; bounces count by when they came; a campaign's
-// bounces leave out complaints, which were delivered.
+// denmaPeriod is a center's sending in a period, defined as on its dashboard (denma-stats.js).
 type denmaPeriod struct {
 	Campaigns        int `db:"campaigns" json:"campaigns"`
 	Sends            int `db:"sends" json:"sends"`
@@ -129,8 +109,7 @@ type denmaPeriod struct {
 	NewSubscribers   int `db:"new_subscribers" json:"new_subscribers"`
 }
 
-// S. is replaced with the center's schema; $1 and $2 are the period's start
-// and end.
+// S. is replaced with the center's schema; $1 and $2 are the period's start and end.
 const denmaCenterInfoSQL = `SELECT
 	(SELECT COUNT(*) FROM S.subscribers) - ` + denmaNoConsentCountSQL + ` AS subscribers,
 	(SELECT COUNT(*) FROM S.lists) AS lists,
@@ -161,23 +140,15 @@ SELECT
 	(SELECT COUNT(*) FROM S.bounces WHERE type = 'complaint' AND created_at >= $1 AND created_at < $2) AS complaint,
 	(SELECT COUNT(*) FROM S.subscribers WHERE created_at >= $1 AND created_at < $2) AS new_subscribers`
 
-// denmaTrackedCampSQL is whether campaign c was sent with individual
-// tracking, so its opens and clicks count per person: some of its views are
-// a subscriber's, or none is anonymous. Views are anonymous when sent while
-// individual tracking was off, and once their subscriber is deleted (listmonk
-// keeps them), which doesn't stop the others counting. Not if it started
-// before Maintenance deleted the center's analytics (denmaAnalyticsDeleted):
-// its views and clicks are gone.
+// denmaTrackedCampSQL is whether campaign c was sent with individual tracking.
 const denmaTrackedCampSQL = `((c.started_at IS NULL OR c.started_at >= COALESCE((SELECT since FROM S.denma_stat_starts WHERE stat = '` + denmaAnalyticsDeleted + `'), '-infinity'))
 		AND (EXISTS (SELECT 1 FROM S.campaign_views v WHERE v.campaign_id = c.id AND v.subscriber_id IS NOT NULL)
 		OR NOT EXISTS (SELECT 1 FROM S.campaign_views v WHERE v.campaign_id = c.id AND v.subscriber_id IS NULL)))`
 
-// denmaAnalyticsDeleted is the denma_stat_starts row whose time is the date
-// up to which Maintenance deleted the center's views and clicks.
+// denmaAnalyticsDeleted is the denma_stat_starts row dated up to when Maintenance deleted analytics.
 const denmaAnalyticsDeleted = "analytics_deleted"
 
-// denmaNoConsentCountSQL is how many of a center's subscribers the API added
-// without consent (cmd/denma_noconsent.go), left out of its figures.
+// denmaNoConsentCountSQL counts subscribers the API added without consent (cmd/denma_noconsent.go).
 const denmaNoConsentCountSQL = `(SELECT COUNT(*) FROM S.denma_no_consent n
 	WHERE EXISTS (SELECT 1 FROM S.subscribers s WHERE S.denma_email_hash(s.email) = n.email_hash))`
 
@@ -192,8 +163,7 @@ func denmaInSchema(q, schema string) string {
 	return strings.ReplaceAll(q, "S.", pq.QuoteIdentifier(schema)+".")
 }
 
-// denmaPeriods reads the from, to, prev_from and prev_to RFC 3339 times of a
-// hub API request.
+// denmaPeriods reads the from, to, prev_from and prev_to times of a hub API request.
 func denmaPeriods(c echo.Context) ([4]time.Time, error) {
 	var t [4]time.Time
 	for i, k := range []string{"from", "to", "prev_from", "prev_to"} {
@@ -205,8 +175,7 @@ func denmaPeriods(c echo.Context) ([4]time.Time, error) {
 	return t, nil
 }
 
-// DenmaHubStats returns every center with its figures for a period (from, to)
-// and the previous one (prev_from, prev_to), all RFC 3339 times.
+// DenmaHubStats returns every center with its figures for a period and the one before.
 func (a *App) DenmaHubStats(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -243,7 +212,7 @@ func (a *App) DenmaHubStats(c echo.Context) error {
 		f, err := denmaCached(x.Schema+"|"+key, func() (figures, error) {
 			f := figures{cur: &denmaPeriod{}, prev: &denmaPeriod{}}
 			info := denmaCenterInfoSQL
-			if !denmaHasTable(db, x.Schema, "denma_no_consent") { // not loaded since features version 22
+			if !denmaHasTable(db, x.Schema, "denma_no_consent") { // the center isn't loaded yet
 				info = strings.Replace(info, denmaNoConsentCountSQL, "0", 1)
 			}
 			err := db.Get(&f, denmaInSchema(info, x.Schema))
@@ -269,8 +238,7 @@ func (a *App) DenmaHubStats(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// ViewDenmaCenters renders the hub's Centers page (views/denma-centers.html):
-// every center, with its sending, to open, enable or disable.
+// ViewDenmaCenters renders the hub's Centers page (views/denma-centers.html).
 func (a *App) ViewDenmaCenters(c echo.Context) error {
 	if _, err := a.hub(c); err != nil {
 		return err
@@ -313,8 +281,7 @@ func (a *App) DenmaOpenCenter(c echo.Context) error {
 		return denmaInternal(err)
 	}
 
-	// The center's session cookie (its auth names it for the center), and
-	// the admin at /admin shows it (cmd/denma_place.go).
+	// The center's session cookie, and the admin at /admin shows it (cmd/denma_place.go).
 	if err := ctr.app.auth.SaveSession(auth.User{Base: auth.Base{ID: userID}}, "", c); err != nil {
 		return err
 	}
@@ -322,9 +289,7 @@ func (a *App) DenmaOpenCenter(c echo.Context) error {
 	return c.Redirect(http.StatusFound, uriAdmin)
 }
 
-// superadminIn returns the superadmin's own account in a center, creating it
-// the first time, and making sure it's still an enabled Super Admin without
-// password login (a center admin may have changed it).
+// superadminIn returns the superadmin's own account in a center, creating or repairing it.
 func (d *denmaCenters) superadminIn(ctr *denmaCenter, hu auth.User) (int, error) {
 	alt := fmt.Sprintf("superadmin-%d@hub.invalid", hu.ID)
 	email := hu.Email.String
@@ -334,12 +299,7 @@ func (d *denmaCenters) superadminIn(ctr *denmaCenter, hu auth.User) (int, error)
 	return d.hubAccount(ctr.ID, ctr.app.db, hu.ID, hu.Username, email, alt, hu.Name)
 }
 
-// hubAccount returns an account of the hub's in a center (db), recorded in
-// denma.center_superadmins under hubUserID (a superadmin's, or 0 for the
-// hub's own, cmd/denma_hierarchy.go), creating it if there's none, and making
-// sure it's still an enabled Super Admin without password login. A new one is
-// named username, or username-hub1, -hub2… if that's taken in the center, with
-// email, or alt if that's taken.
+// hubAccount returns the hub's account in a center (db) for hubUserID, creating or repairing it.
 func (d *denmaCenters) hubAccount(centerID int, db *sqlx.DB, hubUserID int, username, email, alt, name string) (int, error) {
 	var id int
 	err := d.base.db.Get(&id, `SELECT center_user_id FROM denma.center_superadmins WHERE center_id = $1 AND hub_user_id = $2`, centerID, hubUserID)
@@ -398,8 +358,7 @@ type denmaNewCenter struct {
 	AdminEmail    string `json:"admin_email"`
 }
 
-// DenmaCreateCenter creates a center and its first admin, who is e-mailed a
-// link to set their password (also returned, to pass on another way).
+// DenmaCreateCenter creates a center and its first admin, who is e-mailed a link to set a password.
 func (a *App) DenmaCreateCenter(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -447,8 +406,7 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "The admin's e-mail address isn't valid.")
 	}
-	// A new person's username must be free (an existing person, by e-mail
-	// address, keeps theirs).
+	// A new person's username must be free (an existing person keeps theirs).
 	if p, err := d.personByEmail(d.db(), adminEmail); err != nil {
 		return denmaInternal(err)
 	} else if p == nil {
@@ -514,11 +472,7 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// denmaHubSender is the hub's sender (app.from_email) from its settings
-// form: the address entered there, as "Superadmin e-mails from"
-// (partials/settings/general.html), with the hub's name. Only superadmins'
-// own e-mails use it (password resets, the hub's notices); every center has
-// its own sender, on its Config page.
+// denmaHubSender is the hub's sender (app.from_email) from its settings form, with the hub's name.
 func (a *App) denmaHubSender(set *models.Settings) error {
 	if denmaHub == nil || a.denmaInCenter() {
 		return nil
@@ -564,8 +518,7 @@ func (a *App) DenmaSetCenterStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
-// denmaTplFuncs adds the hub's template functions (for the sidebar) to an
-// App's template functions; u is that App's URLs.
+// denmaTplFuncs adds the hub's template functions (for the sidebar) to an App's; u is its URLs.
 func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 	// DenmaHubURL is the hub's dashboard, or "" without multi-center.
 	funcs["DenmaHubURL"] = func() string {
@@ -574,13 +527,11 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 		}
 		return path.Join(uriAdmin, "/hub") // back from a center (cmd/denma_place.go)
 	}
-	// DenmaDailySending is the e-mails sent in the last 24 hours against the
-	// daily limit (cmd/denma_daily.go).
+	// DenmaDailySending is the last 24 hours' e-mails against the daily limit (cmd/denma_daily.go).
 	funcs["DenmaDailySending"] = func() denmadaily.Status {
 		return denmaDaily.Status()
 	}
-	// DenmaPublicForms reports whether the public sign-up page, which the
-	// Forms page makes forms for, is on (a hub setting).
+	// DenmaPublicForms reports whether the public sign-up page is on (a hub setting).
 	funcs["DenmaPublicForms"] = func() bool {
 		return denmaHub == nil || denmaHub.current().cfg.EnablePublicSubPage
 	}
@@ -588,22 +539,18 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 	funcs["DenmaIsHub"] = func() bool {
 		return denmaHub != nil && u.RootPath == denmaHub.current().urlCfg.RootPath
 	}
-	// DenmaInCenter reports whether the page is a center's, whose users are
-	// people (cmd/denma_people.go).
+	// DenmaInCenter reports whether the page is a center's (cmd/denma_people.go).
 	funcs["DenmaInCenter"] = func() bool {
 		return denmaHub != nil && u.RootPath != denmaHub.current().urlCfg.RootPath
 	}
-	// DenmaOtherCenters is a person's other centers, for the menu under their
-	// picture (partials/denma/topnav.html); userID is their account here.
+	// DenmaOtherCenters is a person's other centers, for the menu under their picture.
 	funcs["DenmaOtherCenters"] = func(userID int) []denmaOtherCenter {
 		if denmaHub == nil || u.RootPath == denmaHub.current().urlCfg.RootPath {
 			return nil
 		}
 		return denmaOtherCenters(path.Base(u.RootPath), userID)
 	}
-	// DenmaLoginURL and DenmaForgotURL are the sign-in and forgotten password
-	// forms' addresses (public/templates): with centers, everyone's
-	// (cmd/denma_login.go); else listmonk's, under root.
+	// DenmaLoginURL and DenmaForgotURL are the sign-in and forgotten-password addresses.
 	funcs["DenmaLoginURL"] = func(root string) string {
 		if denmaHub == nil {
 			return root + "/admin/login"
@@ -616,13 +563,11 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 		}
 		return denmaForgotPath
 	}
-	// DenmaMessageDays is how long a subscriber's e-mails are recorded for
-	// (cmd/denma_messages.go).
+	// DenmaMessageDays is how long a subscriber's e-mails are recorded (cmd/denma_messages.go).
 	funcs["DenmaMessageDays"] = func() int {
 		return denmaMessageDays
 	}
-	// DenmaNoContact reports whether the page's center lacks its postal
-	// address, website or contact e-mail (cmd/denma_footer.go).
+	// DenmaNoContact reports whether the page's center lacks its postal address, website or contact.
 	funcs["DenmaNoContact"] = func() bool {
 		if denmaHub == nil || u.RootPath == denmaHub.current().urlCfg.RootPath {
 			return false
@@ -640,11 +585,7 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 	funcs["DenmaSourceURL"] = func() string {
 		return denmaSourceURL
 	}
-	// DenmaAdminLogo and DenmaAdminIcon are the top bar's logo and its icon on
-	// narrow screens (partials/denma/topnav.html), from the hub's settings
-	// (Settings -> General), in the hub and every center; "" for listmonk's.
-	// Read from the hub as each page renders, so saving them shows everywhere
-	// without reloading the centers.
+	// DenmaAdminLogo and DenmaAdminIcon are the top bar's logo and narrow-screen icon (hub's settings).
 	funcs["DenmaAdminLogo"] = func() string {
 		if denmaHub == nil {
 			return ""
@@ -659,14 +600,10 @@ func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
 	}
 }
 
-// errDenmaAccountOff is a session whose account was disabled, or whose
-// superadmin no longer is one.
+// errDenmaAccountOff is a session whose account was disabled or is no longer a superadmin.
 var errDenmaAccountOff = echo.NewHTTPError(http.StatusForbidden, "This account is disabled.")
 
-// denmaSessionUser checks a session's user (ko: its app's) on each request:
-// a disabled account is signed out at once, not when its session ends; and a
-// superadmin's account in a center goes with the hub user it's for, who may
-// have been disabled, removed or made something else in the hub since.
+// denmaSessionUser checks a session's user on each request: a disabled account is signed out at once.
 func denmaSessionUser(ko *koanf.Koanf, u auth.User, err error) (auth.User, error) {
 	if err != nil {
 		return u, err

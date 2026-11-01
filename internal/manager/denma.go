@@ -16,13 +16,9 @@ import (
 	"github.com/knadh/smtppool/v2"
 )
 
-// denma: many centers run in one process, each with its own campaign manager,
-// and a center's settings save replaces its manager without restarting the
-// process (upstream restarts the process, so Close() was enough).
+// denma: each center runs its own campaign manager, replaced on a settings save without a process restart.
 
-// SetNotify sets the function that sends campaign status notifications (the
-// center's own notifier rather than the process-wide one New() uses). Call it
-// before Run().
+// SetNotify sets the campaign status notifier (the center's own). Call it before Run().
 func (m *Manager) SetNotify(fn func(subject string, data any) error) {
 	m.fnNotify = fn
 }
@@ -30,9 +26,7 @@ func (m *Manager) SetNotify(fn func(subject string, data any) error) {
 // stoppedScans holds the managers whose campaign scanner should exit.
 var stoppedScans sync.Map
 
-// StopScanning stops the manager picking up campaigns, so that a replacement
-// manager doesn't run alongside it. Messages already queued are still sent
-// until Close().
+// StopScanning stops the manager picking up campaigns; queued messages are still sent until Close().
 func (m *Manager) StopScanning() {
 	stoppedScans.Store(m, struct{}{})
 	m.denmaCloseScan() // and a scan in progress makes no pipe after this (denma_scanhold.go)
@@ -44,32 +38,21 @@ func (m *Manager) scanStopped() bool {
 	return ok
 }
 
-// denmaQueue is a campaign pipe's queued messages, for its resume checkpoint
-// (pipe.lastID, saved as campaigns.last_subscriber_id by the campaign scan
-// and when the pipe ends): the highest subscriber ID up to which every queued
-// message has finished, sent or failed. Upstream PR #3222 keeps fetching from
-// moving the checkpoint, but takes the highest ID sent, while the workers may
-// still be sending lower ones (or skip them, once the campaign is paused); a
-// restart then skipped those. Messages are queued in ID order and finish in
-// any order.
+// denmaQueue is a pipe's queued messages; its checkpoint is the highest ID up to which all finished.
 type denmaQueue struct {
 	mu     sync.Mutex
 	queued []int        // queued and not finished, in order
 	done   map[int]bool // finished before an earlier one
 }
 
-// denmaQueued records a message queued for a subscriber. Call it before the
-// message can reach a worker.
+// denmaQueued records a message queued for a subscriber, before it can reach a worker.
 func (p *pipe) denmaQueued(subID int) {
 	p.denmaQ.mu.Lock()
 	p.denmaQ.queued = append(p.denmaQ.queued, subID)
 	p.denmaQ.mu.Unlock()
 }
 
-// denmaFinished records a subscriber's message as finished (sent or failed)
-// and moves the checkpoint past every message finished in order. A message a
-// worker skips (the campaign was stopped) isn't finished, so the checkpoint
-// stays before it and a resumed campaign sends it.
+// denmaFinished records a message as finished and moves the checkpoint past those finished in order.
 func (p *pipe) denmaFinished(subID int) {
 	q := &p.denmaQ
 	q.mu.Lock()
@@ -87,8 +70,7 @@ func (p *pipe) denmaFinished(subID int) {
 	}
 }
 
-// denmaNextCampaigns is the campaign scan's NextCampaigns, which saves the
-// running campaigns' sent counts and checkpoints.
+// denmaNextCampaigns is the campaign scan's NextCampaigns, saving counts and checkpoints.
 func (m *Manager) denmaNextCampaigns() ([]*models.Campaign, error) {
 	m.denmaCountsMut.Lock()
 	defer m.denmaCountsMut.Unlock()
@@ -96,9 +78,7 @@ func (m *Manager) denmaNextCampaigns() ([]*models.Campaign, error) {
 	return m.store.NextCampaigns(ids, counts, lastIDs)
 }
 
-// denmaSaveCounts saves a pipe's sent count since the last save, and its
-// checkpoint, when it ends, and those it finished past the checkpoint, which
-// the next pipe skips (denmaLoadAhead).
+// denmaSaveCounts saves a pipe's sent count, checkpoint and those finished past it (denmaLoadAhead).
 func (p *pipe) denmaSaveCounts() error {
 	p.m.denmaCountsMut.Lock()
 	defer p.m.denmaCountsMut.Unlock()
@@ -114,8 +94,7 @@ func (p *pipe) denmaSaveCounts() error {
 	return p.m.store.DenmaSaveSentAhead(p.camp.ID, ahead)
 }
 
-// denmaLoadAhead reads those that pipes before finished past the
-// checkpoint, for the pipe to skip.
+// denmaLoadAhead reads those earlier pipes finished past the checkpoint, for this pipe to skip.
 func (p *pipe) denmaLoadAhead() error {
 	ids, err := p.m.store.DenmaSentAhead(p.camp.ID)
 	if err != nil {
@@ -130,11 +109,7 @@ func (p *pipe) denmaLoadAhead() error {
 	return nil
 }
 
-// DenmaStop stops the manager for a shutdown: it picks up no more campaigns,
-// and each running campaign stops where it is and saves its progress (its
-// pipe's cleanup: the sent count and the exact checkpoint), keeping its
-// status, so that the next start resumes it without sending anyone a second
-// copy. It returns once every campaign has saved, or false after wait.
+// DenmaStop stops for a shutdown, each running campaign saving its progress; false if wait runs out.
 func (m *Manager) DenmaStop(wait time.Duration) bool {
 	m.StopScanning()
 	for deadline := time.Now().Add(wait); ; {
@@ -154,42 +129,26 @@ func (m *Manager) DenmaStop(wait time.Duration) bool {
 	}
 }
 
-// DenmaCountWait blocks a campaign message until a daily limit lets it go
-// and counts it, returning true and a function that gives the count back; or
-// returns false if stopped() first: its campaign was paused or stopped, so
-// the message is skipped as a stopped campaign's are, and sent when it
-// resumes.
+// DenmaCountWait waits for the daily limit and counts the message (give-back func); false if stopped().
 type DenmaCountWait func(stopped func() bool) (bool, func())
 
-// DenmaDailyWait, if set, is DenmaCountWait for the hub's daily limit
-// (cmd/denma_daily.go), in its center's turn.
+// DenmaDailyWait, if set, is DenmaCountWait for the hub's daily limit (cmd/denma_daily.go).
 var DenmaDailyWait func(center string, stopped func() bool) (bool, func())
 
-// DenmaPaceWait, if set, blocks a campaign message until its turn at the
-// process's send rate (cmd/denma_sending.go), after the daily waits, and
-// returns false if stopped() first, as DenmaDailyWait: a shutdown then
-// skips the message instead of waiting for its turn.
+// DenmaPaceWait, if set, blocks a campaign message until its turn at the send rate (cmd/denma_sending.go).
 var DenmaPaceWait func(stopped func() bool) bool
 
-// DenmaDailyCounted and DenmaCenterCounted mark a campaign message that
-// DenmaDailyWait and the center's wait counted as they let it go, so that
-// its send doesn't count it again (cmd/denma_sending.go, denma_daily.go);
-// DenmaPaced, one that had its turn (DenmaPaceWait), so that it doesn't
-// wait for another.
+// DenmaDailyCounted, DenmaCenterCounted and DenmaPaced mark messages whose waits already ran.
 const (
 	DenmaDailyCounted  = "X-Denma-Daily-Counted"
 	DenmaCenterCounted = "X-Denma-Center-Counted"
 	DenmaPaced         = "X-Denma-Paced"
 )
 
-// DenmaCampaignTest marks a campaign's test message (no pipe), for the
-// record of sent e-mails (cmd/denma_messages.go).
+// DenmaCampaignTest marks a campaign's test message, for the sent e-mails record (cmd/denma_messages.go).
 const DenmaCampaignTest = "X-Denma-Campaign-Test"
 
-// denmaMarkCounted marks a campaign message's headers with what its waits
-// counted (waited: whether they ran), and clears the marks otherwise; a
-// test (not waited) is marked as one, with centers (whose e-mails leave the
-// marks out, email.DenmaDropSenderHeaders).
+// denmaMarkCounted marks a campaign message's headers with what its waits counted, or clears the marks.
 func (m *Manager) denmaMarkCounted(h textproto.MIMEHeader, waited bool) {
 	if !waited && DenmaDailyWait != nil {
 		h.Set(DenmaCampaignTest, "1")
@@ -206,23 +165,17 @@ func (m *Manager) denmaMarkCounted(h textproto.MIMEHeader, waited bool) {
 	}
 }
 
-// DenmaSetWindowWait sets the wait for the manager's center's sending hours
-// (cmd/denma_sendwindow.go), as DenmaDailyWait, before the daily limit's.
-// Call it before Run.
+// DenmaSetWindowWait sets the wait for the center's sending hours (cmd/denma_sendwindow.go), before Run.
 func (m *Manager) DenmaSetWindowWait(wait func(stopped func() bool) bool) {
 	m.denmaWindowWait = wait
 }
 
-// DenmaSetCenterWait sets the wait for the manager's center's own daily cap
-// (cmd/denma_daily.go), as DenmaDailyWait, and its slug. Call it before Run.
+// DenmaSetCenterWait sets the wait for the center's own daily cap (cmd/denma_daily.go) and its slug.
 func (m *Manager) DenmaSetCenterWait(center string, wait DenmaCountWait) {
 	m.denmaCenter, m.denmaCenterWait = center, wait
 }
 
-// denmaWaits runs a campaign message's waits in order: the center's sending
-// hours, its daily cap, the hub's daily limit, its turn at the send rate. A
-// wait that gives up gives back what the earlier ones counted. Hours that
-// closed during the daily waits give the counts back and wait again.
+// denmaWaits runs a message's waits in order: sending hours, center cap, hub limit, send rate.
 func (m *Manager) denmaWaits(stopped, gone func() bool, kept *[]func()) bool {
 	for {
 		if m.denmaWindowWait != nil && !m.denmaWindowWait(stopped) {
@@ -268,8 +221,7 @@ func (m *Manager) denmaWaits(stopped, gone func() bool, kept *[]func()) bool {
 	}
 }
 
-// denmaGiveBack gives back what a message's waits counted, if its send failed
-// before it could have reached the mail server.
+// denmaGiveBack gives back what a message's waits counted if its send failed before the mail server.
 func (m *CampaignMessage) denmaGiveBack(err error) {
 	if err == nil || DenmaUncertain(err) {
 		return
@@ -279,13 +231,10 @@ func (m *CampaignMessage) denmaGiveBack(err error) {
 	}
 }
 
-// denmaRecheckAfter is how long after its batch was fetched a message is
-// checked again before it goes.
+// denmaRecheckAfter is how long after its batch was fetched a message is checked again.
 const denmaRecheckAfter = time.Minute
 
-// denmaWaitsFor runs a campaign message's waits, and says whether it goes. If
-// it has waited, its subscriber is checked again; one no longer sent the
-// campaign is passed over.
+// denmaWaitsFor runs a message's waits and says whether it goes; after a wait its subscriber is rechecked.
 func (m *Manager) denmaWaitsFor(msg *CampaignMessage) bool {
 	p := msg.pipe
 	passed := false
@@ -308,24 +257,12 @@ func (m *Manager) denmaWaitsFor(msg *CampaignMessage) bool {
 	return ok
 }
 
-// Failed sends (cmd/denma_retries.go). Each is recorded with its reason and
-// whether it's worth trying again: the mail server unreachable or answering
-// "try later" (a 4xx reply) is temporary; a 5xx reply, or a message that
-// couldn't be made from the template, isn't; nor is one that may have been
-// delivered all the same (DenmaUncertain), which is never sent again
-// automatically. A pipe first sends the
-// campaign's failed sends again (all of them when a paused campaign is
-// resumed; the temporary ones on a retry run, which does nothing else), and a
-// campaign that reaches the end of its list with temporary ones left stays
-// running, to be picked up again for them after a wait.
+// Failed sends (cmd/denma_retries.go): each is recorded with its reason and whether to try again.
 
-// denmaFailStreak is how many sends in a row may fail before the campaign is
-// paused (or listmonk's max_send_errors, if lower; none if that's off): a mail
-// server that's down would otherwise fail everyone left.
+// denmaFailStreak is how many sends in a row may fail before the campaign is paused.
 const denmaFailStreak = 20
 
-// DenmaRetryable reports whether a failed send is worth trying again
-// (denmaTemporary), for others that send.
+// DenmaRetryable reports whether a failed send is worth trying again, for others that send.
 func DenmaRetryable(err error) bool { return denmaTemporary(err) }
 
 // denmaTemporary reports whether a failed send is worth trying again.
@@ -337,12 +274,7 @@ func denmaTemporary(err error) bool {
 	return !DenmaUncertain(err)
 }
 
-// DenmaUncertain reports whether a failed send may have been delivered all
-// the same: the connection failed without the mail server's answer, which,
-// after the message is written, may mean it took it. smtppool sends again
-// itself when an earlier step fails (a stale connection), so what's left is
-// mostly that; a failed connect, DNS lookup, TLS handshake or wait for a
-// connection, or an answer, is certain.
+// DenmaUncertain reports whether a failed send may still have been delivered (no answer after writing).
 func DenmaUncertain(err error) bool {
 	var (
 		tp   *textproto.Error
@@ -382,8 +314,7 @@ func (p *pipe) denmaRenderFailed(s models.Subscriber, err error) {
 	p.denmaFailed(s.ID, "The message couldn't be made from the campaign's template: "+err.Error(), false, false)
 }
 
-// denmaFailed records a failed send, and pauses the campaign after
-// denmaStreakLimit in a row.
+// denmaFailed records a failed send, and pauses the campaign after denmaStreakLimit in a row.
 func (p *pipe) denmaFailed(subID int, reason string, temporary, uncertain bool) {
 	if err := p.m.store.DenmaSendFailed(p.camp.ID, subID, reason, temporary, uncertain); err != nil {
 		p.m.log.Printf("denma: error recording a failed send (%s, subscriber %d): %v", p.camp.Name, subID, err)
@@ -403,8 +334,7 @@ func (p *pipe) denmaStreakLimit() int {
 	return min(denmaFailStreak, p.m.cfg.MaxSendErrors)
 }
 
-// denmaPauseReason is why a campaign was paused for errors, for the
-// notification.
+// denmaPauseReason is why a campaign was paused for errors, for the notification.
 func (p *pipe) denmaPauseReason() string {
 	if p.denmaStreakHit.Load() {
 		return fmt.Sprintf("%d sends in a row failed: the mail server may be down or refusing mail. Resuming the campaign tries again those the server refused; "+
@@ -414,8 +344,7 @@ func (p *pipe) denmaPauseReason() string {
 	return "Too many errors"
 }
 
-// denmaNextRetries queues the next batch of the campaign's failed sends to
-// try again, and reports whether there were any.
+// denmaNextRetries queues the next batch of failed sends to retry, and reports whether there were any.
 func (p *pipe) denmaNextRetries() (bool, error) {
 	subs, err := p.m.store.DenmaRetrySubscribers(p.camp.ID, p.denmaRetryCursor, p.m.cfg.BatchSize, !p.denmaRetryOnly)
 	if err != nil {
@@ -444,9 +373,7 @@ func (p *pipe) denmaNextRetries() (bool, error) {
 	return true, nil
 }
 
-// denmaRetryLater keeps a campaign that reached the end of its list running
-// if it has temporary failures left to try again (cmd/denma_retries.go sets
-// when), and reports whether it did.
+// denmaRetryLater keeps a campaign running if temporary failures are left to retry (cmd/denma_retries.go).
 func (p *pipe) denmaRetryLater() bool {
 	later, err := p.m.store.DenmaRetryLater(p.camp.ID)
 	if err != nil {

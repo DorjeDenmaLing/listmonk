@@ -1,5 +1,4 @@
-// denma: the hub's new center form (views/denma-center-new.html,
-// cmd/denma_hub.go).
+// denma: the hub's new center form (cmd/denma_hub.go).
 import Alpine from 'alpinejs';
 import { api } from '../main.js';
 import * as u from '../utils.js';

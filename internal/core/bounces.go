@@ -96,7 +96,7 @@ func (c *Core) BlocklistBouncedSubscribers(ids []int, campID int, source, typ st
 	return nil
 }
 
-// DeleteBounce deletes a bounce record.
+// DeleteBounce deletes a list.
 func (c *Core) DeleteBounce(id int) error {
 	return c.DeleteBounces([]int{id}, false, 0, "", "")
 }

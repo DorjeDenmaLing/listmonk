@@ -1,6 +1,4 @@
-{{- /* denma: the tags a template can use, under the template editor, with
-   those every campaign and automation e-mail must have marked
-   (cmd/denma_footer.go; assets/js/denma-template-tags.js). */ -}}
+{{- /* denma: the tags a template can use, under the template editor (cmd/denma_footer.go). */ -}}
 {{ define "denma-template-tags" -}}
 <script nonce="{{ .CSPNonce }}">window._denmaContact = {{ ToJSON DenmaContact }};</script>
 <details class="denma-template-tags" data-testid="template-tags">

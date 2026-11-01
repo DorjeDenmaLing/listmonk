@@ -1,6 +1,4 @@
-// denma: Subscribers -> Tags (views/denma-tags.html, cmd/denma_tags.go):
-// adding, renaming and deleting a center's subscriber tags, and their other
-// names (cmd/denma_tagaliases.go).
+// denma: Subscribers -> Tags (cmd/denma_tags.go), and tag names (cmd/denma_tagaliases.go).
 import Alpine from 'alpinejs';
 import { api } from '../main.js';
 import * as u from '../utils.js';

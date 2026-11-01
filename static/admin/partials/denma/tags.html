@@ -1,8 +1,6 @@
-{{- /* denma: subscriber tags in the admin (cmd/denma_tags.go,
-   assets/js/denma-tags-ui.js). */ -}}
+{{- /* denma: subscriber tags in the admin (cmd/denma_tags.go, assets/js/denma-tags-ui.js). */ -}}
 
-{{/* A tag picker: dict "Model" the x-model, "ID" its suggestions' ID,
-   "Label", "Hint", "Disabled" (an Alpine expression, optional). */}}
+{{/* A tag picker: dict "Model", "ID", "Label", "Hint", "Disabled" (optional). */}}
 {{ define "denma-tag-picker" -}}
 <label data-field>
 	{{ .Label }}

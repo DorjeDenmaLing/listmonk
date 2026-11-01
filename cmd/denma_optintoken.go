@@ -1,12 +1,6 @@
 package main
 
-// denma: an opt-in e-mail's link carries a token of its own (?t=), kept
-// hashed for denmaResubTTL. The subscriber's UUID, which admins see, isn't
-// enough to confirm for them where an admin can't: re-subscribing someone
-// who unsubscribed (cmd/denma_resubscribe.go), or lifting the fence on
-// someone the API added (cmd/denma_noconsent.go). Every opt-in e-mail passes
-// denmaCheckOptin, which makes the token; the e-mail's URL takes it
-// (denmaOptinTokenURL).
+// denma: an opt-in e-mail's link carries a token of its own (?t=), kept hashed for denmaResubTTL.
 
 import (
 	"strings"
@@ -27,8 +21,7 @@ CREATE TABLE IF NOT EXISTS denma_optin_tokens (
 CREATE INDEX IF NOT EXISTS denma_optin_tokens_subscriber ON denma_optin_tokens (subscriber_id);
 `
 
-// denmaOptinSending holds the token of the opt-in e-mail being made, by
-// subscriber UUID.
+// denmaOptinSending holds the token of the opt-in e-mail being made, by subscriber UUID.
 var denmaOptinSending sync.Map
 
 // denmaWithOptinToken makes a token for the opt-in e-mail send makes.
@@ -60,15 +53,11 @@ func denmaOptinTokenURL(u, subUUID string) string {
 	return u + "t=" + tok.(string)
 }
 
-// denmaOptinTokenOK reports whether a token is one of a subscriber's opt-in
-// e-mails', and hasn't expired.
-// denmaOwnConfirmKey marks an opt-in page confirmation's meta as the
-// person's own (denmaOwnConfirm); the confirm-subscription-optin override
-// (cmd/denma_queries.go) reads it and doesn't keep it.
+// denmaOptinTokenOK reports whether a token is one of a subscriber's opt-in e-mails', and unexpired.
+// denmaOwnConfirmKey marks an opt-in page confirmation's meta as the person's own.
 const denmaOwnConfirmKey = "denma_own_confirm"
 
-// denmaOwnConfirm marks meta for the opt-in page's confirmation of the
-// subscriber (subUUID) as their own if it comes with their e-mail's token.
+// denmaOwnConfirm marks meta for the subscriber's confirmation as their own, if it has their token.
 func (a *App) denmaOwnConfirm(meta models.JSON, subUUID, token string) {
 	var subID int
 	if err := a.db.Get(&subID, `SELECT id FROM subscribers WHERE uuid = $1`, subUUID); err == nil && denmaOptinTokenOK(a.db, subID, token) {

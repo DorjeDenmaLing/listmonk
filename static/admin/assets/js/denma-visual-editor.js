@@ -1,11 +1,6 @@
-// denma: the visual e-mail builder (listmonk's email-builder, in an iframe):
-// on phones (assets/static/denma-email-builder.css), and for the Text block's
-// Markdown: on in new blocks, a help link, and a formatting bar with its
-// shortcuts. Called by visual-editor.js as its frame loads. The builder's bundle is unchanged:
-// these find its panel by its labels ("Content", "Markdown").
+// denma: the visual e-mail builder's phone layout and Markdown tools (called by visual-editor.js).
 
-// The width up to which the builder's settings panel opens over the e-mail
-// (the stylesheet's media query).
+// The width up to which the settings panel opens over the e-mail (stylesheet media query).
 const PHONE = 600;
 
 // GitHub's guide to Markdown, for the Text block's Markdown switch.
@@ -25,8 +20,7 @@ const BUTTONS = [
   { f: 'numbers', label: 'Numbered list', icon: svg('<line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>') },
 ];
 
-// replace puts text in place of the textarea's start-end, as typing does (so
-// React sees it, and undo works), then selects selStart-selEnd.
+// replace puts text over the textarea's start-end as typing does, then selects selStart-selEnd.
 function replace(ta, start, end, text, selStart, selEnd) {
   const doc = ta.ownerDocument;
   ta.focus();
@@ -46,13 +40,10 @@ function stars(v, i, dir) {
   return n;
 }
 
-// has tells whether runs of l and r *s on either side hold bold (n 2) or
-// italic (n 1): two or more is bold, an odd number italic (*** is both).
+// has tells whether runs of l and r *s on either side hold bold (n 2) or italic (n 1).
 const has = (l, r, n) => (n === 2 ? Math.min(l, r) >= 2 : Math.min(l, r) % 2 === 1);
 
-// emphasis makes the selection bold (n 2) or italic (n 1) with *s, or takes
-// that away if it has it, inside or just outside the selection. Its spaces
-// stay outside; with nothing selected, the cursor is left between the marks.
+// emphasis makes the selection bold (n 2) or italic (n 1) with *s, or takes that away if it has it.
 function emphasis(ta, n) {
   const v = ta.value;
   let s = ta.selectionStart;
@@ -73,8 +64,7 @@ function emphasis(ta, n) {
   }
 }
 
-// list makes the selected lines a list, or plain lines again if they're all
-// already that list.
+// list makes the selected lines a list, or plain lines again if they're all already that list.
 function list(ta, numbered) {
   const v = ta.value;
   const s = v.lastIndexOf('\n', ta.selectionStart - 1) + 1;
@@ -121,8 +111,7 @@ const FORMATS = {
   numbers: (ta) => list(ta, true),
 };
 
-// markdownLabels are the Markdown switch's labels in the settings panel (one,
-// while a Text block is selected).
+// markdownLabels are the Markdown switch's labels in the settings panel.
 function markdownLabels(doc) {
   return [...doc.querySelectorAll('.MuiFormControlLabel-root')]
     .filter((l) => l.querySelector('.MuiFormControlLabel-label')?.textContent.trim() === 'Markdown');
@@ -162,9 +151,7 @@ function makeBar(doc) {
   return bar;
 }
 
-// markdownTools gives the Markdown switch its help link, and the Content box
-// above it its bar while Markdown is on. React reuses the panel's elements for
-// other blocks, so a bar that's no longer above such a box goes.
+// markdownTools gives the Markdown switch its help link and the Content box above it its bar.
 function markdownTools(doc) {
   doc.querySelectorAll('.denma-md-bar').forEach((bar) => {
     const label = bar.nextElementSibling?.nextElementSibling;
@@ -213,9 +200,7 @@ function shortcut(ev) {
 // The text the builder's Add block menu gives a new Text block.
 const NEW_TEXT = 'My new text block';
 
-// markdownOn turns Markdown on in Text blocks just added (with the menu's
-// text, and no Markdown setting yet; source is the builder's document). Those
-// saved, copied or switched off keep theirs.
+// markdownOn turns Markdown on in Text blocks just added (source is the builder's document).
 function markdownOn(win, source) {
   const add = {};
   Object.entries(source || {}).forEach(([id, b]) => {
@@ -228,9 +213,7 @@ function markdownOn(win, source) {
   }
 }
 
-// denmaEditorFrame gives the builder's frame our stylesheet and the Markdown
-// tools and, on a phone, starts it with the settings panel closed (it opens
-// when a block is tapped).
+// denmaEditorFrame gives the builder's frame our stylesheet and Markdown tools.
 export function denmaEditorFrame(iframe, base) {
   const doc = iframe.contentDocument;
   const v = new URL(document.querySelector('script[src*="/js/visual-editor.js"]')?.src || location.href).searchParams.get('v');
@@ -239,8 +222,7 @@ export function denmaEditorFrame(iframe, base) {
   css.href = new URL(`${base}/../denma-email-builder.css${v ? `?v=${v}` : ''}`, location.href).href;
   doc.head.appendChild(css);
 
-  // The settings panel is made again for each block selected, and the switch
-  // changes only its classes.
+  // The settings panel is made again for each block selected.
   new MutationObserver(() => markdownTools(doc)).observe(doc.body, {
     childList: true, subtree: true, attributes: true, attributeFilter: ['class'],
   });

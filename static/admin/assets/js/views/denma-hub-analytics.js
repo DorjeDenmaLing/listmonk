@@ -1,11 +1,4 @@
-// denma: the hub's Analytics page (views/denma-hub-analytics.html): audience
-// growth and mailbox providers for every center, together or one at a time,
-// and each center's, for the dashboard's date range compared with the
-// previous period of the same length. The figures come from
-// /api/denma/hub/analytics (cmd/denma_hub_analytics.go): each center's totals,
-// and the full figures of the one chosen or of all of them, added up there.
-// Definitions are the centers' Analytics' (views/denma-analytics.js), over the
-// period rather than per campaign.
+// denma: the hub's Analytics page: audience growth and mailbox providers, per center or together.
 import Alpine from 'alpinejs';
 import * as s from '../denma-stats.js';
 import { centerPicker, centerTable, centerState } from '../denma-hub-ui.js';
@@ -14,9 +7,7 @@ const CENTER_KEY = 'denma-hub-center';
 const PROVIDER_KEYS = s.PROVIDERS.map((x) => x[0]).concat('other');
 const sumOf = (m) => Object.values(m || {}).reduce((n, v) => n + v, 0);
 
-// The figures shown, from the API's total: growth (as in denma-stats.js
-// growthCells), days ({ 'YYYY-MM-DD': { new, unsub, removed } }) and provider
-// rows ({ key: { subscribers, unsub, received, opens, clicks } }, with 'all').
+// The figures shown: growth, days ({ 'YYYY-MM-DD': { new, unsub, removed } }) and provider rows (with 'all').
 function figures(t) {
   const cur = t.cur || {};
   const prev = t.prev || {};

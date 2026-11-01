@@ -1,12 +1,6 @@
 package main
 
-// denma: System (sidebar, under Settings): the server, database and host, as
-// listmonk collects them, and in the hub, how the centers use them: Postgres
-// connections and the centers' database sizes, the uploads folder and its
-// disk, and the background jobs (each center's e-mail domain check and
-// automations, the bounces the hub takes for all of them, and the shared
-// blocklist). The build links to its commit in the fork's source, which the
-// AGPL v3 requires offering.
+// denma: System (under Settings): the server, database and host, and in the hub, how the centers use them.
 
 import (
 	"fmt"
@@ -24,13 +18,10 @@ import (
 	"github.com/lib/pq"
 )
 
-// denmaSourceURL is the fork's source, which the running version's users are
-// offered (the sidebar's "Powered by listmonk", partials/denma/sidebar.html).
+// denmaSourceURL is the fork's source, offered to the running version's users.
 const denmaSourceURL = "https://github.com/DorjeDenmaLing/listmonk"
 
-// denmaBuildCommit finds the commit in a build string: "v7.0.0 (#3d562dce
-// 2026-10-04...)" from the Makefile, or "v7.0.0 (dev 3d562dce ...)" from the
-// dev setup (docker/start.sh).
+// denmaBuildCommit finds the commit in a build string.
 var denmaBuildCommit = regexp.MustCompile(`(?:#|dev )([0-9a-f]{7,40})\b`)
 
 type denmaSystemView struct {
@@ -93,10 +84,7 @@ type denmaSystemJob struct {
 	Of      int    // running centers
 }
 
-// ViewDenmaSystem renders System: the server stats that upstream shows on the
-// dashboard (getSystemStats in dashboard.go), what listmonk collects for
-// /api/about (version, build, database and host), and in the hub, the
-// centers' use of them. In multi-center mode it's the hub's page only.
+// ViewDenmaSystem renders System: the server stats, what /api/about collects, and the centers' use of them.
 func (a *App) ViewDenmaSystem(c echo.Context) error {
 	if denmaHub != nil && a.urlCfg.RootPath != denmaHub.current().urlCfg.RootPath {
 		return echo.NewHTTPError(http.StatusNotFound)
@@ -112,7 +100,7 @@ func (a *App) ViewDenmaSystem(c echo.Context) error {
 		out.CommitURL = denmaSourceURL + "/commit/" + m[1]
 	}
 
-	// The database's version and size, now (a.about has them from startup).
+	// The database's version and size, now.
 	var info types.JSONText
 	if err := a.db.QueryRow(a.queries.GetDBInfo).Scan(&info); err != nil {
 		a.log.Printf("error getting database info: %v", err)
@@ -126,8 +114,7 @@ func (a *App) ViewDenmaSystem(c echo.Context) error {
 	return c.Render(http.StatusOK, "admin-denma-system", out)
 }
 
-// systemInfo gathers the hub's part of the page. A figure that can't be had
-// is left out (and logged), so the rest still shows.
+// systemInfo gathers the hub's part of the page; a figure that can't be had is left out and logged.
 func (d *denmaCenters) systemInfo() *denmaSystemHub {
 	var (
 		h    = &denmaSystemHub{Startup: denmaStartup.get()}
@@ -135,8 +122,7 @@ func (d *denmaCenters) systemInfo() *denmaSystemHub {
 		db   = base.db
 	)
 
-	// Postgres connections, from every client (PgBouncer's to the server
-	// included), and the app's pools to PgBouncer.
+	// Postgres connections from every client, and the app's pools to PgBouncer.
 	if err := db.QueryRow(`SELECT COUNT(*) FILTER (WHERE backend_type = 'client backend'),
 		current_setting('max_connections')::INT FROM pg_stat_activity`).Scan(&h.ConnsUsed, &h.ConnsMax); err != nil {
 		lo.Printf("denma: error counting database connections: %v", err)
@@ -169,8 +155,7 @@ func (d *denmaCenters) systemInfo() *denmaSystemHub {
 		Schema string `db:"schema"`
 		Bytes  int64  `db:"bytes"`
 	}
-	// Postgres sizes every table's files (with 300 centers, most of a second),
-	// and the sizes change slowly, so they're kept longer than the other figures.
+	// Table sizes change slowly, so they're kept longer than the other figures.
 	sizes, err := denmaCachedFor("system|sizes", 15*time.Minute, func() ([]size, error) {
 		var out []size
 		schemas := make([]string, 0, len(reg))
@@ -198,8 +183,7 @@ func (d *denmaCenters) systemInfo() *denmaSystemHub {
 	h.Uploads = denmaUploadsInfo(base, names, reg)
 	h.Jobs = denmaJobsInfo(loaded)
 
-	// Bounces: those the hub received since it started, and the latest any
-	// center has recorded (which survives a restart).
+	// Bounces: those the hub received since it started, and the latest any center has recorded.
 	h.BouncesSince, h.BounceLastAgo = denmaBounces.get()
 	type latest struct {
 		At   *time.Time `db:"at"`
@@ -248,9 +232,7 @@ func denmaApps(cs []*denmaCenter) []*App {
 	return out
 }
 
-// denmaUploadsInfo is the uploads folder: on the filesystem, its size, the
-// centers using the most (each has its own folder, <uploads>/<slug>), and its
-// disk; on S3, only the bucket (sizing it would mean listing every object).
+// denmaUploadsInfo is the uploads folder's size, its biggest centers and its disk (S3: the bucket only).
 func denmaUploadsInfo(base *App, names map[string]string, reg []denmaCenterRef) denmaSystemUploads {
 	u := denmaSystemUploads{Provider: base.ko.String("upload.provider")}
 	if u.Provider == "s3" {
@@ -272,8 +254,7 @@ func denmaUploadsInfo(base *App, names map[string]string, reg []denmaCenterRef) 
 		total int64
 		by    map[string]int64 // first folder (a center's slug) -> bytes
 	}
-	// Every file is looked at (with 300 centers, tens of thousands), and the
-	// sizes change slowly, so they're kept longer than the other figures.
+	// File sizes change slowly, so they're kept longer than the other figures.
 	us, err := denmaCachedFor("system|uploads", 15*time.Minute, func() (usage, error) {
 		out := usage{by: map[string]int64{}}
 		err := filepath.WalkDir(root, func(p string, e os.DirEntry, err error) error {
@@ -341,8 +322,7 @@ func denmaJobRan(job, center string) {
 	denmaJobRuns.m[job][center] = time.Now()
 }
 
-// denmaJobsInfo is each job's latest run, and how many of the running centers
-// ran it in the last 3 minutes (they run every minute, each at its own second).
+// denmaJobsInfo is each job's latest run, and how many running centers ran it in the last 3 minutes.
 func denmaJobsInfo(loaded []*denmaCenter) []denmaSystemJob {
 	denmaJobRuns.Lock()
 	defer denmaJobRuns.Unlock()
@@ -387,8 +367,7 @@ func (b *denmaBounceCount) get() (int, string) {
 	return b.n, denmaAgo(b.last)
 }
 
-// denmaStartupInfo is how the centers loaded when the process started
-// (loadAll, cmd/denma_centers.go).
+// denmaStartupInfo is how the centers loaded when the process started.
 type denmaStartupInfo struct {
 	Ago           string
 	Loaded, Total int

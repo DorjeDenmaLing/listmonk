@@ -1,9 +1,6 @@
 package models
 
-// denma: every http(s) link in a campaign is tracked. CompileTemplate turns
-// the links of its template, body and plain-text version into
-// {{ TrackLink "..." . }}. Links made by template tags (unsubscribe, view in
-// browser) and links with template tags in them are left as they are.
+// denma: every http(s) link in a campaign is tracked, except links made by template tags.
 
 import (
 	"html"
@@ -60,8 +57,7 @@ func (c *Campaign) denmaTrackBody(body string) string {
 
 func denmaTrackURLs(s string) string {
 	return reDenmaURL.ReplaceAllStringFunc(s, func(u string) string {
-		// Punctuation after a URL isn't part of it; nor is a closing
-		// bracket without an opening one.
+		// Trailing punctuation and unmatched closing brackets aren't part of a URL.
 		trail := ""
 		for len(u) > 0 {
 			last := u[len(u)-1]

@@ -1,13 +1,6 @@
 package main
 
-// denma: folders in Media (the hub's and each center's), one level: each
-// file is in one folder or none, and the page and the editors' picker show
-// all of them, a folder's, or those in none (?folder=<id> or none). A
-// folder is only a label in the database: the files stay where they are, at
-// the same addresses, as e-mails already sent link to them. Uploads go into
-// the folder shown. Only an empty folder can be deleted (its files moved out
-// or deleted first), so deleting one never touches a file. Folder names are
-// unique, ignoring case.
+// denma: folders in Media, one level, a label only (hub and each center).
 
 import (
 	"database/sql"
@@ -27,8 +20,7 @@ import (
 // denmaMediaFolderMax is the longest a folder's name can be.
 const denmaMediaFolderMax = 60
 
-// denmaMediaFoldersSQL makes the tables, in the hub and each center when its
-// app is built.
+// denmaMediaFoldersSQL makes the tables.
 const denmaMediaFoldersSQL = `
 CREATE TABLE IF NOT EXISTS denma_media_folders (
     id         SERIAL PRIMARY KEY,
@@ -56,8 +48,7 @@ type denmaMediaFolder struct {
 	Count int    `db:"count" json:"count"`
 }
 
-// denmaMediaView is what the Media page and picker show of folders
-// (cmd/media.go's mediaView).
+// denmaMediaView is what the Media page and picker show of folders.
 type denmaMediaView struct {
 	Folders  []denmaMediaFolder `json:"folders"`
 	Folder   string             `json:"folder"` // shown: "", "none" or a folder's ID
@@ -76,8 +67,7 @@ func (v denmaMediaView) FolderName() string {
 	return ""
 }
 
-// denmaQueryMedia is listmonk's media query (core.QueryMedia), in a folder
-// (an ID) or in none ("none") if one is given.
+// denmaQueryMedia is listmonk's media query, in a folder or in none.
 func (a *App) denmaQueryMedia(folder, query string, offset, limit int) ([]media.Media, int, error) {
 	if folder == "" {
 		return a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, query, offset, limit)
@@ -221,8 +211,7 @@ func (a *App) DenmaDeleteMediaFolder(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
-// DenmaMoveMedia puts files in a folder, or in none (folder_id 0):
-// {"ids": [...], "folder_id": ...}.
+// DenmaMoveMedia puts files in a folder, or in none: {"ids": [...], "folder_id": ...}.
 func (a *App) DenmaMoveMedia(c echo.Context) error {
 	var in struct {
 		IDs      []int `json:"ids"`
@@ -260,8 +249,7 @@ func (a *App) DenmaMoveMedia(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
-// initDenmaMediaFolderHandlers registers the folders' API (the hub's and
-// centers', as /api/media is).
+// initDenmaMediaFolderHandlers registers the folders' API.
 func initDenmaMediaFolderHandlers(g *echo.Group, a *App) {
 	pm := a.auth.Perm
 	g.GET("/api/denma/media/folders", pm(a.DenmaGetMediaFolders, "media:get"))

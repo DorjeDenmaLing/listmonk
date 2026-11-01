@@ -2,9 +2,7 @@
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
 
-{{/* denma: the hub's MCP page: the connector secret the hosted MCP server
-	uses for people signed in to claude.ai, and every center's MCP keys
-	(cmd/denma_mcp.go). */}}
+{{/* denma: the hub's MCP page: the connector secret and every center's MCP keys (cmd/denma_mcp.go). */}}
 <script nonce="{{ .CSPNonce }}">
 	window._denmaMCPConnector = {{ ToJSON $d.Connector }};
 </script>

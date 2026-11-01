@@ -11,7 +11,7 @@
 	<div class="card page-content">
 		<div class="log-view">
 			<div class="lines" x-ref="lines">
-				<template x-for="(l, i) in denmaShown(lines)" :key="i">{{/* denma: was lines */}}
+				<template x-for="(l, i) in denmaShown(lines)" :key="i">{{/* denma: one center's lines */}}
 					<span class="line">
 						<span class="timestamp" x-text="l.timestamp"></span>
 						<span class="file" x-show="l.file && l.file !== '*'" x-text="l.file + ':'"></span>

@@ -1,11 +1,4 @@
-{{/*
-	denma: the sections of a center's Analytics pages (views/denma-analytics.html,
-	cmd/denma_analytics.go; assets/js/views/denma-analytics.js): Audience's
-	"Audience growth" and "Mailbox providers", Campaigns' "Campaign reports",
-	Automations' "Automation reports". They share the dashboard's date range,
-	each page with its controls. Each section shows only to users with the
-	permissions its figures need.
-*/}}
+{{/* denma: the sections of a center's Analytics pages (Audience, Campaigns, Automations). */}}
 {{ define "denma-analytics" }}
 {{- $d := .Data -}}
 {{- $camps := $d.Can "campaigns:get" "campaigns:get_all" -}}
@@ -247,8 +240,7 @@
 {{- end }}
 {{ end }}
 
-{{/* A rate with its count beside it ({ pct, n }), or "—"; the argument is the
-     Alpine expression for the value. */}}
+{{/* A rate with its count beside it ({ pct, n }), or "—"; the argument is the Alpine expression. */}}
 {{ define "denma-rate-cell" }}
 <td class="num">
 	<template x-if="{{ . }}"><span><strong x-text="({{ . }}).pct"></strong> <span class="denma-sub" x-text="({{ . }}).n"></span></span></template>
@@ -256,9 +248,7 @@
 </td>
 {{ end }}
 
-{{/* A ? after a campaign chart's title (views/analytics.html), opening what
-     it counts. Takes Key (views, clicks, bounces, links) and Individual
-     (individual tracking: people counted once, as listmonk's queries do). */}}
+{{/* A ? after a campaign chart's title, opening what it counts. */}}
 {{ define "denma-analytics-help" -}}
 <ot-dropdown class="denma-help">
 	<button type="button" class="ghost small icon" popovertarget="denma-help-{{ .Key }}" aria-label="What this counts" title="What this counts">{{ Icon "help-circle" }}</button>
@@ -290,8 +280,7 @@
 </ot-dropdown>
 {{- end }}
 
-{{/* The links clicked, most first (views/analytics.html, in place of
-     listmonk's chart). Takes Links and Individual. */}}
+{{/* The links clicked, most first. Takes Links and Individual. */}}
 {{ define "denma-analytics-links" -}}
 <div class="table-wrapper denma-links">
 	<table>

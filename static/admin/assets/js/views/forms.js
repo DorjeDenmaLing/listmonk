@@ -56,7 +56,7 @@ function component(lists = []) {
         + `    <p><input type="email" name="email" required placeholder="${i18n.t('subscribers.email')}" /></p>\n`
         + `    <p><input type="text" name="name" placeholder="${i18n.t('public.subName')}" /></p>\n\n`;
 
-      // denma: the lists go in hidden, as public pages never name them (cmd/denma_signupanswers.go).
+      // denma: the lists go in hidden (cmd/denma_signupanswers.go).
       this.checked.forEach((uuid) => {
         if (this.lists.some((x) => x.uuid === uuid)) {
           h += `    <input type="hidden" name="l" value="${uuid}" />\n`;

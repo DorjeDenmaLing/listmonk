@@ -7,15 +7,12 @@ import (
 	"github.com/knadh/listmonk/models"
 )
 
-// denma: a center's reload builds the new manager while the old one still
-// runs its campaigns; the new one's scanner is held until the old one has
-// stopped, so that no campaign runs in both.
+// denma: a reloaded center's new manager holds its campaign scanner until the old one has stopped.
 
 // heldScans holds the managers whose campaign scanner picks up nothing yet.
 var heldScans sync.Map
 
-// DenmaHoldScan keeps the manager from picking up campaigns until
-// DenmaReleaseScan. Call it before Run.
+// DenmaHoldScan keeps the manager from picking up campaigns until DenmaReleaseScan.
 func (m *Manager) DenmaHoldScan() {
 	heldScans.Store(m, struct{}{})
 }
@@ -25,8 +22,7 @@ func (m *Manager) DenmaReleaseScan() {
 	heldScans.Delete(m)
 }
 
-// DenmaScanHeld reports whether the manager is held, for the center's other
-// jobs, which wait with it.
+// DenmaScanHeld reports whether the manager is held.
 func (m *Manager) DenmaScanHeld() bool { return m.scanHeld() }
 
 // denmaScanState is whether pipes may still be made by a campaign scan.
@@ -37,9 +33,7 @@ type denmaScanState struct {
 
 var errScanClosed = errors.New("the manager is stopping")
 
-// denmaCloseScan makes denmaScanPipe refuse, once any pipe it is making is
-// in the manager's pipes: a scan in progress when scanning is stopped can't
-// start a campaign after the manager's campaigns have been stopped.
+// denmaCloseScan makes denmaScanPipe refuse, once any pipe it is making is in the manager's pipes.
 func (m *Manager) denmaCloseScan() {
 	m.denmaScan.mu.Lock()
 	m.denmaScan.closed = true

@@ -1,26 +1,6 @@
 package main
 
-// denma: one sign-in page for everyone, at /login (and /login/forgot for a
-// forgotten password), outside /admin.
-//
-// A superadmin (a hub user) signs in with listmonk's own sign-in, the hub's,
-// and lands in the hub. Anyone else is a person (cmd/denma_people.go), who
-// signs in with their e-mail address or username, their password and, if
-// they've turned it on, a two-factor code (/login/twofa), and lands in their
-// center. Someone who is a user of more than one center chooses one
-// (/login/centers), unless the page they wanted was in one of them, and can
-// switch between them later from the menu under their picture. A wrong
-// password, or a name nobody has, gets listmonk's usual message.
-//
-// A forgotten password is e-mailed to the person (or the superadmin) with
-// that address, as a link to /login/reset; the page says the same either way.
-// The same page sets a new person's first password (addMember).
-//
-// These are the hub's pages (initDenmaLoginHandlers); the hub's server hands
-// /login and what's under it to the hub's router before anything else
-// (loginRoute). The old sign-in pages, the hub's and each center's
-// (/c/<slug>/admin/login, where listmonk sends someone who isn't signed in),
-// send people here, with the page they wanted.
+// denma: one sign-in page for everyone at /login (and /login/forgot), outside /admin.
 
 import (
 	"bytes"
@@ -47,15 +27,12 @@ const (
 	denmaResetPath   = "/login/reset"
 	denmaEmailPath   = "/login/email"
 
-	// The signing-in-so-far cookie: after the password, for the two-factor
-	// code; after that, for choosing a center.
+	// The signing-in-so-far cookie, for the two-factor code and choosing a center.
 	denmaLoginCookie = "denma_login"
 	denmaLoginTTL    = 10 * time.Minute
 )
 
-// loginRoute hands the sign-in pages to the hub's router, before the hub's
-// and the centers' routing (srv.Pre, cmd/denma_centers.go), reporting whether
-// it did.
+// loginRoute hands the sign-in pages to the hub's router, reporting whether it did.
 func (d *denmaCenters) loginRoute(c echo.Context, next echo.HandlerFunc) (bool, error) {
 	req := c.Request()
 	p := req.URL.Path
@@ -70,7 +47,7 @@ func (d *denmaCenters) loginRoute(c echo.Context, next echo.HandlerFunc) (bool, 
 	case p == denmaLoginPath || strings.HasPrefix(p, denmaLoginPath+"/"):
 		return true, d.toHub(c, next)
 	case req.Method == http.MethodPost && (p == "/admin/forgot" || rest == "admin/forgot"):
-		// listmonk's own form has no limit: it's /login/forgot's, throttled.
+		// /login/forgot is throttled.
 		req.URL.Path, req.URL.RawPath = denmaForgotPath, ""
 		return true, d.toHub(c, next)
 	case get && (p == "/admin/login" || p == "/admin/forgot"):
@@ -81,11 +58,7 @@ func (d *denmaCenters) loginRoute(c echo.Context, next echo.HandlerFunc) (bool, 
 	return false, nil
 }
 
-// denmaLoginRedirect is where an old sign-in page (p, under prefix: a
-// center's /c/<slug>, or the hub's "") sends people: the shared page, with the
-// page they wanted under the same prefix. listmonk's own redirect to its
-// sign-in page (cmd/handlers.go) gives the address as requested, which
-// already has the prefix.
+// denmaLoginRedirect is where an old sign-in page under prefix sends people: /login, keeping the page wanted.
 func denmaLoginRedirect(p, prefix string, q url.Values) string {
 	if p == "/admin/forgot" {
 		return denmaForgotPath
@@ -111,8 +84,7 @@ func (d *denmaCenters) toHub(c echo.Context, next echo.HandlerFunc) error {
 	return next(c)
 }
 
-// initDenmaLoginHandlers registers the sign-in pages, in the hub (with
-// centers).
+// initDenmaLoginHandlers registers the sign-in pages in the hub.
 func initDenmaLoginHandlers(g *echo.Group, a *App) {
 	if !a.ko.Bool("denma.multi_center") || a.ko.String("denma.center") != "" {
 		return
@@ -131,8 +103,7 @@ func initDenmaLoginHandlers(g *echo.Group, a *App) {
 	g.POST(denmaEmailPath, a.DenmaLoginEmail)
 }
 
-// denmaLoginState is someone signing in, between pages: who, and the page
-// they wanted.
+// denmaLoginState is someone signing in, between pages: who, and the page they wanted.
 type denmaLoginState struct {
 	PersonID int
 	Next     string
@@ -141,8 +112,7 @@ type denmaLoginState struct {
 
 func denmaLoginKey(token string) string { return "denma-login:" + token }
 
-// setLoginState keeps st for the next page, in a cookie of its own (for
-// /login's pages only).
+// setLoginState keeps st for the next page in a cookie of its own.
 func (a *App) setLoginState(c echo.Context, st *denmaLoginState) error {
 	token, err := generateRandomString(tmpAuthTokenLen)
 	if err != nil {
@@ -182,8 +152,7 @@ func (a *App) clearLoginState(c echo.Context) {
 	c.SetCookie(&http.Cookie{Name: denmaLoginCookie, Path: denmaLoginPath, MaxAge: -1, HttpOnly: true})
 }
 
-// DenmaLogin signs someone in: a superadmin with listmonk's sign-in, a person
-// with theirs.
+// DenmaLogin signs someone in: a superadmin with listmonk's sign-in, a person with theirs.
 func (a *App) DenmaLogin(c echo.Context) error {
 	var (
 		start    = time.Now()
@@ -198,8 +167,7 @@ func (a *App) DenmaLogin(c echo.Context) error {
 		}
 	}()
 
-	// Not too many guesses (cmd/denma_throttle.go): past the limit, the
-	// password isn't checked.
+	// Not too many guesses (cmd/denma_throttle.go): past the limit the password isn't checked.
 	account := a.denmaPersonKey(username)
 	if err := a.denmaPasswordWait(c, account); err != nil {
 		return a.renderLoginPage(c, err)
@@ -214,9 +182,7 @@ func (a *App) DenmaLogin(c echo.Context) error {
 		return denmaInternal(err)
 	}
 	if hubUser {
-		// listmonk's own sign-in, which counts their guesses too (cmd/auth.go).
-		// They land in the hub's admin: a center's page can't be theirs (they
-		// open centers from the hub), and nothing else is at the root.
+		// listmonk's own sign-in; they land in the hub's admin.
 		if next != uriAdmin && !strings.HasPrefix(next, uriAdmin+"/") {
 			c.Request().Form.Set("next", uriAdmin) // read already, by FormValue
 		}
@@ -235,8 +201,7 @@ func (a *App) DenmaLogin(c echo.Context) error {
 	return a.denmaPasswordOK(c, &p, next)
 }
 
-// denmaPasswordOK carries on once a person's password is right: the
-// two-factor code, if they have it on, then their center.
+// denmaPasswordOK carries on once a person's password is right: two-factor code, then center.
 func (a *App) denmaPasswordOK(c echo.Context, p *denmaPerson, next string) error {
 	if p.TwofaKey.Valid {
 		if err := a.setLoginState(c, &denmaLoginState{PersonID: p.ID, Next: next}); err != nil {
@@ -247,9 +212,7 @@ func (a *App) denmaPasswordOK(c echo.Context, p *denmaPerson, next string) error
 	return a.denmaSignedIn(c, p.ID, next)
 }
 
-// denmaSignedIn takes a person who has signed in to their center: the one
-// they're a user of, the one the page they wanted is in, or the one they
-// choose.
+// denmaSignedIn takes a person who has signed in to their center, or has them choose one.
 func (a *App) denmaSignedIn(c echo.Context, personID int, next string) error {
 	d := denmaHub
 	if _, err := a.db.Exec(`UPDATE denma.people SET loggedin_at = NOW() WHERE id = $1`, personID); err != nil {
@@ -286,8 +249,7 @@ func (a *App) denmaSignedIn(c echo.Context, personID int, next string) error {
 	if err != nil {
 		return a.renderLoginPage(c, err)
 	}
-	// The page they wanted, if it was one of this center's: its admin is at
-	// /admin now (cmd/denma_place.go).
+	// The page they wanted, if it was one of this center's (cmd/denma_place.go).
 	rest, ok := strings.CutPrefix(next, denmaCenterPath+ctr.Slug)
 	if !ok {
 		rest = next
@@ -308,8 +270,7 @@ type denmaLoginPage struct {
 	Email       string
 }
 
-// DenmaLoginTwofa asks a person for their two-factor code, once their
-// password was right.
+// DenmaLoginTwofa asks a person for their two-factor code.
 func (a *App) DenmaLoginTwofa(c echo.Context) error {
 	st := a.loginState(c)
 	if st == nil || st.Choosing {
@@ -328,8 +289,7 @@ func (a *App) DenmaLoginTwofa(c echo.Context) error {
 	code := strings.TrimSpace(c.FormValue("totp_code"))
 	c.Request().Form.Set("username", p.Username) // who, for the activity log (cmd/denma_audit.go)
 
-	// Wrong codes count for the person, whichever sign-in they came in
-	// (cmd/denma_throttle.go): past the limit, no code is checked.
+	// Wrong codes count for the person (cmd/denma_throttle.go): past the limit no code is checked.
 	key := strconv.Itoa(p.ID)
 	if wait := denmaTwofaByPerson.wait(key); wait > 0 {
 		a.clearLoginState(c)
@@ -348,8 +308,7 @@ func (a *App) DenmaLoginTwofa(c echo.Context) error {
 	return a.denmaSignedIn(c, p.ID, st.Next)
 }
 
-// DenmaLoginCenters lets a person who's a user of more than one center choose
-// one, once they've signed in.
+// DenmaLoginCenters lets a person with several centers choose one.
 func (a *App) DenmaLoginCenters(c echo.Context) error {
 	st := a.loginState(c)
 	if st == nil || !st.Choosing {
@@ -377,13 +336,10 @@ func (a *App) DenmaLoginCenters(c echo.Context) error {
 	return c.Render(http.StatusOK, "denma-login-centers", denmaLoginPage{Title: "Choose a center", Centers: ms})
 }
 
-// DenmaForgot e-mails a person with this address a link to set a new
-// password, and has the hub do the same for a superadmin's (listmonk's
-// page, which says the same whether or not anyone has the address).
+// DenmaForgot e-mails a person a link to set a new password, and has the hub do so for a superadmin.
 func (a *App) DenmaForgot(c echo.Context) error {
 	email := strings.ToLower(strings.TrimSpace(c.FormValue("email")))
-	// Not too many e-mails to one address, or requests from one client
-	// (cmd/denma_throttle.go): the page says the same, and nothing is sent.
+	// Limited by address and client (cmd/denma_throttle.go); the page says the same.
 	if !denmaForgotAllowed(c, email) {
 		return c.Render(http.StatusOK, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.resetLinkSent")))
 	}
@@ -399,10 +355,7 @@ func (a *App) DenmaForgot(c echo.Context) error {
 	return a.ForgotPage(c)
 }
 
-// denmaSendReset e-mails a person a link to set a new password, as listmonk
-// does (doForgotPassword). It's sent by one of their centers (the first, by
-// name, they can sign in to), with its sender, look and language, as all
-// their e-mails are; the hub sends it only if none is running.
+// denmaSendReset e-mails a person a password link, sent by their first center (the hub if none runs).
 func (a *App) denmaSendReset(p *denmaPerson) {
 	token, err := denmaHub.newToken(p.ID, passwordResetTTL)
 	if err != nil {
@@ -436,8 +389,7 @@ func (a *App) denmaSendReset(p *denmaPerson) {
 	}
 }
 
-// DenmaLoginReset sets a person's password from a link (a new person's, or
-// a forgotten password's), then signs them in.
+// DenmaLoginReset sets a person's password from a link, then signs them in.
 func (a *App) DenmaLoginReset(c echo.Context) error {
 	var (
 		token = strings.TrimSpace(c.QueryParam("token"))
@@ -468,7 +420,7 @@ func (a *App) DenmaLoginReset(c echo.Context) error {
 		return c.Render(http.StatusOK, "denma-login-reset", out)
 	}
 
-	// Once only: the link goes with the new password (setPassword).
+	// The link goes with the new password (setPassword).
 	if err := denmaHub.setPassword(p.ID, password, ""); err != nil {
 		a.log.Printf("denma: error setting %s's password: %v", p.Email, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
@@ -476,9 +428,7 @@ func (a *App) DenmaLoginReset(c echo.Context) error {
 	return a.denmaPasswordOK(c, p, "")
 }
 
-// DenmaLoginEmail makes a person's new e-mail address theirs, from the link
-// sent to it (denmaSendEmailChange): its page asks, and a POST does it, so
-// that a link scanner doesn't.
+// DenmaLoginEmail makes a person's new e-mail address theirs: its page asks, a POST does it.
 func (a *App) DenmaLoginEmail(c echo.Context) error {
 	const title = "Your new e-mail address"
 	token := strings.TrimSpace(c.QueryParam("token"))
@@ -524,9 +474,7 @@ func (a *App) DenmaLoginEmail(c echo.Context) error {
 	return msg(http.StatusOK, "Done: you now sign in and get your e-mails at "+ch.Email+".")
 }
 
-// denmaLogoutAll ends every session this browser has, the hub's and each
-// center's (session_<slug>), and clears the place: signing out of one is
-// signing out.
+// denmaLogoutAll ends every session this browser has, the hub's and each center's.
 func (a *App) denmaLogoutAll(c echo.Context) {
 	d := denmaHub
 	if d == nil {
@@ -553,9 +501,7 @@ func (a *App) denmaLogoutAll(c echo.Context) {
 	denmaSetPlace(c, "")
 }
 
-// denmaEndCenterSessions signs a hub user (a superadmin) out of their
-// accounts in the centers, as the hub signs them out everywhere on a new
-// password.
+// denmaEndCenterSessions signs a superadmin out of their accounts in the centers.
 func (a *App) denmaEndCenterSessions(hubUserID int) {
 	if denmaHub == nil || a.ko.String("denma.center") != "" {
 		return
@@ -576,9 +522,7 @@ func (a *App) denmaEndCenterSessions(hubUserID int) {
 	}
 }
 
-// denmaNoOIDC keeps OIDC sign-in off in multi-center mode: it would sign
-// people in past /login, its throttle and two-factor sign-in, and make users
-// with a role ID that means something else in each center.
+// denmaNoOIDC keeps OIDC sign-in off in multi-center mode.
 func denmaNoOIDC(ko *koanf.Koanf) {
 	if ko.Bool("denma.multi_center") || ko.String("denma.center") != "" {
 		_ = ko.Set("security.oidc.enabled", false)

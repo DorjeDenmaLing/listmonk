@@ -1,7 +1,4 @@
-// denma: picking an image from Media for a field on a page without its own
-// picker (the hub's Settings -> General, partials/denma/topnav.html).
-// $denmaPickMedia((url) => ...) opens Media's picker in the page's
-// #denma-media-picker dialog and gives the chosen file's URL.
+// denma: $denmaPickMedia((url) => ...) opens Media's picker in #denma-media-picker.
 import Alpine from 'alpinejs';
 
 let pick = null;

@@ -1,23 +1,6 @@
 package main
 
-// denma: one blocklist for every center, for addresses that can't receive
-// mail. When an address hard-bounces in a center, or fails the domain check
-// (cmd/denma_emailcheck.go), it's added to denma.blocked_emails and
-// blocklisted in every center that has it, with the reason and time in the
-// subscriber's auto_blocklist_reason and auto_blocklist_time attributes. A
-// center that gets the address later (a sign-up, an import) blocklists it
-// too, before any opt-in.
-//
-// SES's bounces of mail it didn't send (denmaSuppressedBounce) stay in their
-// center.
-//
-// Hard bounces are found by each center's per-minute e-mail check job:
-// those recorded in the last two days, and older ones whose subscriber is
-// still blocklisted (so an address a center deliberately unblocked after an
-// old bounce stays unblocked there). Complaints aren't shared: someone who
-// marks one center's mail as spam may still want another's.
-//
-// Multi-center mode only; otherwise a center's own blocklist is the only one.
+// denma: one blocklist for every center, for addresses that can't receive mail.
 
 import (
 	"database/sql"
@@ -28,12 +11,10 @@ import (
 	"github.com/lib/pq"
 )
 
-// denmaSharedReasonText is the reason a center is given, other than the one
-// that found it, for an address that hard-bounced.
+// denmaSharedReasonText is the reason the other centers are given for a hard bounce.
 const denmaSharedReasonText = "the address can't receive e-mail"
 
-// denmaCenterReason is the shared blocklist's reason as a center that didn't
-// find the address is told it.
+// denmaCenterReason is the shared blocklist's reason as a center that didn't find it is told.
 func denmaCenterReason(reason string) string {
 	if reason == "hard bounce" {
 		return denmaSharedReasonText
@@ -41,10 +22,7 @@ func denmaCenterReason(reason string) string {
 	return reason
 }
 
-// denmaBlockEverywhere adds an address to the shared blocklist and
-// blocklists it in every center (including the one that found it). It does
-// nothing if the address is already on it. The other centers are given
-// denmaCenterReason.
+// denmaBlockEverywhere adds an address to the shared blocklist and blocklists it in every center.
 func denmaBlockEverywhere(email, reason, slug string) {
 	if denmaHub == nil {
 		return
@@ -111,8 +89,7 @@ func denmaSharedBlock(db *sqlx.DB, email string) (string, bool) {
 	return reason, true
 }
 
-// shareHardBounces adds the center's hard-bounced addresses to the shared
-// blocklist. Run by the e-mail check job.
+// shareHardBounces adds the center's hard-bounced addresses to the shared blocklist.
 func (a *App) shareHardBounces() {
 	if denmaHub == nil {
 		return
@@ -132,8 +109,7 @@ func (a *App) shareHardBounces() {
 	}
 }
 
-// denmaSharedAppliedSQL makes the table of subscribers the shared blocklist
-// has been applied to, in a center (denmaFeaturesSQL).
+// denmaSharedAppliedSQL makes the table of subscribers the shared blocklist was applied to.
 const denmaSharedAppliedSQL = `
 CREATE TABLE IF NOT EXISTS denma_shared_applied (
     subscriber_id INTEGER PRIMARY KEY REFERENCES subscribers(id) ON DELETE CASCADE,
@@ -141,9 +117,7 @@ CREATE TABLE IF NOT EXISTS denma_shared_applied (
 );
 `
 
-// applyPendingBlocks blocklists the shared addresses that denmaBlockEverywhere
-// didn't finish in this center: it failed here, or stopped. Those of the last
-// few minutes may be under way.
+// applyPendingBlocks blocklists the shared addresses denmaBlockEverywhere didn't finish here.
 func (a *App) applyPendingBlocks() {
 	slug := a.ko.String("denma.center")
 	var rows []struct {
@@ -170,10 +144,7 @@ func (a *App) applyPendingBlocks() {
 	}
 }
 
-// applySharedBlocks blocklists the center's subscribers added in the last
-// day whose address is on the shared blocklist, once each: denma_shared_applied
-// remembers them, so one an admin enabled since stays enabled. Run by the
-// e-mail check job.
+// applySharedBlocks blocklists the center's recent subscribers on the shared blocklist, once each.
 func (a *App) applySharedBlocks() {
 	if denmaHub == nil {
 		return

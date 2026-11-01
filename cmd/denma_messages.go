@@ -1,20 +1,6 @@
 package main
 
-// denma: every e-mail a center sends to one of its subscribers, with the mail
-// server's answer (denma_messages), shown on the subscriber's Activity tab:
-// campaigns (and their tests), automations, and others (opt-in
-// confirmations, transactional e-mails, notices), each with its subject and
-// whether it was sent, failed or may have been delivered. Kept for
-// denmaMessageDays (pruned hourly with expired sessions, cmd/denma_prune.go),
-// and with the subscriber: deleting them deletes their record. Automations
-// read it for "no other e-mail in the last N days" (cmd/denma_automations.go).
-//
-// Each center's e-mail messenger records what it sends (email.DenmaOnSent),
-// so nothing that sends needs to: an e-mail to an address that isn't a
-// subscriber of the center (a staff notice) isn't recorded. Campaign
-// messages carry their campaign; automations' e-mails say which, and which
-// of its e-mails, in an internal header (denmaSentAsHeader), which isn't
-// sent.
+// denma: every e-mail a center sends to one of its subscribers, with the mail server's answer (denma_messages).
 
 import (
 	"context"
@@ -35,8 +21,7 @@ import (
 // denmaMessageDays is how long a subscriber's e-mails are recorded for.
 const denmaMessageDays = 90
 
-// denmaSentAsHeader says which automation, and which of its e-mails, an
-// e-mail is: "automation <id> <step>" (id 0 for a test).
+// denmaSentAsHeader says which automation and e-mail an e-mail is: "automation <id> <step>".
 const denmaSentAsHeader = "X-Denma-Sent-As"
 
 // What an e-mail was.
@@ -65,8 +50,7 @@ CREATE INDEX IF NOT EXISTS denma_messages_campaign ON denma_messages (campaign_i
 CREATE INDEX IF NOT EXISTS denma_messages_sub ON denma_messages (subscriber_id, sent_at);
 CREATE INDEX IF NOT EXISTS denma_messages_at ON denma_messages (sent_at);
 
--- When a deleted subscriber's address was last e-mailed, by its hash, for a
--- complaint that arrives after (cmd/denma_bounces.go).
+-- When a deleted subscriber's address was last e-mailed, by its hash (cmd/denma_bounces.go).
 CREATE TABLE IF NOT EXISTS denma_forgotten_sends (
     email_hash TEXT PRIMARY KEY,
     sent_at    TIMESTAMP WITH TIME ZONE NOT NULL
@@ -90,8 +74,7 @@ func denmaSentAs(m *models.Message, autoID, step int) {
 	m.Headers.Set(denmaSentAsHeader, fmt.Sprintf("automation %d %d", autoID, step))
 }
 
-// denmaMessageKind is what an e-mail was, with its campaign or automation and
-// step.
+// denmaMessageKind is what an e-mail was, with its campaign or automation and step.
 func denmaMessageKind(m models.Message) (kind string, campID, autoID, step null.Int) {
 	if m.Campaign != nil && m.Campaign.ID > 0 {
 		kind = denmaMsgCampaign
@@ -111,18 +94,15 @@ func denmaMessageKind(m models.Message) (kind string, campID, autoID, step null.
 	return denmaMsgOther, campID, autoID, step
 }
 
-// denmaIsMarketing reports whether an e-mail is a campaign's or an
-// automation's (tests included).
+// denmaIsMarketing reports whether an e-mail is a campaign's or an automation's.
 func denmaIsMarketing(m models.Message) bool {
 	return (m.Campaign != nil && m.Campaign.ID > 0) || m.Headers.Get(denmaSentAsHeader) != ""
 }
 
-// denmaLogMessages has a center's e-mail messenger (em) record each e-mail it
-// sends to one of the center's subscribers. Called by buildApp.
-// denmaLogMessageTimeout bounds recording one, so that a slow center
-// database can't hold up the send workers every center shares.
+// denmaLogMessageTimeout bounds recording one e-mail.
 const denmaLogMessageTimeout = 2 * time.Second
 
+// denmaLogMessages has a center's e-mail messenger (em) record each e-mail it sends to a subscriber.
 func denmaLogMessages(em *email.Emailer, db *sqlx.DB, ko *koanf.Koanf) {
 	if em == nil || !ko.Bool("denma.multi_center") || ko.String("denma.center") == "" {
 		return
@@ -187,9 +167,7 @@ func (a *App) denmaSubscriberMessages(subID int) []denmaMessage {
 	return out
 }
 
-// denmaMessagesWithin is the SQL condition that subscriber s had a campaign's
-// or another automation's e-mail (than automation $auto) in the last $days
-// days.
+// denmaMessagesWithin is the SQL condition that s had a campaign's or another automation's e-mail in $days days.
 func denmaMessagesWithin(sub, days, auto string) string {
 	return `EXISTS (SELECT 1 FROM denma_messages dm WHERE dm.subscriber_id = ` + sub + `
         AND dm.kind IN ('campaign', 'automation') AND dm.status IN ('sent', 'uncertain')

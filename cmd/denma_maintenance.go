@@ -1,17 +1,6 @@
 package main
 
-// denma: Maintenance (Settings -> Maintenance) for every center. The page is
-// the hub's (centers don't show settings), but the data it cleans up
-// (orphan subscribers, unconfirmed subscriptions, old
-// analytics) is the centers'; the hub has none. So in the hub its API acts on
-// one center, chosen on the page (views/maintenance.html), or on every
-// running center, several at a time. A center's own listmonk handler does the
-// work for one center; for all, the counts are added up, and if any center
-// fails the response is an error that names it (the others are done).
-// Analytics exported from all centers get a first "center" column.
-//
-// The handlers replace listmonk's at the same paths (registered after them:
-// Echo keeps the last); without centers, or in a center, they are listmonk's.
+// denma: Maintenance for every center: in the hub its API acts on one center or on every running one.
 
 import (
 	"encoding/csv"
@@ -34,8 +23,7 @@ func initDenmaMaintenanceHandlers(g *echo.Group, a *App) {
 	g.DELETE("/api/maintenance/subscriptions/unconfirmed", pm(a.DenmaGCSubscriptions, "settings:maintain"))
 }
 
-// denmaMaintainIn returns the centers a maintenance request is for: the
-// center= one, or every running one (nil, nil without centers or in one).
+// denmaMaintainIn returns the centers a maintenance request is for: center= or every running one.
 func (a *App) denmaMaintainIn(c echo.Context) ([]*denmaCenter, error) {
 	if denmaHub == nil || a.ko.String("denma.center") != "" {
 		return nil, nil
@@ -52,8 +40,7 @@ func (a *App) denmaMaintainIn(c echo.Context) ([]*denmaCenter, error) {
 	return ctrs, nil
 }
 
-// denmaEachCenter runs fn in every center, four at a time, and returns the
-// sum of its counts, or an error naming the centers it failed in.
+// denmaEachCenter runs fn in every center, four at a time, summing its counts or naming failures.
 func denmaEachCenter(ctrs []*denmaCenter, fn func(*App) (int, error)) (int, error) {
 	var (
 		mu     sync.Mutex
@@ -91,10 +78,7 @@ func denmaEachCenter(ctrs []*denmaCenter, fn func(*App) (int, error)) (int, erro
 	return total, nil
 }
 
-// DenmaGCSubscribers deletes orphan subscribers. Not blocklisted ones, which
-// listmonk's page offers too: every unsubscribe blocklists
-// (cmd/denma_unsubscribe.go), so deleting them would forget that they opted
-// out, and an import or an API call could add them again.
+// DenmaGCSubscribers deletes orphan subscribers, but not blocklisted ones (cmd/denma_unsubscribe.go).
 func (a *App) DenmaGCSubscribers(c echo.Context) error {
 	if denmaHub != nil && c.Param("type") == "blocklisted" {
 		return echo.NewHTTPError(http.StatusBadRequest,
@@ -149,10 +133,7 @@ func (a *App) DenmaGCSubscriptions(c echo.Context) error {
 	}{n}})
 }
 
-// DenmaGCCampaignAnalytics deletes campaign views and clicks older than a
-// date, and automations' (cmd/denma_auto_reports.go): in a center or a single
-// install, or the hub's centers. Whichever type is asked, views and clicks go
-// together.
+// DenmaGCCampaignAnalytics deletes campaign and automation views and clicks older than a date.
 func (a *App) DenmaGCCampaignAnalytics(c echo.Context) error {
 	ctrs, err := a.denmaMaintainIn(c)
 	if err != nil {
@@ -178,9 +159,7 @@ func (a *App) DenmaGCCampaignAnalytics(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
-// denmaGCAnalytics deletes the app's views and clicks older than t,
-// campaigns' and automations', together, and records the date: campaigns that
-// started before it are left out of rates (denmaTrackedCampSQL).
+// denmaGCAnalytics deletes the app's views and clicks older than t and records the date.
 func (a *App) denmaGCAnalytics(t time.Time) error {
 	if _, err := a.db.Exec(`INSERT INTO denma_stat_starts (stat, since) VALUES ($2, LEAST($1::TIMESTAMPTZ, NOW()))
 		ON CONFLICT (stat) DO UPDATE SET since = GREATEST(denma_stat_starts.since, EXCLUDED.since)`, t, denmaAnalyticsDeleted); err != nil {
@@ -200,8 +179,7 @@ func (a *App) denmaGCAnalytics(t time.Time) error {
 	return nil
 }
 
-// DenmaExportCampaignAnalytics streams campaign views or clicks since a date
-// as CSV; from all centers, with a first "center" column.
+// DenmaExportCampaignAnalytics streams campaign views or clicks since a date as CSV.
 func (a *App) DenmaExportCampaignAnalytics(c echo.Context) error {
 	ctrs, err := a.denmaMaintainIn(c)
 	switch {
@@ -275,8 +253,7 @@ func (a *App) DenmaExportCampaignAnalytics(c echo.Context) error {
 	return nil
 }
 
-// denmaPickCenters are the running centers the hub's Maintenance and Logs
-// pages offer (none elsewhere).
+// denmaPickCenters are the running centers the hub's Maintenance and Logs pages offer.
 func (a *App) denmaPickCenters() []denmaNamedSlug {
 	if denmaHub == nil || a.ko.String("denma.center") != "" {
 		return nil

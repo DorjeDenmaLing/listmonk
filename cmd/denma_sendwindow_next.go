@@ -1,9 +1,6 @@
 package main
 
-// denma: when e-mail that waits for a center's sending hours will go
-// (cmd/denma_sendwindow.go): the next opening. The Calendar, the
-// automations' schedule and the confirmation before a campaign is scheduled
-// show it.
+// denma: when e-mail that waits for a center's sending hours will go (cmd/denma_sendwindow.go).
 
 import (
 	"fmt"
@@ -18,8 +15,7 @@ import (
 
 const denmaMaxHoursAt = 200
 
-// next is the first time at or after t within the hours: t itself if they're
-// open then or off.
+// next is the first time at or after t within the hours.
 func (w *denmaSendWindow) next(t time.Time) time.Time {
 	if w.open(t) {
 		return t
@@ -62,8 +58,7 @@ func (w *denmaSendWindow) describe() string {
 	return fmt.Sprintf("%s %s-%s, %s", strings.Join(parts, ", "), w.From, w.To, w.loc)
 }
 
-// goesSQL is SQL for when e-mail due at e (a timestamptz expression) will go:
-// e, or the next opening if it's outside the hours. It matches next.
+// goesSQL is SQL for when e-mail due at e will go; it matches next.
 func (w *denmaSendWindow) goesSQL(e string) string {
 	if w == nil || !w.On {
 		return e
@@ -114,9 +109,7 @@ func (a *App) denmaHoursAt(t time.Time) denmaHoursNote {
 	return n
 }
 
-// DenmaSendHours answers, for each time given (at, RFC3339), when e-mail
-// going then will actually go: null if it's within the center's sending
-// hours or they're off.
+// DenmaSendHours answers, for each time given, when e-mail going then will go; null if within the hours.
 func (a *App) DenmaSendHours(c echo.Context) error {
 	ats := c.QueryParams()["at"]
 	if len(ats) > denmaMaxHoursAt {

@@ -1,10 +1,4 @@
-// denma: the hub's dashboard (partials/denma/hub.html): every center's
-// sending, all together or one at a time, for a date range compared with the
-// previous period of the same length. The figures come from
-// /api/denma/hub/stats (cmd/denma_hub.go), per center; they're added up here,
-// so rates for all centers weigh each center by its sending. Definitions are
-// the centers' dashboards' (views/denma-dashboard.js). The centers' own rows
-// are on the Centers page (views/denma-hub-centers.js).
+// denma: the hub's dashboard (partials/denma/hub.html): every center's sending from /api/denma/hub/stats.
 import Alpine from 'alpinejs';
 import { urls } from '../main.js';
 import * as s from '../denma-stats.js';

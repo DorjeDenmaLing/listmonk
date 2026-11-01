@@ -42,8 +42,7 @@ type Notifs struct {
 
 	opt Opt
 
-	// denma: DenmaSender, if set, is who its e-mails are from, and the
-	// Reply-To if any (cmd/denma_domains.go, denmaSystemSender).
+	// denma: DenmaSender gives the From and Reply-To of its e-mails (cmd/denma_domains.go).
 	DenmaSender func() (from, replyTo string)
 }
 
@@ -63,13 +62,12 @@ func Initialize(opt Opt, tpls *template.Template, em *email.Emailer, lo *log.Log
 	SetDefault(New(opt, tpls, em, lo)) // denma
 }
 
-// New returns a Notifs instance. denma: one per center; the package-level
-// functions use the default instance (SetDefault).
+// denma: New returns a Notifs instance, one per center.
 func New(opt Opt, tpls *template.Template, em *email.Emailer, lo *log.Logger) *Notifs {
 	return &Notifs{Tpls: tpls, opt: opt, em: em, lo: lo}
 }
 
-// SetDefault sets the instance the package-level functions use. denma
+// denma: SetDefault sets the instance the package-level functions use.
 func SetDefault(n *Notifs) {
 	Tpls = n.Tpls
 	no = n
@@ -121,7 +119,7 @@ func (no *Notifs) Notify(toEmails []string, subject, tplName string, data any, h
 	m := models.Message{
 		Messenger:   "email",
 		ContentType: no.opt.ContentType,
-		From:        from, // denma: was no.opt.FromEmail
+		From:        from, // denma: the center's sender
 		To:          toEmails,
 		Subject:     subject,
 		Body:        body,

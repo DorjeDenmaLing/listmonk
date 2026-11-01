@@ -1,8 +1,4 @@
-// denma: the search box and filter builder for subscribers, lists and
-// campaigns (partials/denma/search.html). The builder's conditions become
-// filters in the search language (cmd/denma_search.go), added to what's in
-// the box; the box is checked with the server before it searches, so a
-// mistake is a message rather than an error page.
+// denma: the search box and filter builder for subscribers, lists and campaigns (partials/denma/search.html).
 import Alpine from 'alpinejs';
 import { api, urls } from '../main.js';
 import * as u from '../utils.js';
@@ -20,9 +16,7 @@ const IS_OPS = [['is', 'is'], ['isnt', 'is not']];
 const NUM_OPS = [['gt', 'is more than'], ['lt', 'is less than'], ['eq', 'is exactly']];
 const DATE_OPS = [['last', 'in the last'], ['ago', 'more than … ago'], ['on', 'on'], ['after', 'after'], ['before', 'before']];
 
-// Field makers. A field has ops, the value's kind (or a function of the op:
-// text, number, days, date, choice, list, campaign, template or none), and
-// tok(op, value, row), its filter.
+// Field makers: a field has ops, a value kind (or a function of the op) and tok(op, value, row), its filter.
 const words = (label) => ({
   id: 'text', label, ops: [['has', 'contains'], ['not', "doesn't contain"]], kind: 'text', tok: (op, v) => (op === 'not' ? neg(q(v)) : q(v)),
 });

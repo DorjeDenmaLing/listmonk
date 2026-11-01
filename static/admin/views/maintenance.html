@@ -19,7 +19,7 @@
 						Data
 						<select aria-label="Data" x-model="subscriberType">
 							<option value="orphan">{{ .L.T "dashboard.orphanSubs" }}</option>
-							{{- if not DenmaIsHub }}{{/* denma: unsubscribing blocklists, so deleting them would forget who opted out (cmd/denma_maintenance.go) */}}
+							{{- if not DenmaIsHub }}{{/* denma: not in the hub (cmd/denma_maintenance.go) */}}
 							<option value="blocklisted">{{ .L.T "subscribers.status.blocklisted" }}</option>
 							{{- end }}
 						</select>
@@ -68,7 +68,7 @@
 		<div class="card">
 			<h4 class="text-4">{{ .L.T "globals.terms.analytics" }}</h4>
 			<div class="row">
-				<div class="col-4">{{/* denma: views and clicks are deleted together, and earlier campaigns leave the rates (cmd/denma_maintenance.go) */}}
+				<div class="col-4">{{/* denma: views and clicks are deleted together (cmd/denma_maintenance.go) */}}
 					<p class="text-light" data-testid="analytics-note">Campaign and automation views and clicks go together. Campaigns sent before the date show no open or click rates afterwards.</p>
 				</div>
 				<div class="col-4">

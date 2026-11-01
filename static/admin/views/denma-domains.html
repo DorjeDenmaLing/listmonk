@@ -1,10 +1,7 @@
 {{ define "admin-denma-domains" -}}
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
-{{/* denma: the hub's Sending domains page: the domains Amazon SES sends
-	from, the centers each is for, and whether SES has verified them
-	(cmd/denma_domains.go, assets/js/views/denma-domains.js). Each one's DNS
-	records are on its own page (views/denma-domain.html). */}}
+{{/* denma: the hub's Sending domains page (cmd/denma_domains.go, assets/js/views/denma-domains.js). */}}
 <script nonce="{{ .CSPNonce }}">
 	window._denmaDomains = {{ ToJSON $d.Domains }};
 	window._denmaCenters = {{ ToJSON $d.Centers }};

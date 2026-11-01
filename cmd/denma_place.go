@@ -1,17 +1,6 @@
 package main
 
-// denma: one address for every center's admin. In multi-center mode the
-// admin is at /admin (and its API at /api) whichever center it shows: the
-// place cookie says which, a center's slug or none for the hub. Signing in
-// to a center, switching to another or opening one from the hub sets it; a
-// hub-only page (centers, people, settings...) clears it. Each center keeps
-// its own session, in a cookie of its own name (session_<slug>) at /.
-//
-// A center's public pages (subscription, opt-in, archive, uploads, sign-up
-// webhooks) and its API for API users stay under /c/<slug>/: they're in
-// e-mails and on websites, and don't depend on who is signed in. An old
-// admin address, /c/<slug>/admin/..., selects that center and goes to
-// /admin/....
+// denma: one admin address (/admin, /api) for every center, chosen by the place cookie.
 
 import (
 	"net/http"
@@ -25,8 +14,7 @@ import (
 // denmaPlaceCookie holds the center the admin shows ("" or absent: the hub).
 const denmaPlaceCookie = "denma_center"
 
-// denmaAdminPath is an App's admin root path: "/" for the hub and every
-// center in multi-center mode, else the root URL's path.
+// denmaAdminPath is an App's admin root path: "/" in multi-center mode, else the root URL's path.
 func denmaAdminPath(ko *koanf.Koanf, rootPath string) string {
 	if ko.Bool("denma.multi_center") || ko.String("denma.center") != "" {
 		return "/"
@@ -34,8 +22,7 @@ func denmaAdminPath(ko *koanf.Koanf, rootPath string) string {
 	return rootPath
 }
 
-// denmaCookieName is a session cookie's name in an App: a center's has its
-// slug, as all are at the same path.
+// denmaCookieName is a session cookie's name in an App: a center's has its slug.
 func denmaCookieName(ko *koanf.Koanf, name string) string {
 	if slug := ko.String("denma.center"); slug != "" {
 		return name + "_" + slug
@@ -74,8 +61,7 @@ func denmaAdminRequest(p string) bool {
 	return p == uriAdmin || strings.HasPrefix(p, uriAdmin+"/") || p == "/api" || strings.HasPrefix(p, "/api/")
 }
 
-// denmaHubOnlyPath reports whether an admin path is the hub's alone, which
-// centers don't have: it's the hub's wherever the admin is.
+// denmaHubOnlyPath reports whether an admin path is the hub's alone.
 func denmaHubOnlyPath(p string) bool {
 	// The hub's Analytics; a center's pages are under it (cmd/denma_analytics.go).
 	if denmaCenterSettingsPath(p) || p == "/admin/analytics" {
@@ -92,8 +78,7 @@ func denmaHubOnlyPath(p string) bool {
 	return false
 }
 
-// placeCenter is the center that serves an admin request at /admin or
-// /api, or nil for the hub.
+// placeCenter is the center that serves an admin request at /admin or /api, or nil for the hub.
 func (d *denmaCenters) placeCenter(c echo.Context, p string) *denmaCenter {
 	if !denmaAdminRequest(p) || denmaHubOnlyPath(p) {
 		return nil
@@ -105,14 +90,10 @@ func (d *denmaCenters) placeCenter(c echo.Context, p string) *denmaCenter {
 	return d.get(slug)
 }
 
-// denmaTabHeader is the center (slug, "" for the hub) the admin page making
-// an API request was loaded for (static/admin/assets/js/denma-place.js).
+// denmaTabHeader is the center ("" for the hub) the admin page was loaded for (denma-place.js).
 const denmaTabHeader = "X-Denma-Center"
 
-// denmaCheckTab refuses an admin API request from a page loaded for another
-// center, or the hub, than the one opened since in another tab or window:
-// the place cookie is the browser's, so the one opened since would serve it.
-// Requests without the header (the preview forms) pass.
+// denmaCheckTab refuses an admin API request from a page loaded for another center than the place's.
 func denmaCheckTab(c echo.Context, p string) error {
 	if (p != "/api" && !strings.HasPrefix(p, "/api/")) || denmaHubOnlyPath(p) {
 		return nil
@@ -124,8 +105,7 @@ func denmaCheckTab(c echo.Context, p string) error {
 	return echo.NewHTTPError(http.StatusConflict, "Another center was opened in another tab or window since this page was loaded. Reload the page to work there.")
 }
 
-// DenmaToHub is the top bar's way back to the hub, for superadmins in a
-// center: the hub's dashboard (its being hub-only clears the place).
+// DenmaToHub is the top bar's way back to the hub, for superadmins in a center.
 func (a *App) DenmaToHub(c echo.Context) error {
 	return c.Redirect(http.StatusFound, uriAdmin)
 }

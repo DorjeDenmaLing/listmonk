@@ -1,14 +1,6 @@
 package main
 
-// denma: what each campaign led to, for Campaign reports on Campaigns ->
-// Analytics (views/denma-analytics.js): unsubscribes, which listmonk doesn't
-// keep by campaign, and bounces apart from spam complaints.
-//
-// An unsubscribe from a campaign's e-mail counts for that campaign
-// (denma_campaign_unsubs, from denmaUnsubscribe) when it opts the person out,
-// not again for someone already opted out. Only the campaign and the time
-// are kept, not who. Counting started when the table was made
-// (denma_stat_starts), so earlier campaigns have none recorded.
+// denma: what each campaign led to (unsubscribes, bounces, complaints), for Campaign reports.
 
 import (
 	"fmt"
@@ -35,8 +27,7 @@ INSERT INTO denma_stat_starts (stat) VALUES ('campaign_unsubs') ON CONFLICT (sta
 CREATE INDEX IF NOT EXISTS denma_views_camp_sub ON campaign_views (campaign_id, subscriber_id, created_at);
 `
 
-// denmaCampaignUnsub counts an opt-out for the campaign whose e-mail it came
-// from, if campUUID is a campaign's.
+// denmaCampaignUnsub counts an opt-out for the campaign whose e-mail it came from.
 const denmaCampaignUnsubSQL = `INSERT INTO denma_campaign_unsubs (campaign_id)
 	SELECT id FROM campaigns WHERE uuid::TEXT = $1`
 
@@ -47,10 +38,7 @@ type denmaCampaignOutcome struct {
 	Unsubscribes int `db:"unsubscribes" json:"unsubscribes"`
 }
 
-// DenmaCampaignOutcomes returns campaigns' bounces, complaints and
-// unsubscribes, and since when unsubscribes are counted.
-//
-//	GET /api/denma/stats/campaigns?id=1&id=2
+// DenmaCampaignOutcomes returns campaigns' bounces, complaints and unsubscribes.
 func (a *App) DenmaCampaignOutcomes(c echo.Context) error {
 	ids, err := parseStringIDs(c.QueryParams()["id"])
 	if err != nil {
@@ -73,12 +61,7 @@ func (a *App) DenmaCampaignOutcomes(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// DenmaCampaignPeopleStats returns, for each campaign, the people who opened and
-// clicked it from from to to, as the analytics' views and clicks count them
-// added up over the period (every view and click without individual
-// tracking).
-//
-//	GET /api/denma/stats/people?id=1&id=2&from=2026-01-01&to=2026-12-31
+// DenmaCampaignPeopleStats returns, for each campaign, the people who opened and clicked it.
 func (a *App) DenmaCampaignPeopleStats(c echo.Context) error {
 	ids, err := parseStringIDs(c.QueryParams()["id"])
 	if err != nil {

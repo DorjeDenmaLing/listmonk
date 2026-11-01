@@ -94,31 +94,23 @@ type Campaign struct {
 	// Fetched bodies of the attachments.
 	Attachments []Attachment `json:"-" db:"-"`
 
-	// denma: the resume checkpoint (upstream PR #3222): every subscriber up
-	// to this ID has been processed. It advances only from the send side
-	// (internal/manager/denma.go), never when subscribers are fetched, so a
-	// restart resumes from it without skipping fetched but unsent ones.
+	// denma: the resume checkpoint: every subscriber up to this ID is processed (internal/manager/denma.go).
 	LastSubscriberID int `db:"last_subscriber_id" json:"-"`
 
 	// denma: the subscriber tags the campaign is also sent to (cmd/denma_tags.go).
 	SubscriberTags pq.StringArray `db:"denma_tags" json:"subscriber_tags"`
 
-	// denma: the sentence inbox apps show after the subject, hidden at the
-	// top of the email (internal/manager/denma_preview_text.go).
+	// denma: the preview text inbox apps show after the subject (internal/manager/denma_preview_text.go).
 	PreviewText string `db:"denma_preview_text" json:"preview_text"`
 
-	// denma: where replies go, in place of the center's default
-	// (cmd/denma_reply_to.go); "" for the default.
+	// denma: where replies go, "" for the center's default (cmd/denma_reply_to.go).
 	ReplyTo string `db:"denma_reply_to" json:"reply_to"`
 
-	// denma: failed sends (cmd/denma_retries.go): when the campaign next
-	// tries them again (set: it's a retry run, sending only to them), and how
-	// many there are (the campaigns list).
+	// denma: when failed sends are tried again (a retry run), and how many (cmd/denma_retries.go).
 	DenmaRetryAt null.Time `db:"denma_retry_at" json:"-"`
 	DenmaFailed  int       `db:"denma_failed" json:"denma_failed"`
 
-	// denma: how many people opened and clicked it, for the campaigns list
-	// (cmd/denma_campaign_people.go); nil if not counted.
+	// denma: how many opened and clicked, nil if not counted (cmd/denma_campaign_people.go).
 	DenmaPeople *DenmaCampaignPeople `db:"-" json:"-"`
 
 	// Pseudofield for getting the total number of subscribers

@@ -1,31 +1,6 @@
 package main
 
-// denma: what automations' e-mails led to, for Analytics -> Automations and
-// Explore (views/denma-analytics.js): opens, clicks, unsubscribes, bounces
-// and complaints, per automation and per e-mail of a series (its step).
-//
-//   - Opens: each automation e-mail has the tracking pixel ({{ TrackView }},
-//     added if its template hasn't it, as campaigns', models.DenmaWithTrackView),
-//     /automation/<uuid>/<subscriber>/px.png?step=N, recorded in
-//     denma_automation_views (by whom only with individual tracking).
-//   - Clicks: tracked links (cmd/denma_automations.go) carry ?step=N too;
-//     clicks recorded before have no step and count only in an automation's
-//     total.
-//   - Unsubscribes: denmaUnsubscribe is given the automation's UUID, and a
-//     new opt-out counts for it (denma_automation_unsubs), as for campaigns.
-//   - Bounces and complaints: automation e-mails carry the automation's UUID
-//     in X-Listmonk-Campaign, which bounce notifications give back as a
-//     campaign's (no campaign has it, so listmonk records the bounce without
-//     one); it counts for the automation (denma_automation_bounces).
-//
-// Unsubscribes and bounces keep only the automation, its e-mail and when
-// that e-mail was sent (the person's latest from it), not who. Each was
-// counted from when its table was made (denma_stat_starts).
-//
-// A report is about the e-mails sent in the period: how many, to how many
-// people, and of those people, how many opened and clicked them (at any time
-// since), unsubscribed or bounced. With individual tracking off, opens and
-// clicks aren't tied to people: they're every open and click in the period.
+// denma: what automations' e-mails led to (opens, clicks, unsubscribes, bounces), for Analytics and Explore.
 
 import (
 	"database/sql"
@@ -79,8 +54,7 @@ CREATE INDEX IF NOT EXISTS denma_automation_bounces_auto ON denma_automation_bou
 INSERT INTO denma_stat_starts (stat) VALUES ('automation_views'), ('automation_unsubs'), ('automation_bounces')
     ON CONFLICT (stat) DO NOTHING;`
 
-// denmaAutoLastSentSQL is automation au's latest e-mail to the subscriber s
-// who matches sub: its step and when it was sent, or NULLs.
+// denmaAutoLastSentSQL is automation au's latest e-mail to subscriber s: its step and time, or NULLs.
 func denmaAutoLastSentSQL(sub string) string {
 	last := func(col string) string {
 		return `(SELECT g.` + col + ` FROM denma_automation_log g JOIN subscribers s ON s.id = g.subscriber_id
@@ -89,8 +63,7 @@ func denmaAutoLastSentSQL(sub string) string {
 	return last("step") + " AS step, " + last("at") + " AS sent_at"
 }
 
-// denmaAutoUnsubSQL counts an opt-out for the automation whose e-mail it
-// came from, if $1 is an automation's UUID ($2: the subscriber's).
+// denmaAutoUnsubSQL counts an opt-out for the automation whose UUID is $1 ($2: the subscriber's).
 var denmaAutoUnsubSQL = `INSERT INTO denma_automation_unsubs (automation_id, step, sent_at)
     SELECT au.id, ` + denmaAutoLastSentSQL(`s.uuid::TEXT = $2`) + ` FROM denma_automations au WHERE au.uuid::TEXT = $1`
 
@@ -105,8 +78,7 @@ func denmaAutoStepParam(c echo.Context) int {
 	return max(step, 1)
 }
 
-// denmaAutoTrackView is the tracking pixel in an automation's e-mail to a
-// subscriber, as listmonk's TrackView makes campaigns'.
+// denmaAutoTrackView is the tracking pixel in an automation's e-mail to a subscriber.
 func (a *App) denmaAutoTrackView(autoUUID, subUUID string, step int) string {
 	if a.cfg.Privacy.DisableTracking || autoUUID == dummyUUID || subUUID == dummyUUID {
 		return "" // tracking off, a test or a sample
@@ -121,10 +93,7 @@ func (a *App) denmaAutoTrackView(autoUUID, subUUID string, step int) string {
 	return fmt.Sprintf(`<img src="%s" width="1" height="1" style="display:none;max-height:0;max-width:0;opacity:0" alt="">`, u)
 }
 
-// DenmaAutomationView records an open of an automation's e-mail (by whom
-// only with individual tracking) and returns the pixel: an automation that
-// sends e-mail, one of its e-mails, and, with individual tracking, a
-// subscriber it ran for. Anything else isn't recorded.
+// DenmaAutomationView records an open of an automation's e-mail and returns the pixel.
 func (a *App) DenmaAutomationView(c echo.Context) error {
 	c.Response().Header().Set("Cache-Control", "no-cache")
 	if a.cfg.Privacy.DisableTracking {
@@ -149,19 +118,14 @@ func (a *App) DenmaAutomationView(c echo.Context) error {
 	return c.Blob(http.StatusOK, "image/png", pixelPNG)
 }
 
-// denmaAutoBounce is what a bounce counts for: the automation whose UUID it
-// gives as its campaign's, and that automation's latest e-mail to the
-// subscriber. ID 0 if it's no automation's.
+// denmaAutoBounce is the automation a bounce counts for (ID 0 if none) and its latest e-mail to the subscriber.
 type denmaAutoBounce struct {
 	ID     int        `db:"id"`
 	Step   *int       `db:"step"`
 	SentAt *time.Time `db:"sent_at"`
 }
 
-// denmaRecordBounce records a bounce with record (listmonk's), and counts it
-// for its automation if it's one's: read first, as listmonk's may delete the
-// subscriber; counted only once it's recorded, as a bounce that fails is
-// tried again.
+// denmaRecordBounce records a bounce with record, then counts it for its automation (read first).
 func denmaRecordBounce(db *sqlx.DB, b models.Bounce, record func(models.Bounce) error) error {
 	var au denmaAutoBounce
 	if b.CampaignUUID != "" && reUUID.MatchString(b.CampaignUUID) {
@@ -184,8 +148,7 @@ func denmaRecordBounce(db *sqlx.DB, b models.Bounce, record func(models.Bounce) 
 	return nil
 }
 
-// denmaAutoReportRow is an automation's figures, or one of its e-mails'
-// (Step > 0), for the e-mails sent in a period.
+// denmaAutoReportRow is an automation's figures, or one of its e-mails' (Step > 0).
 type denmaAutoReportRow struct {
 	AutomationID int    `db:"automation_id" json:"automation_id"`
 	Step         int    `db:"step" json:"step"` // 0: the automation's total
@@ -202,8 +165,7 @@ type denmaAutoReportRow struct {
 	Subject      string `db:"-" json:"subject"`
 }
 
-// denmaAutoReportSQL is each automation's figures and each of its e-mails',
-// for e-mails sent from $1 to $2 (opens and clicks by anyone: in that time).
+// denmaAutoReportSQL is each automation's and e-mail's figures for e-mails sent from $1 to $2.
 const denmaAutoReportSQL = `
 WITH sent AS (
     SELECT automation_id, step, subscriber_id, COUNT(*) AS n, MIN(at) AS first_at
@@ -236,11 +198,7 @@ FROM ev
 GROUP BY GROUPING SETS ((automation_id, step), (automation_id))
 ORDER BY automation_id, step`
 
-// DenmaAutomationReports returns each automation's figures, with each of its
-// e-mails', for the e-mails sent in a period (from, to: RFC 3339 times),
-// and since when opens, unsubscribes and bounces are counted.
-//
-//	GET /api/denma/stats/automations?from=...&to=...
+// DenmaAutomationReports returns each automation's figures for a period (GET /api/denma/stats/automations).
 func (a *App) DenmaAutomationReports(c echo.Context) error {
 	if !denmaAutomationsOn(a) {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
@@ -286,7 +244,7 @@ func (a *App) DenmaAutomationReports(c echo.Context) error {
 	for _, r := range rows {
 		au, ok := byID[r.AutomationID]
 		if !ok || r.Step < 0 {
-			continue // deleted since, or clicks before steps were recorded (in the total)
+			continue // deleted since, or recorded before steps
 		}
 		r.Name = au.Name
 		if r.Step > 0 {
@@ -305,8 +263,7 @@ type denmaExploreAuto struct {
 	Name string `db:"name" json:"name"`
 }
 
-// denmaExploreCount is an automation's opens, clicks or bounces in a bucket
-// (an hour or a day), as listmonk's campaign counts.
+// denmaExploreCount is an automation's opens, clicks or bounces in an hour or day bucket.
 type denmaExploreCount struct {
 	AutomationID int       `db:"automation_id" json:"automation_id"`
 	Count        int       `db:"count" json:"count"`
@@ -322,9 +279,7 @@ type denmaExplore struct {
 	Bounces     []denmaExploreCount `json:"bounces"`
 }
 
-// denmaExploreCountSQL counts a table's rows per automation and bucket, as
-// get-campaign-view-counts does (people once per bucket, with individual
-// tracking, for opens and clicks).
+// denmaExploreCountSQL counts a table's rows per automation and bucket, as get-campaign-view-counts does.
 func denmaExploreCountSQL(table string, distinct bool) string {
 	count := "COUNT(*)"
 	if distinct {
@@ -336,9 +291,7 @@ func denmaExploreCountSQL(table string, distinct bool) string {
     GROUP BY automation_id, "timestamp" ORDER BY "timestamp"`
 }
 
-// denmaExploreAutomations adds the automations chosen on Explore (?auto=) to
-// its figures and charts (cmd/campaign_analytics.go), for users who can see
-// automations; with any, its links table is the campaigns' and theirs.
+// denmaExploreAutomations adds the automations chosen on Explore (?auto=) to its figures and charts.
 func (a *App) denmaExploreAutomations(c echo.Context, v *campaignAnalyticsView, from, to time.Time) error {
 	v.Denma = denmaExplore{Automations: []denmaExploreAuto{}}
 	if !denmaAutomationsOn(a) || !v.Can(denmaAutoGet) {
@@ -383,8 +336,7 @@ func (a *App) denmaExploreAutomations(c echo.Context, v *campaignAnalyticsView, 
 		}
 	}
 
-	// The links, the campaigns' and the automations' together (people once
-	// with individual tracking, as get-campaign-link-counts).
+	// The links, the campaigns' and the automations' together.
 	count := "COUNT(*)"
 	if ind {
 		count = "COUNT(DISTINCT subscriber_id)"

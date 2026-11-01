@@ -1,8 +1,4 @@
-{{- /* denma: the activity log (cmd/denma_audit.go), on a center's Activity
-   page (its own) and the hub's (every center's);
-   assets/js/views/denma-audit.js.
-
-   dict "Root" . "Hub" true|false "Centers" []{Slug, Name} (the hub's filter) */ -}}
+{{- /* denma: the activity log (cmd/denma_audit.go): dict "Root" . "Hub" true|false "Centers" []{Slug, Name} */ -}}
 {{ define "denma-audit" -}}
 <section class="card page-content has-table denma-audit" x-data="denmaAudit({{ .Hub }}, {{ ToJSON .Centers }})" data-testid="activity">
 	<header class="hstack justify-between denma-audit-head">

@@ -1,16 +1,6 @@
 package main
 
-// denma: unsubscribing opts out of the center. A center's lists are internal,
-// so a subscriber never sees them: the unsubscribe page has one button, and
-// it, and every other way to unsubscribe from an e-mail (a campaign's, an
-// automation's or an opt-in's link, and the one-click List-Unsubscribe that
-// Gmail and Yahoo send without the page), blocklists the subscriber in this
-// center and unsubscribes them from all its lists. No campaign, tag or
-// automation reaches them again. Signing up again sends them a confirmation,
-// and only confirming brings them back (cmd/denma_resubscribe.go): no admin
-// can (cmd/denma_optouts.go). Other centers aren't affected. The preferences page keeps the
-// name and the privacy choices, without lists
-// (static/public/templates/subscription.html).
+// denma: unsubscribing opts out of the center: blocklisted and off all its lists (cmd/denma_optouts.go).
 
 import (
 	"net/http"
@@ -24,11 +14,7 @@ const (
 	denmaNotSubscribedText  = "You're not on this center's lists, so you won't get its e-mails."
 )
 
-// denmaUnsubscribe is listmonk's unsubscribe (public.go), for any e-mail:
-// campUUID may be a campaign's, an automation's or none (an opt-in's). In a
-// center, their opt-out (cmd/denma_optouts.go) is recorded first and they're
-// blocklisted in the same transaction: both, or neither (and they can try
-// again), so nobody is left blocklisted with no opt-out to keep them so.
+// denmaUnsubscribe is listmonk's unsubscribe for any e-mail; the opt-out and blocklisting share a transaction.
 func (a *App) denmaUnsubscribe(subUUID, campUUID string, _ bool) error {
 	if !a.denmaHasOptOuts() {
 		return a.core.UnsubscribeByCampaign(subUUID, campUUID, true)
@@ -48,8 +34,7 @@ func (a *App) denmaUnsubscribe(subUUID, campUUID string, _ bool) error {
 	if err != nil {
 		return fail(err)
 	}
-	// A new opt-out counts for the campaign it came from (cmd/denma_campaign_stats.go),
-	// or the automation (cmd/denma_auto_reports.go).
+	// A new opt-out counts for its campaign or automation (cmd/denma_campaign_stats.go).
 	if n, _ := res.RowsAffected(); n > 0 && campUUID != "" {
 		if _, err := tx.Exec(denmaCampaignUnsubSQL, campUUID); err != nil {
 			return fail(err)
@@ -60,9 +45,7 @@ func (a *App) denmaUnsubscribe(subUUID, campUUID string, _ bool) error {
 			}
 		}
 	}
-	// listmonk's unsubscribe-by-campaign, blocklisting: every list. Their
-	// other records at a variant of the address (denma_canon_hash: dots,
-	// +tags), the same inbox, too.
+	// listmonk's unsubscribe-by-campaign, blocklisting: every list, and the address's variants (denma_canon_hash).
 	if _, err := tx.Exec(`WITH sub AS (
 			UPDATE subscribers SET status = 'blocklisted'
 			WHERE denma_canon_hash(email) = (SELECT denma_canon_hash(email) FROM subscribers WHERE uuid = $1)
@@ -78,8 +61,7 @@ func (a *App) denmaUnsubscribe(subUUID, campUUID string, _ bool) error {
 	return nil
 }
 
-// denmaWipe is the public page's "wipe my data": their opt-out is recorded
-// first, as an unsubscribe's, so that it outlives them; then they're deleted.
+// denmaWipe is the public page's "wipe my data": it records the opt-out, then deletes the subscriber.
 func (a *App) denmaWipe(subUUID string) error {
 	if err := a.denmaUnsubscribe(subUUID, "", false); err != nil {
 		return err

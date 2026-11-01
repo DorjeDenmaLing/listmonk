@@ -1,19 +1,6 @@
 package main
 
-// denma: images missing from an e-mail. An image in a campaign or automation
-// e-mail that's in the center's Media is shown from there; deleted from
-// Media since, it would be a broken image in everyone's e-mail. So a
-// campaign doesn't start, nor is scheduled or tested, and an automation isn't
-// saved, turned on or run, while its e-mail (as rendered) has an image from the
-// center's uploads that its Media no longer has. Images from elsewhere aren't
-// checked. Deleting a file is checked against what shows it too
-// (cmd/denma_mediause.go).
-//
-// Nor while it has one at the hub's uploads address that the hub's Media
-// doesn't have: a center's files were there before centers had their own
-// folder (DDL's, until 2026-10-23), and nothing serves them there now.
-// Features version 42 pointed the centers' templates and campaigns at their
-// own folder, for the files their Media has (denmaRewriteHubUploads).
+// denma: an e-mail with images missing from the center's Media or the hub's can't be started or saved.
 
 import (
 	"database/sql"
@@ -30,8 +17,7 @@ import (
 
 var reDenmaImgSrc = regexp.MustCompile(`(?i)<img\b[^>]*?\ssrc\s*=\s*["']([^"']+)["']`)
 
-// denmaUploadNames is the names of the files under an uploads address (base,
-// absolute; its path counts too) that an e-mail's images (body, HTML) show.
+// denmaUploadNames is the file names under an uploads address (base) that an e-mail's images show.
 func denmaUploadNames(base string, body []byte) []string {
 	u, err := url.Parse(base)
 	if err != nil || u.RawQuery != "" { // a private bucket's signed URLs: unknown
@@ -61,8 +47,7 @@ func denmaUploadNames(base string, body []byte) []string {
 	return names
 }
 
-// denmaMediaNames is the names of the files in the center's uploads that an
-// e-mail's images (body, HTML) show.
+// denmaMediaNames is the files in the center's uploads that an e-mail's images show.
 func (a *App) denmaMediaNames(body []byte) []string {
 	if a.media == nil {
 		return nil
@@ -70,8 +55,7 @@ func (a *App) denmaMediaNames(body []byte) []string {
 	return denmaUploadNames(a.media.GetURL(""), body)
 }
 
-// denmaHubImages is the names of the images in a center's e-mail (body, HTML)
-// at the hub's uploads address that the hub's Media doesn't have.
+// denmaHubImages is the images at the hub's uploads address that the hub's Media doesn't have.
 func (a *App) denmaHubImages(body []byte) []string {
 	if denmaHub == nil || a.ko.String("denma.center") == "" {
 		return nil
@@ -104,8 +88,7 @@ func (a *App) denmaNotInMedia(names []string) []string {
 	return missing
 }
 
-// denmaCheckImages refuses an e-mail with images from the center's uploads
-// that aren't in its Media, or at the hub's address.
+// denmaCheckImages refuses an e-mail with images missing from the center's Media or the hub's.
 func (a *App) denmaCheckImages(body []byte) error {
 	if names := a.denmaMediaNames(body); len(names) > 0 {
 		switch missing := a.denmaNotInMedia(names); len(missing) {
@@ -126,9 +109,7 @@ func (a *App) denmaCheckImages(body []byte) error {
 	return nil
 }
 
-// denmaHubUploadsRewriter is a function that points HTML's (or a visual
-// source's) links to files named at the hub's uploads address (root, uri),
-// absolute or root-relative, to base.
+// denmaHubUploadsRewriter returns a func pointing links to hub-uploads files at base.
 func denmaHubUploadsRewriter(root, uri, base string, names []string) (func(string) string, error) {
 	alts := make([]string, len(names))
 	for i, n := range names {
@@ -150,12 +131,7 @@ func denmaHubUploadsRewriter(root, uri, base string, names []string) (func(strin
 	}, nil
 }
 
-// denmaRewriteHubUploads points the links in the center's templates and
-// campaigns (in tx, its schema) to its files at the hub's uploads address
-// (root and uri: "https://news.example.org", "/uploads"), absolute or
-// root-relative, to its own uploads address (base, ending in "/"), for the
-// files its Media has and the hub's (hubNames, served at that address) hasn't.
-// Returns how many templates and campaigns it changed.
+// denmaRewriteHubUploads repoints a center's hub-uploads links to base; returns how many it changed.
 func denmaRewriteHubUploads(tx *sqlx.Tx, root, uri, base string, hubNames []string) (int, error) {
 	if hubNames == nil {
 		hubNames = []string{} // not NULL, which <> ALL would make no names

@@ -1,14 +1,6 @@
 package main
 
-// denma: a center's sending hours (Config -> General): campaigns and
-// automation e-mails go only on its days, between its hours, in its time
-// zone, so that a campaign held back by the daily limit doesn't trickle out
-// at 3 a.m. Outside them, a campaign's messages wait (manager
-// DenmaSetWindowWait, before the daily limit's wait, so that no room is
-// claimed overnight) and go on when they open; automations that send e-mail
-// wait to run. Confirmations, password resets, notices, tests and the API's
-// transactional e-mails always go. Off by default. A save applies at once, as
-// the daily cap does.
+// denma: a center's sending hours (Config -> General); campaigns and automations wait outside them.
 
 import (
 	"fmt"
@@ -22,8 +14,7 @@ import (
 	"github.com/knadh/listmonk/internal/manager"
 )
 
-// denmaSendWindow is a center's sending hours (denma.send_window), in its
-// time zone (denma.timezone).
+// denmaSendWindow is a center's sending hours (denma.send_window), in its time zone (denma.timezone).
 type denmaSendWindow struct {
 	On   bool   `json:"on"`
 	Days []int  `json:"days"` // 0 Sunday … 6 Saturday
@@ -92,8 +83,7 @@ func (w *denmaSendWindow) open(t time.Time) bool {
 	return slices.Contains(w.Days, int(t.Weekday())) && m >= w.from && m < w.to
 }
 
-// denmaWindows holds each center's hours (by slug), changed at once on a
-// save.
+// denmaWindows holds each center's hours by slug.
 var denmaWindows sync.Map // slug -> *atomic.Pointer[denmaSendWindow]
 
 func denmaWindowOf(slug string) *atomic.Pointer[denmaSendWindow] {
@@ -114,8 +104,7 @@ func denmaWindowFrom(ko *koanf.Koanf) *denmaSendWindow {
 	return &w
 }
 
-// denmaCenterWindow sets a center's hours from its settings (ko) and makes
-// its campaign messages wait for them. Called with denmaCenterCap.
+// denmaCenterWindow sets a center's hours from its settings and makes campaign messages wait for them.
 func denmaCenterWindow(mgr *manager.Manager, ko *koanf.Koanf) {
 	if !ko.Bool("denma.multi_center") || ko.String("denma.center") == "" {
 		return
@@ -133,8 +122,7 @@ func denmaCenterWindow(mgr *manager.Manager, ko *koanf.Koanf) {
 	})
 }
 
-// denmaSendingOpen reports whether a's center may send campaigns and
-// automation e-mails now.
+// denmaSendingOpen reports whether a's center may send campaigns and automations now.
 func (a *App) denmaSendingOpen() bool {
 	if !a.ko.Bool("denma.multi_center") || a.ko.String("denma.center") == "" {
 		return true

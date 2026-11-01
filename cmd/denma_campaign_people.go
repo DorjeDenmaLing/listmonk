@@ -7,12 +7,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// denma: the Campaigns list shows how many people opened and clicked each
-// campaign, as Campaign reports and the dashboards count them, instead of
-// listmonk's totals of opens and clicks (so someone who opened it three
-// times counted three). A campaign sent without individual tracking
-// (denmaTrackedCampSQL) shows its totals, as Analytics does, as people
-// aren't known.
+// denma: the Campaigns list shows how many people opened and clicked each campaign.
 
 // denmaCampaignPeople fills in camps' people who opened and clicked.
 func (a *App) denmaCampaignPeople(camps []models.Campaign) {

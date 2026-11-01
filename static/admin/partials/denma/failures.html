@@ -1,6 +1,4 @@
-{{- /* denma: a campaign's failed sends, on its page (cmd/denma_retries.go,
-   assets/js/denma-failures.js). dict "Root", "F" (denmaSendFailures),
-   "Campaign", "CanResend". */ -}}
+{{- /* denma: a campaign's failed sends (cmd/denma_retries.go); dict "Root", "F", "Campaign", "CanResend". */ -}}
 {{ define "denma-send-failures" -}}
 {{- $f := .F }}{{ $c := .Campaign }}
 <div role="alert" data-variant="warning" class="denma-failures" data-testid="send-failures">

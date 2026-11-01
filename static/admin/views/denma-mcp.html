@@ -2,9 +2,7 @@
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
 
-{{/* denma: a center's Config -> MCP page: the keys Claude uses to work in
-	the center as one of its users (cmd/denma_mcp.go), saved as they're
-	changed. */}}
+{{/* denma: a center's Config -> MCP page: Claude's keys (cmd/denma_mcp.go). */}}
 <script nonce="{{ .CSPNonce }}">
 	window._denmaMCPKeys = {{ ToJSON $d.Keys }};
 	window._denmaMCPUsers = {{ ToJSON $d.Users }};

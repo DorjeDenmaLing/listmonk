@@ -1,8 +1,4 @@
-// denma: the confirmation before a campaign is started or scheduled, with
-// what's about to be sent and to how many (partials/denma/start-confirm.html,
-// cmd/denma_start.go). Mixed into the campaign page (views/campaign.js) and
-// the Campaigns list (views/campaigns.js), in place of listmonk's plain
-// "Are you sure?".
+// denma: the confirmation before a campaign is started or scheduled (cmd/denma_start.go).
 import { api } from './main.js';
 
 const FORMATS = {
@@ -15,10 +11,7 @@ export function denmaStartConfirm() {
     startConfirm: null,
     _startResolve: null,
 
-    // denmaConfirmStart shows campaign c's details (as the API has a
-    // campaign; the template's name is c.template_name, if known) before it's
-    // started, or scheduled for c.send_at, and resolves to whether it was
-    // confirmed.
+    // denmaConfirmStart shows campaign c's details before it's started or scheduled, resolving to whether confirmed.
     denmaConfirmStart(c, schedule) {
       const lists = (c.lists || []).filter((l) => l.id);
       const tags = c.subscriber_tags || [];

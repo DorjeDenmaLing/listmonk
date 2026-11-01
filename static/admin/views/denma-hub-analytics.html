@@ -1,10 +1,6 @@
 {{ define "admin-denma-hub-analytics" -}}
 {{ template "admin-header" . }}
-{{/* denma: the hub's Analytics page: every center's audience growth and
-	mailbox providers, together or one at a time, and each center's
-	(assets/js/views/denma-hub-analytics.js, cmd/denma_hub_analytics.go). As on
-	the centers' Analytics (partials/denma/analytics.html), without the
-	per-campaign figures. */}}
+{{/* denma: the hub's Analytics page: every center's audience growth and mailbox providers (cmd/denma_hub_analytics.go). */}}
 <section class="denma-hub denma-dash" x-data="denmaHubAnalytics" x-cloak>
 	<header class="page-header">
 		<h1 class="page-title" x-text="selected ? `Analytics: ${selected.name}` : 'Analytics: all centers'">Analytics</h1>

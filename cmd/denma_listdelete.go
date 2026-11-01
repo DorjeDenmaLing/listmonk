@@ -1,9 +1,6 @@
 package main
 
-// denma: a list an automation or a sign-up webhook uses can't be deleted
-// (Lists: one, those picked, or every one matching the search); the refusal
-// names what uses it, to be changed first. Server webhooks are changed by a
-// superadmin.
+// denma: a list an automation or sign-up webhook uses can't be deleted; the refusal names what uses it.
 
 import (
 	"errors"
@@ -15,9 +12,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// denmaListsMatchSQL is the lists listmonk's delete-lists query deletes by a
-// search ($1, spaces collapsed), type, opt-in, status and tags, of those the
-// user may manage ($6 all, else $7).
+// denmaListsMatchSQL is the lists a delete by search ($1) and filters would delete.
 const denmaListsMatchSQL = `SELECT id FROM lists
 WHERE ($1 = '' OR to_tsvector(name) @@ plainto_tsquery($1) OR name ILIKE ('%' || $1 || '%'))
 AND ($2 = '' OR type = $2::list_type)
@@ -26,8 +21,7 @@ AND ($4 = '' OR status = $4::list_status)
 AND (CARDINALITY($5::VARCHAR(100)[]) = 0 OR $5 <@ tags)
 AND ($6 OR id = ANY($7::INT[]))`
 
-// denmaListsInUseMatching is denmaListsInUse for the lists a delete by
-// search would delete.
+// denmaListsInUseMatching is denmaListsInUse for the lists a delete by search would delete.
 func (a *App) denmaListsInUseMatching(query, typ, optin, status string, tags []string, all bool, permitted []int) error {
 	if tags == nil {
 		tags = []string{}
@@ -40,8 +34,7 @@ func (a *App) denmaListsInUseMatching(query, typ, optin, status string, tags []s
 	return a.denmaListsInUse(ids)
 }
 
-// denmaListsInUse refuses to delete lists an automation or a sign-up webhook
-// uses, naming them.
+// denmaListsInUse refuses to delete lists an automation or sign-up webhook uses, naming them.
 func (a *App) denmaListsInUse(ids []int) error {
 	if len(ids) == 0 {
 		return nil

@@ -1,12 +1,6 @@
 package main
 
-// denma: what starting a campaign means, for the confirmation shown before
-// it's started or scheduled (static/admin/partials/denma/start-confirm.html,
-// assets/js/denma-start.js): how many it goes to, the center's default
-// reply-to (cmd/denma_reply_to.go), its daily cap (cmd/denma_daily.go) and its
-// sending hours (cmd/denma_sendwindow_next.go).
-// A draft campaign that would go to no one can't be started or scheduled
-// (denmaCheckRecipients).
+// denma: what starting a campaign means: the confirmation's counts, and no recipients refused.
 
 import (
 	"errors"
@@ -25,10 +19,7 @@ func initDenmaStartHandlers(g *echo.Group, a *App) {
 	g.GET("/api/denma/send-hours", pm(a.DenmaSendHours, "campaigns:get_all", "campaigns:get")) // cmd/denma_sendwindow_next.go
 }
 
-// denmaRecipientsSQL counts a campaign's recipients as next-campaigns
-// (queries/campaigns.sql) does when it starts: the subscribers on its lists
-// ($1) and the active ones with any of its tags ($2), once each, for its type
-// ($3).
+// denmaRecipientsSQL counts a campaign's recipients as next-campaigns does: lists $1, tags $2, type $3.
 const denmaRecipientsSQL = `
 SELECT COUNT(*) FROM (
     SELECT sl.subscriber_id FROM subscriber_lists sl
@@ -48,9 +39,7 @@ SELECT COUNT(*) FROM (
         AND NOT ('api-send' = ANY(COALESCE(dl.tags, '{}'))) AND (CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status != 'unsubscribed' END))
 ) x`
 
-// DenmaStartCheck answers how many a campaign would go to, with the lists
-// (list_id) and tags (tag) given, which may not be saved yet; the lists the
-// user can't see, and the tags if they can't send to tags, don't count.
+// DenmaStartCheck answers how many a campaign would go to, with the lists and tags given.
 func (a *App) DenmaStartCheck(c echo.Context) error {
 	id := getID(c)
 	if err := a.checkCampaignPerm(auth.PermTypeGet, id, c); err != nil {
@@ -93,8 +82,7 @@ func (a *App) DenmaStartCheck(c echo.Context) error {
 	}{count, a.denmaReplyTo(), a.denmaCapStatus(), a.denmaHoursAt(at)}})
 }
 
-// denmaRecipients counts campaign id's recipients with the lists and tags
-// given (denmaRecipientsSQL).
+// denmaRecipients counts campaign id's recipients with the lists and tags given.
 func (a *App) denmaRecipients(id int, listIDs []int, tags []string, typ string) (int, error) {
 	var count int
 	if err := a.db.Get(&count, denmaRecipientsSQL, pq.Array(listIDs), pq.Array(tags), typ); err != nil {
@@ -104,10 +92,7 @@ func (a *App) denmaRecipients(id int, listIDs []int, tags []string, typ string) 
 	return count, nil
 }
 
-// denmaCheckCompiles refuses to start or schedule a campaign whose e-mail
-// can't be made, its plain-text version included (made from the body,
-// cmd/denma_features.go): the campaign manager would try it every few
-// seconds and never send it. Called by denmaCheckCampaignStart.
+// denmaCheckCompiles refuses to start or schedule a campaign whose e-mail can't be made.
 func (a *App) denmaCheckCompiles(id int) error {
 	camp, err := a.core.GetCampaignForPreview(id, 0)
 	if err != nil {
@@ -122,9 +107,7 @@ func (a *App) denmaCheckCompiles(id int) error {
 // errDenmaNoRecipients refuses to start a campaign that would go to no one.
 var errDenmaNoRecipients = errors.New("No one would get this campaign: no one subscribed is on its lists or has its tags. Add a list with subscribers first.")
 
-// denmaCheckRecipients refuses to start or schedule a draft campaign that
-// would go to no one, with its saved lists and tags. A paused one, which has
-// sent to some already, can go on. Called by denmaCheckCampaignStart.
+// denmaCheckRecipients refuses to start or schedule a draft that would go to no one.
 func (a *App) denmaCheckRecipients(id int) error {
 	var c struct {
 		Status string         `db:"status"`

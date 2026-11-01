@@ -7,15 +7,10 @@ import (
 	"github.com/knadh/listmonk/models"
 )
 
-// denma: BeforePush, if set, is called before every message any Emailer
-// sends, and may block (for a send limit shared by every app in the process,
-// cmd/denma_sending.go). Campaign messages, notifications, opt-ins and
-// password resets all pass here. It may change the message's headers (the
-// map is the message's own), such as removing an internal one.
+// denma: BeforePush, if set, is called before every message any Emailer sends, and may block or change its headers.
 var BeforePush func(m models.Message)
 
-// DenmaOnSent has e call f with each message it sends and the mail server's
-// answer (the error Push returns), once the server has answered.
+// DenmaOnSent has e call f with each message it sends and the mail server's answer.
 func (e *Emailer) DenmaOnSent(f func(m models.Message, err error)) {
 	e.denmaSent = f
 }
@@ -28,19 +23,10 @@ func (e *Emailer) denmaDone(m models.Message, err error) error {
 	return err
 }
 
-// DenmaDropSenderHeaders, if set (multi-center), leaves a message's own
-// headers with any of DenmaHeaderProblem's problems out of every e-mail,
-// whatever set them: a center's campaign or transactional message could
-// otherwise send as another center's domain, past the sender checks
-// (cmd/denma_domains.go), or to recipients nobody checked. The SMTP servers'
-// own headers (the hub's settings) are kept.
+// DenmaDropSenderHeaders, if set, leaves a message's own headers with a DenmaHeaderProblem out of every e-mail.
 var DenmaDropSenderHeaders bool
 
-// DenmaHeaderProblem is why a message's own header can't be sent, or "":
-// "name" (not a header name), "control" (a control character: CR or LF would
-// start a header of its own), "sender" (DenmaSenderHeader), "recipients"
-// (Bcc, Cc and To: recipients the limits, blocklist and consent rules never
-// see) or "internal" (X-Denma-*, the process's own).
+// DenmaHeaderProblem is why a message's own header can't be sent (name, control, sender, recipients, internal), or "".
 func DenmaHeaderProblem(name, value string) string {
 	if name == "" {
 		return "name"
@@ -66,8 +52,7 @@ func DenmaHeaderProblem(name, value string) string {
 	return ""
 }
 
-// denmaDropHeader reports whether DenmaDropSenderHeaders leaves a header out:
-// one with any of DenmaHeaderProblem's problems.
+// denmaDropHeader reports whether DenmaDropSenderHeaders leaves a header out.
 func denmaDropHeader(name string, vals []string) bool {
 	for _, v := range vals {
 		if DenmaHeaderProblem(name, v) != "" {
@@ -77,9 +62,7 @@ func denmaDropHeader(name string, vals []string) bool {
 	return len(vals) == 0 && DenmaHeaderProblem(name, "") != ""
 }
 
-// DenmaSenderHeader reports whether a header (any case) says who an e-mail is
-// from, or sets how Amazon SES sends it: From, Sender, Return-Path (the
-// envelope sender), Resent-From, Resent-Sender, and X-SES-*.
+// DenmaSenderHeader reports whether a header says who an e-mail is from or sets how SES sends it.
 func DenmaSenderHeader(name string) bool {
 	switch k := textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(name)); k {
 	case "From", "Sender", hdrReturnPath, "Resent-From", "Resent-Sender":

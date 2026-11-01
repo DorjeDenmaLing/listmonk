@@ -17,8 +17,7 @@ const (
 	denmaUploadDiskFree = 0.15
 )
 
-// denmaCheckUploadRoom refuses an upload if the center's folder is at its quota,
-// or the disk it shares with the database is nearly full.
+// denmaCheckUploadRoom refuses an upload if the center's folder is at quota or the disk is nearly full.
 func (a *App) denmaCheckUploadRoom() error {
 	if denmaHub == nil || a.ko.String("upload.provider") != "filesystem" {
 		return nil

@@ -1,22 +1,6 @@
 package main
 
-// denma: subscribers' first and last names. A subscriber has first_name and
-// last_name, and their name (listmonk's, which its pages, search and exports
-// read) is the two joined, kept so by a trigger (denma_keep_names) however
-// they're set. Either can be blank (a single name).
-//
-//   - Given first and last names (the admin, imports, sign-up webhooks, the
-//     sending API, the public pages), the name is made from them.
-//   - Given only a name (listmonk's own paths, or a request without them),
-//     it's split once at the first space: "Jane Mary Smith" is Jane and
-//     Mary Smith. So were the names subscribers had before (features
-//     version 35).
-//   - A stand-in name (their address, the part before the @, or the
-//     importer's "Jane Doe" from jane.doe@) has no first or last name.
-//
-// Templates' .Subscriber.FirstName and .LastName give them (models/
-// subscribers.go), and listmonk's guess from the name only when neither is
-// set.
+// denma: subscribers' first and last names; the name is the two joined, kept by denma_keep_names.
 
 import (
 	"strings"
@@ -24,13 +8,10 @@ import (
 	"github.com/knadh/listmonk/models"
 )
 
-// denmaNameMax is the most characters of a first or last name (as
-// denma_keep_names keeps them).
+// denmaNameMax is the most characters of a first or last name.
 const denmaNameMax = 100
 
-// denmaNamesColumnsSQL adds the columns, which listmonk's export queries
-// read: in a center (denmaNamesSQL), on a new install and in the hub
-// (denmaCampaignColumnsSQL, before the queries are prepared).
+// denmaNamesColumnsSQL adds the first and last name columns (denmaNamesSQL, denmaCampaignColumnsSQL).
 const denmaNamesColumnsSQL = `ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS first_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS last_name TEXT NOT NULL DEFAULT '';`
 
@@ -40,9 +21,7 @@ const denmaNamesSQL = denmaNamesColumnsSQL + `
 CREATE OR REPLACE FUNCTION denma_tidy_name(n TEXT) RETURNS TEXT
 LANGUAGE sql IMMUTABLE AS $$ SELECT btrim(regexp_replace(COALESCE(n, ''), '\s+', ' ', 'g')) $$;
 
--- A name split once at the first space; a stand-in (the address, the part
--- before the @, or that with its dots as spaces, as the importer makes it)
--- isn't one.
+-- A name split once at the first space; a stand-in (the address, or its local part) has none.
 CREATE OR REPLACE FUNCTION denma_split_name(name TEXT, email TEXT) RETURNS TEXT[]
 LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$
     SELECT CASE WHEN n = '' OR lower(n) IN (lower(btrim(email)), lower(split_part(btrim(email), '@', 1)),
@@ -51,12 +30,7 @@ LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$
     FROM (SELECT denma_tidy_name(name) AS n) x;
 $$;
 
--- The name is the first and last names joined; given only a name, it's
--- split. listmonk's own statements, which write only the name, are given
--- them as attribs.denma_first_name and denma_last_name (denmaWithNames, and
--- the importer's internal/subimporter/denma.go), taken out here (before
--- denma_mark_imported_subscriber, by the triggers' names). Requests can't
--- give attributes starting denma_ (denmaReservedAttribs).
+-- The name is the two names joined, or a given name split; names come as attribs.denma_first_name/_last_name.
 CREATE OR REPLACE FUNCTION denma_keep_names() RETURNS trigger
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
@@ -91,14 +65,12 @@ CREATE TRIGGER denma_keep_names BEFORE INSERT OR UPDATE OF name, first_name, las
     FOR EACH ROW EXECUTE FUNCTION denma_keep_names();
 `
 
-// denmaSplitNamesSQL splits the names subscribers had before (features
-// version 35), once.
+// denmaSplitNamesSQL splits the existing names once.
 const denmaSplitNamesSQL = `UPDATE subscribers s SET first_name = p[1], last_name = p[2]
 	FROM (SELECT id, denma_split_name(name, email) AS p FROM subscribers WHERE first_name = '' AND last_name = '') x
 	WHERE s.id = x.id AND (p[1] <> '' OR p[2] <> '')`
 
-// denmaTidyName is a first or last name as the database keeps it: spaces
-// collapsed and trimmed, at most denmaNameMax characters.
+// denmaTidyName tidies a name as the database does: spaces collapsed, at most denmaNameMax characters.
 func denmaTidyName(n string) string {
 	n = strings.Join(strings.Fields(reDenmaControl.ReplaceAllString(n, " ")), " ")
 	if r := []rune(n); len(r) > denmaNameMax {
@@ -112,8 +84,7 @@ func denmaJoinName(first, last string) string {
 	return strings.TrimSpace(denmaTidyName(first) + " " + denmaTidyName(last))
 }
 
-// denmaSplitName is a name split as the database splits it
-// (denma_split_name): once, at the first space; none for a stand-in.
+// denmaSplitName splits a name as denma_split_name does: once at the first space; none for a stand-in.
 func denmaSplitName(name, email string) (string, string) {
 	n := strings.Join(strings.Fields(name), " ")
 	local, _, _ := strings.Cut(strings.TrimSpace(email), "@")
@@ -125,8 +96,7 @@ func denmaSplitName(name, email string) (string, string) {
 	return denmaTidyName(first), denmaTidyName(last)
 }
 
-// denmaWithNames is attribs with first and last names for the database to
-// take (denma_keep_names) as listmonk's statement saves the subscriber.
+// denmaWithNames is attribs with first and last names for denma_keep_names to take.
 func denmaWithNames(attribs map[string]any, first, last string) map[string]any {
 	if attribs == nil {
 		attribs = map[string]any{}
@@ -135,8 +105,7 @@ func denmaWithNames(attribs map[string]any, first, last string) map[string]any {
 	return attribs
 }
 
-// denmaFormName is a public page's name: its first and last names joined,
-// if given, else the name.
+// denmaFormName is a public page's name: first and last joined if given, else name.
 func denmaFormName(name, first, last string) string {
 	if n := denmaJoinName(first, last); n != "" {
 		return n
@@ -144,8 +113,7 @@ func denmaFormName(name, first, last string) string {
 	return name
 }
 
-// denmaFormNames is the attributes that give a new subscriber a public
-// form's first and last names (denmaWithNames), or none.
+// denmaFormNames is the attributes giving a new subscriber a form's first and last names, or none.
 func denmaFormNames(first, last string) models.JSON {
 	if denmaJoinName(first, last) == "" {
 		return nil
@@ -153,19 +121,13 @@ func denmaFormNames(first, last string) models.JSON {
 	return denmaWithNames(nil, first, last)
 }
 
-// denmaPrefsNames gives sub the preferences page's first and last names, for
-// listmonk to save.
+// denmaPrefsNames gives sub the preferences page's first and last names.
 func denmaPrefsNames(sub *models.Subscriber, first, last string) {
 	sub.DenmaFirstName, sub.DenmaLastName = first, last
 	denmaNamesIn(sub, nil)
 }
 
-// denmaNamesIn readies an admin's request (s) for listmonk to save, after
-// its attributes are checked: given first or last names, its name is made
-// from them, and they go with its attributes. before is the subscriber as
-// stored, for a PATCH (which starts from it): if they're unchanged, nothing
-// is added, so a new name alone is split by the database. Given neither, so
-// is the name.
+// denmaNamesIn makes s's name from any first and last names given; before is the stored subscriber.
 func denmaNamesIn(s *models.Subscriber, before *models.Subscriber) {
 	first, last := denmaTidyName(s.DenmaFirstName), denmaTidyName(s.DenmaLastName)
 	if before != nil && first == before.DenmaFirstName && last == before.DenmaLastName {

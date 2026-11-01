@@ -22,10 +22,7 @@ func init() {
 	csvHeaders["last_name"] = true
 }
 
-// denmaImportNames gives sub the row's first and last names, if it has
-// them: its name made from them, and the names in its attributes, which the
-// database takes out (denma_keep_names). Without them, the database splits
-// the name.
+// denmaImportNames gives sub the row's first and last names, if it has them (denma_keep_names).
 func denmaImportNames(sub SubReq, row map[string]string) SubReq {
 	first, last := strings.Join(strings.Fields(row["first_name"]), " "), strings.Join(strings.Fields(row["last_name"]), " ")
 	if first == "" && last == "" {
@@ -39,8 +36,7 @@ func denmaImportNames(sub SubReq, row map[string]string) SubReq {
 	return sub
 }
 
-// DenmaImportOpt is an import's own options, from the import page
-// (cmd/denma_imports.go), and its number in denma_imports.
+// DenmaImportOpt is an import's own options (cmd/denma_imports.go), and its number in denma_imports.
 type DenmaImportOpt struct {
 	DenmaAutomations bool   `json:"run_automations"`  // its joins and tags start automations
 	DenmaConsent     bool   `json:"keep_consent"`     // it keeps the file's consent records
@@ -48,8 +44,7 @@ type DenmaImportOpt struct {
 	DenmaImportID    int    `json:"-"`
 }
 
-// denmaBegin begins a batch's transaction, with the import's number for the
-// database's triggers (denma.import_id).
+// denmaBegin begins a batch's transaction, with the import's number (denma.import_id).
 func (s *Session) denmaBegin() (*sql.Tx, error) {
 	tx, err := s.im.db.Begin()
 	if err != nil || s.opt.DenmaImportID == 0 {
@@ -62,9 +57,7 @@ func (s *Session) denmaBegin() (*sql.Tx, error) {
 	return tx, nil
 }
 
-// denmaAfterImport runs Options.AfterImport, if set, once a subscribe import's
-// rows are in and before the import is marked finished: denma checks the
-// imported addresses (cmd/denma_emailcheck.go). since is when it started.
+// denmaAfterImport runs Options.AfterImport, if set, after a subscribe import's rows, before it finishes.
 func (s *Session) denmaAfterImport(since time.Time) {
 	if s.opt.Mode != ModeSubscribe {
 		return
@@ -77,8 +70,7 @@ func (s *Session) denmaAfterImport(since time.Time) {
 	}
 }
 
-// denmaCountConsents records, and logs, how many consent records the import
-// kept (cmd/denma_imports.go).
+// denmaCountConsents records how many consent records the import kept (cmd/denma_imports.go).
 func (s *Session) denmaCountConsents() {
 	var n int
 	if err := s.im.db.QueryRow(`UPDATE denma_imports SET consents = (SELECT COUNT(*) FROM subscribers
@@ -90,8 +82,7 @@ func (s *Session) denmaCountConsents() {
 	s.log.Printf("kept the consent record of %d", n)
 }
 
-// DenmaFail ends a session whose file failed (LoadCSV, or its ZIP), which
-// Start would otherwise wait for forever. Its status is already failed.
+// DenmaFail ends a session whose file failed (its status is already failed).
 func (s *Session) DenmaFail() {
 	if !s.denmaFailed {
 		s.denmaFailed = true
@@ -99,9 +90,7 @@ func (s *Session) DenmaFail() {
 	}
 }
 
-// denmaEndFailed is Start's end for a failed file: the open batch rolled
-// back, and the after-import checks for the batches already in, but not
-// marked finished.
+// denmaEndFailed is Start's end for a failed file: rolls back the open batch, runs the after-import checks.
 func (s *Session) denmaEndFailed(tx *sql.Tx, cur int, started time.Time) {
 	if cur > 0 && tx != nil {
 		tx.Rollback()
@@ -110,10 +99,7 @@ func (s *Session) denmaEndFailed(tx *sql.Tx, cur int, started time.Time) {
 	s.log.Printf("import failed")
 }
 
-// DenmaUTF8 is a CSV file as UTF-8, and the encoding it was read from, or ""
-// if it was UTF-8: UTF-16 if it starts with a byte order mark, or
-// Windows-1252 (Excel's CSV on Windows) if it isn't valid UTF-8. NUL
-// characters are dropped.
+// DenmaUTF8 returns b as UTF-8 and its source encoding ("" if UTF-8): UTF-16 or Windows-1252.
 func DenmaUTF8(b []byte) ([]byte, string) {
 	enc := ""
 	switch {
@@ -132,9 +118,7 @@ func DenmaUTF8(b []byte) ([]byte, string) {
 	return b, enc
 }
 
-// DenmaUTF8Reader is DenmaUTF8 for a file read as a stream: it gives the file
-// as UTF-8 and the encoding it was read from, or "". open gives the file from
-// its start; a file that may not be UTF-8 is opened twice (once to tell).
+// DenmaUTF8Reader is DenmaUTF8 for a stream; open gives the file from its start (it may be opened twice).
 func DenmaUTF8Reader(open func() (io.ReadCloser, error)) (io.ReadCloser, string, error) {
 	rc, err := open()
 	if err != nil {

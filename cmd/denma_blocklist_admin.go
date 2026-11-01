@@ -8,8 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// DenmaSharedUnblock takes an address off the shared blocklist; superadmins only,
-// in the hub. Centers that blocklisted it keep it so until their admins enable it.
+// DenmaSharedUnblock takes an address off the shared blocklist (superadmins, in the hub).
 func (a *App) DenmaSharedUnblock(c echo.Context) error {
 	if denmaHub == nil || a.ko.String("denma.center") != "" || auth.GetUser(c).UserRole.ID != auth.SuperAdminRoleID {
 		return echo.NewHTTPError(http.StatusForbidden, "Only a superadmin can do this, in the hub.")

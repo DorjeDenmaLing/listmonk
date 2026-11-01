@@ -1,11 +1,6 @@
 package main
 
-// denma: a center's Config pages (sidebar, in a center). General: the
-// center's own details, which aren't the hub's settings
-// (denmaCenterOwnSettings): its name, logo, favicon and language, and its
-// sender, reply-to and admin notification e-mails. Saving reloads the center.
-// Webhooks: its sign-up webhooks (cmd/denma_signup.go), saved on their own.
-// For users with center:manage (Center Admins, and superadmins).
+// denma: a center's Config pages, General and Webhooks, for users with center:manage.
 
 import (
 	"encoding/json"
@@ -23,8 +18,7 @@ import (
 
 const denmaCenterPerm = "center:manage"
 
-// denmaCenterFields are the settings on the Config page (all of them a
-// center's own, in denmaCenterOwnSettings).
+// denmaCenterFields are the settings on the Config page, all a center's own.
 var denmaCenterFields = []string{
 	"app.site_name", "app.logo_url", "app.favicon_url", "app.lang",
 	"app.from_email", "app.notify_emails",
@@ -37,10 +31,7 @@ var denmaCenterFields = []string{
 	"denma.website", "denma.contact_email", // cmd/denma_footer.go
 }
 
-// denmaPermissions adds ours to listmonk's permissions (permissions.json), so
-// that roles can grant them: automations' to the Campaigns group, and
-// center:manage, in multi-center mode, to the Settings group. It drops
-// subscribers:sql_query, as SQL queries are off (cmd/denma_search.go).
+// denmaPermissions adds our permissions to listmonk's, and drops subscribers:sql_query.
 func denmaPermissions(raw []byte, ko *koanf.Koanf) []byte {
 	var groups []map[string]any
 	if err := json.Unmarshal(raw, &groups); err != nil {
@@ -73,8 +64,7 @@ func denmaPermissions(raw []byte, ko *koanf.Koanf) []byte {
 	return out
 }
 
-// initDenmaCenterHandlers registers the Config pages (General and Webhooks)
-// and their API.
+// initDenmaCenterHandlers registers the Config pages and their API.
 func initDenmaCenterHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/center"), a.ViewDenmaCenter)
 	g.GET(path.Join(uriAdmin, "/center/webhooks"), a.ViewDenmaWebhooks)
@@ -125,10 +115,9 @@ type denmaCenterView struct {
 	Form    denmaCenterForm
 	Address string
 	Langs   []i18nLang
-	Super   bool // a superadmin, who alone can turn unsubscribe everywhere off, and set the daily cap
+	Super   bool // a superadmin
 
-	// The center's sending domains (cmd/denma_domains.go), and whether the
-	// hub checks senders against them.
+	// The center's sending domains (cmd/denma_domains.go), and whether the hub checks senders.
 	Domains   []denmaCenterDomain
 	DomainsOn bool
 
@@ -142,8 +131,7 @@ type denmaCenterView struct {
 	Design         int
 }
 
-// denmaWebhooksView is Config -> Webhooks: the sign-up webhooks
-// (cmd/denma_signup.go), and the lists they can have.
+// denmaWebhooksView is Config -> Webhooks: the sign-up webhooks and their lists.
 type denmaWebhooksView struct {
 	adminView
 	SignupHooks []denmaSignupHook
@@ -162,8 +150,7 @@ type denmaOption struct {
 	Optin string `db:"optin" json:"optin,omitempty"`
 }
 
-// inCenter returns an error unless the App is a center (not the hub, and in
-// multi-center mode).
+// inCenter returns an error unless the App is a center in multi-center mode.
 func (a *App) inCenter() error {
 	if denmaHub == nil || a.ko.String("denma.center") == "" {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
@@ -264,8 +251,7 @@ func (a *App) ViewDenmaWebhooks(c echo.Context) error {
 	return c.Render(http.StatusOK, "admin-denma-webhooks", view)
 }
 
-// DenmaUpdateCenter saves the Config page and reloads the center (after
-// any campaign it's sending; one that only waits doesn't hold it up).
+// DenmaUpdateCenter saves the Config page and reloads the center.
 func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -339,8 +325,7 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	if err := a.denmaCheckFeatures(&f); err != nil {
 		return bad(err.Error())
 	}
-	// Only a superadmin can turn unsubscribe everywhere off, or set the daily
-	// cap; others keep the cap as it is.
+	// Only a superadmin can turn unsubscribe everywhere off or set the daily cap.
 	if auth.GetUser(c).UserRole.ID != auth.SuperAdminRoleID {
 		cur, err := a.centerForm()
 		if err != nil {
@@ -373,8 +358,7 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 			return denmaInternal(err)
 		}
 	}
-	// The details as they were, which e-mails being sent may still show
-	// for a while (cmd/denma_footer.go).
+	// The details as they were (cmd/denma_footer.go).
 	newContact := denmaContact{Address: f.PostalAddress, Website: f.Website, Email: f.ContactEmail}
 	if err := denmaKeepPrevContact(tx, denmaContactOf(a.ko.String("denma.center")), newContact); err != nil {
 		return denmaInternal(err)
@@ -382,13 +366,12 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	if err := tx.Commit(); err != nil {
 		return denmaInternal(err)
 	}
-	a.denmaDesignLogoChanged(oldLogo, f.LogoURL) // the center's design shows its logo (cmd/denma_design.go)
+	a.denmaDesignLogoChanged(oldLogo, f.LogoURL) // cmd/denma_design.go
 	// The daily cap applies at once (cmd/denma_daily.go).
 	if c := denmaCenterCounter(a.ko); c != nil {
 		c.SetLimit(f.DailyCap, 0)
 	}
-	// And the sending hours (cmd/denma_sendwindow.go), and the postal
-	// address, website and contact e-mail (cmd/denma_footer.go).
+	// The sending hours and the footer's details (cmd/denma_sendwindow.go, cmd/denma_footer.go).
 	if slug := a.ko.String("denma.center"); slug != "" {
 		w := f.SendWindow
 		denmaWindowOf(slug).Store(&w)
@@ -405,8 +388,7 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{map[string]bool{"reloading": a.denmaReloadCenter()}})
 }
 
-// denmaReloadCenter reloads the center a is, now or once any campaign
-// sending has finished, reporting whether it's now.
+// denmaReloadCenter reloads the center a is, now or after any campaign sending, and says if now.
 func (a *App) denmaReloadCenter() bool {
 	ctr := denmaHub.get(a.ko.String("denma.center"))
 	if ctr != nil && ctr.app == a && a.denmaSending() {

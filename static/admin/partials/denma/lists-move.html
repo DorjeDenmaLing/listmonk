@@ -1,8 +1,6 @@
-{{- /* denma: the Subscribers page's Move to list, Remove from list and Delete
-   subscriber (cmd/denma_listmove.go, assets/js/denma-listmove-ui.js). */ -}}
+{{- /* denma: the Subscribers page's list actions (cmd/denma_listmove.go). */ -}}
 
-{{/* A subscriber row's list actions and Delete: dict "Root", "Sub", "List"
-   (the list being viewed, or nil). */}}
+{{/* A row's list actions and Delete: dict "Root", "Sub", "List" (the list viewed, or nil). */}}
 {{ define "denma-sub-row-actions" -}}
 {{- $sub := .Sub -}}
 {{- $cur := .List -}}

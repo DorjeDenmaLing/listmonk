@@ -1,38 +1,6 @@
 package main
 
-// denma: opt-outs. Someone who unsubscribes from a center themselves (the
-// unsubscribe link or button, or the mail app's one-click unsubscribe;
-// cmd/denma_unsubscribe.go), or marks one of its e-mails as spam, has
-// withdrawn their consent, and only they can give it again. So no one in the
-// center can enable them or subscribe them to lists again, superadmins
-// included, by any means (the subscriber page, the API, bulk actions,
-// imports, or deleting and adding them again):
-//
-//   - Someone who unsubscribed can subscribe again only by confirming the
-//     e-mail that signing up again sends them (cmd/denma_resubscribe.go), or
-//     that an admin sends them, when they've asked, with "Send a confirmation
-//     to subscribe again" on their page; or by signing up again on another
-//     system that vouches for it, through a Server sign-up webhook with
-//     "confirmed" (cmd/denma_signup.go: a Retreat Guru registration with the
-//     newsletter box ticked, through rg-sync).
-//   - Someone who complained never can, in that center.
-//
-// Each center keeps them in denma_optouts, by a SHA-256 of the address, so
-// that it outlives the subscriber (deleting them keeps the opt-out), and of
-// its canonical form (denma_email_canon: without a +tag, and for Gmail
-// without dots), so that a variant of the address is opted out too; and
-// database triggers enforce it: an opted-out address can't be enabled (an
-// error says why) and is blocklisted if it's added again, and its
-// subscriptions stay unsubscribed. Confirming a re-subscription removes an
-// "unsubscribed" opt-out, in the same transaction that enables them.
-//
-// Being blocklisted for anything else (a hard bounce or the domain check,
-// which say nothing about consent, or an admin's own blocklisting) can still
-// be undone by an admin.
-//
-// When the table is first made, those already blocklisted with no other
-// reason recorded are taken as having unsubscribed, and those who complained
-// as complaints.
+// denma: opt-outs, kept by hash so only the person can undo an unsubscribe (cmd/denma_unsubscribe.go).
 
 import (
 	"database/sql"
@@ -54,8 +22,7 @@ const (
 	denmaOptOutBefore = "before"
 )
 
-// denmaOptOutsSQL makes the opt-outs' table and triggers, in a center
-// (denmaFeaturesSQL).
+// denmaOptOutsSQL makes the opt-outs' table and triggers in a center.
 const denmaOptOutsSQL = `
 CREATE OR REPLACE FUNCTION denma_email_hash(e TEXT) RETURNS TEXT
 LANGUAGE sql IMMUTABLE AS $$ SELECT encode(sha256(convert_to(lower(trim(e)), 'UTF8')), 'hex') $$;
@@ -68,8 +35,7 @@ IF to_regclass('denma_optouts') IS NULL THEN
         source     TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
     );
-    -- Those already opted out: complaints, and the blocklisted with no
-    -- bounce or domain check to say why.
+    -- Those already opted out: complaints, and the blocklisted with no other reason.
     INSERT INTO denma_optouts (email_hash, kind, source, created_at)
         SELECT denma_email_hash(s.email), 'complained', 'before', MIN(b.created_at)
         FROM bounces b JOIN subscribers s ON s.id = b.subscriber_id WHERE b.type = 'complaint' GROUP BY s.email
@@ -85,11 +51,7 @@ IF to_regclass('denma_optouts') IS NULL THEN
 END IF;
 END $$;
 
--- Since features version 32: an address's canonical form, so that a
--- variant of an opted-out one is opted out too: lowercase, its local part
--- without a +tag, and Gmail's without dots, at gmail.com. (A +tag goes to
--- the same mailbox at most providers; erring the other way would let an
--- admin past an opt-out.)
+-- An address's canonical form: lowercase, local part without a +tag, Gmail's without dots.
 CREATE OR REPLACE FUNCTION denma_email_canon(e TEXT) RETURNS TEXT
 LANGUAGE sql IMMUTABLE AS $$
     SELECT CASE WHEN d IN ('gmail.com', 'googlemail.com') THEN replace(l, '.', '') || '@gmail.com' ELSE l || '@' || d END
@@ -102,8 +64,7 @@ LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$ SELECT encode(sha256(c
 ALTER TABLE denma_optouts ADD COLUMN IF NOT EXISTS canon_hash TEXT NULL;
 CREATE INDEX IF NOT EXISTS denma_optouts_canon ON denma_optouts (canon_hash);
 CREATE INDEX IF NOT EXISTS denma_subscribers_canon ON subscribers (denma_canon_hash(email));
--- An opt-out's canonical hash, from its subscriber's address, when the
--- writer didn't give it; and those from before, whose subscriber is here.
+-- An opt-out's canonical hash, from its subscriber's address when the writer didn't give it.
 CREATE OR REPLACE FUNCTION denma_optout_canon() RETURNS TRIGGER
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
@@ -124,8 +85,7 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     ORDER BY kind = 'complained' DESC LIMIT 1
 $$;
 
--- An opted-out address stays blocklisted: added again, it's blocklisted;
--- enabling it is refused. A changed address keeps the old one's opt-out.
+-- An opted-out address stays blocklisted and can't be enabled; a changed address keeps the old opt-out.
 CREATE OR REPLACE FUNCTION denma_keep_optouts() RETURNS TRIGGER
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE k TEXT;
@@ -172,8 +132,7 @@ DROP TRIGGER IF EXISTS denma_keep_optout_lists ON subscriber_lists;
 CREATE TRIGGER denma_keep_optout_lists BEFORE INSERT OR UPDATE ON subscriber_lists
     FOR EACH ROW EXECUTE FUNCTION denma_keep_optout_lists();
 
--- A complaint opts out for good, and blocklists, whatever the bounce
--- settings say.
+-- A complaint opts out for good, and blocklists.
 CREATE OR REPLACE FUNCTION denma_record_complaint() RETURNS TRIGGER
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
@@ -220,9 +179,7 @@ func (a *App) denmaOptOutOf(email string) *denmaOptOut {
 	return &o
 }
 
-// denmaCheckOptOut refuses to enable a subscriber who opted out (the admin's
-// and the API's update), with words for people; the database refuses it
-// anyway (denma_keep_optouts).
+// denmaCheckOptOut refuses to enable a subscriber who opted out, with words for people.
 func (a *App) denmaCheckOptOut(id int, email, status string) error {
 	if !a.denmaHasOptOuts() || status == models.SubscriberStatusBlockListed {
 		return nil

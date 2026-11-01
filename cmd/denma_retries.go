@@ -1,30 +1,6 @@
 package main
 
-// denma: campaign sends that failed, and trying them again. listmonk logs a
-// failed send and moves on: the campaign still finishes, and no one knows who
-// didn't get it. Here each one is recorded (denma_send_failures: who, why,
-// whether it's worth trying again), with those whose message couldn't be made
-// from the campaign's template.
-//
-//   - A temporary failure (the mail server unreachable or saying "try later",
-//     such as SES's sending quota) is tried again automatically when the
-//     campaign reaches the end of its list: the campaign stays running, and
-//     is picked up again after a wait (campaigns.denma_retry_at) to send only
-//     those, up to len(denmaRetryWaits) more times. One the server refused for
-//     good (a 5xx reply) isn't, nor one that may have been delivered all the
-//     same (uncertain: the connection lost before the server's answer to the
-//     message, internal/manager/denma.go), which would be a second copy.
-//   - A run of failures in a row (internal/manager/denma.go) pauses the
-//     campaign, so a mail server that's down doesn't fail everyone left.
-//   - Resuming a paused campaign tries its failed sends again first (every
-//     one but the uncertain, as whatever failed may have been fixed), then
-//     carries on.
-//   - The campaign's page lists them with the reasons, and a finished
-//     campaign's "Resend to them" sends only those again.
-//
-// A retry run only sends to those failed sends: it doesn't recount the
-// campaign's lists (queries/campaigns.sql, next-campaigns), so people who
-// joined since don't get it.
+// denma: campaign sends that failed, recorded (denma_send_failures) and tried again.
 
 import (
 	"net/http"
@@ -37,13 +13,10 @@ import (
 	null "gopkg.in/volatiletech/null.v6"
 )
 
-// denmaRetryWaits are the waits, in minutes, before each automatic retry of a
-// temporary failure, from when it last failed.
+// denmaRetryWaits are the waits, in minutes, before each automatic retry of a temporary failure.
 var denmaRetryWaits = []int{5, 30, 120}
 
-// denmaRetriesSQL makes the failed sends' table and the campaigns' retry
-// time, in a center (denmaFeaturesSQL) and in the hub (denmaHubColumns), whose
-// campaign manager runs the same queries.
+// denmaRetriesSQL makes the failed sends' table and the campaigns' retry time, in a center and the hub.
 const denmaRetriesSQL = `
 CREATE TABLE IF NOT EXISTS denma_send_failures (
     campaign_id   INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
@@ -60,8 +33,7 @@ ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_retry_at TIMESTAMP WITH TIM
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_sent_ahead INTEGER[] NOT NULL DEFAULT '{}';
 `
 
-// DenmaSendFailed records a failed send (or a retry's failure) for the
-// campaign manager.
+// DenmaSendFailed records a failed send (or a retry's failure) for the campaign manager.
 func (s *store) DenmaSendFailed(campID, subID int, reason string, temporary, uncertain bool) error {
 	if r := []rune(reason); len(r) > 500 {
 		reason = string(r[:500])
@@ -78,9 +50,7 @@ func (s *store) DenmaRetrySent(campID, subID int) error {
 	return err
 }
 
-// denmaStillSentSQL is whether failed send f's subscriber s would still be
-// sent its campaign: on one of its lists (confirmed, if the list is double
-// opt-in), or with one of its tags and on a list (next-campaign-subscribers).
+// denmaStillSentSQL is whether failed send f's subscriber s would still be sent its campaign.
 const denmaStillSentSQL = `(EXISTS (SELECT 1 FROM campaign_lists cl JOIN lists l ON l.id = cl.list_id
 		JOIN subscriber_lists sl ON sl.list_id = l.id AND sl.subscriber_id = s.id
 		WHERE cl.campaign_id = f.campaign_id AND CASE WHEN l.optin = 'double' THEN sl.status = 'confirmed' ELSE sl.status != 'unsubscribed' END)
@@ -96,11 +66,7 @@ func (s *store) DenmaStillSent(campID, subID int) (bool, error) {
 	return still, err
 }
 
-// DenmaRetrySubscribers returns the next batch (after afterID) of a
-// campaign's failed sends to try again: temporary ones, or all of them, that
-// haven't been retried as often as they may be, to subscribers who haven't
-// since been blocklisted (which unsubscribing does) or taken off its lists.
-// Never the uncertain.
+// DenmaRetrySubscribers returns the next batch (after afterID) of a campaign's failed sends to retry.
 func (s *store) DenmaRetrySubscribers(campID, afterID, limit int, all bool) ([]models.Subscriber, error) {
 	var out []models.Subscriber
 	err := s.core.DenmaDB().Select(&out, `SELECT s.* FROM denma_send_failures f JOIN subscribers s ON s.id = f.subscriber_id
@@ -113,9 +79,7 @@ func (s *store) DenmaRetrySubscribers(campID, afterID, limit int, all bool) ([]m
 	return out, err
 }
 
-// DenmaRetryLater sets when a campaign that reached the end of its list next
-// tries its temporary failures again, and reports whether it has any;
-// without any, it clears the time and the campaign can finish.
+// DenmaRetryLater sets when a campaign next retries its temporary failures; it clears the time if none.
 func (s *store) DenmaRetryLater(campID int) (bool, error) {
 	var at null.Time
 	err := s.core.DenmaDB().Get(&at, `UPDATE campaigns SET denma_retry_at = (
@@ -126,8 +90,7 @@ func (s *store) DenmaRetryLater(campID int) (bool, error) {
 	return at.Valid, err
 }
 
-// DenmaSentAhead returns those a campaign's stopped pipes sent past its
-// checkpoint, which a resumed one skips.
+// DenmaSentAhead returns those a campaign's stopped pipes sent past its checkpoint.
 func (s *store) DenmaSentAhead(campID int) ([]int, error) {
 	var ids pq.Int64Array
 	if err := s.core.DenmaDB().Get(&ids, `SELECT denma_sent_ahead FROM campaigns WHERE id = $1`, campID); err != nil {
@@ -140,8 +103,7 @@ func (s *store) DenmaSentAhead(campID int) ([]int, error) {
 	return out, nil
 }
 
-// DenmaSaveSentAhead adds ids to those sent past the campaign's checkpoint,
-// keeping only those still past it.
+// DenmaSaveSentAhead adds ids to those sent past the campaign's checkpoint.
 func (s *store) DenmaSaveSentAhead(campID int, ids []int) error {
 	_, err := s.core.DenmaDB().Exec(`UPDATE campaigns c SET denma_sent_ahead = ARRAY(
 		SELECT DISTINCT x FROM unnest(c.denma_sent_ahead || $2::INT[]) x WHERE x > c.last_subscriber_id ORDER BY x)
@@ -161,8 +123,7 @@ type denmaSendFailure struct {
 	FailedAt     time.Time `db:"failed_at" json:"failed_at"`
 }
 
-// denmaSendFailures is a campaign's failed sends: how many, the commonest
-// reasons, the latest ones, and when they're next tried.
+// denmaSendFailures is a campaign's failed sends: how many, common reasons, latest ones, next try.
 type denmaSendFailures struct {
 	Total   int `db:"total" json:"total"`
 	Reasons []struct {
@@ -171,8 +132,7 @@ type denmaSendFailures struct {
 	} `db:"-" json:"reasons"`
 	Items   []denmaSendFailure `db:"-" json:"items"`
 	RetryAt null.Time          `db:"retry_at" json:"retry_at"`
-	// Pending is how many will be tried again automatically; Waiting, whether
-	// that's later (RetryAt), rather than now.
+	// Pending is how many will be tried again automatically; Waiting, whether that's later (RetryAt).
 	Pending int  `db:"pending" json:"pending"`
 	Waiting bool `db:"-" json:"-"`
 }
@@ -206,8 +166,7 @@ func (a *App) denmaCampaignFailures(campID int) (*denmaSendFailures, error) {
 	return out, nil
 }
 
-// denmaCampaignFailuresView is denmaCampaignFailures for the campaign's page,
-// which shows nothing if they can't be read.
+// denmaCampaignFailuresView is denmaCampaignFailures for the campaign's page.
 func (a *App) denmaCampaignFailuresView(campID int) *denmaSendFailures {
 	out, err := a.denmaCampaignFailures(campID)
 	if err != nil {
@@ -239,8 +198,7 @@ func (a *App) DenmaGetSendFailures(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// DenmaResendFailures sends a finished campaign again to those it couldn't
-// send to, and to no one else: every failed send gets as many tries again.
+// DenmaResendFailures sends a finished campaign again to those it couldn't send to.
 func (a *App) DenmaResendFailures(c echo.Context) error {
 	id := getID(c)
 	if err := a.checkCampaignPerm(auth.PermTypeManage, id, c); err != nil {
@@ -271,8 +229,7 @@ func (a *App) DenmaResendFailures(c echo.Context) error {
 	if n == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "There's no one to resend to: everyone it couldn't send to has since unsubscribed, been blocklisted or left its lists.")
 	}
-	// Running, as a retry run (denma_retry_at set): the campaign manager
-	// picks it up within seconds and sends only to them.
+	// Running, as a retry run (denma_retry_at set): the campaign manager sends only to them.
 	if _, err := tx.Exec(`UPDATE campaigns SET status = 'running', denma_retry_at = NOW(), updated_at = NOW() WHERE id = $1`, id); err != nil {
 		return a.denmaResendErr(id, err)
 	}

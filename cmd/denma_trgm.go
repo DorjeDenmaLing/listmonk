@@ -1,8 +1,6 @@
 package main
 
-// denma: trigram indexes on subscribers' names and addresses, for the
-// search's "contains" matches (ILIKE '%x%'). pg_trgm is made once, before the
-// centers load; a center loaded without it has no such indexes.
+// denma: trigram indexes on subscribers' names and addresses, for "contains" searches.
 
 import "github.com/jmoiron/sqlx"
 

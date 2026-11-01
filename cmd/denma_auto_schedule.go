@@ -1,20 +1,6 @@
 package main
 
-// denma: the automations' schedule (views/denma-automations.html, under the
-// list): what they've run and what's coming up, by day.
-//
-// Everything is counted in the database, by day (in the viewer's time zone)
-// and automation, so hundreds of automations and thousands of people waiting
-// stay quick: the page shows a chart of the days, the automations of the day
-// chosen, and the people of one of them only when asked, a page at a time.
-// Who ran is denma_automation_log (each step of each run); who's coming up
-// is what denmaAutoPendingSQL finds, due when their wait is over (now, if
-// that's passed and they're still waiting: the next run, or a sender's
-// domain SES hasn't verified, or the daily limit), and the follow-ups and
-// e-mails tried again that are waiting (cmd/denma_auto_series.go). Their
-// e-mails go when the center's sending hours open (cmd/denma_sendwindow_next.go).
-// Whether they meet its conditions is checked when it runs. People's
-// addresses are only for users who can see all subscribers.
+// denma: the automations' schedule (what has run and what's coming up, by day), for denma-automations.html.
 
 import (
 	"fmt"
@@ -33,10 +19,7 @@ const (
 	denmaSchedPerPage = 50
 )
 
-// denmaAutoDueSQL is what's coming up (cond on a, the automation), with when
-// it's due: when the wait is over, or now if that's passed. A run's next
-// e-mail too. An automation that sends e-mail goes when the sending hours
-// w (nil if off) open, if its e-mail is due outside them.
+// denmaAutoDueSQL is what's coming up (cond on a), with when it's due, within the sending hours w if on.
 func denmaAutoDueSQL(cond string, w *denmaSendWindow) string {
 	return `SELECT u.automation_id, u.subscriber_id, CASE WHEN a.send_email THEN ` + w.goesSQL("u.due") + ` ELSE u.due END AS due
 		FROM (SELECT p.automation_id, p.subscriber_id, GREATEST(p.first_at + make_interval(mins => p.delay_minutes), NOW()) AS due
@@ -48,8 +31,7 @@ func denmaAutoDueSQL(cond string, w *denmaSendWindow) string {
 		JOIN denma_automations a ON a.id = u.automation_id`
 }
 
-// schedQuery is a schedule request: the viewer's time zone, and an
-// automation (0 for all).
+// schedQuery is a schedule request: the viewer's time zone, and an automation (0 for all).
 type schedQuery struct {
 	loc    *time.Location
 	tz     string
@@ -79,8 +61,7 @@ func (q schedQuery) day(s string) (time.Time, error) {
 	return d, nil
 }
 
-// cond is the automation condition for denmaAutoPendingSQL, with the
-// automation as parameter n.
+// cond is the automation condition for denmaAutoPendingSQL, with the automation as parameter n.
 func (q schedQuery) cond(n int) string {
 	if q.autoID == 0 {
 		return "TRUE"
@@ -97,9 +78,7 @@ type denmaSchedDay struct {
 	Upcoming int    `db:"upcoming" json:"upcoming"`
 }
 
-// DenmaAutoSchedule returns the days from `from` (YYYY-MM-DD, by default two
-// weeks ago) for `days` days (28), with what ran and what's coming up on
-// each, and how many are coming up after them.
+// DenmaAutoSchedule returns 28 days of what ran and what's coming up, from `from` (default two weeks ago).
 func (a *App) DenmaAutoSchedule(c echo.Context) error {
 	q, err := a.schedQuery(c)
 	if err != nil {
@@ -168,8 +147,7 @@ func (a *App) DenmaAutoSchedule(c echo.Context) error {
 	}})
 }
 
-// denmaSchedGroup is an automation on a day: who it ran for, and who's
-// coming up.
+// denmaSchedGroup is an automation on a day: who it ran for, and who's coming up.
 type denmaSchedGroup struct {
 	ID       int       `db:"id" json:"id"`
 	Name     string    `db:"name" json:"name"`
@@ -182,8 +160,7 @@ type denmaSchedGroup struct {
 	Summary  string    `db:"-" json:"summary"`
 }
 
-// DenmaAutoScheduleDay returns the automations that ran or are coming up on
-// a day.
+// DenmaAutoScheduleDay returns the automations that ran or are coming up on a day.
 func (a *App) DenmaAutoScheduleDay(c echo.Context) error {
 	q, err := a.schedQuery(c)
 	if err != nil {
@@ -263,8 +240,7 @@ type denmaSchedPerson struct {
 	Total  int       `db:"total" json:"-"`
 }
 
-// DenmaAutoSchedulePeople returns who an automation ran for on a day, or
-// who's coming up (kind=upcoming), a page at a time.
+// DenmaAutoSchedulePeople returns who an automation ran for on a day, or who's coming up, by page.
 func (a *App) DenmaAutoSchedulePeople(c echo.Context) error {
 	q, err := a.schedQuery(c)
 	if err != nil {

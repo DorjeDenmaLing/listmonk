@@ -1,16 +1,12 @@
 import { denmaAgo } from '../denma-ago.js';
 import { denmaUnsaved } from '../denma-unsaved.js';
-// denma: a center's Config pages, General (views/denma-center.html),
-// Webhooks (views/denma-webhooks.html), cmd/denma_center.go, and API
-// (views/denma-api.html, cmd/denma_api.go). Saving General reloads the
-// center; the page reloads once it's back.
+// denma: a center's Config pages: General, Webhooks and API; saving General reloads the center.
 import Alpine from 'alpinejs';
 import { api, urls } from '../main.js';
 import * as u from '../utils.js';
 import { denmaTagAutocomplete } from '../denma-tags-ui.js';
 
-// Every time zone the browser knows (with the center's), for its sending
-// hours (cmd/denma_sendwindow.go).
+// Every time zone the browser knows (with the center's), for its sending hours.
 function timeZones(cur) {
   const all = (Intl.supportedValuesOf && Intl.supportedValuesOf('timeZone')) || [];
   return cur && !all.includes(cur) ? [cur, ...all] : all;
@@ -35,8 +31,7 @@ function denmaCenter() {
 
     init() {
       this.denmaUnsavedInit();
-      // What's chosen in the Media picker (partials/media-picker.html, as
-      // the campaign page's).
+      // What's chosen in the Media picker (partials/media-picker.html).
       window.addEventListener('message', (e) => {
         if (e.origin !== window.location.origin || e.source !== this.$refs.mediaFrame?.contentWindow) {
           return;
@@ -89,9 +84,7 @@ function denmaCenter() {
 
 const ago = denmaAgo;
 
-// Config -> Webhooks: the sign-up webhooks (cmd/denma_signup.go), saved as
-// they're changed: Form webhooks (the center's admins') and Server webhooks
-// (the superadmins'). A new address or secret is shown once.
+// Config -> Webhooks: the sign-up webhooks (cmd/denma_signup.go), saved as they're changed.
 const denmaNewHookForm = (kind) => ({
   id: 0, kind, name: '', list_ids: [], tags: [], request_tags: [],
   per_hour: window._denmaSignupPerHour || 50, create_tags: false, allowed_from: '',
@@ -265,9 +258,7 @@ const denmaNewKeyForm = () => ({
 // A date as YYYY-MM-DD (UTC).
 const denmaYMD = (d) => d.toISOString().slice(0, 10);
 
-// Config -> API: the sending API's keys (cmd/denma_api.go), saved as
-// they're changed. A new key is shown once. A deleted key stays listed,
-// to be restored, for a few days.
+// Config -> API: the sending API's keys (cmd/denma_api.go), saved as they're changed.
 function denmaAPIKeys() {
   return {
 				keys: window._denmaAPIKeys || [],
@@ -487,12 +478,7 @@ if (k.can.includes('events')) {
   };
 }
 
-// The sending API's reference on Config -> API, made from its OpenAPI 3.1
-// description (cmd/denma_api_openapi.json): each operation by tag, with what
-// a key needs (x-denma-can), its parameters, request fields, a curl example,
-// the answer's fields and its responses; and the webhook. The sign-up
-// webhooks' (cmd/denma_signup_openapi.json) on Config -> Webhooks, with
-// specVar '_denmaSignupSpec' and their secret in its curl examples.
+// The sending API's reference on Config -> API, made from its OpenAPI description (and the webhooks').
 function denmaAPIDocs(specVar = '_denmaAPISpec', secretVar = 'KEY') {
 		const spec = window[specVar] || { info: {}, paths: {} };
 		const can = {

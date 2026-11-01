@@ -1,7 +1,6 @@
 package main
 
-// denmaPermInfo is how a permission is named and explained in the admin. The
-// key is what's stored and checked.
+// denmaPermInfo is how a permission is named and explained in the admin.
 type denmaPermInfo struct {
 	Key   string
 	Label string
@@ -9,8 +8,7 @@ type denmaPermInfo struct {
 	Risky bool
 }
 
-// denmaPermHidden are permissions that do nothing in multi-center mode, so
-// no form offers them. Roles that have them keep them.
+// denmaPermHidden are permissions no form offers in multi-center mode.
 var denmaPermHidden = map[string]bool{"webhooks:post_bounce": true}
 
 var denmaPermGroupLabels = map[string]string{

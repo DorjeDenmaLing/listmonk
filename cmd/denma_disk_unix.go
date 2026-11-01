@@ -4,8 +4,7 @@ package main
 
 import "syscall"
 
-// denmaDiskUsage is the size of the disk a path is on, and its space free to
-// the app (System, cmd/denma_system.go).
+// denmaDiskUsage returns the total and free space of the disk a path is on.
 func denmaDiskUsage(p string) (total, free uint64, ok bool) {
 	var st syscall.Statfs_t
 	if err := syscall.Statfs(p, &st); err != nil {

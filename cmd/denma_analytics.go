@@ -1,16 +1,6 @@
 package main
 
-// denma: a center's Analytics, a group in the sidebar
-// (partials/denma/sidebar.html) of four pages, each with its own dates
-// (partials/denma/analytics.html, views/denma-analytics.js):
-//   - Audience: Audience growth and Mailbox providers.
-//   - Campaigns: Campaign reports.
-//   - Automations: Automation reports (cmd/denma_auto_reports.go).
-//   - Explore: listmonk's Campaigns -> Analytics, where automations can be
-//     picked as well as campaigns. It keeps its route, so reports and the
-//     dashboard still link to it.
-// Each needs Analytics' permission (campaigns:get_analytics) and those its
-// figures do. The hub's Analytics is its own (cmd/denma_hub_analytics.go).
+// denma: a center's Analytics, a sidebar group of four pages: Audience, Campaigns, Automations, Explore.
 
 import (
 	"net/http"
@@ -55,8 +45,7 @@ func init() {
 	}
 }
 
-// initDenmaAnalyticsHandlers registers the pages (a center's; the hub has no
-// center content, cmd/denma_centers.go).
+// initDenmaAnalyticsHandlers registers the pages (a center's; the hub has none).
 func initDenmaAnalyticsHandlers(g *echo.Group, a *App) {
 	for p := range denmaAnalyticsPages {
 		g.GET(path.Join(uriAdmin, "/analytics", p), func(c echo.Context) error { return a.ViewDenmaAnalytics(c, p) })

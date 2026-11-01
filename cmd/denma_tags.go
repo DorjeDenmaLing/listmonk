@@ -1,27 +1,6 @@
 package main
 
-// denma: subscriber tags, a center's own labels for its subscribers
-// (volunteer, donor, retreat-2026), which subscribers never see. They're
-// kept in the subscriber's attributes (attribs.tags, a list), so they go
-// wherever attributes go: the API, imports, exports, templates. A trigger
-// keeps them lowercase, trimmed and without duplicates however they're set
-// (denmaFeaturesSQL, cmd/denma_features.go).
-//
-// A center's tags are added under Subscribers -> Tags (views/denma-tags.html,
-// the denma_tags table), which lists them with how many have each, and
-// renames or deletes them. A subscriber can only have those: they're given
-// or taken away on the subscriber's page, for the subscribers picked (or
-// every one matching a search) on the Subscribers page, or by an import
-// (which leaves out tags the center doesn't have); search finds them with
-// tag:volunteer.
-//
-// A campaign can be sent to tags as well as lists (campaigns.denma_tags,
-// "subscriber_tags" in the API): it goes to everyone on its lists or with
-// any of its tags, once each. A tag reaches only active subscribers: those
-// not blocklisted, with at least one subscription that isn't unsubscribed
-// (confirmed, on a double opt-in list), so it never reaches someone who
-// didn't sign up or confirm (queries/campaigns.sql). Since a tag can reach
-// anyone in the center, sending to tags needs access to all lists.
+// denma: subscriber tags, a center's own labels kept in attribs.tags (denmaFeaturesSQL tidies them).
 
 import (
 	"database/sql"
@@ -45,9 +24,7 @@ var (
 	reDenmaTagSpace = regexp.MustCompile(`\s+`)
 )
 
-// denmaNormTags tidies tags as the database does (denma_norm_tags): split at
-// commas and |, lowercase, trimmed, spaces collapsed, without empty ones,
-// duplicates or ones over 100 characters, sorted.
+// denmaNormTags tidies tags as denma_norm_tags does: lowercase, trimmed, deduplicated, at most 100 chars.
 func denmaNormTags(in []string) []string {
 	seen := map[string]bool{}
 	out := []string{}
@@ -65,37 +42,24 @@ func denmaNormTags(in []string) []string {
 	return out
 }
 
-// denmaCampaignColumnsSQL adds what listmonk's campaign queries read of ours:
-// the tags, preview text and reply-to (cmd/denma_reply_to.go) columns and
-// the failed sends (cmd/denma_retries.go); and, for its export queries,
-// subscribers' first and last names (cmd/denma_names.go).
+// denmaCampaignColumnsSQL adds the columns listmonk's campaign and export queries read.
 const denmaCampaignColumnsSQL = `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';` +
 	denmaPreviewTextSQL + denmaReplyToSQL + denmaRetriesSQL + denmaNamesColumnsSQL
 
-// denmaPreviewTextSQL adds the campaign's preview text (models.Campaign
-// PreviewText).
+// denmaPreviewTextSQL adds the campaign's preview text (models.Campaign PreviewText).
 const denmaPreviewTextSQL = `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_preview_text TEXT NOT NULL DEFAULT '';`
 
-// denmaPreviewTextMax is the most characters of preview text; inbox apps
-// show well under it.
+// denmaPreviewTextMax is the most characters of preview text.
 const denmaPreviewTextMax = 200
 
-// denmaInstallColumns adds them on a new install (install.go), before its
-// queries are prepared, as a center's features (denmaFeaturesSQL) or the hub
-// (denmaHubColumns) add them later.
+// denmaInstallColumns adds the columns on a new install, before the queries are prepared.
 func denmaInstallColumns(db *sqlx.DB) {
 	if _, err := db.Exec(denmaCampaignColumnsSQL); err != nil {
 		lo.Fatalf("denma: error adding the campaign tags column and failed sends: %v", err)
 	}
 }
 
-// denmaHubColumns adds the campaign tags column and the failed sends' table
-// (cmd/denma_retries.go) to the hub's schema, which has no features installed
-// but runs listmonk's campaign queries (which read them), and the daily
-// sending limit and its reserve (cmd/denma_daily.go, which also replaces
-// listmonk's sliding window with it) and the admin's logo
-// (partials/denma/topnav.html) to its settings, and deletes any API users
-// (cmd/denma_noapiusers.go). Called on every start (denmaPrepareHub).
+// denmaHubColumns adds the hub's campaign tags, failed sends, daily limit and logo; run on every start.
 func denmaHubColumns(db *sqlx.DB) {
 	if _, err := db.Exec(denmaCampaignColumnsSQL +
 		`INSERT INTO settings (key, value) VALUES ('denma.daily_limit', '0'), ('denma.daily_reserve', '5'),
@@ -108,17 +72,12 @@ func denmaHubColumns(db *sqlx.DB) {
 	}
 }
 
-// denmaTagActiveSQL is true for an active subscriber (alias subscribers): not
-// blocklisted, with a subscription that isn't unsubscribed (or, on a double
-// opt-in list, is confirmed), and isn't to an API campaign's list, which is
-// no consent (cmd/denma_noconsent.go). The campaign queries use the same
-// condition.
+// denmaTagActiveSQL is true for an active subscriber (alias subscribers); the campaign queries use it too.
 const denmaTagActiveSQL = `(subscribers.status <> 'blocklisted' AND EXISTS (SELECT 1 FROM subscriber_lists dsl
 	JOIN lists dl ON dl.id = dsl.list_id WHERE dsl.subscriber_id = subscribers.id AND ` + denmaAPIListActive + `
 	AND (CASE WHEN dl.optin = 'double' THEN dsl.status = 'confirmed' ELSE dsl.status <> 'unsubscribed' END)))`
 
-// denmaTagCount is a tag, how many subscribers have it, and how many of them a
-// campaign to it would reach.
+// denmaTagCount is a tag, how many subscribers have it, and how many a campaign to it would reach.
 type denmaTagCount struct {
 	Tag         string `db:"tag" json:"tag"`
 	Subscribers int    `db:"subscribers" json:"subscribers"`
@@ -138,8 +97,7 @@ func (a *App) denmaTags() ([]denmaTagCount, error) {
 	return out, err
 }
 
-// denmaUnknownTags returns an error naming the tags (tidied) the center
-// doesn't have, if any.
+// denmaUnknownTags returns an error naming the tidied tags the center doesn't have.
 func (a *App) denmaUnknownTags(tags []string) error {
 	var missing []string
 	if err := a.db.Select(&missing, `SELECT t FROM unnest($1::TEXT[]) t WHERE NOT EXISTS (SELECT 1 FROM denma_tags d WHERE d.tag = t)`,
@@ -158,9 +116,7 @@ func (a *App) denmaUnknownTags(tags []string) error {
 		s, strings.Join(missing, ", "), it))
 }
 
-// denmaCheckSubscriberTags checks that a subscriber's attributes (as sent to
-// the API) only have the center's tags, or their other names. Called by
-// CreateSubscriber, UpdateSubscriber and PatchSubscriber.
+// denmaCheckSubscriberTags checks a subscriber's attributes only have the center's tags or other names.
 func (a *App) denmaCheckSubscriberTags(attribs map[string]any) error {
 	tags, err := a.denmaResolveTags(denmaAttribTags(attribs))
 	if err != nil {
@@ -173,8 +129,7 @@ func (a *App) denmaCheckSubscriberTags(attribs map[string]any) error {
 	return a.denmaUnknownTags(tags)
 }
 
-// denmaAttribTags is the tags in attributes' "tags" (a string, or a list,
-// nested once at most), tidied as the database does.
+// denmaAttribTags is the tags in attributes' "tags" (a string or list, nested once), tidied.
 func denmaAttribTags(attribs map[string]any) []string {
 	var tags []string
 	var add func(v any, depth int)
@@ -235,8 +190,7 @@ func (a *App) DenmaGetTags(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{tags})
 }
 
-// denmaAllSubscribers returns an error unless the user may change every
-// subscriber (subscribers:manage, and all lists).
+// denmaAllSubscribers returns an error unless the user may change every subscriber.
 func (a *App) denmaAllSubscribers(c echo.Context) error {
 	u := auth.GetUser(c)
 	if !denmaAllLists(&u) || !u.HasPerm("subscribers:manage") {
@@ -287,8 +241,7 @@ func (a *App) DenmaAddTag(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{map[string]string{"tag": tag[0]}})
 }
 
-// DenmaChangeTag renames a tag (merging it into another of that name), or
-// deletes it from the center and every subscriber.
+// DenmaChangeTag renames a tag (merging into an existing one) or deletes it everywhere.
 func (a *App) DenmaChangeTag(c echo.Context) error {
 	if err := a.denmaAllSubscribers(c); err != nil {
 		return err
@@ -326,9 +279,7 @@ func (a *App) DenmaChangeTag(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	// The center's tags first: the trigger keeps subscribers to them. The new
-	// name is added before the old goes, so that its other names follow it
-	// (cmd/denma_tagaliases.go); one of them can be the new name.
+	// The new name is added first, then the old goes (cmd/denma_tagaliases.go).
 	var res sql.Result
 	err = denmaLockTags(tx)
 	if err == nil && len(to) == 1 {
@@ -347,7 +298,7 @@ func (a *App) DenmaChangeTag(c echo.Context) error {
 			_, err = tx.Exec(`UPDATE denma_tag_aliases SET tag = $2 WHERE tag = $1`, from[0], to[0])
 		}
 	}
-	// An automation keeps its tags: without one, its conditions would change.
+	// An automation keeps its tags.
 	if err == nil && len(to) == 0 && denmaAutomationsOn(a) {
 		var names []string
 		err = tx.Select(&names, `SELECT name FROM denma_automations
@@ -364,8 +315,7 @@ func (a *App) DenmaChangeTag(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("There's no tag %s.", from[0]))
 		}
 	}
-	// When subscribers got it (cmd/denma_automations.go) goes with the new
-	// name first, so that renaming doesn't set off automations.
+	// The time subscribers got it (cmd/denma_automations.go) goes to the new name first.
 	if err == nil && len(to) == 1 && denmaAutomationsOn(a) {
 		_, err = tx.Exec(`INSERT INTO denma_tag_log (subscriber_id, tag, added_at) SELECT subscriber_id, $2, added_at
 			FROM denma_tag_log WHERE tag = $1 ON CONFLICT DO NOTHING`, from[0], to[0])
@@ -406,24 +356,19 @@ func (a *App) DenmaChangeTag(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{map[string]int64{"subscribers": n}})
 }
 
-// denmaTagsSet is the new attributes when adding (add, a boolean
-// parameter) or removing tags (tags, a TEXT[] parameter); the trigger tidies
-// them.
+// denmaTagsSet is the new attributes when adding (add) or removing tags (tags, a TEXT[] parameter).
 func denmaTagsSet(add, tags string) string {
 	cur := `COALESCE(CASE WHEN jsonb_typeof(attribs->'tags') = 'array' THEN attribs->'tags' END, '[]'::JSONB)`
 	return `(CASE WHEN jsonb_typeof(attribs) = 'object' THEN attribs ELSE '{}'::JSONB END) || jsonb_build_object('tags',
 		CASE WHEN ` + add + `::BOOLEAN THEN ` + cur + ` || to_jsonb(` + tags + `::TEXT[]) ELSE ` + cur + ` - ` + tags + `::TEXT[] END)`
 }
 
-// denmaTagsByQuerySQL adds or removes tags ($5, $6) for the subscribers
-// matching a query (models.Queries.ExecSubQueryTpl's %query%, with $1-$4).
+// denmaTagsByQuerySQL adds or removes tags ($5, $6) for the subscribers matching a query (%query%, $1-$4).
 var denmaTagsByQuerySQL = `WITH subs AS (%query%)
 UPDATE subscribers SET attribs = ` + denmaTagsSet("$5", "$6") + `, updated_at = NOW()
 WHERE id = ANY(SELECT id FROM subs)`
 
-// DenmaTagSubscribers adds or removes tags for the subscribers picked (ids),
-// or for every one matching a search (as the Subscribers page's other bulk
-// actions).
+// DenmaTagSubscribers adds or removes tags for the subscribers picked (ids) or matching a search.
 func (a *App) DenmaTagSubscribers(c echo.Context) error {
 	user := auth.GetUser(c)
 	var req struct {
@@ -487,16 +432,12 @@ func denmaAllLists(u *auth.User) bool {
 	return all
 }
 
-// sanitizeDenmaSQL is the core's sanitizeSQLExp for a condition built by
-// denmaSearch (it only trims a trailing semicolon).
+// sanitizeDenmaSQL is the core's sanitizeSQLExp for a condition built by denmaSearch.
 func sanitizeDenmaSQL(q string) string {
 	return strings.TrimSuffix(strings.TrimSpace(q), ";")
 }
 
-// denmaCheckCampaign tidies a campaign's columns of ours and checks them:
-// its preview text's length, its reply-to address, and that it may have its
-// tags: regular campaigns only, by users with access to all lists. Called by
-// CreateCampaign and UpdateCampaign.
+// denmaCheckCampaign tidies and checks a campaign's columns of ours: preview text, reply-to and tags.
 func (a *App) denmaCheckCampaign(o *campReq, c echo.Context) error {
 	if err := denmaNoOptinCampaign(o.Type); err != nil { // cmd/denma_optincampaigns.go
 		return err
@@ -518,13 +459,10 @@ func (a *App) denmaCheckCampaign(o *campReq, c echo.Context) error {
 	if u := auth.GetUser(c); !denmaAllLists(&u) {
 		return echo.NewHTTPError(http.StatusForbidden, "Sending to tags needs access to all lists.")
 	}
-	// (One the center doesn't have is a typo, or a tag since deleted.)
 	return a.denmaUnknownTags(o.SubscriberTags)
 }
 
-// denmaSaveCampaign saves a campaign's columns of ours, its tags, preview
-// text and reply-to (after listmonk saved the rest), into out, the campaign
-// returned.
+// denmaSaveCampaign saves a campaign's tags, preview text and reply-to into out, after listmonk's save.
 func (a *App) denmaSaveCampaign(id int, o *campReq, out *models.Campaign) error {
 	tags := o.SubscriberTags
 	if tags == nil {

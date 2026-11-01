@@ -1,8 +1,4 @@
-{{/*
-	denma: in the top bar of a center (not the hub), for a superadmin who
-	opened it from the hub: which center they're in, and the way back.
-	Included in views/base.html.
-*/}}
+{{/* denma: the top bar's center name and way back for a superadmin who opened it from the hub. */}}
 {{ define "denma-superadmin-notice" }}
 {{- with .Data.Profile }}
 {{- if and DenmaHubURL (not DenmaIsHub) (eq .UserRole.ID 1) }}

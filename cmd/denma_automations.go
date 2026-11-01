@@ -1,53 +1,6 @@
 package main
 
-// denma: automations (sidebar, in a center; not the hub), as Mailchimp's
-// are: when something happens to someone, after an optional wait, they're
-// added to or removed from lists, tagged or untagged, and sent an e-mail,
-// any of these.
-//
-// What sets one off (its trigger):
-//   - joins: they join one of its lists (single opt-in ones).
-//   - confirms: they confirm their subscription to one of its lists (double
-//     opt-in ones), by the link in the confirmation e-mail, or are added
-//     confirmed. Never before: someone waiting to confirm has given no
-//     consent yet.
-//   People added by hand count too (unless the admin says not to,
-//   cmd/denma_listmove.go), and by an import if it asks
-//   (cmd/denma_imports.go).
-//   - tagged: they get one of its tags (cmd/denma_tags.go).
-//   - opens, clicks: they open its campaign, or click a link in it. Only with
-//     Settings -> Privacy's individual tracking on, which ties them to people.
-//
-// Only what happens while an automation is on counts, not what happened
-// before. It runs once per person, or each time it happens again (each_time).
-// Its conditions (if_tags, unless_tags) are checked when the wait is over;
-// someone who doesn't meet them is skipped (for that time).
-//
-// Its actions keep to the subscriber's consent: it never acts on someone
-// blocklisted or added by the API without consent (cmd/denma_noconsent.go),
-// never re-adds someone who unsubscribed from a list, adds people as
-// confirmed only if they've confirmed a subscription in the center (not an
-// API campaign's list), and removing from a list deletes the subscription (it isn't an
-// unsubscribe, so unsubscribe everywhere doesn't apply). Automations that would set each other
-// off in a loop (one adding to a list or tag that sets off another, and back)
-// can't be turned on together.
-//
-// A cron job (every minute, per center) runs what's due; e-mails go through
-// the center's e-mail messenger. denma_automation_sends records each run, per
-// automation and subscriber, with what it did, for the subscriber's Activity
-// tab; denma_list_joins and denma_tag_log record when people joined lists and
-// got tags.
-//
-// Its e-mails' unsubscribe links take the automation's UUID in place of a
-// campaign's (public.go calls denmaUnsubscribe). Their "view in browser" link
-// is /automation/<uuid>/<subscriber>. Their links are tracked through
-// /automation/link/... (denma_automation_clicks), and their opens by a pixel
-// (cmd/denma_auto_reports.go).
-//
-// Every new center starts with one (denmaDefaultAutomation): website signups,
-// on a double opt-in list, move on to its newsletter once they've confirmed.
-// It replaced the Website signups setting, which centers that had it got as
-// an automation (features version 16).
+// denma: automations, which change lists and tags and send e-mails when something happens to someone.
 
 import (
 	"database/sql"
@@ -86,8 +39,7 @@ const (
 	denmaAutoMaxDelay = 365 * 24 * 60
 	// denmaAutoMaxTags is the most tags in each of an automation's fields.
 	denmaAutoMaxTags = 20
-	// denmaAutoMaxQuietDays is the most days its "no other e-mail" can be
-	// (the record of sent e-mails is kept for longer, cmd/denma_messages.go).
+	// denmaAutoMaxQuietDays is the most days its "no other e-mail" can be.
 	denmaAutoMaxQuietDays = 30
 )
 
@@ -103,8 +55,7 @@ const (
 	denmaTrigClicks   = "clicks"
 )
 
-// denmaAutoTables are made in each center's schema when it loads (and in a
-// single install's when it starts); each part is made once.
+// denmaAutoTables are made in each center's schema when it loads; each part is made once.
 const denmaAutoTables = `
 CREATE TABLE IF NOT EXISTS denma_automations (
     id            SERIAL PRIMARY KEY,
@@ -119,8 +70,7 @@ CREATE TABLE IF NOT EXISTS denma_automations (
     created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
--- Its lists: those that set it off (trigger), and those it adds people to or
--- removes them from.
+-- Its lists: those that set it off (trigger), and those it adds people to or removes them from.
 CREATE TABLE IF NOT EXISTS denma_automation_lists (
     automation_id INTEGER NOT NULL REFERENCES denma_automations(id) ON DELETE CASCADE,
     list_id       INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
@@ -172,10 +122,7 @@ DO $$ BEGIN
     END IF;
 END $$;
 
--- When each subscriber last joined each list (on a double opt-in list, when
--- they confirmed), for automations; and, when they confirm a double opt-in
--- list themselves (denma.own_confirm, cmd/denma_queries.go), not an admin,
--- attribs.consent_confirmed_at.
+-- When each subscriber last joined each list (on a double opt-in list, when they confirmed).
 DO $$ BEGIN
     IF to_regclass('denma_list_joins') IS NULL THEN
         CREATE TABLE denma_list_joins (
@@ -199,8 +146,7 @@ DECLARE
     dbl BOOLEAN;
 BEGIN
     SELECT optin = 'double' INTO dbl FROM lists WHERE id = NEW.list_id;
-    -- An admin's add or move without the lists' automations isn't a join (cmd/denma_listmove.go),
-    -- nor an import's without them (cmd/denma_imports.go).
+    -- Not an admin's move or an import's without automations.
     IF ((dbl AND NEW.status = 'confirmed' AND (TG_OP = 'INSERT' OR OLD.status <> 'confirmed'))
         OR (NOT dbl AND NEW.status <> 'unsubscribed' AND (TG_OP = 'INSERT' OR OLD.status = 'unsubscribed')))
         AND COALESCE(current_setting('denma.quiet_joins', true), '') <> 'on'
@@ -210,7 +156,7 @@ BEGIN
     END IF;
     IF dbl AND TG_OP = 'UPDATE' AND NEW.status = 'confirmed' AND OLD.status = 'unconfirmed'
         AND COALESCE(current_setting('denma.own_confirm', true), '') = 'on' THEN
-        -- Attributes may be JSON null, which || would make an array.
+        -- Attributes may be JSON null.
         UPDATE subscribers
         SET attribs = (CASE WHEN jsonb_typeof(attribs) = 'object' THEN attribs ELSE '{}'::JSONB END) || jsonb_build_object('consent_confirmed_at',
                 to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')),
@@ -252,7 +198,7 @@ BEGIN
     IF now_tags = had_tags THEN
         RETURN NULL;
     END IF;
-    IF TG_OP = 'UPDATE' THEN -- planned each time, for the log's size now
+    IF TG_OP = 'UPDATE' THEN
         EXECUTE 'DELETE FROM denma_tag_log WHERE subscriber_id = $1 AND NOT (tag = ANY($2))' USING NEW.id, now_tags;
     END IF;
     -- Not an import's tags without its automations (cmd/denma_imports.go).
@@ -266,8 +212,7 @@ BEGIN
 END;
 $$;
 
--- Joining a double opt-in list was always when they confirmed; those
--- automations say so.
+-- Joining a double opt-in list is when they confirmed.
 UPDATE denma_automations a SET trigger_type = 'confirms' WHERE trigger_type = 'joins'
     AND EXISTS (SELECT 1 FROM denma_automation_lists al WHERE al.automation_id = a.id AND al.kind = 'trigger')
     AND NOT EXISTS (SELECT 1 FROM denma_automation_lists al JOIN lists l ON l.id = al.list_id
@@ -291,15 +236,11 @@ ALTER TABLE denma_automations ADD COLUMN IF NOT EXISTS quiet_days INTEGER NOT NU
 	denmaAutoSeriesSQL + // follow-ups and history (cmd/denma_auto_series.go)
 	denmaAutoReportsSQL // opens, unsubscribes and bounces (cmd/denma_auto_reports.go)
 
-// denmaAutoRunnableSQL is whether automation a can run: what it sends has
-// its templates.
+// denmaAutoRunnableSQL is whether automation a can run.
 const denmaAutoRunnableSQL = `(NOT a.send_email OR (a.template_id IS NOT NULL
     AND NOT EXISTS (SELECT 1 FROM denma_automation_steps st WHERE st.automation_id = a.id AND st.template_id IS NULL)))`
 
-// denmaAutoPendingSQL is what's happened to people that the active
-// automations matching cond (a condition on a, the automation) haven't run
-// for yet: one row per automation and subscriber, with the first and last of
-// those events. Each kind of trigger's events come from their own table.
+// denmaAutoPendingSQL is what's happened to people that active automations haven't run for.
 func denmaAutoPendingSQL(cond string) string {
 	on := `a.active AND ` + denmaAutoRunnableSQL + ` AND (` + cond + `)`
 	return `
@@ -333,17 +274,15 @@ FROM ev
 JOIN subscribers s ON s.id = ev.subscriber_id
 LEFT JOIN denma_automation_sends d ON d.automation_id = ev.automation_id AND d.subscriber_id = ev.subscriber_id
 WHERE s.status <> 'blocklisted' AND (d.subscriber_id IS NULL OR (ev.each_time AND ev.at > d.trigger_at))
-    -- Not those the API added, who haven't consented (cmd/denma_noconsent.go).
+    -- Not those the API added without consent (cmd/denma_noconsent.go).
     AND NOT EXISTS (SELECT 1 FROM denma_no_consent nc WHERE nc.email_hash = denma_email_hash(s.email))
-    -- Only those subscribed to something: not a sign-up who hasn't confirmed
-    -- (a Form webhook tags them at once), until they do.
+    -- Only those subscribed to something.
     AND EXISTS (SELECT 1 FROM subscriber_lists asl JOIN lists al ON al.id = asl.list_id WHERE asl.subscriber_id = s.id
         AND (asl.status = 'confirmed' OR (asl.status = 'unconfirmed' AND al.optin = 'single')))
 GROUP BY ev.automation_id, ev.subscriber_id, ev.delay_minutes`
 }
 
-// denmaAutomation is an automation, with its lists and its template's and
-// campaign's names.
+// denmaAutomation is an automation, with its lists and its template's and campaign's names.
 type denmaAutomation struct {
 	ID                int            `db:"id" json:"id"`
 	UUID              string         `db:"uuid" json:"uuid"`
@@ -440,14 +379,12 @@ type denmaAutoForm struct {
 
 	Steps []denmaAutoStepForm `json:"steps"` // its follow-ups (cmd/denma_auto_series.go)
 
-	// TestEmail is where "Send a test" sends it, and TestStep which of its
-	// e-mails (1, or a follow-up's).
+	// TestEmail is where "Send a test" sends it, and TestStep which of its e-mails.
 	TestEmail string `json:"test_email"`
 	TestStep  int    `json:"test_step"`
 }
 
-// denmaAutoOption is a list, template or campaign in the automation page's
-// selects.
+// denmaAutoOption is a list, template or campaign in the automation page's selects.
 type denmaAutoOption struct {
 	ID      int    `db:"id" json:"id"`
 	Name    string `db:"name" json:"name"`
@@ -473,14 +410,12 @@ type denmaAutomationView struct {
 	Held               string              // why its e-mails can't be sent (cmd/denma_address.go), or ""
 }
 
-// denmaAutomationsOn reports whether the app has automations: a center, or
-// listmonk without multi-center; not the hub.
+// denmaAutomationsOn reports whether the app has automations (not the hub).
 func denmaAutomationsOn(a *App) bool {
 	return !a.ko.Bool("denma.multi_center") || a.ko.String("denma.center") != ""
 }
 
-// denmaStartAutomations makes the app's automation tables if they're missing
-// and adds the job that runs them to its cron. Called by buildApp.
+// denmaStartAutomations makes the automation tables and adds the job that runs them.
 func denmaStartAutomations(a *App) {
 	if !denmaAutomationsOn(a) || a.crons == nil {
 		return
@@ -490,9 +425,7 @@ func denmaStartAutomations(a *App) {
 		a.log.Printf("denma: error checking the automation tables: %v", err)
 		return
 	}
-	// A center reloading makes them while its old app's job may be using
-	// them: their ALTERs and indexes lock even when there's nothing to do, so
-	// a deadlock is tried again. Tables made before are enough to run.
+	// Tables made before are enough to run; a deadlock is tried again.
 	if err := denmaRetryDeadlock(func() error { _, err := a.db.Exec(denmaAutoTables); return err }); err != nil {
 		a.log.Printf("denma: error making the automation tables: %v", err)
 		if !exists {
@@ -522,8 +455,7 @@ func denmaStartAutomations(a *App) {
 	a.crons.Start()
 }
 
-// denmaRetryDeadlock runs fn, again (up to 5 times, a little later each
-// time) while Postgres says it deadlocked.
+// denmaRetryDeadlock runs fn, again (up to 5 times) while Postgres says it deadlocked.
 func denmaRetryDeadlock(fn func() error) error {
 	var err error
 	for i := range 5 {
@@ -536,9 +468,7 @@ func denmaRetryDeadlock(fn func() error) error {
 	return err
 }
 
-// denmaDefaultAutomation gives a new center (db, its schema) its website
-// signups' lists and the automation that moves people on from the first
-// once they've confirmed. Called when the center is made.
+// denmaDefaultAutomation gives a new center its website signups' lists and automation.
 func denmaDefaultAutomation(db *sqlx.DB) error {
 	if _, err := db.Exec(denmaAutoTables); err != nil {
 		return err
@@ -566,8 +496,7 @@ func denmaDefaultAutomation(db *sqlx.DB) error {
 	return tx.Commit()
 }
 
-// denmaInsertMoveAutomation adds an automation, on from now, that moves
-// people who confirm the hold list to the target list, each time.
+// denmaInsertMoveAutomation adds an automation moving people from the hold list to the target list.
 func denmaInsertMoveAutomation(tx *sqlx.Tx, hold, target int, name string) error {
 	var id int
 	if err := tx.Get(&id, `INSERT INTO denma_automations (uuid, name, subject, trigger_type, send_email, each_time, active, active_since)
@@ -579,9 +508,7 @@ func denmaInsertMoveAutomation(tx *sqlx.Tx, hold, target int, name string) error
 	return err
 }
 
-// denmaMigrateSignupSetting turns the Website signups setting (a holding
-// list and a target list), which the features' trigger used to do, into an
-// automation, and removes it (features version 16).
+// denmaMigrateSignupSetting turns the Website signups setting into an automation.
 func denmaMigrateSignupSetting(tx *sqlx.Tx) (bool, error) {
 	if _, err := tx.Exec(denmaAutoTables); err != nil {
 		return false, err
@@ -626,21 +553,15 @@ func (a *App) runAutomations() {
 	}
 }
 
-// denmaAutoHeld is when each automation (center/ID) last logged that it's
-// waiting for its sender's domain, to log it once an hour.
+// denmaAutoHeld is when each automation last logged that it's waiting for its sender's domain.
 var denmaAutoHeld sync.Map
 
-// denmaAutoShown is when each automation's e-mails (by App, ID and last
-// change) last passed autoContent; it's checked again after
-// denmaAutoShownFor, rather than rendered every minute. Templates can't be
-// saved without the address, a new address reloads the center (a new App),
-// and each e-mail is checked again as it's sent (denmaCountedMessenger).
+// denmaAutoShown is when each automation's e-mails last passed autoContent.
 var denmaAutoShown sync.Map
 
 const denmaAutoShownFor = 15 * time.Minute
 
-// denmaForgetAutoChecks forgets a's automations' remembered passes, so that
-// they're checked again (a Media file was deleted).
+// denmaForgetAutoChecks forgets a's automations' remembered autoContent passes.
 func (a *App) denmaForgetAutoChecks() {
 	prefix := fmt.Sprintf("%p/", a)
 	denmaAutoShown.Range(func(k, _ any) bool {
@@ -670,8 +591,7 @@ func (a *App) autoContentOK(auto denmaAutomation) error {
 	return nil
 }
 
-// runAutomation runs an automation for those whose wait is over, and sends
-// its e-mails that are due (follow-ups, and those tried again).
+// runAutomation runs an automation for those whose wait is over, and sends its due e-mails.
 func (a *App) runAutomation(auto denmaAutomation) {
 	limit := denmaAutoBatch
 	var claim, centerClaim int64 // its e-mails' claims against the daily limit and the center's cap
@@ -680,8 +600,7 @@ func (a *App) runAutomation(auto denmaAutomation) {
 		if a.emailMsgr == nil {
 			return
 		}
-		// Nothing runs while SES has said it hasn't verified the sender's
-		// domain (cmd/denma_domains.go): those due wait, and go once it has.
+		// Nothing runs while SES hasn't verified the sender's domain (cmd/denma_domains.go).
 		from := auto.FromEmail
 		if from == "" {
 			from = a.cfg.FromEmail
@@ -694,9 +613,7 @@ func (a *App) runAutomation(auto denmaAutomation) {
 			}
 			return
 		}
-		// Nor while its e-mails don't show the center's details
-		// (cmd/denma_address.go) or have an image missing from its Media
-		// (cmd/denma_images.go). A pass is kept for a while (denmaAutoShown).
+		// Nor while its e-mails lack the center's details or have an image missing.
 		if err := a.autoContentOK(auto); err != nil {
 			key := fmt.Sprintf("%s/%d/address", a.ko.String("denma.center"), auto.ID)
 			if t, ok := denmaAutoHeld.Load(key); !ok || time.Since(t.(time.Time)) > time.Hour {
@@ -705,10 +622,7 @@ func (a *App) runAutomation(auto denmaAutomation) {
 			}
 			return
 		}
-		// The hub's daily limit (cmd/denma_daily.go): its share of what's
-		// left, claimed before anything is sent, so that automations running
-		// at the same time in other centers can't take the same room. What
-		// isn't sent is given back; the rest are run later.
+		// The hub's daily limit (cmd/denma_daily.go): claimed before sending, the unsent given back.
 		got, id := denmaDaily.Claim(limit)
 		a.denmaAutoWant(auto, limit, got) // and what's due that it couldn't get
 		if got == 0 {
@@ -730,10 +644,7 @@ func (a *App) runAutomation(auto denmaAutomation) {
 	pushed += a.runAutoDue(auto, limit-pushed, claim, centerClaim) // cmd/denma_auto_series.go
 }
 
-// denmaAutoWant tells the daily limit how many of auto's e-mails are due
-// that its claim of got (of limit) can't cover, and the center's cap would
-// let go, so that campaign messages leave room for them (denmaDaily.Want);
-// none if its claim was whole.
+// denmaAutoWant tells the daily limit how many of auto's due e-mails its claim can't cover.
 func (a *App) denmaAutoWant(auto denmaAutomation, limit, got int) {
 	key := a.ko.String("denma.center") + "/" + strconv.Itoa(auto.ID)
 	due := 0
@@ -750,12 +661,9 @@ func (a *App) denmaAutoWant(auto denmaAutomation, limit, got int) {
 	denmaDaily.Want(key, max(denmaCenterRoom(a.ko, due)-got, 0))
 }
 
-// runAutoFirst runs an automation for those whose wait is over (up to
-// limit): its conditions, its lists and tags, and its first e-mail. Returns
-// how many e-mails were handed over.
+// runAutoFirst runs an automation for those whose wait is over: conditions, actions, first e-mail.
 func (a *App) runAutoFirst(auto denmaAutomation, limit int, claim, centerClaim int64) int {
-	// Mark who's due as done first, so that no one is run twice for the same
-	// thing. A run whose e-mail is being sent is left to finish.
+	// Mark who's due as done first; a run being sent is left to finish.
 	var due []struct {
 		ID  int `db:"subscriber_id"`
 		Run int `db:"runs"`
@@ -833,8 +741,7 @@ func (a *App) runAutoFirst(auto denmaAutomation, limit int, claim, centerClaim i
 	for i, s := range subs {
 		sendIDs[i] = s.ID
 	}
-	// Not to those who've had another e-mail from the center lately, if it
-	// says so: theirs is skipped, and their series goes on.
+	// Not to those who've had another e-mail lately, if it says so.
 	if auto.QuietDays > 0 && len(sendIDs) > 0 {
 		var recent []int
 		if err := a.db.Select(&recent, `SELECT s.id FROM unnest($1::INT[]) s(id) WHERE `+denmaMessagesWithin("s.id", "$2", "$3"),
@@ -869,7 +776,7 @@ func (a *App) runAutoFirst(auto denmaAutomation, limit int, claim, centerClaim i
 	for i, id := range sendIDs {
 		dids[i] = didFor(id)
 	}
-	// What it did is kept with the run, for a retry's history.
+	// What it did is kept with the run.
 	if _, err := a.db.Exec(`UPDATE denma_automation_sends d SET status = 'queued', sent_at = NOW(), did = x.did
 		FROM unnest($2::INT[], $3::TEXT[]) x(id, did) WHERE d.automation_id = $1 AND d.subscriber_id = x.id`,
 		auto.ID, pq.Array(sendIDs), pq.Array(dids)); err != nil {
@@ -881,9 +788,7 @@ func (a *App) runAutoFirst(auto denmaAutomation, limit int, claim, centerClaim i
 	return pushed
 }
 
-// autoActions adds and removes an automation's lists and tags for
-// subscribers, returning what it did, in words, and for those it didn't add
-// to a list they'd unsubscribed from, saying so.
+// autoActions adds and removes an automation's lists and tags for subscribers.
 func (a *App) autoActions(auto denmaAutomation, ids []int) (string, map[int]string, error) {
 	notes := map[int]string{}
 	tx, err := a.db.Beginx()
@@ -905,10 +810,7 @@ func (a *App) autoActions(auto denmaAutomation, ids []int) (string, map[int]stri
 		for _, u := range unsub {
 			notes[u.ID] = "not added to " + orList(u.Lists, "or") + ": they'd unsubscribed"
 		}
-		// Confirmed if they've confirmed a subscription here (so they can be
-		// sent a double opt-in list's campaigns), not an API campaign's
-		// (cmd/denma_noconsent.go); never back on a list they unsubscribed
-		// from.
+		// Confirmed if they've confirmed a subscription here; never back on a list they left.
 		if _, err := tx.Exec(`INSERT INTO subscriber_lists (subscriber_id, list_id, status)
 			SELECT s.id, l.id, (CASE WHEN EXISTS (SELECT 1 FROM subscriber_lists x JOIN lists dl ON dl.id = x.list_id
 				WHERE x.subscriber_id = s.id AND x.status = 'confirmed' AND `+denmaAPIListActive+`)
@@ -921,8 +823,7 @@ func (a *App) autoActions(auto denmaAutomation, ids []int) (string, map[int]stri
 		}
 	}
 	if len(auto.RemoveListIDs) > 0 {
-		// Deleted, not unsubscribed: they haven't asked to leave. A list
-		// they unsubscribed from keeps that.
+		// Deleted, not unsubscribed; a list they unsubscribed from keeps that.
 		if _, err := tx.Exec(`DELETE FROM subscriber_lists WHERE subscriber_id = ANY($1) AND list_id = ANY($2) AND status <> 'unsubscribed'`,
 			pq.Array(ids), auto.RemoveListIDs); err != nil {
 			return "", nil, err
@@ -943,8 +844,7 @@ func (a *App) autoActions(auto denmaAutomation, ids []int) (string, map[int]stri
 	return strings.Join(auto.ActionList(false), "; "), notes, nil
 }
 
-// autoNotes adds a note to what an automation did for some subscribers (in
-// their run and its history).
+// autoNotes adds a note to what an automation did for some subscribers.
 func (a *App) autoNotes(id int, notes map[int]string) {
 	for sub, note := range notes {
 		if _, err := a.db.Exec(`UPDATE denma_automation_sends SET did = did || ' (' || $3 || ')'
@@ -959,8 +859,7 @@ func (a *App) autoNotes(id int, notes map[int]string) {
 	}
 }
 
-// autoDid records what an automation did for subscribers, ending their runs
-// (and in its history).
+// autoDid records what an automation did for subscribers, ending their runs.
 func (a *App) autoDid(id int, subIDs []int, status, did string) {
 	if len(subIDs) == 0 {
 		return
@@ -973,8 +872,7 @@ func (a *App) autoDid(id int, subIDs []int, status, did string) {
 	}
 }
 
-// autoFailed records that an automation didn't run for (or e-mail)
-// subscribers.
+// autoFailed records that an automation didn't run for subscribers.
 func (a *App) autoFailed(id int, subIDs []int, err error) {
 	a.log.Printf("denma: error running automation %d: %v", id, err)
 	if _, e := a.db.Exec(`WITH d AS (UPDATE denma_automation_sends SET status = 'failed', error = $3, next_at = NULL
@@ -985,8 +883,7 @@ func (a *App) autoFailed(id int, subIDs []int, err error) {
 	}
 }
 
-// denmaAutoRun is a step of an automation's run for a subscriber (or the
-// next e-mail of a series, NextAt), for their Activity tab.
+// denmaAutoRun is a step of an automation's run for a subscriber, for their Activity tab.
 type denmaAutoRun struct {
 	ID     int       `db:"id"`
 	Name   string    `db:"name"`
@@ -998,8 +895,7 @@ type denmaAutoRun struct {
 	At     time.Time `db:"sent_at"`
 }
 
-// denmaAutoRuns returns what automations did for a subscriber, latest first,
-// with their series' next e-mails (status "waiting", At when) first.
+// denmaAutoRuns returns what automations did for a subscriber, latest first.
 func (a *App) denmaAutoRuns(subID int) []denmaAutoRun {
 	if !denmaAutomationsOn(a) {
 		return nil
@@ -1026,9 +922,7 @@ type denmaAutoTemplate struct {
 	Attachments []models.Attachment
 }
 
-// autoTemplate gets a template, a visual one: transactional ones can't have
-// the footer's links (cmd/denma_footer.go). For e-mail (inline), with its media
-// inlined as listmonk does for transactional ones.
+// autoTemplate gets a visual template, with its media inlined (cmd/denma_footer.go).
 func (a *App) autoTemplate(id int, inline bool) (denmaAutoTemplate, error) {
 	var t struct {
 		Type string `db:"type"`
@@ -1050,8 +944,7 @@ func (a *App) autoTemplate(id int, inline bool) (denmaAutoTemplate, error) {
 	return denmaAutoTemplate{Body: body, Attachments: atts}, nil
 }
 
-// denmaAutoData is what an automation's template is rendered with: what a
-// transactional template (Subscriber, Tx) and a campaign's (Campaign, L) get.
+// denmaAutoData is what an automation's template is rendered with.
 type denmaAutoData struct {
 	Subscriber models.Subscriber
 	Campaign   *models.Campaign
@@ -1062,8 +955,7 @@ type denmaAutoData struct {
 // reDenmaTrackLink is listmonk's https://...@TrackLink shorthand.
 var reDenmaTrackLink = regexp.MustCompile(`(https?://[\p{L}\p{N}_\-\.~!#$&'()*+,/:;=?@\[\]%]*)@TrackLink`)
 
-// autoMessage renders an automation's e-mail (step: 1, or a follow-up's,
-// with auto.Subject its subject) to a subscriber.
+// autoMessage renders an automation's e-mail (step: 1, or a follow-up's) to a subscriber.
 func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate, s models.Subscriber) (models.Message, error) {
 	var (
 		root     = strings.TrimSuffix(a.urlCfg.RootURL, "/")
@@ -1077,8 +969,7 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 		viewURL += "?step=" + strconv.Itoa(step)
 	}
 	maps.Copy(funcs, a.manager.GenericTemplateFuncs())
-	// Campaign templates' functions; links and opens are tracked
-	// (cmd/denma_auto_reports.go).
+	// Campaign templates' functions; links and opens are tracked (cmd/denma_auto_reports.go).
 	maps.Copy(funcs, template.FuncMap{
 		"TrackLink":      func(u string, _ ...any) string { return a.autoTrackLink(u, auto.UUID, s.UUID, step) },
 		"TrackView":      func(...any) template.HTML { return template.HTML(a.denmaAutoTrackView(auto.UUID, s.UUID, step)) },
@@ -1149,8 +1040,7 @@ func (a *App) autoMessage(auto denmaAutomation, step int, tpl denmaAutoTemplate,
 // denmaAutoLinks caches links' UUIDs (center, then URL).
 var denmaAutoLinks sync.Map
 
-// autoTrackLink is a link's tracked address in an automation's e-mail (its
-// step), /automation/link/..., or the link itself with tracking off.
+// autoTrackLink is a link's tracked address in an automation's e-mail, or the link with tracking off.
 func (a *App) autoTrackLink(u, autoUUID, subUUID string, step int) string {
 	if a.cfg.Privacy.DisableTracking {
 		return u
@@ -1176,10 +1066,7 @@ func (a *App) autoTrackLink(u, autoUUID, subUUID string, step int) string {
 	return out
 }
 
-// DenmaAutomationLink records a click on an automation e-mail's link and
-// redirects to it: a link of an automation that sends e-mail, and that ran for
-// the subscriber (anyone, with individual tracking off). Anything else is 404.
-// Its step is kept if it's one of the automation's e-mails.
+// DenmaAutomationLink records a click on an automation e-mail's link and redirects to it.
 func (a *App) DenmaAutomationLink(c echo.Context) error {
 	var l struct {
 		ID     int    `db:"id"`
@@ -1232,8 +1119,7 @@ func initDenmaPublicHandlers(g *echo.Group, a *App) {
 	}
 }
 
-// automationsAllowed returns an error unless the app has automations and the
-// user can see them.
+// automationsAllowed returns an error unless the app has automations and the user can see them.
 func (a *App) automationsAllowed(v adminView) error {
 	if !denmaAutomationsOn(a) {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
@@ -1244,8 +1130,7 @@ func (a *App) automationsAllowed(v adminView) error {
 	return nil
 }
 
-// automations returns the center's automations, with how many are waiting
-// for each.
+// automations returns the center's automations, with how many are waiting for each.
 func (a *App) automations() ([]denmaAutomation, error) {
 	out := []denmaAutomation{}
 	if err := a.db.Select(&out, denmaAutoSelectSQL+` ORDER BY a.created_at`); err != nil {
@@ -1333,8 +1218,7 @@ func (a *App) ViewDenmaAutomation(c echo.Context) error {
 	return c.Render(http.StatusOK, "admin-denma-automation", out)
 }
 
-// denmaAutoTagField tidies one of an automation's tag fields and checks that
-// the center has them.
+// denmaAutoTagField tidies one of an automation's tag fields and checks the center has them.
 func (a *App) denmaAutoTagField(tags []string, what string) ([]string, error) {
 	tags = denmaNormTags(tags)
 	if len(tags) > denmaAutoMaxTags {
@@ -1346,8 +1230,7 @@ func (a *App) denmaAutoTagField(tags []string, what string) ([]string, error) {
 	return tags, nil
 }
 
-// denmaAutoListField checks one of an automation's list fields: lists that
-// exist, that the user can manage; returned by ID.
+// denmaAutoListField checks one of an automation's list fields, returned by ID.
 func (a *App) denmaAutoListField(c echo.Context, ids []int) ([]int, error) {
 	out := []int{}
 	if len(ids) == 0 {
@@ -1368,10 +1251,7 @@ func (a *App) denmaAutoListField(c echo.Context, ids []int) ([]int, error) {
 	return out, nil
 }
 
-// denmaAutoAllLists refuses an automation that tags or campaigns set off, or
-// that changes tags, to a user without access to every list: tags and
-// campaigns reach people on any list, as campaigns to tags do
-// (cmd/denma_tags.go).
+// denmaAutoAllLists refuses tag or campaign triggers or tag changes to a user without every list.
 func denmaAutoAllLists(c echo.Context, trigger string, tagActions bool) error {
 	if u := auth.GetUser(c); denmaAllLists(&u) {
 		return nil
@@ -1511,8 +1391,7 @@ func (a *App) validateAutomation(c echo.Context, f *denmaAutoForm) error {
 	return a.validateAutoSteps(f) // its follow-ups (cmd/denma_auto_series.go)
 }
 
-// denmaAutoNode is an automation in the loop check: what sets it off, and
-// the lists and tags it adds.
+// denmaAutoNode is an automation in the loop check.
 type denmaAutoNode struct {
 	ID       int
 	Name     string
@@ -1523,10 +1402,7 @@ type denmaAutoNode struct {
 	AddTags  []string
 }
 
-// denmaAutoLoop returns the names of automations that would set each other
-// off in a loop (the first back at the end), or nil: one sets off another
-// by adding people to a list that sets it off, or giving them a tag that
-// does.
+// denmaAutoLoop returns the names of automations that would set each other off in a loop, or nil.
 func denmaAutoLoop(nodes []denmaAutoNode) []string {
 	sets := func(x, y denmaAutoNode) bool {
 		switch y.Trigger {
@@ -1579,8 +1455,7 @@ func denmaAutoLoop(nodes []denmaAutoNode) []string {
 	return nil
 }
 
-// checkAutoLoop returns an error if the automation (id, 0 for a new one), on
-// with this definition, would set off a loop with the other ones on.
+// checkAutoLoop returns an error if the automation, turned on, would set off a loop.
 func (a *App) checkAutoLoop(id int, self denmaAutoNode) error {
 	var autos []denmaAutomation
 	if err := a.db.Select(&autos, denmaAutoSelectSQL+` WHERE a.active AND a.id <> $1`, id); err != nil {
@@ -1600,8 +1475,7 @@ func (a *App) checkAutoLoop(id int, self denmaAutoNode) error {
 	return nil
 }
 
-// denmaTextArray is a TEXT[] parameter, never NULL (as pq.Array of a nil
-// slice is): NULL in jsonb || or - makes the whole value NULL.
+// denmaTextArray is a TEXT[] parameter, never NULL.
 func denmaTextArray(in []string) any {
 	if in == nil {
 		in = []string{}
@@ -1709,8 +1583,7 @@ func (a *App) DenmaSaveAutomation(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{map[string]int{"id": id}})
 }
 
-// DenmaSetAutomationStatus turns an automation on or off. Turned on, it's for
-// what happens from then on.
+// DenmaSetAutomationStatus turns an automation on or off.
 func (a *App) DenmaSetAutomationStatus(c echo.Context) error {
 	if !denmaAutomationsOn(a) {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
@@ -1774,9 +1647,7 @@ func (a *App) DenmaDeleteAutomation(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
-// DenmaTestAutomation sends the automation page's e-mail to an address: as
-// to that subscriber, if there's one, or to a sample one. Its other actions
-// aren't tried.
+// DenmaTestAutomation sends the automation's e-mail to an address; its other actions aren't tried.
 func (a *App) DenmaTestAutomation(c echo.Context) error {
 	if !denmaAutomationsOn(a) {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
@@ -1830,8 +1701,7 @@ func (a *App) DenmaTestAutomation(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
-// ViewDenmaAutomationMessage shows an automation's e-mail to a subscriber
-// (its "view in browser" link).
+// ViewDenmaAutomationMessage shows an automation's e-mail to a subscriber ("view in browser").
 func (a *App) ViewDenmaAutomationMessage(c echo.Context) error {
 	notFound := func() error {
 		return c.Render(http.StatusNotFound, tplMessage,
@@ -1872,8 +1742,7 @@ func orList(names []string, or string) string {
 	return strings.Join(names[:n-1], ", ") + " " + or + " " + names[n-1]
 }
 
-// Broken says why the automation can't run, or "": what it needs was
-// deleted.
+// Broken says why the automation can't run, or "".
 func (d denmaAutomation) Broken() string {
 	switch {
 	case (d.TriggerType == denmaTrigJoins || d.TriggerType == denmaTrigConfirms) && len(d.ListNames) == 0:
@@ -1967,10 +1836,7 @@ func denmaDays(n int) string {
 	return strconv.Itoa(n) + " days"
 }
 
-// autoContent checks each of an automation's e-mails: that its template has
-// the footer's links and, rendered for a sample subscriber, shows the center's
-// details (cmd/denma_footer.go) and, with images, has no image missing from
-// its Media.
+// autoContent checks each of an automation's e-mails for the footer, center details and images.
 func (a *App) autoContent(auto denmaAutomation, images bool) error {
 	if !auto.SendEmail {
 		return nil
@@ -2007,8 +1873,7 @@ func (a *App) autoContent(auto denmaAutomation, images bool) error {
 	return nil
 }
 
-// ActionList is what the automation does, in words, each one a phrase: "add
-// to A", "send the e-mail Welcome" (with mail, its e-mail too).
+// ActionList is what the automation does, in words, each one a phrase.
 func (d denmaAutomation) ActionList(mail bool) []string {
 	var out []string
 	if len(d.AddListNames) > 0 {
@@ -2037,8 +1902,7 @@ func (d denmaAutomation) ActionList(mail bool) []string {
 	return out
 }
 
-// Summary is the automation in words: "When someone joins A, right away:
-// added to B; sent the e-mail Welcome."
+// Summary is the automation in words.
 func (d denmaAutomation) Summary() string {
 	s := d.Trigger() + ", " + d.Wait()
 	if c := d.Conditions(); c != "" {

@@ -1,5 +1,4 @@
-// denma: System's form taking an address off the shared blocklist, in the hub
-// (views/denma-system.html, cmd/denma_blocklist_admin.go).
+// denma: System's form taking an address off the shared blocklist (cmd/denma_blocklist_admin.go).
 import Alpine from 'alpinejs';
 import { api } from '../main.js';
 import * as u from '../utils.js';

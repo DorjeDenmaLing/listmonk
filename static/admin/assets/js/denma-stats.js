@@ -1,7 +1,4 @@
-// denma: shared figures for the dashboard and Analytics sections (ported from
-// the production admin add-on, listmonk-js/admin-custom.js). Everything comes
-// from listmonk's own API with the user's session; subscriber counts are
-// named figures computed on the server (cmd/denma_stats.go).
+// denma: shared figures for the dashboard and Analytics sections, from listmonk's API (cmd/denma_stats.go).
 import { urls } from './main.js';
 
 
@@ -46,8 +43,7 @@ function parseDay(s) {
   return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
 }
 
-// [start, end) in local time, plus the previous period of the same length.
-// null when a custom range is incomplete.
+// [start, end) in local time, plus the previous period; null if a custom range is incomplete.
 export function periods(r) {
   const today = new Date();
   let end = addDays(new Date(today.getFullYear(), today.getMonth(), today.getDate()), 1);
@@ -75,8 +71,7 @@ export function periodDays(p) {
 
 // ---- API ----
 
-// GET an /api path and return its `data`. Errors are thrown (not toasted), so
-// each section can say what failed in its own note.
+// GET an /api path and return its data; errors are thrown, not toasted.
 export async function getJSON(uri) {
   const res = await fetch(`${urls.api}${uri}`, { headers: { Accept: 'application/json' } });
   const out = await res.json().catch(() => ({}));
@@ -104,15 +99,10 @@ export function startedIn(campaigns, p) {
   });
 }
 
-// Whether a campaign's opens and clicks are counted per subscriber: not if
-// all its opens are without one (sent while individual tracking was off, as
-// before production turned it on), which open and click figures leave out,
-// as the hub's do (cmd/denma_stats.go). A deleted subscriber's opens are
-// anonymous too, but leave the campaign counted.
+// Whether a campaign's opens and clicks are counted per subscriber (cmd/denma_stats.go).
 export const isTracked = (c) => c.denmaTracked !== false;
 
-// The people who opened and clicked each campaign since `from` (cmd/denma_campaign_stats.go):
-// { views: {id: count}, clicks: {id: count} }.
+// The people who opened and clicked each campaign since from: { views: {id: count}, clicks: {id: count} }.
 export async function campaignPeople(ids, from) {
   const out = { views: {}, clicks: {} };
   if (!ids.length) {
@@ -126,9 +116,7 @@ export async function campaignPeople(ids, from) {
   return out;
 }
 
-// Campaigns' bounces (hard and soft: complaints were delivered), complaints
-// and unsubscribes (cmd/denma_campaign_stats.go), by ID, and since when
-// unsubscribes are counted.
+// Campaigns' bounces, complaints and unsubscribes by ID, and since when unsubscribes are counted.
 export async function campaignOutcomes(ids) {
   if (!ids.length) {
     return { since: null, byId: {} };
@@ -141,9 +129,7 @@ export async function campaignOutcomes(ids) {
 
 const sumValues = (m) => Object.values(m).reduce((n, v) => n + v, 0);
 
-// Subscribers in one of the server's figures (cmd/denma_stats.go): { total,
-// results }, of whom only the total is used. opts: period ({ start, end }),
-// campaign (an ID), and search (the search language, cmd/denma_search.go).
+// Subscribers in one of the server's figures: { total, results }; opts: period, campaign, search.
 export function subscriberStat(metric, opts = {}) {
   const q = new URLSearchParams({ metric, per_page: '1' });
   if (opts.period) {
@@ -159,8 +145,7 @@ export function subscriberStat(metric, opts = {}) {
   return getJSON(`/denma/stats/subscribers?${q.toString()}`);
 }
 
-// The new, unsub and removed figures of a period, counted in chart buckets
-// (buckets): { added, unsub, removed }, each a count per bucket.
+// The new, unsub and removed figures of a period, per chart bucket: { added, unsub, removed }.
 export function growthStat(period, bk) {
   const q = new URLSearchParams({ from: period.start.toISOString(), to: period.end.toISOString() });
   bk.list.forEach((b) => q.append('edge', b.start.toISOString()));
@@ -218,9 +203,7 @@ export async function measure(campaigns, p) {
 
 // ---- Bounces ----
 
-// [key, label, format, description, health bands [watch from, at risk from]].
-// Health bands follow Amazon SES: it reviews an account at a 5% bounce or
-// 0.1% complaint rate.
+// [key, label, format, description, health bands [watch from, at risk from]], after Amazon SES.
 export const BOUNCE_METRICS = [
   ['hard', 'Hard bounces', 'count', "Permanent failures (address doesn't exist). listmonk blocklists these addresses."],
   ['hardRate', 'Hard bounce rate', 'pct2', 'Hard bounces as a share of sends. Amazon SES reviews accounts at 5% and can pause sending at 10%.', [0.02, 0.05]],
@@ -240,10 +223,7 @@ export function health(v, bands) {
 }
 
 // ---- Audience growth (Analytics, and the hub's Analytics) ----
-//
-// g: { active, added, unsub, removed, net, and prevAdded, prevUnsub,
-// prevRemoved, prevNet }. Website signups waiting on a double opt-in holding
-// list aren't counted as subscribers until they confirm.
+// g: { active, added, unsub, removed, net, prevAdded, prevUnsub, prevRemoved, prevNet }.
 
 const GROWTH = [
   // [label, current key, previous key, higher is good, description]
@@ -297,8 +277,7 @@ function bucketLabel(b, unit, short) {
   return unit === 'week' && !short ? `Week of ${str}` : str;
 }
 
-// Bars of subscribers gained (up) and lost (down) per bucket, drawn at the
-// container's real width so labels stay readable on phones.
+// Bars of subscribers gained (up) and lost (down) per bucket, at the container's width.
 export function growthChart(bk, width) {
   const NS = 'http://www.w3.org/2000/svg';
   const W = Math.max(300, Math.round(width || 900));
@@ -355,8 +334,7 @@ export function growthChart(bk, width) {
 
 // ---- Mailbox providers (Analytics, and the hub's Analytics) ----
 
-// [key, label, opens inflated by Apple Mail]. Their domains are on the
-// server (denmaProviders, cmd/denma_hub_analytics.go).
+// [key, label, opens inflated by Apple Mail] (domains: denmaProviders, cmd/denma_hub_analytics.go).
 export const PROVIDERS = [
   ['gmail', 'Gmail'],
   ['microsoft', 'Microsoft'],
@@ -368,9 +346,7 @@ const PROVIDER_MIN_PERIOD = 30; // emails before a rate is judged
 
 export const pct = (n, d, digits) => (d > 0 ? `${(n / d * 100).toFixed(digits)}%` : '—');
 
-// rows: { [provider key, 'other' or 'all']: { subscribers, unsub, received,
-// opens, clicks } }. Everyone except this group and Apple (whose automatic
-// opens would raise the bar), as picked from each row.
+// rows: { [provider key, 'other' or 'all']: { subscribers, unsub, received, opens, clicks } }.
 export function providerBaseline(rows, key, pick) {
   const all = pick(rows.all);
   const own = pick(rows[key]);
@@ -422,9 +398,7 @@ export function fmtTime(d) {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-// Change from the previous period: { cls, arrow, text, title }.
-//   higherIsGood  whether an increase is good (green) or bad (red)
-//   newIfZero     a previous 0 shows as "new" (bounces) rather than "—"
+// Change from the previous period: { cls, arrow, text, title }; newIfZero shows a previous 0 as "new".
 export function change(cur, prev, higherIsGood, kind, newIfZero) {
   if (cur == null || prev == null || (prev === 0 && (!newIfZero || cur === 0))) {
     return { cls: '', arrow: '', text: '—', title: 'No comparable figure for the previous period.' };

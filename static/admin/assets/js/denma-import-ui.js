@@ -1,10 +1,4 @@
-// denma: the import's preview (cmd/denma_importpreview.go,
-// partials/denma/import.html): once a file is picked, what it holds and what
-// importing it would do, made again when the file or a setting changes.
-// Upload waits for it, and first adds the tags picked to the center. The file
-// is sent once: the server keeps it for a few minutes, and a change of
-// settings sends its token only (a request a newer one replaces is cancelled).
-// Spread into the import page's component.
+// denma: the import's preview (cmd/denma_importpreview.go), spread into the import page.
 import { api, urls } from './main.js';
 import * as u from './utils.js';
 
@@ -31,7 +25,7 @@ export function denmaImportPreview() {
       });
     },
 
-    // What a preview depends on: the file and the settings.
+    // What a preview depends on.
     denmaKey() {
       const f = this.form;
       if (!f.file) {
@@ -63,7 +57,7 @@ export function denmaImportPreview() {
       let err = '';
       try {
         let resp = await this.denmaPreviewRequest(abort.signal, true);
-        if (resp.status === 410) { // no longer kept: send the file again
+        if (resp.status === 410) { // send the file again
           resp = await this.denmaPreviewRequest(abort.signal, false);
         }
         const out = await resp.json().catch(() => ({}));
@@ -76,7 +70,7 @@ export function denmaImportPreview() {
         }
       } catch (e) {
         if (e.name === 'AbortError') {
-          return; // a later one's on its way
+          return;
         }
         err = e.message;
       }
@@ -92,8 +86,7 @@ export function denmaImportPreview() {
       return f ? JSON.stringify([f.name, f.size, f.lastModified]) : '';
     },
 
-    // A preview's request: the settings, and the file's token if the server
-    // has the file (and it's wanted), else the file.
+    // A preview's request: the settings and the file or its token.
     denmaPreviewRequest(signal, useToken) {
       const params = new FormData();
       params.set('params', JSON.stringify({
@@ -115,8 +108,7 @@ export function denmaImportPreview() {
       });
     },
 
-    // Whether the preview is of the file and settings as they are, and finds
-    // something to import.
+    // Whether the preview is current and finds something to import.
     denmaPreviewOK() {
       const p = this.denmaPrev;
       return !!p && !p.error && p.valid > 0 && !this.denmaPrevBusy && this.denmaPrevKey === this.denmaKey();
@@ -162,8 +154,7 @@ export function denmaImportPreview() {
       this.denmaNewTags().forEach((t) => { this.denmaAddTags[t.tag] = on; });
     },
 
-    // Adds the new tags picked to the center (as Subscribers -> Tags does),
-    // before the upload. False if one couldn't be.
+    // Adds the picked new tags to the center before the upload.
     async denmaCreateTags() {
       for (const t of this.denmaNewTags()) {
         if (!this.denmaAddTags[t.tag]) {

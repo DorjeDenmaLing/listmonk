@@ -1,9 +1,6 @@
 package core
 
-// denma: a materialized view's refresh on a request, when slow queries
-// aren't cached: concurrent, so reading the view isn't blocked, and shared
-// by the requests that arrive together. Each request waits for a refresh
-// that started after it came.
+// denma: materialized view refresh on a request, shared by requests that arrive together.
 
 import "sync"
 
@@ -19,8 +16,7 @@ type denmaViewRefresh struct {
 	next chan struct{}
 }
 
-// denmaRefreshView refreshes the view, or waits for the refresh queued
-// behind the one running.
+// denmaRefreshView refreshes the view, or waits for the refresh queued behind the running one.
 func (c *Core) denmaRefreshView(name string) error {
 	v := &c.denmaViews
 	v.mu.Lock()

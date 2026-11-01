@@ -405,8 +405,7 @@ func (a *App) SubscriptionPrefs(c echo.Context) error {
 			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.T("public.errorProcessingRequest")))
 	}
 
-	// denma: lists aren't shown (cmd/denma_unsubscribe.go), so there are none
-	// to unsubscribe from here; the name is all this saves.
+	// denma: no lists to unsubscribe from here (cmd/denma_unsubscribe.go); only the name is saved.
 	if true {
 		return c.Render(http.StatusOK, tplMessage,
 			makeMsgTpl(a.i18n.T("globals.messages.done"), "", a.i18n.T("public.prefsSaved")))
@@ -474,7 +473,7 @@ func (a *App) OptinPage(c echo.Context) error {
 		}
 	}
 
-	a.denmaMovedLists(subUUID, &req.ListUUIDs) // denma: the lists a pending opt-in was moved to (cmd/denma_listmove.go)
+	a.denmaMovedLists(subUUID, &req.ListUUIDs) // denma: the lists a pending opt-in moved to (cmd/denma_listmove.go)
 
 	// Get the list of subscription lists where the subscriber hasn't confirmed.
 	lists, err := a.core.GetSubscriberLists(0, subUUID, nil, req.ListUUIDs, models.SubscriptionStatusUnconfirmed, "")
@@ -794,7 +793,7 @@ func (a *App) WipeSubscriberData(c echo.Context) error {
 	}
 
 	subUUID := c.Param("subUUID")
-	if err := a.denmaWipe(subUUID); err != nil { // denma: was a.core.DeleteSubscribers (cmd/denma_unsubscribe.go)
+	if err := a.denmaWipe(subUUID); err != nil { // denma: cmd/denma_unsubscribe.go
 		a.log.Printf("error wiping subscriber data: %s", err)
 		return c.Render(http.StatusInternalServerError, tplMessage,
 			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.Ts("public.errorProcessingRequest")))
@@ -897,13 +896,13 @@ func (a *App) processSubForm(c echo.Context) (hasOptin bool, err error) { // den
 	a.denmaNoConsentSignup(req.Email, nil, req.FormListUUIDs) // denma: their own sign-up (cmd/denma_noconsent.go)
 
 	// Insert the subscriber into the DB.
-	newSub, hasOptin, err := a.core.InsertSubscriber(models.Subscriber{ // denma: was _
+	newSub, hasOptin, err := a.core.InsertSubscriber(models.Subscriber{ // denma: keeps the new subscriber
 		Name:    req.Name,
 		Email:   req.Email,
 		Status:  models.SubscriberStatusEnabled,
 		Attribs: denmaFormNames(req.First, req.Last), // denma
 	}, nil, listUUIDs, false, true)
-	if err == nil && newSub.Status == models.SubscriberStatusBlockListed { // denma: an address that opted out before (cmd/denma_optouts.go)
+	if err == nil && newSub.Status == models.SubscriberStatusBlockListed { // denma: an address that opted out (cmd/denma_optouts.go)
 		return a.denmaResubForm(newSub, listUUIDs)
 	}
 	if err == nil {

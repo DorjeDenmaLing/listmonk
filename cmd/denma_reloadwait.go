@@ -1,14 +1,10 @@
 package main
 
-// denma: a campaign that only waits (for its center's sending hours, or a
-// daily limit) doesn't hold up its center's reload: the reload stops it
-// (denmaRetire) and it goes on in the new App from where it was.
+// denma: a campaign that only waits (sending hours, daily limit) doesn't hold up its center's reload.
 
 import "github.com/knadh/listmonk/internal/denmadaily"
 
-// denmaCampaignsWaiting reports whether a center's campaigns can't send
-// now: outside its sending hours, or a daily limit (the hub's, the
-// center's) reached, or what's left of it kept for others.
+// denmaCampaignsWaiting reports whether a center's campaigns can't send now: hours or a daily limit.
 func denmaCampaignsWaiting(hoursOpen bool, limits ...denmadaily.Status) bool {
 	if !hoursOpen {
 		return true
@@ -21,9 +17,7 @@ func denmaCampaignsWaiting(hoursOpen bool, limits ...denmadaily.Status) bool {
 	return false
 }
 
-// denmaSending reports whether a has a campaign sending now. One that only
-// waits for the sending hours or the daily limit doesn't count: a reload
-// stops it, and it goes on in the new App from where it was.
+// denmaSending reports whether a has a campaign sending now; one that only waits doesn't count.
 func (a *App) denmaSending() bool {
 	if !a.manager.HasRunningCampaigns() {
 		return false

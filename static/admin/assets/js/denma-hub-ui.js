@@ -1,7 +1,4 @@
-// denma: the hub's center picker and center tables, for hundreds of centers
-// (partials/denma/hub-ui.html), on its Dashboard, Centers, Analytics and
-// Activity pages. Both are mixed into a page's component. Also what the
-// Dashboard and Centers pages share: their figures and the center last shown.
+// denma: the hub's center picker and center tables (partials/denma/hub-ui.html).
 import { getJSON } from './denma-stats.js';
 
 // The center the Dashboard and Analytics last showed ('' for all).
@@ -21,8 +18,7 @@ export function saveCenter(slug) {
   } catch { /* storage unavailable */ }
 }
 
-// hubStats gets every center's sending for the periods p (denma-stats.js
-// periods) from /api/denma/hub/stats (cmd/denma_hub.go).
+// hubStats gets every center's sending for the periods p from /api/denma/hub/stats (cmd/denma_hub.go).
 export function hubStats(p) {
   const q = new URLSearchParams({
     from: p.cur.start.toISOString(),
@@ -33,8 +29,7 @@ export function hubStats(p) {
   return getJSON(`/denma/hub/stats?${q}`);
 }
 
-// hubFigures are the figures shown from a period of hubStats (or several
-// added up).
+// hubFigures are the figures shown from a period of hubStats (or several added up).
 export function hubFigures(p) {
   const rate = (n, d) => (d > 0 ? n / d : null);
   const delivered = p.sends - p.camp_bounces;
@@ -54,16 +49,12 @@ export function hubFigures(p) {
   };
 }
 
-// centerPicker is a searchable center picker ("denma-center-picker"), for a
-// component with centers ([{ slug, name }]), center (the chosen slug) and
-// onCenter() (called when it changes). fixed are the choices before the
-// centers, the first being the default: e.g. [{ slug: '', name: 'All centers' }].
+// centerPicker ("denma-center-picker"): needs centers, center and onCenter(); fixed are the first choices.
 export function centerPicker(fixed) {
   return {
     pick: { q: '', open: false, i: 0 },
 
-    // The choices matching what's typed: names starting with it first, then
-    // with a word starting with it, then the rest (addresses too).
+    // The choices matching what's typed: names starting with it first, then words, then the rest.
     pickChoices() {
       const all = fixed.concat(this.centers);
       const q = this.pick.q.trim().toLowerCase();
@@ -137,9 +128,7 @@ export function centerPicker(fixed) {
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 const compare = (x, y) => (typeof x === 'string' ? collator.compare(x, y) : (x > y) - (x < y));
 
-// centerTable adds search, sorting and pages ("denma-th", "denma-pager") to a
-// table of this.rows, each with name, slug, state (running, starting, error,
-// disabled) and sort ({ key: value }: null sorts last either way).
+// centerTable adds search, sorting and pages to a table of this.rows; null sorts last either way.
 export function centerTable(key = 'name', dir = 'asc', perPage = 50) {
   return {
     tbl: { q: '', status: '', key, dir, page: 1, perPage },

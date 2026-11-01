@@ -1,9 +1,6 @@
 package main
 
-// denma: a superadmin who hasn't two-factor sign-in is taken, after signing in,
-// to a page asking them to set it up (the Profile page's switch), with a
-// "Later" that lasts that sign-in. Nothing is blocked. Center admins and
-// people aren't asked.
+// denma: asks a hub superadmin without two-factor sign-in to set it up after signing in; "Later" lasts the sign-in.
 
 import (
 	"net/http"
@@ -23,9 +20,7 @@ const (
 	denmaTwofaLater      = "denma_twofa_later" // the session's hash, once they chose Later
 )
 
-// denmaTwofaPromptDue reports whether a request is the first page of a hub
-// superadmin without two-factor sign-in, who hasn't chosen Later: a page
-// someone opens (GET, as HTML), not the Profile page or this one.
+// denmaTwofaPromptDue reports whether a request is the first page of a due superadmin (a GET for HTML).
 func denmaTwofaPromptDue(u auth.User, method, reqPath, accept string, later bool) bool {
 	if u.Type != auth.UserTypeUser || u.UserRole.ID != auth.SuperAdminRoleID || !u.PasswordLogin || u.TwofaType == models.TwofaTypeTOTP || later {
 		return false
@@ -40,8 +35,7 @@ func denmaTwofaPromptDue(u auth.User, method, reqPath, accept string, later bool
 	return true
 }
 
-// denmaTwofaPrompt sends the hub superadmin who's due to the prompt page,
-// reporting whether it did.
+// denmaTwofaPrompt sends the due hub superadmin to the prompt page, reporting whether it did.
 func (a *App) denmaTwofaPrompt(c echo.Context) (bool, error) {
 	if denmaHub == nil || a.denmaInCenter() {
 		return false, nil
@@ -78,8 +72,7 @@ func (a *App) ViewDenmaTwofaPrompt(c echo.Context) error {
 	})
 }
 
-// DenmaTwofaLater stops the prompt for this sign-in, and goes on to the page
-// they wanted.
+// DenmaTwofaLater stops the prompt for this sign-in, and goes on to the page they wanted.
 func (a *App) DenmaTwofaLater(c echo.Context) error {
 	c.SetCookie(&http.Cookie{
 		Name:     denmaTwofaLater,

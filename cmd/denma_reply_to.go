@@ -1,12 +1,6 @@
 package main
 
-// denma: where replies go. A center's default (Config -> General,
-// denma.reply_to) is the Reply-To of everything it sends: campaigns and
-// automations (internal/manager/denma_reply_to.go), API e-mails
-// (cmd/denma_api_send.go) and its own e-mails (denmaSetSystemSender). A
-// campaign's own (campaigns.denma_reply_to, on the campaign form) replaces it
-// for that campaign. With neither, there's no Reply-To, and replies go to the
-// sender.
+// denma: where replies go: a center's default reply-to (denma.reply_to), replaced by a campaign's own.
 
 import (
 	"errors"
@@ -14,9 +8,7 @@ import (
 	"strings"
 )
 
-// denmaReplyToSQL adds the campaign's reply-to address, and moves a Reply-To
-// set as a custom header (the campaign form's headers box, since removed)
-// into it.
+// denmaReplyToSQL adds the campaign's reply-to address.
 const denmaReplyToSQL = `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_reply_to TEXT NOT NULL DEFAULT '';`
 
 const denmaReplyToMoveSQL = `
@@ -34,8 +26,7 @@ UPDATE campaigns c SET denma_reply_to = r.v,
 // denmaReplyToMax is the longest reply-to address.
 const denmaReplyToMax = 300
 
-// denmaCheckReplyTo tidies a reply-to address: "" (none), or one address,
-// name@example.org or "Name" <name@example.org>.
+// denmaCheckReplyTo tidies a reply-to address: "" or one address, with or without a name.
 func denmaCheckReplyTo(addr string) (string, error) {
 	addr = strings.TrimSpace(addr)
 	if addr == "" {

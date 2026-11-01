@@ -1,26 +1,6 @@
 package main
 
-// denma: the activity log, for accountability. Every change made in the admin
-// or through the API, in the hub and in every center, is recorded in
-// denma.audit_log: who (the user, and for a superadmin in a center, their hub
-// username), when, from where (IP), what (a description, the route, the
-// target and its name), whether it worked (the HTTP status), and the request
-// (query and body, with passwords, secrets and tokens removed and long values
-// cut; a body over denmaAuditMaxBody isn't). So are sign-ins (and failed
-// ones: at /login, in the hub's log, and entering a center, in its own),
-// sign-outs, password resets, a superadmin opening a center, and data
-// exports. Reading pages and searching aren't, nor unauthenticated requests
-// (denmaAuditUnauthed). Sending API requests are recorded by key and
-// outcome, without the body.
-//
-// Requests about people (subscribers, imports, the hub's people) are recorded
-// without their addresses, names or attributes (denmaAuditPersonal): the
-// subscriber is named by ID.
-//
-// A center's log is on its Activity page, for those who can use its Config
-// page; the superadmins' hub has every center's, on its own Activity page
-// (both views/denma-activity.html). Rows are never changed by the app, and
-// are deleted after the hub's denma.audit_days days (pruneAuditLog).
+// denma: the activity log of changes, sign-ins and exports, in the hub and every center (denma.audit_log).
 
 import (
 	"bytes"
@@ -81,8 +61,7 @@ var denmaAuditGets = map[string]bool{
 	"/api/subscribers/:id/export": true,
 }
 
-// Changes on these routes aren't by a signed-in user (subscribers, mail
-// servers): listmonk records them where they belong.
+// Changes on these routes aren't by a signed-in user.
 var denmaAuditPublic = regexp.MustCompile(`^/(subscription|webhooks|link|campaign|archive|api/public|auth/oidc|signup/:token)`)
 
 var denmaAuditInit sync.Once
@@ -112,8 +91,7 @@ func denmaAudit(a *App) echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			// The body's first denmaAuditMaxBody bytes, for the record (put
-			// back for the handler). A longer body isn't recorded.
+			// The body's first denmaAuditMaxBody bytes, put back for the handler.
 			var body []byte
 			tooLarge := false
 			if strings.HasPrefix(req.Header.Get(echo.HeaderContentType), echo.MIMEApplicationJSON) && req.Body != nil &&
@@ -133,7 +111,7 @@ func denmaAudit(a *App) echo.MiddlewareFunc {
 				}
 			}
 
-			// The target's name before it changes (or goes).
+			// The target's name before it changes.
 			target, targetName := denmaAuditTarget(a, c, route)
 
 			err := next(c)
@@ -173,16 +151,12 @@ func denmaBodyLimit(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// denmaAuditAPIRoute is whether a route is the sending API's (cmd/denma_api.go)
-// or a Server webhook's (cmd/denma_signup.go), recorded by key or webhook and
-// what it did, not the request, which is about people.
+// denmaAuditAPIRoute is whether a route is the sending API's or a Server webhook's.
 func denmaAuditAPIRoute(route string) bool {
 	return route == "/v1" || strings.HasPrefix(route, "/v1/") || route == "/signup/server"
 }
 
-// denmaAuditUnauthed is whether a request has no user or key: an API request
-// without a working key, or a refused admin API request without a session.
-// Sign-in pages aren't /api routes, so failed sign-ins are still recorded.
+// denmaAuditUnauthed is whether a request has no user or key.
 func denmaAuditUnauthed(c echo.Context, route string, status int) bool {
 	if route == "/signup/server" {
 		return signupHookOf(c).ID == 0
@@ -196,8 +170,7 @@ func denmaAuditUnauthed(c echo.Context, route string, status int) bool {
 	return (status == http.StatusUnauthorized || status == http.StatusForbidden) && strings.HasPrefix(route, "/api/")
 }
 
-// denmaAuditTarget is the route's :id (or other parameter) and, for an
-// :id, the thing's name.
+// denmaAuditTarget is the route's :id (or other parameter) and, for an :id, the thing's name.
 func denmaAuditTarget(a *App, c echo.Context, route string) (string, string) {
 	names := c.ParamNames()
 	if len(names) == 0 {
@@ -223,15 +196,14 @@ func denmaAuditTarget(a *App, c echo.Context, route string) (string, string) {
 		return target, ""
 	}
 	if denmaAuditResource(route) == "people" && a.denmaInCenter() {
-		return target, "" // the hub's people aren't a center's to see (cmd/denma_people.go)
+		return target, "" // cmd/denma_people.go
 	}
 	var name string
 	_ = a.db.Get(&name, q, id)
 	return target, name
 }
 
-// denmaAuditResource is the thing a route is about: campaigns in
-// /api/campaigns/:id/status, automations in /api/denma/automations/:id.
+// denmaAuditResource is the thing a route is about, such as campaigns or automations.
 func denmaAuditResource(route string) string {
 	parts := strings.Split(strings.Trim(route, "/"), "/")
 	if len(parts) > 1 && parts[0] == "api" {
@@ -267,7 +239,7 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 	details := map[string]any{}
 	if u, ok := c.Get(auth.UserHTTPCtxKey).(auth.User); ok && u.ID > 0 {
 		uid, username, name, role = &u.ID, u.Username, u.Name, u.UserRole.ID
-		// Through an MCP key (cmd/denma_mcp.go): which, and for whom on claude.ai.
+		// Through an MCP key (cmd/denma_mcp.go): which, and for whom.
 		if m, ok := denmaMCPOf(c); ok {
 			details["via"] = fmt.Sprintf("MCP key %q", m.KeyName)
 			details["mcp_key_id"] = m.KeyID
@@ -290,9 +262,7 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 			details["result"] = res
 		}
 	} else {
-		// Signing in, or a password reset: who it was for, if it's someone,
-		// by their username; never what was typed (an address, or a
-		// password in the wrong field).
+		// Signing in, or a password reset: who it was for, by username; never what was typed.
 		typed := strings.TrimSpace(c.FormValue("username"))
 		if typed == "" {
 			typed = strings.TrimSpace(c.FormValue("email"))
@@ -301,7 +271,7 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 	}
 
 	if strings.HasPrefix(route, denmaLoginPath) || strings.HasPrefix(route, "/admin/login") {
-		redact = func(v any) any { return denmaRedact(denmaRedactPersonal(v)) } // addresses typed in
+		redact = func(v any) any { return denmaRedact(denmaRedactPersonal(v)) }
 	}
 	if q := req.URL.Query(); len(q) > 0 {
 		details["query"] = redact(map[string][]string(q))
@@ -331,7 +301,7 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 		details["form"] = redact(map[string][]string(req.PostForm))
 	}
 	if loc := c.Response().Header().Get(echo.HeaderLocation); loc != "" {
-		details["redirect"] = denmaRedactURL(loc) // a two-factor page's token
+		details["redirect"] = denmaRedactURL(loc)
 	}
 	dj, err := json.Marshal(details)
 	if err != nil || len(dj) > 64*1024 {
@@ -354,10 +324,7 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 	}
 }
 
-// denmaAuditPersonal is whether a route is about people, recorded without
-// their addresses, names or attributes: subscribers (and their imports), the
-// hub's people, transactional e-mails, tests sent to addresses, and tagging
-// by a search.
+// denmaAuditPersonal is whether a route is about people, recorded without their details.
 func denmaAuditPersonal(route string) bool {
 	switch denmaAuditResource(route) {
 	case "subscribers", "import", "people", "tx":
@@ -366,8 +333,7 @@ func denmaAuditPersonal(route string) bool {
 	return strings.HasSuffix(route, "/test") || route == "/api/denma/tags/subscribers"
 }
 
-// denmaAuditAboutPerson is whether a route's target is a person, whose name
-// isn't recorded.
+// denmaAuditAboutPerson is whether a route's target is a person.
 func denmaAuditAboutPerson(route string) bool {
 	switch denmaAuditResource(route) {
 	case "subscribers", "import", "people":
@@ -376,14 +342,11 @@ func denmaAuditAboutPerson(route string) bool {
 	return false
 }
 
-// Keys whose values are about a person, left out of denmaAuditPersonal's
-// requests: addresses, names, attributes, a transactional e-mail's data, and
-// searches (which can name them).
+// Keys whose values are about a person, left out of denmaAuditPersonal's requests.
 var denmaPersonalKey = regexp.MustCompile(`(?i)^(e-?mails?|names?|first_?name|last_?name|attribs|attributes|` +
 	`subscribers?|subscriber_e-?mails?|test_e-?mails?|data|query|search)$`)
 
-// denmaAuditWho is the username of the person (or hub user) typed in to sign
-// in or reset a password, by username or address, or "(unknown)".
+// denmaAuditWho is the username typed in to sign in or reset a password, or "(unknown)".
 func (a *App) denmaAuditWho(typed string) string {
 	if typed == "" {
 		return ""
@@ -419,8 +382,7 @@ func denmaRedactURL(s string) string {
 // reDenmaAddress is an e-mail address in text.
 var reDenmaAddress = regexp.MustCompile(`[^\s@"'<>(),;:]+@[^\s@"'<>(),;:]+\.[a-zA-Z]{2,}`)
 
-// denmaRedactPersonal is a request's values without a person's addresses,
-// names or attributes: those keys' values, and addresses anywhere.
+// denmaRedactPersonal is a request's values without a person's details.
 func denmaRedactPersonal(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
@@ -459,8 +421,7 @@ func denmaRedactPersonal(v any) any {
 	return v
 }
 
-// denmaRedactPersonalJSON is a JSON body through denmaRedactPersonal; one
-// that isn't JSON isn't kept.
+// denmaRedactPersonalJSON is a JSON body through denmaRedactPersonal.
 func denmaRedactPersonalJSON(body []byte) []byte {
 	if len(body) == 0 {
 		return body
@@ -476,12 +437,10 @@ func denmaRedactPersonalJSON(body []byte) []byte {
 	return b
 }
 
-// denmaAuditMaxDays is the most days the hub can keep the log for, but for
-// ever (0).
+// denmaAuditMaxDays is the most days the hub can keep the log for (0 is for ever).
 const denmaAuditMaxDays = 3650
 
-// pruneAuditLog deletes the activity log's entries older than the hub's
-// denma.audit_days, every hour, a batch at a time.
+// pruneAuditLog deletes entries older than denma.audit_days, hourly, in batches.
 func (d *denmaCenters) pruneAuditLog() {
 	time.Sleep(2 * time.Minute)
 	for {
@@ -512,8 +471,7 @@ func (d *denmaCenters) pruneAuditLog() {
 // Keys whose values aren't recorded.
 var denmaSecretKey = regexp.MustCompile(`(?i)pass|secret|token|otp|totp|api_?key|access_?key|private|^code$|^key$|cookie|session|nonce`)
 
-// denmaRedact is a request's values without secrets, with long text cut
-// (campaign bodies) and long lists shortened (thousands of subscriber IDs).
+// denmaRedact is a request's values without secrets, with long text and lists cut.
 func denmaRedact(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
@@ -872,10 +830,7 @@ type denmaAuditRow struct {
 	Details    json.RawMessage `db:"details" json:"details"`
 }
 
-// DenmaGetAudit returns a page of the log, newest first: a center's own (on
-// its Activity page), or, in the hub, every center's (?center= a slug, or hub
-// for the hub's own). ?before= an ID pages back; ?q= matches the user or the
-// action.
+// DenmaGetAudit returns a page of the log, newest first: a center's own, or in the hub every center's.
 func (a *App) DenmaGetAudit(c echo.Context) error {
 	center := a.ko.String("denma.center")
 	if center == "" && denmaHub != nil {
@@ -921,8 +876,7 @@ func denmaAuditLike(q string) string {
 	return "%" + denmaLikeEscape(q) + "%"
 }
 
-// denmaActivityView is an Activity page: in the hub, every center's log; in a
-// center, its own.
+// denmaActivityView is an Activity page.
 type denmaActivityView struct {
 	adminView
 	Hub     bool
@@ -934,8 +888,7 @@ type denmaNamedSlug struct {
 	Name string `db:"name" json:"name"`
 }
 
-// ViewDenmaActivity renders the Activity page: the hub's (superadmins), or a
-// center's (center:manage).
+// ViewDenmaActivity renders the Activity page: the hub's or a center's.
 func (a *App) ViewDenmaActivity(c echo.Context) error {
 	if a.inCenter() == nil {
 		v := newAdminView(c, "Activity", "", "denma.activity")

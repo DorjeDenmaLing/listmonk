@@ -1,31 +1,6 @@
 package main
 
 // denma: the sending API's endpoints, at <center>/v1/ (cmd/denma_api.go).
-// Requests and answers are JSON; answers are {"data": ...}, or {"message":
-// "..."} with an error status. Unknown fields are refused, so a typo isn't
-// silently ignored. A POST that sends (messages, campaigns) can carry an
-// Idempotency-Key header: the same key again (from the same API key) gets
-// the first request's answer and sends nothing more, so a retry after a
-// timeout never sends twice.
-//
-// Who isn't sent to is in each answer ("skipped"), without the reason
-// (denmaAPINotSent).
-//
-//   - Campaigns skip everyone blocklisted in the center: those who
-//     unsubscribed or complained (cmd/denma_optouts.go), bounced, or whose
-//     domain can't receive mail. Its recipients' domains are checked before
-//     it starts (the import's check, cmd/denma_emailcheck.go), so it starts a
-//     few seconds after it's made ("starting").
-//   - Transactional e-mails (password resets, receipts, notices) still go to
-//     those who unsubscribed, as they're not marketing; not to those who
-//     complained, bounced, or whose domain can't receive mail. Each address
-//     is added to the center as a subscriber without lists, if it's new, so
-//     that its bounces and complaints are recorded (the e-mail carries its
-//     X-Listmonk-Subscriber header).
-//
-// E-mail is from the key's sender (cmd/denma_api.go), and counts against its
-// daily limit: a transactional e-mail when it's sent, a campaign's
-// recipients when it starts.
 
 import (
 	"database/sql"
@@ -87,9 +62,7 @@ func initDenmaAPIPublicHandlers(g *echo.Group, a *App) {
 	}
 }
 
-// denmaAPIRoutes are the API's endpoints (under /v1), each with what a key
-// needs to use it ("" for any key). The OpenAPI description
-// (denma_api_openapi.json) is tested against them.
+// denmaAPIRoutes are the API's endpoints (under /v1), each with what a key needs to use it.
 var denmaAPIRoutes = []struct {
 	Method, Path, Can string
 	Handler           func(a *App) echo.HandlerFunc
@@ -105,8 +78,7 @@ var denmaAPIRoutes = []struct {
 	{http.MethodGet, "/events", denmaAPICanEvents, func(a *App) echo.HandlerFunc { return a.DenmaAPIEvents }}, // cmd/denma_api_events.go
 }
 
-// DenmaAPISubscribersGone answers POST /v1/subscribers, which Server
-// webhooks replace (cmd/denma_signup.go), whatever the key.
+// DenmaAPISubscribersGone answers POST /v1/subscribers with 410.
 func (a *App) DenmaAPISubscribersGone(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -189,8 +161,7 @@ func (a *App) apiTemplate(name string, kind string, types ...string) (int, strin
 		fmt.Sprintf("%d %s templates are called %q; give them different names (Campaigns -> Templates).", len(rows), kind, name))
 }
 
-// apiSender returns the key's sender (or the center's), checked as ready to
-// send from, and the Reply-To value, which has to be at the center's domains.
+// apiSender returns the key's sender (or the center's) and the Reply-To value.
 func (a *App) apiSender(c echo.Context, replyTo string) (string, string, error) {
 	from := apiKeyOf(c).Sender
 	if from == "" {
@@ -213,8 +184,7 @@ func (a *App) apiSender(c echo.Context, replyTo string) (string, string, error) 
 	return from, replyTo, nil
 }
 
-// apiReplyToOK refuses a reply-to address that isn't at one of the center's
-// sending domains (or its sender's, without them, cmd/denma_domains.go).
+// apiReplyToOK refuses a reply-to address outside the center's sending domains.
 func (a *App) apiReplyToOK(addr string) error {
 	dom := denmaSenderDomain(addr)
 	doms, err := a.denmaCenterDomains()
@@ -239,8 +209,7 @@ func (a *App) apiReplyToOK(addr string) error {
 	return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(`"reply_to" has to be at one of the center's domains (%s).`, strings.Join(names, ", ")))
 }
 
-// apiCapErr is the answer when the center's daily cap leaves no room for n
-// e-mails.
+// apiCapErr is the answer when the center's daily cap leaves no room for n e-mails.
 func (a *App) apiCapErr(n int) error {
 	s := denmaCenterCounter(a.ko).Status()
 	if s.Left > 0 {
@@ -258,8 +227,7 @@ func (a *App) apiCapErr(n int) error {
 
 // ---- GET /v1 ----
 
-// DenmaAPIStatus says which center and key this is, and how its sending
-// stands: a request to test a key with.
+// DenmaAPIStatus says which center and key this is, and how its sending stands.
 func (a *App) DenmaAPIStatus(c echo.Context) error {
 	st, err := a.apiState()
 	if err != nil {
@@ -335,9 +303,7 @@ type denmaAPIMessageResult struct {
 	Skipped []denmaAPISkip `json:"skipped"`
 }
 
-// apiIdem starts an idempotent request: done is the stored answer if the key
-// was used before; else id is the row to store this one's in (0 without a
-// key).
+// apiIdem starts an idempotent request: the stored answer if any, else the row to store it in.
 func (a *App) apiIdem(c echo.Context, table string) (id int64, done json.RawMessage, err error) {
 	idem := strings.TrimSpace(c.Request().Header.Get(denmaAPIIdemHeader))
 	if idem == "" {
@@ -417,8 +383,7 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 	if done != nil {
 		return c.JSON(http.StatusOK, okResp{done})
 	}
-	// Without a result, the Idempotency-Key's row is forgotten, so the
-	// request can be tried again.
+	// Without a result, the Idempotency-Key's row is forgotten.
 	stored := false
 	defer func() {
 		if idemID != 0 && !stored {
@@ -491,8 +456,7 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 		msgs = append(msgs, denmaAPIMessage(sub, from, replyTo, m.Subject, m.ContentType, m.Body, m.AltBody, tpl.Attachments)) // cmd/denma_api_outbox.go
 	}
 
-	// The key's daily limit, and the center's daily cap: all of them, or
-	// none.
+	// The key's daily limit and the center's daily cap: all of them, or none.
 	k := apiKeyOf(c)
 	if len(msgs) > 0 {
 		if err := a.apiSendClaim(c, len(msgs)); err != nil {
@@ -509,8 +473,7 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 		}
 		centerClaim = id
 	}
-	// And the hub's daily limit, short of the reserve kept for opt-ins and
-	// password resets (cmd/denma_sending.go).
+	// The hub's daily limit, short of the reserve kept for opt-ins and password resets.
 	daily, err := denmaClaimDaily(len(msgs))
 	if err != nil {
 		if cc != nil {
@@ -522,8 +485,7 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 	for i, msg := range msgs {
 		denmaMarkClaim(&msg, denmaCenterClaimHeader, centerClaim) // cmd/denma_daily.go
 		denmaMarkClaim(&msg, denmaClaimHeader, daily)
-		// Recorded until the mail server answers, which may mean trying it
-		// again or an event for the key (cmd/denma_api_outbox.go).
+		// Recorded until the mail server answers (cmd/denma_api_outbox.go).
 		outID, err := a.apiOutboxAdd(k.ID, tplID, msg)
 		if err == nil {
 			if err = a.apiOutboxPush(outID, msg); err != nil {
@@ -549,7 +511,7 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 	if idemID != 0 {
 		_, err = a.db.Exec(`UPDATE denma_api_messages SET template_id = $2, sent = $3, skipped = $4, result = $5 WHERE id = $1`,
 			idemID, tplID, len(res.Sent), len(res.Skipped), string(b))
-		stored = err == nil || len(res.Sent) > 0 // kept once any went: a retry mustn't send them again
+		stored = err == nil || len(res.Sent) > 0 // kept once any went
 	} else {
 		_, err = a.db.Exec(`INSERT INTO denma_api_messages (key_id, template_id, sent, skipped, result) VALUES ($1, $2, $3, $4, $5)`,
 			k.ID, tplID, len(res.Sent), len(res.Skipped), string(b))
@@ -562,10 +524,7 @@ func (a *App) DenmaAPISendMessage(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{res})
 }
 
-// apiTxRecipient readies a transactional e-mail's recipient: the subscriber
-// (added without lists if new, so that bounces and complaints are recorded,
-// and with no consent, cmd/denma_noconsent.go), or denmaAPINotSent if it's
-// not sent to.
+// apiTxRecipient readies a transactional e-mail's recipient, or denmaAPINotSent if not sent to.
 func (a *App) apiTxRecipient(keyID int, email, name, first, last string, skip map[string]bool) (models.Subscriber, string, error) {
 	var sub models.Subscriber
 	if no, err := a.denmaTxRefused(email, skip); err != nil || no {
@@ -593,11 +552,7 @@ func (a *App) apiTxRecipient(keyID int, email, name, first, last string, skip ma
 	return sub, "", err
 }
 
-// denmaTxRefused reports whether a transactional e-mail isn't sent to email:
-// it complained here, hard-bounced (here, which the shared blocklist only
-// has after the minute's job, cmd/denma_blocklist.go, or anywhere), or its
-// domain can't receive mail. Someone who unsubscribed, or whom an admin
-// blocklisted, is still sent it.
+// denmaTxRefused reports whether email complained, bounced, or has an undeliverable domain.
 func (a *App) denmaTxRefused(email string, skip map[string]bool) (bool, error) {
 	if _, ok := denmaSharedBlock(a.db, email); ok {
 		return true, nil
@@ -621,8 +576,7 @@ func (a *App) denmaTxRefused(email string, skip map[string]bool) (bool, error) {
 	return no, err
 }
 
-// denmaTxSkipped reports whether listmonk's transactional API (/api/tx)
-// leaves email out (denmaTxRefused), adding why to notFound.
+// denmaTxSkipped reports whether /api/tx leaves email out, adding why to notFound.
 func (a *App) denmaTxSkipped(email string, notFound *[]string) bool {
 	no, err := a.denmaTxRefused(email, denmaEmailSkip(a.ko))
 	if err != nil {
@@ -680,8 +634,7 @@ type denmaAPICampaign struct {
 	Skipped []denmaAPISkip `db:"-" json:"skipped,omitempty"` // when recipients are added, and who won't be sent it when it starts
 }
 
-// A draft's recipients are everyone given: the count doesn't say who the
-// center has blocklisted until it starts (apiNotSent).
+// A draft's count is everyone given, until it starts (apiNotSent).
 const denmaAPICampaignSQL = `SELECT c.id, c.uuid, c.name, c.subject, x.error,
 	CASE WHEN x.state = 'starting' AND c.status = 'draft' THEN 'starting' ELSE c.status::TEXT END AS status,
 	(SELECT COUNT(*) FROM subscriber_lists sl JOIN subscribers s ON s.id = sl.subscriber_id
@@ -706,8 +659,7 @@ func (a *App) apiCampaign(c echo.Context, id int) (denmaAPICampaign, error) {
 	return out, nil
 }
 
-// DenmaAPICreateCampaign makes a campaign, with its recipients, and starts
-// it unless "start" is false.
+// DenmaAPICreateCampaign makes a campaign with its recipients, and starts it unless "start" is false.
 func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 	var r denmaAPICampaignReq
 	if err := denmaAPIBind(c, &r); err != nil {
@@ -807,8 +759,7 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 	}()
 	claimed := 0
 	if start {
-		// Who it won't go to, said only once it's sent: a draft's answer
-		// mustn't tell a key who the center has blocklisted for free.
+		// Who it won't go to, said only once it's sent.
 		if skipped, err = a.apiNotSent(listID, skipped); err != nil {
 			return denmaInternal(err)
 		}
@@ -875,8 +826,7 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 	if idem != "" {
 		idemArg = idem
 	}
-	// Recorded only while the key's in use: one deleted as leaked since this
-	// request came in has had its campaigns cancelled (cmd/denma_api.go).
+	// Recorded only while the key's in use (cmd/denma_api.go).
 	kl := a.apiKeyLock(k.ID)
 	kl.Lock()
 	live, err := a.apiKeyLive(k.ID, false)
@@ -912,14 +862,7 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// apiAddRecipients adds recipients to an API campaign's list, creating new
-// subscribers, and returns those skipped for the request's faults (not a
-// valid address, attributes too big): the blocklisted go on the list, not
-// to be sent it, and are said when it starts (apiNotSent). Their attributes are
-// stored in the list's subscriber_lists.meta, for this campaign only
-// (denmaAPIRecipientData); existing subscribers keep theirs, and their name
-// unless it's a stand-in, which the name given replaces as the campaign
-// starts (denma_api_campaign_contacts), not for a draft never sent.
+// apiAddRecipients adds recipients to an API campaign's list, returning those skipped as faulty.
 func (a *App) apiAddRecipients(c echo.Context, listID int, in []denmaAPIRecipient) ([]denmaAPISkip, error) {
 	keyID := apiKeyOf(c).ID
 	skipped := []denmaAPISkip{}
@@ -983,9 +926,7 @@ func (a *App) apiAddRecipients(c echo.Context, listID int, in []denmaAPIRecipien
 		return fail(err)
 	}
 	defer tx.Rollback()
-	// New ones, with their attributes, written once: existing subscribers
-	// keep theirs. An address that opted out is added blocklisted, without
-	// them. None has consent (cmd/denma_noconsent.go).
+	// New subscribers get their attributes, written once; opted-out ones are added blocklisted.
 	var added []string
 	if err := tx.Select(&added, `INSERT INTO subscribers (uuid, email, name, first_name, last_name, status, attribs)
 		SELECT gen_random_uuid(), i.email, COALESCE(NULLIF(i.name, ''), split_part(i.email, '@', 1)), i.first, i.last, 'enabled',
@@ -1010,8 +951,7 @@ func (a *App) apiAddRecipients(c echo.Context, listID int, in []denmaAPIRecipien
 	for _, s := range subs {
 		ids = append(ids, s.ID)
 	}
-	// On the list, with their attributes and name; the latest if given again. Only
-	// here can the fenced join it (cmd/denma_noconsent.go).
+	// On the list with their attributes and name (cmd/denma_noconsent.go).
 	if _, err := tx.Exec(`SELECT set_config('denma.api_recipients', $1, true)`, strconv.Itoa(listID)); err != nil {
 		return fail(err)
 	}
@@ -1033,8 +973,7 @@ func (a *App) apiAddRecipients(c echo.Context, listID int, in []denmaAPIRecipien
 	return skipped, nil
 }
 
-// apiNotSent adds to skipped those on an API campaign's list who won't be
-// sent it: blocklisted, or unsubscribed from it.
+// apiNotSent adds to skipped those on the list who won't be sent it (blocklisted or unsubscribed).
 func (a *App) apiNotSent(listID int, skipped []denmaAPISkip) ([]denmaAPISkip, error) {
 	var emails []string
 	if err := a.db.Select(&emails, `SELECT LOWER(s.email) FROM subscriber_lists sl JOIN subscribers s ON s.id = sl.subscriber_id
@@ -1047,9 +986,7 @@ func (a *App) apiNotSent(listID int, skipped []denmaAPISkip) ([]denmaAPISkip, er
 	return skipped, nil
 }
 
-// apiNewCampaignList makes an API campaign's list, with its tag
-// (denmaAPIListTag), which only the API can give a list
-// (denma_keep_api_list_tag, cmd/denma_noconsent.go).
+// apiNewCampaignList makes an API campaign's list, with its tag (denmaAPIListTag).
 func (a *App) apiNewCampaignList(name, desc string) (int, error) {
 	tx, err := a.db.Beginx()
 	if err != nil {
@@ -1068,9 +1005,7 @@ func (a *App) apiNewCampaignList(name, desc string) (int, error) {
 	return id, tx.Commit()
 }
 
-// denmaAPIRecipientData overlays an API campaign's per-recipient attributes
-// (apiAddRecipients) on its subscribers, for its e-mails: the manager's
-// batches (cmd/manager_store.go) and retries (cmd/denma_retries.go).
+// denmaAPIRecipientData overlays an API campaign's per-recipient attributes on its subscribers.
 func denmaAPIRecipientData(db *sqlx.DB, campID int, subs []models.Subscriber) error {
 	if len(subs) == 0 {
 		return nil
@@ -1120,9 +1055,7 @@ func denmaAPIRecipientData(db *sqlx.DB, campID int, subs []models.Subscriber) er
 	return nil
 }
 
-// denmaViewRecipientData is a subscriber with an API campaign's attributes
-// for them laid over, for the campaign's "view in browser" page, as its
-// e-mail had them.
+// denmaViewRecipientData is a subscriber with an API campaign's attributes laid over, for its web page.
 func (a *App) denmaViewRecipientData(campID int, sub models.Subscriber) models.Subscriber {
 	subs := []models.Subscriber{sub}
 	if err := denmaAPIRecipientData(a.db, campID, subs); err != nil {
@@ -1140,20 +1073,17 @@ func (a *App) apiListRecipients(listID int) (int, error) {
 	return n, err
 }
 
-// denmaAPIStarting is the campaigns being started, so that the minute's job
-// (cmd/denma_api_events.go) doesn't start one twice.
+// denmaAPIStarting is the campaigns being started.
 var denmaAPIStarting sync.Map
 
-// apiStart starts an API campaign: its recipients' domains (and the shared
-// blocklist) checked, then running, or scheduled for its send_at.
+// apiStart starts an API campaign: domains checked, then running or scheduled for send_at.
 func (a *App) apiStart(id int) {
 	key := fmt.Sprintf("%s/%d", a.ko.String("denma.center"), id)
 	if _, busy := denmaAPIStarting.LoadOrStore(key, true); busy {
 		return
 	}
 	defer denmaAPIStarting.Delete(key)
-	// While the API's paused, it stays starting; the minute's job starts it
-	// once it's resumed.
+	// While the API's paused, it stays starting; the minute's job starts it once resumed.
 	if st, err := a.apiState(); err != nil || st.PausedAt != nil {
 		return
 	}
@@ -1164,8 +1094,7 @@ func (a *App) apiStart(id int) {
 			err = fmt.Errorf("%v", he.Message) // without echo's "code=...", for the caller
 		}
 		a.log.Printf("denma: API campaign %d didn't start: %v", id, err)
-		// A draft again, its claim on the key's daily limit given back: starting
-		// it again claims it again.
+		// A draft again, its claim on the key's daily limit given back.
 		var back struct {
 			KeyID   sql.NullInt64 `db:"key_id"`
 			Claimed int           `db:"claimed"`
@@ -1219,8 +1148,7 @@ func (a *App) apiStart(id int) {
 		failed(err)
 		return
 	}
-	// Started only if it wasn't cancelled meanwhile, nor its key deleted as
-	// leaked (under its lock, cmd/denma_api.go).
+	// Started only if not cancelled meanwhile, nor its key deleted (under its lock, cmd/denma_api.go).
 	kl := a.apiKeyLock(x.KeyID)
 	kl.Lock()
 	defer kl.Unlock()
@@ -1260,8 +1188,7 @@ func (a *App) DenmaAPIGetCampaign(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// DenmaAPIAddRecipients adds recipients to a campaign made with "start":
-// false, before it's started.
+// DenmaAPIAddRecipients adds recipients to a campaign made with "start": false.
 func (a *App) DenmaAPIAddRecipients(c echo.Context) error {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var r struct {
@@ -1309,9 +1236,7 @@ func (a *App) DenmaAPIAddRecipients(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// denmaAPICampaignLocks keep adding recipients to a draft and starting it
-// apart (the process is the only one), so a start claims from the key's limit
-// exactly the recipients it sends: none are added after it counts them.
+// denmaAPICampaignLocks keep adding recipients to a draft and starting it apart.
 var denmaAPICampaignLocks [64]sync.Mutex
 
 func (a *App) apiCampaignLock(id int) *sync.Mutex {
@@ -1384,8 +1309,7 @@ func (a *App) DenmaAPIStartCampaign(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// DenmaAPICancelCampaign cancels a campaign: before it starts, while
-// scheduled, or while it's sending.
+// DenmaAPICancelCampaign cancels a campaign before it starts, while scheduled, or while sending.
 func (a *App) DenmaAPICancelCampaign(c echo.Context) error {
 	id, _ := strconv.Atoi(c.Param("id"))
 	cur, err := a.apiCampaign(c, id)
@@ -1408,8 +1332,7 @@ func (a *App) DenmaAPICancelCampaign(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// apiUnclaimScheduled gives back what a cancelled scheduled campaign claimed
-// of its key's limit.
+// apiUnclaimScheduled gives back what a cancelled scheduled campaign claimed of its key's limit.
 func (a *App) apiUnclaimScheduled(id int) {
 	var back struct {
 		KeyID   sql.NullInt64 `db:"key_id"`
@@ -1453,18 +1376,13 @@ func (a *App) apiCancelCampaign(id int, status string) error {
 
 // ---- Where the links a key sends go ----
 
-// reDenmaLink finds links in text, once its HTML entities and CSS escapes
-// are decoded (denmaLinkText): http(s) addresses, with any slashes and
-// backslashes or none (browsers read https:\\host and https:host as
-// https://host), and protocol-relative ones (//host) in any attribute or CSS
-// url().
+// reDenmaLink finds links in decoded text: http(s) addresses and protocol-relative ones (//host).
 var reDenmaLink = regexp.MustCompile(`(?i)\bhttps?:[/\\]*([^/\\\s"'<>()\[\]{}^|?#]+)|(?:=|url\()\s*["']?\s*[/\\]{2}([^/\\\s"'<>()]+)`)
 
 // reDenmaCSSEscape is a CSS escape: a backslash and up to 6 hex digits.
 var reDenmaCSSEscape = regexp.MustCompile(`\\([0-9a-fA-F]{1,6})\s?`)
 
-// reDenmaAttrValue is a quoted attribute value or a CSS url(), where
-// browsers drop a link's tabs and newlines.
+// reDenmaAttrValue is a quoted attribute value or a CSS url().
 var reDenmaAttrValue = regexp.MustCompile(`=\s*"[^"]*"|=\s*'[^']*'|(?i)url\([^)]*\)`)
 
 // denmaDropTabNL is text without tabs and newlines.
@@ -1472,9 +1390,7 @@ func denmaDropTabNL(s string) string {
 	return strings.NewReplacer("\t", "", "\r", "", "\n", "").Replace(s)
 }
 
-// denmaLinkText decodes what could hide a link from reDenmaLink: HTML
-// entities (twice encoded too), CSS escapes, and tabs and newlines in
-// attribute values.
+// denmaLinkText decodes HTML entities, CSS escapes, and tabs and newlines in attribute values.
 func denmaLinkText(s string) string {
 	for i := 0; i < 3 && strings.ContainsAny(s, "&\\"); i++ {
 		d := html.UnescapeString(s)
@@ -1513,8 +1429,7 @@ func denmaNameHasLink(name string) bool {
 	return len(denmaTextLinkHosts(name)) > 0 || strings.Contains(strings.ToLower(denmaLinkText(name)), "www.")
 }
 
-// denmaLinkDomainsForm checks a key's link domains: domains (an address's
-// host is taken), lowercase, each once.
+// denmaLinkDomainsForm checks a key's link domains: bare, lowercase, each once.
 func denmaLinkDomainsForm(in []string) ([]string, error) {
 	out := []string{}
 	for _, s := range in {
@@ -1538,10 +1453,7 @@ func denmaLinkDomainsForm(in []string) ([]string, error) {
 	return out, nil
 }
 
-// apiOwnLinkDomains are the domains a key's links can always go to: the
-// center's sending domains (or its sender's, if it has none yet), its
-// website (in every campaign's footer), and the app's own (its uploads,
-// archive and tracked links).
+// apiOwnLinkDomains are the domains a key's links can always go to: the center's own.
 func (a *App) apiOwnLinkDomains() []string {
 	out := []string{}
 	if u, err := url.Parse(a.urlCfg.RootURL); err == nil && u.Hostname() != "" {
@@ -1579,8 +1491,7 @@ func denmaLinkAllowed(host string, domains []string) bool {
 	return false
 }
 
-// denmaLinkHosts returns the hosts of the links in values' text: strings,
-// and the strings in maps and lists, at any depth.
+// denmaLinkHosts returns the hosts of the links in values' text, at any depth.
 func denmaLinkHosts(values ...any) []string {
 	var out []string
 	var walk func(v any)
@@ -1588,8 +1499,7 @@ func denmaLinkHosts(values ...any) []string {
 		switch t := v.(type) {
 		case string:
 			out = append(out, denmaTextLinkHosts(t)...)
-			// A value that's one address may go in an href, where its tabs
-			// and newlines are dropped.
+			// A value that's one address may go in an href.
 			if u := strings.TrimSpace(denmaDropTabNL(t)); u != strings.TrimSpace(t) && !strings.ContainsAny(u, " ") {
 				out = append(out, denmaTextLinkHosts(u)...)
 			}
@@ -1622,9 +1532,7 @@ func denmaAPIRecipientAttribs(rs []denmaAPIRecipient) []map[string]any {
 	return out
 }
 
-// apiCheckLinks refuses a request whose text has a link (in its subject,
-// body, data or attributes) to anywhere but the key's link domains and the
-// center's own (apiOwnLinkDomains).
+// apiCheckLinks refuses a request with a link outside the key's link domains and the center's own.
 func (a *App) apiCheckLinks(c echo.Context, values ...any) error {
 	hosts := denmaLinkHosts(values...)
 	if len(hosts) == 0 {
@@ -1645,9 +1553,7 @@ func denmaLinksAllowed(hosts, allowed []string) error {
 	return nil
 }
 
-// denmaCheckRendered checks the links of an e-mail as it's filled in, which
-// its template's logic (print, sprig's functions, a recipient's data) can
-// make, as apiCheckLinks: the center's template's own (tpl) are allowed too.
+// denmaCheckRendered checks the links of an e-mail as filled in, as apiCheckLinks does.
 func denmaCheckRendered(allowed []string, tpl string, texts ...string) error {
 	allowed = append(append([]string{}, allowed...), denmaTextLinkHosts(tpl)...)
 	for _, t := range texts {
@@ -1658,8 +1564,7 @@ func denmaCheckRendered(allowed []string, tpl string, texts ...string) error {
 	return nil
 }
 
-// denmaAPICampLinksFor is how long an API campaign's allowed link domains are
-// kept before being read again.
+// denmaAPICampLinksFor is how long an API campaign's allowed link domains are cached.
 const denmaAPICampLinksFor = time.Minute
 
 // denmaCampLinks is an API campaign's allowed link domains, and when they were read.
@@ -1668,14 +1573,10 @@ type denmaCampLinks struct {
 	at      time.Time
 }
 
-// denmaAPICampLinks caches each API campaign's allowed link domains, by
-// center and campaign ID; nil for a campaign that isn't one.
+// denmaAPICampLinks caches each API campaign's allowed link domains, by center and campaign ID.
 var denmaAPICampLinks sync.Map
 
-// denmaCheckCampaignLinks checks an API campaign's e-mail, as it's sent, as
-// denmaCheckRendered: one with a link elsewhere isn't sent, and is a failed
-// send (cmd/denma_retries.go). A campaign whose key has gone keeps to the
-// center's own domains.
+// denmaCheckCampaignLinks checks an API campaign's e-mail as it's sent; a bad link fails the send.
 func denmaCheckCampaignLinks(slug string, m models.Message) error {
 	if m.Campaign == nil || denmaHub == nil {
 		return nil
@@ -1705,13 +1606,11 @@ func denmaCheckCampaignLinks(slug string, m models.Message) error {
 	if allowed == nil {
 		return nil
 	}
-	// And the center's website as it is now: the footer links it, and it
-	// may have changed since the campaign started.
+	// And the center's website as it is now (the footer links it).
 	if h := denmaWebsiteHost(slug); h != "" {
 		allowed = append(slices.Clip(allowed), h)
 	}
-	// Where its tracked links go, which the template's logic can make
-	// ({{ TrackLink (print "ht" "tps://...") . }}): the e-mail has only ours.
+	// Where its tracked links go, made by the template's logic.
 	var dests []string
 	if ctr := denmaHub.get(slug); ctr != nil {
 		var err error
@@ -1729,16 +1628,13 @@ func denmaCheckCampaignLinks(slug string, m models.Message) error {
 	return nil
 }
 
-// reDenmaTrackedLink is a tracked link's UUID in an e-mail (LinkTrackURL:
-// .../link/<link>/<campaign>/<subscriber>).
+// reDenmaTrackedLink is a tracked link's UUID in an e-mail (.../link/<link>/<campaign>/<subscriber>).
 var reDenmaTrackedLink = regexp.MustCompile(`/link/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/`)
 
-// denmaTrackedURLCache is tracked links' destinations, by center and link
-// UUID (a link's never changes).
+// denmaTrackedURLCache is tracked links' destinations, by center and link UUID.
 var denmaTrackedURLCache sync.Map
 
-// denmaTrackedURLs is where the tracked links in texts go, in center ctr,
-// without tabs and newlines (which a browser drops when it follows one).
+// denmaTrackedURLs is where the tracked links in texts go, in center ctr.
 func denmaTrackedURLs(ctr *denmaCenter, texts ...string) ([]string, error) {
 	var out, missing []string
 	seen := map[string]bool{}

@@ -1,21 +1,16 @@
-// denma: the tags a template can use, under the template editor
-// (partials/denma/template-tags.html), those every campaign and automation
-// e-mail must have (cmd/denma_footer.go) marked with whether the template has
-// them. The page sets window._denmaContact, the center's details. The check on
-// save is the one that counts; this one follows it. Spread into views/templates.js.
+// denma: the tags a template can use, marked by whether it has them (cmd/denma_footer.go).
 
 const CAMPAIGN = ['campaign', 'campaign_visual'];
 const tagRe = (name) => new RegExp(`\\{\\{-?\\s*${name}\\b`);
 
-// A website or e-mail address, or a word naming it, to compare (as the server's
-// denmaSiteWord).
+// A website or e-mail address, or a word naming it, to compare.
 function siteWord(s) {
   let w = (s || '').toLowerCase();
   ['https://', 'http://', 'mailto:', 'www.'].forEach((p) => { if (w.startsWith(p)) w = w.slice(p.length); });
   return w.replace(/[/.:!?)]+$/, '');
 }
 
-// Text (or HTML's text) for comparing: lowercase, without commas, spaces collapsed.
+// Text for comparing: lowercase, without commas, spaces collapsed.
 function plainWords(s, isHTML) {
   let t = s || '';
   if (isHTML) {
@@ -24,8 +19,7 @@ function plainWords(s, isHTML) {
   return t.toLowerCase().replace(/[,;·|]/g, ' ').split(/\s+/).filter(Boolean).join(' ');
 }
 
-// The tags, the template types they're for, and for those it must have, how
-// to tell it has them (t: the template, below).
+// The tags, the template types they're for, and how to tell it has them.
 const TAGS = [
   {
     tag: '{{ template "content" . }}', types: ['campaign'],
@@ -82,7 +76,7 @@ export function denmaTemplateTags(contact) {
   const c = contact || {};
   let memo = { body: null };
 
-  // The template, for the rows' checks; worked out once per change.
+  // The template, for the rows' checks.
   function tpl(body) {
     if (memo.body === body) {
       return memo.t;

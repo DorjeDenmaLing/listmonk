@@ -1,12 +1,6 @@
 package main
 
-// denma: a clean shutdown. listmonk only handles SIGHUP (a reload), so a
-// deploy's SIGTERM (docker stop) ended the process mid-send, like a crash:
-// each running campaign resumed from its last saved checkpoint, sending
-// those after it a second copy. On SIGTERM or SIGINT, every campaign
-// manager (the hub's and each center's) stops its running campaigns where
-// they are and saves their progress (manager.DenmaStop), then the process
-// exits. The campaigns stay running, and resume on the next start.
+// denma: on SIGTERM or SIGINT, campaigns stop where they are and save their progress.
 
 import (
 	"os"
@@ -18,12 +12,10 @@ import (
 	"github.com/knadh/listmonk/internal/manager"
 )
 
-// denmaStopWait is how long the managers have to save, within Docker's
-// default 10 seconds before it kills the process.
+// denmaStopWait is how long the managers have to save.
 const denmaStopWait = 8 * time.Second
 
-// denmaAwaitShutdown handles SIGTERM and SIGINT for the process. Called by
-// main.
+// denmaAwaitShutdown handles SIGTERM and SIGINT for the process.
 func denmaAwaitShutdown(app *App) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)

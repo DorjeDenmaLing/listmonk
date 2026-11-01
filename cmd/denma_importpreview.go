@@ -1,27 +1,6 @@
 package main
 
-// denma: the import's preview (Subscribers -> Import). Before an import is
-// uploaded, the page sends the file and its settings here, and shows what
-// the import would do, without changing anything:
-//
-//   - the file as read: the columns used and ignored, the lines it skips and
-//     why, and its first rows as they'd be imported (e-mail, name, tags,
-//     attributes), so a file from another system can be checked;
-//   - the people: new to the center, already in it, already on each list,
-//     and those blocklisted, by why (unsubscribed, complained, bounced,
-//     blocklisted by an admin) and what the import does with them;
-//   - the automations its lists and tags would start, if it runs them, and
-//     the consent records it'd keep, if it keeps them (cmd/denma_imports.go);
-//   - the tags: each with how many have it, and whether the center has it
-//     (or it's another name for one of its tags, given as that tag).
-//     The page offers to add the ones it doesn't, as Subscribers -> Tags
-//     does (POST /api/denma/tags), before the upload; the import itself
-//     still leaves out tags the center doesn't have (cmd/denma_tags.go).
-//
-// It reads the file as listmonk's importer does (internal/subimporter), and
-// the database as the import's triggers do (cmd/denma_features.go,
-// cmd/denma_optouts.go, cmd/denma_noconsent.go). Not in the activity log
-// (it changes nothing: denmaAuditSkip's /preview), and it logs no addresses.
+// denma: the import's preview (Subscribers -> Import): what an import would do, changing nothing.
 
 import (
 	"archive/zip"
@@ -51,7 +30,7 @@ const (
 	denmaImportProblems = 20
 )
 
-// The importer's columns, and its header cleaning (non-ASCII, like a BOM).
+// The importer's columns, and its header cleaning.
 var (
 	denmaImportColumns = []string{"email", "name", "first_name", "last_name", "attributes"}
 	reDenmaNonASCII    = regexp.MustCompile("[[:^ascii:]]")
@@ -67,8 +46,8 @@ type denmaImportPreview struct {
 	Columns  []string `json:"columns"`  // the importer's columns found
 	Ignored  []string `json:"ignored"`  // the file's other columns
 	Error    string   `json:"error"`    // why it can't be imported at all
-	Encoding string   `json:"encoding"` // what the file was read as if it isn't UTF-8 (subimporter.DenmaUTF8Reader), or ""
-	Token    string   `json:"token"`    // stands for the file, kept for the next preview (cmd/denma_importkeep.go)
+	Encoding string   `json:"encoding"` // what the file was read as if not UTF-8, or ""
+	Token    string   `json:"token"`    // stands for the kept file (cmd/denma_importkeep.go)
 
 	Rows       int `json:"rows"`        // data rows read
 	Valid      int `json:"valid"`       // rows with an address the import takes
@@ -93,9 +72,9 @@ type denmaImportPreview struct {
 	ExistingWithTags int              `json:"existing_with_tags"` // existing subscribers the file gives tags
 	CanAddTags       bool             `json:"can_add_tags"`
 
-	Automations []string             `json:"automations"` // the active automations its lists and tags start, if asked (cmd/denma_imports.go)
-	Consent     *denmaImportConsents `json:"consent"`     // the consent records it keeps, if asked (cmd/denma_imports.go)
-	BlockDates  *denmaImportDates    `json:"block_dates"` // a blocklist import's dates, with a reason (cmd/denma_imports.go)
+	Automations []string             `json:"automations"` // the automations it would start
+	Consent     *denmaImportConsents `json:"consent"`     // the consent records it keeps
+	BlockDates  *denmaImportDates    `json:"block_dates"` // a blocklist import's dates
 }
 
 type denmaImportProblem struct {
@@ -122,7 +101,7 @@ type denmaImportRow struct {
 	Dropped  []string       `json:"dropped"`
 	Existing bool           `json:"existing"`
 	Blocked  string         `json:"blocked"` // denmaImportBlocked's json name, or ""
-	Consent  string         `json:"consent"` // the consent record kept, or why not (cmd/denma_imports.go)
+	Consent  string         `json:"consent"` // the consent record kept, or why not
 
 	consent denmaImportConsentGiven
 }
@@ -135,8 +114,7 @@ type denmaImportListInfo struct {
 	Unsubscribed int    `db:"unsubscribed" json:"unsubscribed"` // in the file, unsubscribed from it
 }
 
-// denmaImportBlocked counts the addresses that are, or will be, blocklisted,
-// each under the first that applies.
+// denmaImportBlocked counts the addresses that are, or will be, blocklisted, by the first reason.
 type denmaImportBlocked struct {
 	Complained   int `json:"complained"`   // marked the center's mail as spam
 	Unsubscribed int `json:"unsubscribed"` // unsubscribed themselves
@@ -166,8 +144,7 @@ type denmaImportAddr struct {
 	HasConsent bool `db:"has_consent"` // a consent record already
 }
 
-// blocked is why the address is, or will be, blocklisted (or kept off the
-// lists), or "".
+// blocked is why the address is, or will be, blocklisted or kept off the lists, or "".
 func (d denmaImportAddr) blocked() string {
 	switch {
 	case d.OptOut.String == "complained":
@@ -184,9 +161,7 @@ func (d denmaImportAddr) blocked() string {
 	return ""
 }
 
-// DenmaImportPreview reads an import's file and settings (as POST
-// /api/import/subscribers takes them) and says what the import would do. The
-// file is sent once: the answer's token stands for it (cmd/denma_importkeep.go).
+// DenmaImportPreview reads an import's file and settings and says what it would do.
 func (a *App) DenmaImportPreview(c echo.Context) error {
 	user := auth.GetUser(c)
 	key := denmaKeptKey(a.ko.String("denma.center"), user.ID)
@@ -272,8 +247,7 @@ func (a *App) DenmaImportPreview(c echo.Context) error {
 // errDenmaOverLimit is a file in a ZIP that's over denmaMaxBody.
 var errDenmaOverLimit = errors.New("over the limit")
 
-// denmaLimited reads at most n bytes of r, and fails with errDenmaOverLimit
-// if there's more.
+// denmaLimited reads at most n bytes of r, failing with errDenmaOverLimit beyond that.
 type denmaLimited struct {
 	r io.Reader
 	n int64
@@ -293,9 +267,7 @@ func (l *denmaLimited) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// denmaImportOpen is the CSV the importer would read from the file (size
-// bytes): the file, or the first .csv in a ZIP (as ImportSubscribers takes
-// it). It gives its name, and a way to open it, from its start.
+// denmaImportOpen is the CSV the importer would read: the file, or the first .csv in a ZIP.
 func denmaImportOpen(f io.ReaderAt, size int64, upload string) (string, func() (io.ReadCloser, error), error) {
 	if strings.HasSuffix(strings.ToLower(upload), ".csv") {
 		return upload, func() (io.ReadCloser, error) {
@@ -335,19 +307,16 @@ func denmaImportReadError(name string, err error) string {
 	return fmt.Sprintf("Error reading %s in the ZIP file: %v", name, err)
 }
 
-// denmaImportEntry is what the file gives an address, and what the center
-// has of it.
+// denmaImportEntry is what the file gives an address, and what the center has.
 type denmaImportEntry struct {
 	tags    []string
-	consent denmaImportConsentGiven // its first row's (cmd/denma_imports.go)
-	dates   map[string]string       // its first row's unsubscribed_at and bounced_at (cmd/denma_imports.go)
+	consent denmaImportConsentGiven // its first row's
+	dates   map[string]string       // its first row's unsubscribed_at and bounced_at
 
 	existing, hasConsent bool
 }
 
-// denmaReadImport reads a CSV as the importer's LoadCSV does, and returns
-// the preview of the file, the addresses it'd import (in order), and what
-// it gives each.
+// denmaReadImport reads a CSV as the importer does: the file's preview, its addresses, what each gives.
 func denmaReadImport(ctx context.Context, r io.Reader, delim rune, validate func(subimporter.SubReq) (subimporter.SubReq, error)) (denmaImportPreview, []string, map[string]*denmaImportEntry) {
 	p := denmaImportPreview{Columns: []string{}, Ignored: []string{}, Problems: []denmaImportProblem{},
 		Attribs: []denmaImportAttrib{}, Sample: []denmaImportRow{}, Lists: []denmaImportListInfo{}, Tags: []denmaImportTag{}, Automations: []string{}}
@@ -523,8 +492,7 @@ func denmaIsImportColumn(h string) bool {
 	return false
 }
 
-// denmaImportCenter fills in what the center has of the file's addresses:
-// who's new, on the lists, blocklisted, and which tags it has.
+// denmaImportCenter fills in what the center has of the file's addresses.
 func (a *App) denmaImportCenter(p *denmaImportPreview, addrs []string, entries map[string]*denmaImportEntry, listIDs []int) error {
 	shared := `false`
 	if denmaHub != nil {

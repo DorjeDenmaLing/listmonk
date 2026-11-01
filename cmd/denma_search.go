@@ -1,36 +1,6 @@
 package main
 
-// denma: search for subscribers, lists and campaigns. listmonk's advanced
-// subscriber search takes a raw SQL expression, which can read anything the
-// database user can (every center's schema, the users table). That's turned
-// off: a `query` is refused, and the search boxes take a small search language
-// instead, compiled here to SQL from known fields only, with every value
-// quoted. The lists and campaigns pages had only a plain search; they take the
-// same language, with their own fields.
-//
-// Plain words match names (and, for subscribers, addresses; for campaigns,
-// subjects). Terms are ANDed; OR, NOT (or -term) and parentheses combine them:
-//   list:Newsletter -opened>90d     (status:draft OR status:paused) tag:retreat
-// ":" is "contains" for text and "is" for the rest; =, !=, >, >=, < and <=
-// also work where they make sense. Values with spaces go in quotes. A date is
-// 2024-01-31 (the whole day), today, yesterday, or 30d for 30 days ago (also
-// h, w, m and y): created>30d is "in the last 30 days"; scheduled:any is set. A list, campaign or
-// template is its name (any case) or ID; part of a name is enough when only
-// one matches.
-//
-// Subscribers: email, name, domain (domain:yahoo.*), status, list, confirmed,
-//   unconfirmed, unsubscribed (a list, any, or list:none), created, updated,
-//   opened, clicked (a campaign, a link, any, or when), bounced (hard, soft,
-//   complaint, any, or when), tag (a tag, any, or none: cmd/denma_tags.go),
-//   attr.<name> (attr.address.city for nested), has:attr.<name>, id.
-// Lists: name, type, optin, status, subscribers (a count), campaign (sent
-//   to by a campaign, or any), mailed (when a campaign last started to it, or
-//   any), created, updated, id.
-// Campaigns: name, subject, from, status, type, format, tag, list, template,
-//   created, updated, started, scheduled, sent, opens, clicks, bounces (counts),
-//   archive (yes or no), id.
-//
-// The views' filter builder writes these (assets/js/views/denma-search.js).
+// denma: the search language for subscribers, lists and campaigns, compiled to SQL from known fields.
 
 import (
 	"fmt"
@@ -63,9 +33,7 @@ var denmaSearchKeys = map[denmaKind]string{
 	denmaCampaigns:   "name, subject, from, status, type, format, tag, list, template, created, updated, started, scheduled, sent, opens, clicks, bounces, archive, id",
 }
 
-// denmaSearch compiles a subscriber search into an SQL condition for
-// listmonk's query: on return *search is empty (the condition does the
-// matching) and *query holds the condition. Raw SQL in *query is refused.
+// denmaSearch compiles a subscriber search into an SQL condition in *query, emptying *search.
 func (a *App) denmaSearch(user auth.User, search, query *string) error {
 	if strings.TrimSpace(*query) != "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "SQL queries are turned off. Search with the search box's filters instead.")
@@ -78,9 +46,7 @@ func (a *App) denmaSearch(user auth.User, search, query *string) error {
 	return nil
 }
 
-// denmaListSearch narrows the lists a lists query may return to those that
-// match a search: on return *search is empty, and, if there was one, *all is
-// false and *permitted holds the matching lists the user may see.
+// denmaListSearch narrows the lists a lists query may return to those matching a search.
 func (a *App) denmaListSearch(user auth.User, search *string, all *bool, permitted *[]int) error {
 	cond, err := a.denmaSearchSQL(denmaLists, user, *search)
 	if err != nil || cond == "" {
@@ -108,9 +74,7 @@ func (a *App) denmaQueryCampaigns(user auth.User, search string, statuses, tags 
 	return a.core.DenmaQueryCampaigns(cond, statuses, tags, typ, orderBy, order, getAll, permittedLists, offset, limit)
 }
 
-// denmaCampaignDeletes turns a bulk delete's search into the campaigns that
-// match it: on return *query is empty and *ids holds them (0 if none, which
-// deletes nothing). listmonk still checks the user's permission for each.
+// denmaCampaignDeletes turns a bulk delete's search into campaign IDs in *ids, emptying *query.
 func (a *App) denmaCampaignDeletes(user auth.User, ids *[]int, query *string) error {
 	if len(*ids) > 0 || strings.TrimSpace(*query) == "" {
 		return nil
@@ -131,9 +95,7 @@ func (a *App) denmaCampaignDeletes(user auth.User, ids *[]int, query *string) er
 	return nil
 }
 
-// denmaSearchSQL is a search's SQL condition ("" for a blank search), or a
-// 400 error saying what's wrong with it. One that isn't blank but has no
-// terms (`""`) is a mistake: as no condition, a bulk action would take everyone.
+// denmaSearchSQL is a search's SQL condition ("" for blank), or a 400 error; a termless search is refused.
 func (a *App) denmaSearchSQL(kind denmaKind, user auth.User, search string) (string, error) {
 	if strings.ContainsRune(search, 0) || !utf8.ValidString(search) {
 		return "", echo.NewHTTPError(http.StatusBadRequest, "Search: it has characters that aren't text")
@@ -578,8 +540,7 @@ func (p *denmaParser) campaignTerm(key, op, v string) (string, error) {
 	return "", nil
 }
 
-// activity is a subscriber's opens, clicks or bounces: by a campaign (or
-// link, or bounce type), any, or when.
+// activity is a subscriber's opens, clicks or bounces: by campaign, link or type, any, or when.
 func (p *denmaParser) activity(key, op, v string) (string, error) {
 	table := map[string]string{"opened": "campaign_views", "clicked": "link_clicks", "bounced": "bounces"}[key]
 	base := "EXISTS (SELECT 1 FROM " + table + " dact WHERE dact.subscriber_id = subscribers.id"
@@ -693,8 +654,7 @@ func denmaAttrPath(path string) string {
 
 var denmaNumRe = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
 
-// denmaAttrCond compares an attribute: contains, equals (or has, in an
-// array), or orders numbers, dates or text.
+// denmaAttrCond compares an attribute: contains, equals (or has), or orders values.
 func denmaAttrCond(text, json, op, v string) (string, error) {
 	q := pq.QuoteLiteral(v)
 	switch op {
@@ -711,9 +671,7 @@ func denmaAttrCond(text, json, op, v string) (string, error) {
 
 var denmaAgoRe = regexp.MustCompile(`^([0-9]+)\s*(h|d|w|m|y)$`)
 
-// denmaDateCond compares a timestamp column with a date (YYYY-MM-DD, a whole
-// day in the database's time zone), today, yesterday, a time (RFC 3339), or
-// "N units ago" (30d); or, with any, checks that it's set.
+// denmaDateCond compares a timestamp column with a date, today, yesterday, a time, or "30d"; any checks it's set.
 func denmaDateCond(col, op, v string) (string, error) {
 	var (
 		lv    = strings.ToLower(strings.TrimSpace(v))
@@ -772,9 +730,7 @@ func denmaDateCond(col, op, v string) (string, error) {
 
 // ---- Names ----
 
-// list, campaign and template find a list, campaign or template the user
-// can see by name or ID: lists as the lists pages show them, campaigns as
-// checkCampaignPerm lets them see one, and templates with templates:get.
+// list, campaign and template find one the user can see by name or ID.
 func (p *denmaParser) list(v string) (int, error) {
 	if p.lists == nil {
 		p.lists = []denmaNamed{}
@@ -879,10 +835,7 @@ func initDenmaSearchAPIHandlers(g *echo.Group, a *App) {
 	g.GET("/api/denma/stats/people", a.auth.Perm(a.DenmaCampaignPeopleStats, "campaigns:get_analytics")) // cmd/denma_campaign_stats.go
 }
 
-// DenmaCheckSearch says whether a search (?kind=subscribers, lists or
-// campaigns) is valid: the search boxes check before they search, so a
-// mistake is a message rather than an error page. Only names the user could
-// search for anyway are looked up.
+// DenmaCheckSearch says whether a search (?kind=subscribers, lists or campaigns) is valid.
 func (a *App) DenmaCheckSearch(c echo.Context) error {
 	user := auth.GetUser(c)
 	kind := denmaKind(c.QueryParam("kind"))

@@ -36,7 +36,7 @@ func newManagerStore(q *models.Queries, c *core.Core, m media.Store) *store {
 // NextCampaigns retrieves active campaigns ready to be processed excluding
 // campaigns that are also being processed. Additionally, it takes a map of campaignID:sentCount
 // of campaigns that are being processed and updates them in the DB.
-// denma: and their resume checkpoints, lastSubIDs (upstream PR #3222).
+// denma: and their resume checkpoints, lastSubIDs.
 func (s *store) NextCampaigns(currentIDs []int64, sentCounts []int64, lastSubIDs []int64) ([]*models.Campaign, error) {
 	var out []*models.Campaign
 	err := s.queries.NextCampaigns.Select(&out, pq.Int64Array(currentIDs), pq.Int64Array(sentCounts), pq.Int64Array(lastSubIDs))
@@ -47,15 +47,14 @@ func (s *store) NextCampaigns(currentIDs []int64, sentCounts []int64, lastSubIDs
 // Since batches are processed sequentially, the retrieval is ordered by ID,
 // and every batch takes the last ID of the last batch and fetches the next
 // batch above that.
-// denma: after lastFetchedID, the pipe's fetch cursor (upstream PR #3222).
+// denma: after lastFetchedID, the pipe's fetch cursor.
 func (s *store) NextSubscribers(campID, lastFetchedID, limit int) ([]models.Subscriber, error) {
 	var camps []runningCamp
 	if err := s.queries.GetRunningCampaign.Select(&camps, campID); err != nil {
 		return nil, err
 	}
 
-	// denma: a campaign with tags (cmd/denma_tags.go) may have no lists; its
-	// row has list ID 0.
+	// denma: a campaign with tags (cmd/denma_tags.go) may have no lists: list ID 0.
 	listIDs := []int{}
 	for _, c := range camps {
 		if c.ListID != 0 {

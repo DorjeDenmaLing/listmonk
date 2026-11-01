@@ -454,7 +454,7 @@ func (a *App) CreateCampaign(c echo.Context) error {
 
 	// Filter lists against the current user's permitted lists.
 	user := auth.GetUser(c)
-	o.ListIDs = user.FilterListsByPerm(auth.PermTypeManage, o.ListIDs) // denma: manage, as upstream's a7af420f
+	o.ListIDs = user.FilterListsByPerm(auth.PermTypeManage, o.ListIDs) // denma: manage permission
 
 	// If the campaign's 'opt-in', prepare a default message.
 	switch o.Type {
@@ -533,7 +533,7 @@ func (a *App) UpdateCampaign(c echo.Context) error {
 
 	// Filter lists against the current user's permitted lists.
 	user := auth.GetUser(c)
-	o.ListIDs = user.FilterListsByPerm(auth.PermTypeManage, o.ListIDs) // denma: manage, as upstream's a7af420f
+	o.ListIDs = user.FilterListsByPerm(auth.PermTypeManage, o.ListIDs) // denma: manage permission
 
 	if err := a.denmaCheckCampaign(&o, c); err != nil { // denma: cmd/denma_tags.go
 		return err
@@ -656,7 +656,7 @@ func (a *App) DeleteCampaigns(c echo.Context) error {
 	if !hasAllPerm {
 		// Either the user has campaigns:manage_all permissions and can manage all campaigns,
 		// or the campaigns are filtered by the lists the user has get|manage access to.
-		hasAllPerm, permittedLists = user.GetPermittedLists(auth.PermTypeManage) // denma: manage, as upstream's a7af420f
+		hasAllPerm, permittedLists = user.GetPermittedLists(auth.PermTypeManage) // denma: manage permission
 	}
 
 	var (
@@ -993,7 +993,7 @@ func (a *App) checkCampaignPerm(types auth.PermType, id int, c echo.Context) err
 	user := auth.GetUser(c)
 
 	perm := auth.PermCampaignsGet
-	listPerm := auth.PermTypeGet | auth.PermTypeManage // denma: manage to change, as upstream's a7af420f
+	listPerm := auth.PermTypeGet | auth.PermTypeManage // denma: manage to change
 	if types&auth.PermTypeGet != 0 {
 		// It's a get request and there's a blanket get all permission.
 		if user.HasPerm(auth.PermCampaignsGetAll) {

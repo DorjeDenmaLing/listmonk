@@ -1,22 +1,6 @@
 package main
 
-// denma: how the sending API's transactional e-mails go after they're
-// queued (POST /v1/messages, cmd/denma_api_send.go). Each is kept in
-// denma_api_outbox from when it's queued until the mail server answers:
-//
-//   - sent: forgotten.
-//   - refused for good: a message_failed event for the key.
-//   - "try later" or the server unreachable: tried again after each of
-//     denmaRetryWaits (as automations' e-mails are), then a message_failed
-//     event.
-//   - the connection lost before the server's answer: a message_uncertain
-//     event, never sent again (it may have been delivered).
-//
-// A retry claims the hub's daily limit and the center's cap as a new e-mail
-// does. Events say only what happened, never the mail server's words. The
-// minute's job (cmd/denma_api_events.go) sends the retries, and sees to
-// e-mails left by a restart: those not taken by a worker go again, those
-// being sent are uncertain.
+// denma: how the sending API's queued e-mails are kept, retried or failed (POST /v1/messages).
 
 import (
 	"database/sql"
@@ -32,7 +16,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// denmaAPIOutboxSQL makes the table (denmaAPISQL), since features version 56.
+// denmaAPIOutboxSQL makes the table (denmaAPISQL).
 const denmaAPIOutboxSQL = `
 CREATE TABLE IF NOT EXISTS denma_api_outbox (
     id            BIGSERIAL PRIMARY KEY,
@@ -81,12 +65,10 @@ const (
 	denmaAPIMsgMaybe   = "It may have been delivered: the connection was lost before the mail server answered. It isn't sent again."
 )
 
-// errDenmaAPIRestart is the outcome of an e-mail that was being sent when the
-// process stopped.
+// errDenmaAPIRestart is the outcome of an e-mail being sent when the process stopped.
 var errDenmaAPIRestart = errors.New("the server stopped while it was being sent")
 
-// denmaAPIMsgBusy is the reason once the mail server couldn't take an e-mail
-// after all its tries.
+// denmaAPIMsgBusy is the reason once the mail server couldn't take an e-mail after all its tries.
 func denmaAPIMsgBusy() string {
 	return fmt.Sprintf("The mail server couldn't take it, after %d tries.", len(denmaRetryWaits)+1)
 }
@@ -99,8 +81,7 @@ const (
 	denmaAPIUncertain = "uncertain"
 )
 
-// denmaAPIVerdict says what becomes of an e-mail the mail server answered
-// err to, after retries tries again, and the reason to give for an event.
+// denmaAPIVerdict says what becomes of an e-mail the mail server answered err to.
 func denmaAPIVerdict(err error, retries int) (verdict, reason string) {
 	switch {
 	case err == nil:
@@ -136,8 +117,7 @@ func denmaAPIMessage(sub models.Subscriber, from, replyTo, subject, contentType 
 	}
 }
 
-// apiOutboxAdd records a queued e-mail (key keyID, template tplID), and
-// returns its ID.
+// apiOutboxAdd records a queued e-mail (key keyID, template tplID) and returns its ID.
 func (a *App) apiOutboxAdd(keyID, tplID int, msg models.Message) (int64, error) {
 	var id int64
 	err := a.db.Get(&id, `INSERT INTO denma_api_outbox (key_id, subscriber_id, email, template_id, from_email, reply_to, subject, content_type, body, alt_body)
@@ -147,8 +127,7 @@ func (a *App) apiOutboxAdd(keyID, tplID int, msg models.Message) (int64, error) 
 	return id, err
 }
 
-// apiOutboxPush hands a recorded e-mail to the campaign manager, which tells
-// the outbox how it went.
+// apiOutboxPush hands a recorded e-mail to the campaign manager, which reports how it went.
 func (a *App) apiOutboxPush(id int64, msg models.Message) error {
 	return a.manager.DenmaPushTracked(msg, func() error {
 		res, err := a.db.Exec(`UPDATE denma_api_outbox SET status = 'sending', updated_at = NOW() WHERE id = $1 AND status = 'queued'`, id)
@@ -169,8 +148,7 @@ func (a *App) apiOutboxForget(id int64) {
 	}
 }
 
-// apiOutboxEnd deletes e-mail id, if it's being sent, with an event for its
-// key: type and reason.
+// apiOutboxEnd deletes e-mail id, if it's being sent, with an event of type and reason for its key.
 func (a *App) apiOutboxEnd(id int64, typ, reason string) {
 	if _, err := a.db.Exec(`WITH d AS (DELETE FROM denma_api_outbox WHERE id = $1 AND status = 'sending' RETURNING key_id, email)
 		INSERT INTO denma_api_events (type, key_id, email, reason) SELECT $2, key_id, email, $3 FROM d`, id, typ, reason); err != nil {
@@ -219,8 +197,7 @@ type denmaAPIOutboxRow struct {
 	AltBody     string `db:"alt_body"`
 }
 
-// apiOutboxLater puts a retry that wasn't sent back, to be tried again in
-// denmaAPIRetryHold minutes (not counted as a try).
+// apiOutboxLater puts a retry that wasn't sent back, for denmaAPIRetryHold minutes (not a try).
 func (a *App) apiOutboxLater(id int64) {
 	if _, err := a.db.Exec(`UPDATE denma_api_outbox SET status = 'retry', next_at = NOW() + make_interval(mins => $2), updated_at = NOW()
 		WHERE id = $1 AND status = 'queued'`, id, denmaAPIRetryHold); err != nil {
@@ -236,13 +213,10 @@ func (a *App) apiOutboxDrop(id int64, reason string) {
 	}
 }
 
-// denmaAPIRecovered holds the centers whose e-mails left by the last
-// process have been seen to.
+// denmaAPIRecovered holds the centers whose left-over e-mails have been seen to.
 var denmaAPIRecovered sync.Map
 
-// apiRecoverMessages sees to e-mails left queued or being sent: by the last
-// process (once in this one), or for longer than denmaAutoStale. Queued ones
-// weren't sent, and go again; those being sent may have been delivered.
+// apiRecoverMessages sees to left-over e-mails: queued ones go again, those being sent are uncertain.
 func (a *App) apiRecoverMessages() {
 	before := time.Now().Add(-denmaAutoStale)
 	if _, done := denmaAPIRecovered.LoadOrStore(a.ko.String("denma.center"), true); !done {
@@ -263,11 +237,9 @@ func (a *App) apiRecoverMessages() {
 	}
 }
 
-// apiRetryMessages sends the e-mails whose wait is over, up to
-// denmaAPIRetryBatch, if the API isn't paused and the daily limit and the
-// center's cap have room. The minute's job calls it.
+// apiRetryMessages sends the e-mails whose wait is over, within the API's pause, daily limit and cap.
 func (a *App) apiRetryMessages() {
-	// A leaked key's aren't sent; the ones waiting too long fail.
+	// Those of a deleted key aren't sent; the ones waiting too long fail.
 	if _, err := a.db.Exec(`DELETE FROM denma_api_outbox o USING denma_api_keys k
 		WHERE k.id = o.key_id AND k.deleted_at IS NOT NULL AND k.leaked`); err != nil {
 		a.log.Printf("denma: error forgetting a leaked key's e-mails: %v", err)
@@ -359,9 +331,7 @@ func (a *App) apiRetryMessages() {
 	}
 }
 
-// apiOutboxWant asks the daily limit to keep room, ahead of campaigns, for
-// the retries due that its claim didn't cover and that may go (not from a
-// sender in waiting, within the center's cap); none clears it.
+// apiOutboxWant asks the daily limit to keep room, ahead of campaigns, for the retries due.
 func (a *App) apiOutboxWant(limit, got int, waiting []string) {
 	due := 0
 	if got < limit {

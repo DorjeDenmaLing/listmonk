@@ -1,15 +1,10 @@
-// denma: the Subscribers page's Move to list, Remove from list and Delete
-// subscriber, and Manage lists' "Run the lists' automations" there and on a
-// subscriber's page (cmd/denma_listmove.go, partials/denma/lists-move.html).
-// Spread into the page's component (so no getters: spreading copies their
-// values); uses its filters and _queryBody().
+// denma: Move to list, Remove from list, Delete and "Run the lists' automations" (cmd/denma_listmove.go).
 import { api, urls } from './main.js';
 import * as u from './utils.js';
 
 const subs = (n) => `${n} contact${n === 1 ? '' : 's'}`;
 
-// The center's active automations that joining a list starts, fetched once
-// (null for users who can't read them: the option then names none).
+// The center's active automations that joining a list starts, fetched once.
 let autos = null;
 let asked = false;
 function joinAutomations() {
@@ -23,8 +18,7 @@ function joinAutomations() {
   return autos;
 }
 
-// denmaAddRun is what Manage lists sends for its automations option (m, the
-// dialog's state): for Add only; other actions don't join anyone.
+// denmaAddRun is what Manage lists sends for its automations option; Add only.
 export function denmaAddRun(m) {
   return m.action === 'add' ? { run_automations: !!m.runAutos } : {};
 }
@@ -51,8 +45,7 @@ export function denmaListMoves() {
       return !!l && l.optin === 'double';
     },
 
-    // The names of the automations joining lists (IDs) starts: null if
-    // unknown or no list is picked.
+    // The names of the automations that joining the lists (IDs) starts.
     denmaAutosFor(ids) {
       if (!asked) {
         joinAutomations().then((a) => { this.mvAutos = a; });

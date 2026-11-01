@@ -8,8 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// denmaViewPerms is the permissions each admin page needs, by its route:
-// one of each group. Pages that check their own aren't here.
+// denmaViewPerms is the permissions each admin page needs, by its route (one of each group).
 var denmaViewPerms = map[string][][]string{}
 
 func init() {

@@ -1,11 +1,6 @@
 package main
 
-// denma: the hub's own media, for its branding (Settings -> General: its logo
-// and favicon, and the admin's logo and icon). The hub's uploads folder holds
-// every center's (<uploads>/<slug>), so its own media go in a folder of their
-// own, <uploads>/_hub (or <bucket path>/_hub on S3), which the hub serves at
-// its upload URI as a center serves its own. A slug can't have "_", so no
-// center's folder is the hub's.
+// denma: the hub's own media (branding), in <uploads>/_hub, served at its upload URI.
 
 import (
 	"os"
@@ -25,8 +20,7 @@ func denmaIsHubKo(ko *koanf.Koanf) bool {
 	return ko.Bool("denma.multi_center") && ko.String("denma.center") == ""
 }
 
-// denmaUploadDir is the folder an app's filesystem uploads are in and served
-// from: its own, or the hub's under the hub's uploads folder.
+// denmaUploadDir is the folder an app's filesystem uploads are in and served from.
 func denmaUploadDir(ko *koanf.Koanf, dir string) string {
 	if denmaIsHubKo(ko) {
 		return filepath.Join(dir, denmaHubMediaDir)
@@ -52,14 +46,12 @@ func denmaHubMediaS3(ko *koanf.Koanf, o *s3.Opt) {
 	}
 }
 
-// denmaHubMediaPage reports whether p is the Media page (or its picker),
-// which the hub has though it's under /admin/campaigns.
+// denmaHubMediaPage reports whether p is the Media page (or its picker).
 func denmaHubMediaPage(p string) bool {
 	return p == "/admin/campaigns/media" || strings.HasPrefix(p, "/admin/campaigns/media/")
 }
 
-// denmaHubUpload reports whether p is under the hub's upload URI
-// (filesystem), or S3's public URL when the app serves it (a path).
+// denmaHubUpload reports whether p is under the hub's upload URI, or S3's public URL.
 func denmaHubUpload(hub *App, p string) bool {
 	if hub == nil {
 		return false

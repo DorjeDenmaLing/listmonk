@@ -1,12 +1,4 @@
-// denma: the admin's tooltips, in place of Oat's. Oat turns each title into
-// data-tooltip and draws it with CSS on the element itself, on one line: a
-// table that scrolls sideways or a clipped container cut it off, and long
-// ones ran off the screen. This draws the same data-tooltip in one popover
-// in the top layer, above everything, wrapped and kept on the screen: above
-// the element (below with data-tooltip-placement="bottom", or when there's no
-// room above), after a short pause on hover, at once on keyboard focus, with
-// its line breaks. Iframes' titles and tooltips that only repeat what's shown
-// aren't. Oat's own are hidden (denma.css).
+// denma: the admin's tooltips in one popover in the top layer, in place of Oat's.
 
 const DELAY = 400;
 const GAP = 8;
@@ -57,8 +49,7 @@ function hide() {
 // Text as shown, without leading symbols (a status's dot).
 const plain = (s) => s.replace(/\s+/g, ' ').trim().replace(/^[^\p{L}\p{N}]+/u, '');
 
-// Whether a tooltip only repeats what the element shows: its own text, or
-// listmonk's "View <its text>" on filter links. Unless the text is cut off.
+// Whether a tooltip only repeats what the element shows.
 function repeats(t, text) {
   const shown = plain(t.innerText || '');
   if (!shown || t.scrollWidth > t.clientWidth) return false;
@@ -66,8 +57,7 @@ function repeats(t, text) {
   return tip === shown || (tip.endsWith(` ${shown}`) && tip.split(' ').length === shown.split(' ').length + 1);
 }
 
-// The element whose tooltip to show: not an iframe (its title names it for
-// screen readers), nor one that repeats itself.
+// The element whose tooltip to show: not an iframe, nor one that repeats itself.
 function owner(e) {
   const t = e.target instanceof Element ? e.target.closest('[data-tooltip]') : null;
   if (!t || t.tagName === 'IFRAME' || repeats(t, t.getAttribute('data-tooltip') || '')) return null;

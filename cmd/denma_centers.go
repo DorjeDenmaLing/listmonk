@@ -1,25 +1,6 @@
 package main
 
-// denma: many centers in one listmonk process.
-//
-// With denma.multi_center = true, the install itself is the hub, Listmonk
-// Shambhala, at /: the superadmins' home (cmd/denma_hub.go), in its own
-// Postgres schema (db.params search_path, e.g. "hub"; prepared by
-// denmaPrepareHub). Every center registered in denma.centers is served at
-// /c/<slug>/ from its own schema: its own lists, subscribers, campaigns,
-// templates, media, settings and users. Each center is a full App (buildApp)
-// with its own config, DB pool, campaign manager and router (initHTTPRouter);
-// the hub's server hands /c/<slug>/ requests to that center's router.
-//
-// Centers are provisioned (schema created, listmonk installed, sample data
-// removed, roles, URLs and uploads set) when first loaded, and upgraded to the
-// hub's database version when loaded after a listmonk upgrade. A center can
-// also be an existing install (DDL's, in the public schema): it keeps its
-// data, and is moved into the same layout as every other center, its own
-// schema and uploads folder (cmd/denma_layout.go). Settings are the hub's, for every center (all but each center's own,
-// denmaCenterOwnSettings), and only the hub shows them. Saving the hub's
-// settings rebuilds the hub and then each center they changed; only an OS
-// SIGHUP restarts the whole process.
+// denma: many centers in one listmonk process: the hub at /, each center at /c/<slug>/.
 
 import (
 	"context"
@@ -60,11 +41,7 @@ var (
 // denmaHub is the running centers, when denma.multi_center is on.
 var denmaHub *denmaCenters
 
-// denmaCenterOwnSettings are a center's own settings: its address and uploads
-// folder, set on every load (adopt), and what its admins set on its Config
-// page. Every other setting is the hub's, for all centers: they're
-// managed in the hub's Settings only (centers don't show settings) and copied
-// to each center when it loads and when the hub's are saved.
+// denmaCenterOwnSettings are a center's own settings; every other setting is the hub's.
 var denmaCenterOwnSettings = []string{
 	"app.root_url", "upload.filesystem.upload_path", "upload.s3.bucket_path",
 	"migrations", // the schema's own version
@@ -81,9 +58,7 @@ var denmaCenterOwnSettings = []string{
 	"denma.timezone", "denma.send_window", // cmd/denma_sendwindow.go
 }
 
-// denmaCenterSettingsPath reports whether a path (in a center) is one of the
-// settings pages or APIs, which only the hub has: Settings, Logs, Maintenance
-// and System. A center's reload and error events stay (they're its own).
+// denmaCenterSettingsPath reports whether a path is a settings page or API, which only the hub has.
 func denmaCenterSettingsPath(p string) bool {
 	for _, pre := range []string{"/admin/settings", "/api/settings", "/api/logs", "/api/maintenance"} {
 		if p == pre || strings.HasPrefix(p, pre+"/") {
@@ -93,9 +68,7 @@ func denmaCenterSettingsPath(p string) bool {
 	return false
 }
 
-// denmaCenterAdminRole is the role a center's own admins get: everything but
-// the settings, which superadmins manage, and raw SQL subscriber queries,
-// which could read other centers' schemas (all centers share a database user).
+// denmaCenterAdminRole is the role a center's own admins get: everything but settings and raw SQL.
 const denmaCenterAdminRole = "Center Admin"
 
 var denmaCenterAdminExcluded = map[string]bool{
@@ -125,8 +98,7 @@ type denmaCenters struct {
 	bySlug map[string]*denmaCenter
 	base   *App // the hub, served at /
 
-	// The hub once reloaded: its App and router. Until then, main()'s server
-	// and App serve it.
+	// The hub once reloaded: its App and router.
 	reBase   *App
 	reRouter *echo.Echo
 
@@ -134,30 +106,22 @@ type denmaCenters struct {
 	failed     map[string]string // centers that didn't load: slug -> error
 	starting   map[string]bool   // centers still loading after a start
 
-	// One center at a time changes database objects (schemas, migrations,
-	// shared settings) and moves files while loading; the rest of loading
-	// (its app and router) runs several at once.
+	// Serializes changes to database objects and files while a center loads.
 	setupMu sync.Mutex
 	timings denmaTimings
 
-	// One enable, disable or reload's swap at a time: two enables would both
-	// load (and the first App keep sending), and a reload finishing after a
-	// disable would put the center back.
+	// Serializes enable, disable and reload swaps.
 	lifeMu sync.Mutex
 
 	stopping map[string][]chan struct{} // slug -> Apps being stopped (cmd/denma_lifecycle.go), under mu
 
-	// One pass of the hub's settings to the centers at a time
-	// (propagateShared); a hub reload during one asks for another after it.
+	// Serializes passes of propagateShared.
 	propMu      sync.Mutex
 	propRunning bool
 	propAgain   bool
 }
 
-// denmaNoExit, once centers are on, turns errors that would stop the server
-// while a center loads (preparing its queries, reading its settings; see
-// cmd/init.go) into a panic that load recovers from, so that the center
-// fails to load and the others carry on.
+// denmaNoExit turns errors that would stop the server while a center loads into a recoverable panic.
 var denmaNoExit func(error) any
 
 type denmaLoadError struct{ err error }
@@ -218,8 +182,7 @@ func (d *denmaCenters) loaded() []*denmaCenter {
 	return out
 }
 
-// initDenmaCenters loads the registered centers and mounts them on the hub's
-// server. It does nothing unless denma.multi_center is on.
+// initDenmaCenters loads the registered centers and mounts them on the hub's server.
 func initDenmaCenters(srv *echo.Echo, base *App) {
 	if !base.ko.Bool("denma.multi_center") {
 		return
@@ -243,9 +206,7 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 	}
 	denmaHub = d
 
-	// The centers load in the background, several at a time, while the hub
-	// and the centers already loaded serve; until a center has loaded, its
-	// pages say it's starting.
+	// The centers load in the background, several at a time, while the hub serves.
 	for _, c := range list {
 		d.starting[c.Slug] = true
 	}
@@ -255,14 +216,11 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 	go d.pruneAuditLog()       // cmd/denma_audit.go
 	go d.pruneCenters()        // expired sessions, old e-mail records (cmd/denma_prune.go)
 
-	// The hub's settings saves (and Reload) rebuild it in place, as for the
-	// centers: they signal on a channel of their own, while main() keeps the
-	// original one, which now only gets OS SIGHUPs.
+	// The hub's settings saves rebuild it in place, signalling on a channel of their own.
 	base.chReload = make(chan os.Signal, 1)
 	go d.watchBaseReload(base)
 
-	// /c/<slug>/... goes to that center's router, with the prefix removed;
-	// anything else to the hub's (main()'s, until it's reloaded).
+	// /c/<slug>/... goes to that center's router with the prefix removed; the rest to the hub's.
 	srv.Pre(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			// Signing in, for everyone (cmd/denma_login.go).
@@ -275,15 +233,11 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 			}
 			p := c.Request().URL.Path
 			if !strings.HasPrefix(p, denmaCenterPath) {
-				// The hub has no subscribers of its own: of listmonk's public
-				// pages it keeps only what its admin needs. (Links in e-mails
-				// sent before an install became a center, at /, are the web
-				// server's to forward to /c/<slug>/.)
+				// The hub keeps only the public pages its admin needs.
 				if p == "/" {
 					return c.Redirect(http.StatusFound, uriAdmin)
 				}
-				// The admin at /admin (and /api) is the center the place
-				// cookie says, or the hub's (cmd/denma_place.go).
+				// /admin (and /api) is the center the place cookie names, or the hub (cmd/denma_place.go).
 				if denmaAdminRequest(p) {
 					if err := denmaCheckTab(c, p); err != nil {
 						return err
@@ -321,8 +275,7 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 			if ctr == nil {
 				return echo.NewHTTPError(http.StatusNotFound, "center not found")
 			}
-			// An old admin address (e-mails, bookmarks): the center, at /admin
-			// (cmd/denma_place.go).
+			// An old admin address (e-mails, bookmarks) goes to the center at /admin (cmd/denma_place.go).
 			if c.Request().Method == http.MethodGet && (rest == "admin" || strings.HasPrefix(rest, "admin/")) {
 				denmaSetPlace(c, slug)
 				to := path.Clean("/" + rest) // and still under /admin: no "admin/../api/..."
@@ -334,8 +287,7 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 				}
 				return c.Redirect(http.StatusFound, to)
 			}
-			// Bounce webhooks from the mail provider are the hub's, which
-			// records each in its center (cmd/denma_bounces.go).
+			// Bounce webhooks are the hub's, recorded in their center (cmd/denma_bounces.go).
 			if strings.HasPrefix(rest, "webhooks/service/") {
 				r := c.Request().Clone(c.Request().Context())
 				r.URL.Path = "/" + rest
@@ -397,8 +349,7 @@ func (d *denmaCenters) loadAll(list []*denmaCenter, workers int) {
 	d.retryBounces()                                                       // those that came while they loaded (cmd/denma_bounces.go)
 }
 
-// denmaStartingPage answers for a center that's still loading after a start:
-// a page that reloads itself, or for the API, an error to retry.
+// denmaStartingPage answers for a center still loading: a self-reloading page, or an API error.
 func denmaStartingPage(c echo.Context) error {
 	c.Response().Header().Set("Retry-After", "5")
 	if strings.Contains(c.Request().Header.Get("Accept"), "text/html") {
@@ -411,12 +362,7 @@ background:#fff;color:#333}@media (prefers-color-scheme:dark){body{background:#1
 	return echo.NewHTTPError(http.StatusServiceUnavailable, "This center is starting up. Try again in a few seconds.")
 }
 
-// DenmaHealthCenters is the hub's /health/centers, for monitoring: OK
-// ({"data":true}) when the database answers and every enabled center is
-// running; else a 503 with how many are running, starting and failed to load.
-// /health only says the process answers, and a center's /c/<slug>/health
-// that one center: neither sees another center fail. Counts only: anyone can
-// read it.
+// DenmaHealthCenters is the hub's /health/centers: OK if every enabled center runs, else 503.
 func (a *App) DenmaHealthCenters(c echo.Context) error {
 	d := denmaHub
 	if d == nil || a.ko.String("denma.center") != "" {
@@ -436,12 +382,7 @@ func (a *App) DenmaHealthCenters(c echo.Context) error {
 	})
 }
 
-// denmaEveryMinute adds a job to an app's cron that runs every minute, at a
-// second of the minute set by its center (plus at seconds), so that the
-// centers' jobs spread over the minute rather than all running at once, and
-// a center's jobs (at different at) don't run together: each would need a
-// connection of its own. Each finished run is recorded under job, for System
-// (cmd/denma_system.go). Errors are logged; it returns (0, nil).
+// denmaEveryMinute adds a job to an app's cron every minute, at its center's second (+ at).
 func denmaEveryMinute(a *App, at int, job string, fn func()) (int, error) {
 	center := a.ko.String("denma.center")
 	h := fnv.New32a()
@@ -484,9 +425,7 @@ func (m denmaMinuteAt) Next(t time.Time) time.Time {
 	return next
 }
 
-// denmaFastJobs says whether a center is in the comma-separated list of
-// centers whose jobs run every 10 seconds: DENMA_FAST_JOBS, set only by the dev
-// stack, for its tests.
+// denmaFastJobs says whether a center is in DENMA_FAST_JOBS (dev stack only): jobs every 10 seconds.
 func denmaFastJobs(list, center string) bool {
 	return center != "" && slices.Contains(strings.Split(list, ","), center)
 }
@@ -502,9 +441,7 @@ func (f denmaFastAt) Next(t time.Time) time.Time {
 	return next
 }
 
-// denmaHubPath reports whether the hub serves a path: its admin and API (but
-// no center content), the health check, the static files its pages use, and
-// the bounce webhooks (for every center, cmd/denma_bounces.go).
+// denmaHubPath reports whether the hub serves a path (admin, API, health, static, bounces).
 func denmaHubPath(p string) bool {
 	if denmaCenterContent(p) && !denmaHubMediaPage(p) {
 		return false
@@ -517,10 +454,7 @@ func denmaHubPath(p string) bool {
 	return false
 }
 
-// denmaCenterContent reports whether a path is one of a center's content
-// pages or APIs (lists, subscribers, campaigns, templates and the rest),
-// which the hub, having none, doesn't serve. The hub has its own Media, for
-// its branding (cmd/denma_hubmedia.go).
+// denmaCenterContent reports whether a path is center content, which the hub doesn't serve.
 func denmaCenterContent(p string) bool {
 	for _, pre := range []string{
 		"/admin/lists", "/admin/subscribers", "/admin/campaigns", "/admin/templates",
@@ -560,8 +494,7 @@ func denmaInitRegistry(db *sqlx.DB) error {
 			center_user_id INTEGER NOT NULL,
 			PRIMARY KEY (center_id, hub_user_id)
 		);
-		-- Addresses that can't receive mail, blocklisted in every center
-		-- (cmd/denma_blocklist.go).
+		-- Addresses that can't receive mail, blocklisted in every center (cmd/denma_blocklist.go).
 		CREATE TABLE IF NOT EXISTS denma.blocked_emails (
 			email      TEXT PRIMARY KEY, -- lowercase
 			reason     TEXT NOT NULL,
@@ -592,9 +525,7 @@ func denmaInitRegistry(db *sqlx.DB) error {
 	return denmaInitMCP(db) // cmd/denma_mcp.go
 }
 
-// denmaSeedCenters registers centers listed as "slug:Name,slug2:Name 2" if
-// they aren't registered yet, for dev and CI. Otherwise centers are made in
-// the hub.
+// denmaSeedCenters registers centers listed as "slug:Name,slug2:Name 2", for dev and CI.
 func denmaSeedCenters(db *sqlx.DB, list string) {
 	for _, item := range strings.Split(list, ",") {
 		slug, name, _ := strings.Cut(strings.TrimSpace(item), ":")
@@ -607,9 +538,7 @@ func denmaSeedCenters(db *sqlx.DB, list string) {
 	}
 }
 
-// denmaRegisterCenter adds a center to the registry (it's provisioned when
-// loaded), in schema center_<slug>. It returns the new
-// center, or nil if the slug or schema is taken.
+// denmaRegisterCenter adds a center to the registry, or returns nil if its slug or schema is taken.
 func denmaRegisterCenter(db *sqlx.DB, slug, name string) (*denmaCenter, error) {
 	if !reDenmaSlug.MatchString(slug) || len(slug) > 50 {
 		return nil, fmt.Errorf("invalid address %q: use lowercase letters, digits and single hyphens", slug)
@@ -628,8 +557,7 @@ func denmaRegisterCenter(db *sqlx.DB, slug, name string) (*denmaCenter, error) {
 	return out[0], nil
 }
 
-// load opens a center: provisions its schema if new, then builds its App and
-// router, and watches for its reload signal (a settings save).
+// load opens a center: provisions it if new, builds its App and router, and watches for reload.
 func (d *denmaCenters) load(c *denmaCenter) (err error) {
 	var cdb *sqlx.DB
 	defer func() {
@@ -661,15 +589,13 @@ func (d *denmaCenters) load(c *denmaCenter) (err error) {
 
 	app := buildApp(ck, cdb, cq, false)
 	d.timings.add(2, &t)
-	// Its own uploads folder (uploads/<slug>, set by adopt), which
-	// listmonk expects to exist.
+	// Its own uploads folder (uploads/<slug>, set by adopt).
 	if p := ck.String("upload.filesystem.upload_path"); ck.String("upload.provider") == "filesystem" && p != "" {
 		if err := os.MkdirAll(p, 0o755); err != nil {
 			lo.Printf("denma: error creating %s's uploads folder %s: %v", c.Slug, p, err)
 		}
 	}
-	// Never listmonk's first-run "create the Super Admin" page: a center's
-	// users come from the hub.
+	// Never listmonk's first-run "create the Super Admin" page.
 	app.needsUserSetup = false
 	c.app = app
 	c.router = initHTTPRouter(app.cfg, app.urlCfg, app.i18n, fs, app)
@@ -679,8 +605,7 @@ func (d *denmaCenters) load(c *denmaCenter) (err error) {
 	return nil
 }
 
-// denmaTimings adds up the time centers spend in each step of loading, for
-// the startup log.
+// denmaTimings adds up the time centers spend in each loading step.
 type denmaTimings struct {
 	mu sync.Mutex
 	d  [4]time.Duration // setup, queries, app, router
@@ -702,8 +627,7 @@ func (m *denmaTimings) String() string {
 	return fmt.Sprintf("setup %s, queries %s, app %s, router %s", r(m.d[0]), r(m.d[1]), r(m.d[2]), r(m.d[3]))
 }
 
-// setup readies a center's schema, settings and files and opens its DB pool,
-// one center at a time (setupMu).
+// setup readies a center's schema, settings and files and opens its DB pool (one at a time).
 func (d *denmaCenters) setup(c *denmaCenter) (*sqlx.DB, *koanf.Koanf, error) {
 	d.setupMu.Lock()
 	defer d.setupMu.Unlock()
@@ -733,14 +657,7 @@ func (d *denmaCenters) setup(c *denmaCenter) (*sqlx.DB, *koanf.Koanf, error) {
 	return cdb, ck, nil
 }
 
-// centerConfig is the hub's config (files, env, flags) with the
-// center's own schema and a small DB pool. Its settings are loaded over it.
-// (Those are the original's settings; every key is overwritten by the center's.)
-//
-// The search path is the center's schema ONLY. With other schemas on it, a
-// name the center's schema lacks resolves elsewhere: listmonk's installer
-// starts with "DROP TABLE IF EXISTS subscribers CASCADE" and friends, which on
-// a new, empty schema would drop another schema's tables.
+// centerConfig is the hub's config with the center's own schema and a small DB pool.
 func (d *denmaCenters) centerConfig(c *denmaCenter) *koanf.Koanf {
 	ck := koanf.New(".")
 	_ = ck.Load(confmap.Provider(d.base.ko.All(), "."), nil)
@@ -754,9 +671,7 @@ func (d *denmaCenters) centerConfig(c *denmaCenter) *koanf.Koanf {
 	if ck.Int("db.max_open") < 1 {
 		_ = ck.Set("db.max_open", 4)
 	}
-	// Some connections kept open: with none, every query (such as the
-	// campaign check every few seconds) connects anew and re-prepares its
-	// statement, which with many centers runs the server out of ports.
+	// Keeps some connections open between queries.
 	if ck.Int("db.max_idle") < 1 {
 		_ = ck.Set("db.max_idle", 1)
 	}
@@ -766,8 +681,7 @@ func (d *denmaCenters) centerConfig(c *denmaCenter) *koanf.Koanf {
 	return ck
 }
 
-// denmaConnect opens a center's DB pool. initDB exits the process on failure,
-// which one center shouldn't do, so the connection is tested first.
+// denmaConnect opens a center's DB pool, testing the connection first.
 func denmaConnect(ck *koanf.Koanf) (*sqlx.DB, error) {
 	var c struct {
 		Host     string `koanf:"host"`
@@ -791,15 +705,13 @@ func denmaConnect(ck *koanf.Koanf) (*sqlx.DB, error) {
 	return initDB(ck), nil
 }
 
-// denmaInstalling says that a center is being installed, in which case install's
-// errors don't stop the process (installFatalf).
+// denmaInstalling says that a center is being installed.
 var denmaInstalling atomic.Bool
 
 // denmaInstallError is an error in install, while a center is being installed.
 type denmaInstallError struct{ error }
 
-// installFatalf is install's error: the process's end, unless a center is being
-// installed, which fails alone.
+// installFatalf is install's error: ends the process unless a center is being installed.
 func installFatalf(format string, args ...any) {
 	if denmaInstalling.Load() {
 		panic(denmaInstallError{fmt.Errorf(format, args...)})
@@ -818,16 +730,14 @@ func denmaRecoverInstall(err *error) {
 	}
 }
 
-// provision creates and installs the center's schema if it doesn't exist yet,
-// and points its URLs and uploads at /c/<slug>/.
+// provision installs the center's schema if new and points its URLs and uploads at /c/<slug>/.
 func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) (err error) {
 	var installed bool
 	if err := db.Get(&installed, `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = 'settings')`, c.Schema); err != nil {
 		return err
 	}
 	if installed {
-		// Provisioning finishes by setting denma.provisioned. A center from
-		// before has its features instead; without either, it stopped part-way.
+		// Provisioned centers have denma.provisioned or features; with neither, it stopped part-way.
 		var done bool
 		if err := db.Get(&done, `SELECT EXISTS (SELECT 1 FROM settings WHERE key IN ('denma.provisioned', 'denma.features_version'))`); err != nil {
 			return err
@@ -871,12 +781,7 @@ func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) (err error) {
 	defer denmaInstalling.Store(false)
 	install(migList[len(migList)-1].version, db, fs, false, false)
 
-	// A clean center: none of listmonk's samples but two templates, its
-	// default campaign template (for rich text, HTML and Markdown campaigns)
-	// and its sample visual template, which becomes the default visual
-	// template when the center loads (cmd/denma_features.go), as does its
-	// design (cmd/denma_design.go); and not the admin that LISTMONK_ADMIN_USER
-	// creates (that's the hub's superadmin, with its password).
+	// A clean center: no listmonk samples but the default campaign and sample visual templates.
 	if _, err := db.Exec(`DELETE FROM campaigns; DELETE FROM templates WHERE NOT is_default AND type <> 'campaign_visual';
 		DELETE FROM subscribers; DELETE FROM lists; DELETE FROM sessions; DELETE FROM users;`); err != nil {
 		return fmt.Errorf("removing the sample data: %v", err)
@@ -909,10 +814,7 @@ func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) (err error) {
 	return nil
 }
 
-// provisionRoles creates a center's roles if they're missing: Super Admin,
-// which must be role 1 (auth.SuperAdminRoleID), for superadmins, and Center
-// Admin. Super Admin keeps every permission, including ones added since (such
-// as center:manage), as the admin's menus check the role's list.
+// provisionRoles creates a center's roles if missing: Super Admin (role 1) and Center Admin.
 func (d *denmaCenters) provisionRoles(db *sqlx.DB) error {
 	var all, admin []string
 	for p := range d.base.cfg.Permissions {
@@ -945,10 +847,7 @@ func (d *denmaCenters) provisionRoles(db *sqlx.DB) error {
 	return nil
 }
 
-// adopt keeps a center in step with the hub on every load: its address and
-// uploads folder under the hub's (cmd/denma_layout.go), the roles the hub
-// relies on, no Super Admins but the hub's, its users people, and the
-// features' triggers.
+// adopt keeps a center in step with the hub on every load: address, roles, admins, people, triggers.
 func (d *denmaCenters) adopt(c *denmaCenter, db *sqlx.DB) error {
 	fsPath, s3Path := denmaUploadPaths(d.base.ko, c.Slug)
 	for k, v := range map[string]string{
@@ -973,9 +872,7 @@ func (d *denmaCenters) adopt(c *denmaCenter, db *sqlx.DB) error {
 	return denmaRetryDeadlock(func() error { return d.features(c, db) }) // cmd/denma_features.go
 }
 
-// denmaCryptoFuncs makes listmonk's pgcrypto functions, which live in the
-// extension's own schema (public), callable from a schema that has the
-// search path to itself (a center's or the hub's).
+// denmaCryptoFuncs makes pgcrypto's functions callable from a schema with its own search path.
 func denmaCryptoFuncs(db sqlx.Ext) error {
 	var ext string
 	if err := sqlx.Get(db, &ext, `SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'pgcrypto'`); err != nil {
@@ -991,11 +888,7 @@ func denmaCryptoFuncs(db sqlx.Ext) error {
 	return nil
 }
 
-// denmaPrepareHub readies the hub's own schema before listmonk checks it
-// (main.go's init()), in multi-center mode: the search path must be one schema
-// of the hub's own (db.params "search_path=hub"), never public. On the first
-// start it creates the schema and installs listmonk there, without the sample
-// data, named Listmonk Shambhala.
+// denmaPrepareHub readies the hub's own schema before listmonk checks it, installing it on first start.
 func denmaPrepareHub(db *sqlx.DB) {
 	if !ko.Bool("denma.multi_center") {
 		return
@@ -1038,10 +931,7 @@ func denmaPrepareHub(db *sqlx.DB) {
 	}
 }
 
-// upgrade brings a center's schema to the binary's version. The hub's schema
-// already is (listmonk won't start otherwise), so running listmonk --upgrade,
-// after a backup of the database, upgrades every center as it loads. Unlike
-// upgrade(), a failure stops only this center.
+// upgrade brings a center's schema to the binary's version; a failure stops only this center.
 func (d *denmaCenters) upgrade(c *denmaCenter, db *sqlx.DB) error {
 	last, pending, err := getPendingMigrations(db)
 	if err != nil {
@@ -1059,8 +949,7 @@ func (d *denmaCenters) upgrade(c *denmaCenter, db *sqlx.DB) error {
 	return nil
 }
 
-// syncShared copies the hub's settings to a center (db is the center's pool),
-// all but the center's own, reporting whether any changed.
+// syncShared copies the hub's settings to a center, all but its own; it reports whether any changed.
 func (d *denmaCenters) syncShared(db *sqlx.DB) (bool, error) {
 	res, err := db.Exec(fmt.Sprintf(`UPDATE settings c SET value = p.value, updated_at = NOW()
 		FROM %s.settings p WHERE p.key = c.key AND c.key <> ALL($1) AND c.value IS DISTINCT FROM p.value`,
@@ -1072,17 +961,8 @@ func (d *denmaCenters) syncShared(db *sqlx.DB) (bool, error) {
 	return n > 0, nil
 }
 
-// propagateShared copies the hub's changed settings to every center and
-// reloads those that changed, one at a time, each once the one before has
-// been rebuilt. A center that is sending a campaign is reloaded once it has
-// finished (it shows "needs restart" until then, as listmonk does for a
-// settings save); one whose campaigns only wait (for its sending hours or a
-// daily limit) is reloaded at once.
-//
-// Only one pass runs at a time: a hub reload during one (the hub's settings
-// saved again) asks for one more pass after it, which reloads only the
-// centers whose settings changed again. Two passes at once rebuilt each
-// center twice over, and ran out of memory with 300 centers.
+// propagateShared copies the hub's changed settings to every center and reloads those that changed,
+// one at a time; a center sending a campaign is reloaded once it finishes. One pass runs at a time.
 func (d *denmaCenters) propagateShared() {
 	d.propMu.Lock()
 	if d.propRunning {
@@ -1098,8 +978,7 @@ func (d *denmaCenters) propagateShared() {
 		if !d.propAgain {
 			d.propRunning = false
 			d.propMu.Unlock()
-			// The rebuilt centers' old Apps are garbage now: hand their
-			// memory back (Go keeps it otherwise).
+			// Hands the old Apps' memory back.
 			debug.FreeOSMemory()
 			return
 		}
@@ -1136,8 +1015,7 @@ func (d *denmaCenters) propagatePass() {
 	}
 }
 
-// awaitReload waits (a minute at most) for center c to be replaced by its
-// reload, or disabled.
+// awaitReload waits (a minute at most) for center c to be replaced by its reload, or disabled.
 func (d *denmaCenters) awaitReload(c *denmaCenter) {
 	for range 600 {
 		if d.get(c.Slug) != c {
@@ -1148,8 +1026,7 @@ func (d *denmaCenters) awaitReload(c *denmaCenter) {
 	lo.Printf("denma: center %s hasn't reloaded within a minute; going on to the next", c.Slug)
 }
 
-// reloadWhenIdle reloads a center once it has no campaign sending, unless it
-// has been reloaded (or disabled) in the meantime.
+// reloadWhenIdle reloads a center once no campaign is sending, unless changed meanwhile.
 func (d *denmaCenters) reloadWhenIdle(c *denmaCenter) {
 	for {
 		time.Sleep(time.Minute)
@@ -1176,8 +1053,7 @@ func (d *denmaCenters) disable(slug string) error {
 	if d.isStarting(slug) {
 		return errDenmaStarting
 	}
-	// Its App is stopped after the lock is let go (the other centers' enables
-	// and reloads don't wait for it), and the request waits for that.
+	// Its App is stopped after the lock is let go, and the request waits for that.
 	c, end, err := func() (*denmaCenter, func(), error) {
 		d.lifeMu.Lock()
 		defer d.lifeMu.Unlock()
@@ -1215,8 +1091,7 @@ func (d *denmaCenters) enable(slug string) error {
 	if d.get(slug) != nil {
 		return nil
 	}
-	// An App of the center still stopping (disabled or replaced a moment ago)
-	// may be running campaigns: the new one picks them up after it.
+	// The new App picks up campaigns once the center's old App has stopped.
 	before := d.stopsOf(slug)
 	c.holdScan = len(before) > 0
 	if err := d.load(&c); err != nil {
@@ -1264,13 +1139,11 @@ func (d *denmaCenters) watchReload(c *denmaCenter) {
 	before := d.stopsOf(c.Slug)
 	end := d.beginStop(c.Slug)
 	d.lifeMu.Unlock()
-	// The old App stops after the lock is let go; the new one picks up
-	// campaigns once it has.
+	// The old App stops after the lock is let go; the new one then picks up campaigns.
 	d.retireThen(old, next.app, before, end)
 }
 
-// watchBaseReload rebuilds the hub when its settings are saved:
-// a new App and router on a new DB pool, with the settings read afresh.
+// watchBaseReload rebuilds the hub when its settings are saved: a new App, router and DB pool.
 func (d *denmaCenters) watchBaseReload(old *App) {
 	<-old.chReload
 	lo.Printf("denma: reloading the hub")
@@ -1300,22 +1173,14 @@ func (d *denmaCenters) watchBaseReload(old *App) {
 	go d.watchBaseReload(app)
 	go d.propagateShared()
 
-	// main() closes the original App when the process restarts, and its
-	// manager and messengers can't be closed twice.
+	// main() closes the original App when the process restarts.
 	denmaRetire(old, old == d.base)
 }
 
-// denmaRetireWait is how long a retired App's running campaigns have to stop
-// and save their progress.
+// denmaRetireWait is how long a retired App's running campaigns have to stop and save.
 const denmaRetireWait = time.Minute
 
-// denmaRetire shuts down an App that has been replaced or disabled: at once,
-// its campaign scanning and cron jobs (the replacement has its own), and its
-// running campaigns, which stop where they are and save their progress, as
-// at a shutdown (cmd/denma_shutdown.go), so that they resume (in the
-// replacement, or when the center is enabled again) without sending anyone a
-// second copy; after a grace period for in-flight requests, and any import
-// running in it, the rest.
+// denmaRetire shuts down a replaced or disabled App; its campaigns stop and save their progress.
 func denmaRetire(old *App, original bool) (stopped bool) {
 	first := false
 	old.retired.Do(func() { first = true })
@@ -1337,8 +1202,7 @@ func denmaRetire(old *App, original bool) (stopped bool) {
 
 	go func() {
 		time.Sleep(5 * time.Second)
-		// Its jobs finish first: an automation's run may still be handing
-		// e-mails to the manager (cmd/denma_automations.go).
+		// Its jobs finish first (cmd/denma_automations.go).
 		select {
 		case <-jobs.Done():
 		case <-time.After(10 * time.Minute):
@@ -1351,7 +1215,7 @@ func denmaRetire(old *App, original bool) (stopped bool) {
 			old.db.SetMaxIdleConns(0) // let its connections go; main() closes it
 			return
 		}
-		// Closing its manager under a campaign still sending would panic.
+		// Waits for campaigns still sending.
 		for deadline := time.Now().Add(denmaStragglerWait); !stopped && old.manager.HasRunningCampaigns(); {
 			if time.Now().After(deadline) {
 				return
@@ -1378,16 +1242,12 @@ func denmaEmailMessenger(msgrs []manager.Messenger) *email.Emailer {
 	return nil
 }
 
-// tmpKey scopes a key in the process-wide tmptokens store (password reset and
-// 2FA tokens) to the app's center, so that one center's tokens are no good in
-// another.
+// tmpKey scopes a key in the tmptokens store (password reset, 2FA) to the app's center.
 func (a *App) tmpKey(k string) string {
 	return a.urlCfg.RootURL + " " + k
 }
 
-// denmaPrefixWriter puts the center's /c/<slug> prefix on redirects to
-// root-relative paths: listmonk redirects to "/admin", "/admin/login" and so
-// on, which from a center mean that center's pages, not the hub's.
+// denmaPrefixWriter puts the center's /c/<slug> prefix on redirects to root-relative paths.
 type denmaPrefixWriter struct {
 	http.ResponseWriter
 	prefix string

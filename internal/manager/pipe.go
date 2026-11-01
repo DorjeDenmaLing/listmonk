@@ -21,18 +21,16 @@ type pipe struct {
 	stopped        atomic.Bool
 	withErrors     atomic.Bool
 
-	// denma: the fetch cursor (upstream PR #3222), and the queued messages for
-	// the resume checkpoint, lastID (denma.go).
+	// denma: the fetch cursor, and the queue for the resume checkpoint lastID (denma.go).
 	lastFetched atomic.Int64
 	denmaQ      denmaQueue
 
-	// denma: failed sends tried again first, and the failures in a row
-	// (denma.go).
+	// denma: failed sends tried again first, and failures in a row (denma.go).
 	denmaRetrying    atomic.Bool
 	denmaRetryOnly   bool
 	denmaRetryCursor int
 	denmaRetried     map[int]bool
-	denmaAhead       map[int]bool // sent ahead of the checkpoint by a pipe that stopped
+	denmaAhead       map[int]bool // denma: sent ahead of the checkpoint
 	denmaStreak      atomic.Int64
 	denmaStreakHit   atomic.Bool
 
@@ -70,13 +68,11 @@ func (m *Manager) newPipe(c *models.Campaign) (*pipe, error) {
 		m:    m,
 	}
 
-	// denma: fetching starts from the resume checkpoint: after a restart, the
-	// last subscriber up to whom every message was processed (upstream PR #3222).
+	// denma: fetching starts from the resume checkpoint.
 	p.lastFetched.Store(int64(c.LastSubscriberID))
 	p.lastID.Store(uint64(c.LastSubscriberID))
 
-	// denma: a campaign's failed sends are tried again first; a retry run
-	// (campaigns.denma_retry_at) only does that (denma.go).
+	// denma: failed sends first; a retry run (campaigns.denma_retry_at) only those (denma.go).
 	p.denmaRetrying.Store(true)
 	p.denmaRetryOnly = c.DenmaRetryAt.Valid
 
@@ -112,9 +108,7 @@ func (m *Manager) newPipe(c *models.Campaign) (*pipe, error) {
 func (p *pipe) NextSubscribers() (bool, error) {
 	p.denmaFetchedAt.Store(time.Now().UnixNano()) // denma: denma.go
 
-	// denma: a stopped campaign (paused for errors, or a shutdown) fetches no
-	// more; its workers would only skip them. Its checkpoint stays before
-	// the first message not sent, so resuming sends the rest.
+	// denma: a stopped campaign fetches no more.
 	if p.stopped.Load() {
 		return false, nil
 	}
@@ -130,7 +124,7 @@ func (p *pipe) NextSubscribers() (bool, error) {
 	}
 
 	// Fetch the next batch of subscribers from a 'running' campaign.
-	// denma: after the pipe's fetch cursor (upstream PR #3222).
+	// denma: after the pipe's fetch cursor.
 	subs, err := p.m.store.NextSubscribers(p.camp.ID, int(p.lastFetched.Load()), p.m.cfg.BatchSize)
 	if err != nil {
 		return false, fmt.Errorf("error fetching campaign subscribers (%s): %v", p.camp.Name, err)
@@ -156,7 +150,7 @@ func (p *pipe) NextSubscribers() (bool, error) {
 		msg, err := p.newMessage(s)
 		if err != nil {
 			p.m.log.Printf("error rendering message (%s) (subscriber %d): %v", p.camp.Name, s.ID, err) // denma: no address
-			p.denmaRenderFailed(s, err) // denma: denma.go
+			p.denmaRenderFailed(s, err)                                                                // denma: denma.go
 			continue
 		}
 

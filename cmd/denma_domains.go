@@ -1,26 +1,6 @@
 package main
 
-// denma: the hub's Sending domains page (superadmins). Every center sends
-// through the hub's mail server, Amazon SES, which sends only from domains it
-// has verified. A superadmin adds a center's domain here for the center: it's
-// set up in SES (Easy DKIM, a bounce subdomain as its custom MAIL FROM, the
-// hub's configuration set and bounce and complaint notifications), and its DNS
-// records are listed to send to whoever manages the center's DNS. SES and the
-// records are checked in the background until it's verified, then daily.
-//
-// A center's senders (its own, its campaigns' and automations') must be on
-// one of its domains, and campaigns start and tests send only once SES has
-// verified it. Senders that were set before (DDL's, at the cutover) are added
-// for their centers when the hub starts, and a domain can't be taken from a
-// center whose sender is on it.
-//
-// SES is the hub's SMTP server's region (email-smtp.<region>.amazonaws.com),
-// reached with the server's AWS credentials (its instance role). denma.ses is
-// "fake" in dev, for an SES of our own (denmaFakeSES), or "off".
-//
-// Bounce and complaint notifications are set with SES's v1 API, the only one
-// that has them; listmonk's webhook doesn't count complaints from the v2
-// event destinations (internal/bounce/webhooks/ses.go).
+// denma: the hub's Sending domains page: centers send only from SES-verified domains set up here.
 
 import (
 	"context"
@@ -59,12 +39,10 @@ const (
 	denmaDMARCValue = "v=DMARC1; p=none;"
 )
 
-// The hub's SMTP server, if it's SES's. Domains are checked with
-// reDenmaDomain (cmd/denma_features.go).
+// The hub's SMTP server, if it's SES's; domains are checked with reDenmaDomain (cmd/denma_features.go).
 var reDenmaSESHost = regexp.MustCompile(`^email-smtp(?:-fips)?\.([a-z0-9-]+)\.amazonaws\.com$`)
 
-// denmaInitDomains creates the sending domains and the centers each is for
-// (with the registry).
+// denmaInitDomains creates the sending domains and the centers each is for.
 func denmaInitDomains(db *sqlx.DB) error {
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS denma.sending_domains (
@@ -110,11 +88,9 @@ type denmaSES interface {
 	SetMailFrom(ctx context.Context, domain, mailFrom, behavior string) error
 	RestartDKIM(ctx context.Context, domain string) error
 	SetConfigSet(ctx context.Context, domain, set string) error
-	// SetNotifications sends its bounces and complaints, with their
-	// headers, to an SNS topic.
+	// SetNotifications sends its bounces and complaints, with their headers, to an SNS topic.
 	SetNotifications(ctx context.Context, domain, topic string) error
-	// No Delete: the server may not delete identities; a superadmin does, in
-	// the SES console.
+	// No Delete: identities are deleted in the SES console.
 }
 
 var denmaSESClients struct {
@@ -178,8 +154,7 @@ func (d *denmaCenters) ses() (denmaSES, string) {
 	return denmaSESFor(base.ko, base.db)
 }
 
-// denmaDomainsOn reports whether senders are checked against the sending
-// domains: in multi-center mode, with SES.
+// denmaDomainsOn reports whether senders are checked against the sending domains (multi-center, SES).
 func denmaDomainsOn() bool {
 	if denmaHub == nil {
 		return false
@@ -260,7 +235,7 @@ func (s *denmaRealSES) SetConfigSet(ctx context.Context, domain, set string) err
 	return err
 }
 
-// SetNotifications spaces its calls a second apart: SES allows one a second.
+// SetNotifications spaces its calls a second apart.
 func (s *denmaRealSES) SetNotifications(ctx context.Context, domain, topic string) error {
 	wait := func() error {
 		select {
@@ -289,9 +264,7 @@ func (s *denmaRealSES) SetNotifications(ctx context.Context, domain, topic strin
 	return nil
 }
 
-// denmaFakeSES is an SES of our own, for dev (denma.ses = fake), kept in the
-// database. A domain is verified 30 seconds after it's added, or its DKIM
-// fails if its name has "fail" in it, or it stays pending with "pending".
+// denmaFakeSES is an SES of our own for dev (denma.ses = fake); "fail" or "pending" in a name sets the outcome.
 type denmaFakeSES struct {
 	region string
 	db     *sqlx.DB
@@ -405,9 +378,7 @@ func (s *denmaFakeSES) SetNotifications(_ context.Context, domain, topic string)
 	return s.edit(domain, func(id *denmaFakeIdentity) { id.BounceTopic, id.ComplaintTopic, id.Headers = topic, topic, true })
 }
 
-// denmaDomainRef is what new domains copy: the configuration set and the
-// bounce and complaint topic of the hub's sender's domain (Settings ->
-// General), which reach the hub (cmd/denma_bounces.go).
+// denmaDomainRef is what new domains copy: the hub sender's configuration set and topic.
 type denmaDomainRef struct {
 	Domain    string `json:"domain"`
 	ConfigSet string `json:"config_set"`
@@ -462,8 +433,7 @@ type denmaDNSRecord struct {
 	SES    bool     `json:"ses"` // Amazon SES found it (so it's ok)
 }
 
-// denmaDomainIssue is something to fix in SES, and its fix (an action of
-// DenmaFixDomain), if the hub has one.
+// denmaDomainIssue is something to fix in SES, and its fix (a DenmaFixDomain action).
 type denmaDomainIssue struct {
 	Text string `json:"text"`
 	Fix  string `json:"fix"`
@@ -477,8 +447,7 @@ type denmaDomainState struct {
 	Issues  []denmaDomainIssue `json:"issues"`
 	Error   string             `json:"error"` // SES couldn't be asked
 
-	// From the rest: whether it can send (SES has verified it), whether
-	// nothing's left to do, and which (denmaDomainStatuses).
+	// Derived: whether it can send, whether nothing's left to do, and which (denmaDomainStatuses).
 	CanSend bool   `json:"can_send"`
 	Ready   bool   `json:"ready"`
 	Status  string `json:"status"`
@@ -495,8 +464,7 @@ var denmaDomainStatuses = map[string][2]string{
 	"ready":      {"Ready", "status-finished"},
 }
 
-// denmaLookups are DNS lookups with a time limit; a nil error with nothing
-// found is a definite "none".
+// denmaLookups are DNS lookups with a time limit; a nil error with nothing found is a definite none.
 type denmaLookups struct {
 	r *net.Resolver
 }
@@ -538,14 +506,12 @@ func (l denmaLookups) mx(ctx context.Context, name string) ([]string, error) {
 	return out, err
 }
 
-// denmaHost is name without the domain: "abc._domainkey" for
-// abc._domainkey.example.org.
+// denmaHost is name without the domain: "abc._domainkey" for abc._domainkey.example.org.
 func denmaHost(name, domain string) string {
 	return strings.TrimSuffix(strings.TrimSuffix(name, domain), ".")
 }
 
-// denmaPrefixed is the lines of a TXT lookup that start with prefix (in any
-// case): its SPF or DMARC records.
+// denmaPrefixed is the lines of a TXT lookup that start with prefix (any case): SPF or DMARC records.
 func denmaPrefixed(lines []string, prefix string) []string {
 	var out []string
 	for _, l := range lines {
@@ -556,8 +522,7 @@ func denmaPrefixed(lines []string, prefix string) []string {
 	return out
 }
 
-// denmaMergeSPF adds SES to an SPF record, before its all: once evaluation
-// reaches all, it stops.
+// denmaMergeSPF adds SES to an SPF record, before its all.
 func denmaMergeSPF(spf string) string {
 	parts := strings.Fields(spf)
 	for i, p := range parts {
@@ -568,8 +533,7 @@ func denmaMergeSPF(spf string) string {
 	return spf + " include:amazonses.com"
 }
 
-// checkRecords looks the domain's records up in DNS (SES's own verdicts, when
-// it has them, count first).
+// checkRecords looks the domain's records up in DNS (SES's own verdicts count first).
 func checkDenmaRecords(ctx context.Context, domain, mailFrom, region string, id denmaSESIdentity) []denmaDNSRecord {
 	l := denmaLookups{r: &net.Resolver{PreferGo: true}}
 	var out []denmaDNSRecord
@@ -577,8 +541,7 @@ func checkDenmaRecords(ctx context.Context, domain, mailFrom, region string, id 
 		r.Status, r.Note = "missing", "The DNS lookup didn't answer ("+err.Error()+"); it's tried again later."
 	}
 
-	// DKIM: three CNAMEs, from SES's tokens (none for a domain whose DKIM
-	// keys SES doesn't manage).
+	// DKIM: three CNAMEs from SES's tokens (none where SES doesn't manage the keys).
 	easy := id.DKIMOrigin == "" || id.DKIMOrigin == "AWS_SES"
 	zone := id.SigningZone
 	if zone == "" {
@@ -785,10 +748,7 @@ func denmaSendingVerdict(st *denmaDomainState) {
 	}
 }
 
-// setupDomain sets a domain up in SES, adding only what it hasn't: the
-// domain (Easy DKIM), its bounce subdomain, the configuration set and
-// notifications of the hub's sender's domain. It doesn't change what SES
-// has already (another bounce subdomain, topic or set), which may be in use.
+// setupDomain sets a domain up in SES, adding only what it hasn't; it changes nothing SES already has.
 func (d *denmaCenters) setupDomain(ctx context.Context, s denmaSES, domain, mailFrom string) error {
 	ref := d.domainRef(ctx, s)
 	id, err := s.Get(ctx, domain)
@@ -826,8 +786,7 @@ func (d *denmaCenters) setupDomain(ctx context.Context, s denmaSES, domain, mail
 	return nil
 }
 
-// denmaSenderDomain is the domain of a From address, lowercase; "" if it
-// isn't one.
+// denmaSenderDomain is the lowercase domain of a From address, or "".
 func denmaSenderDomain(from string) string {
 	addr, err := mail.ParseAddress(strings.TrimSpace(from))
 	if err != nil {
@@ -840,8 +799,7 @@ func denmaSenderDomain(from string) string {
 	return strings.ToLower(addr.Address[at+1:])
 }
 
-// denmaCheckMailFrom checks a bounce subdomain: one or more labels below the
-// domain.
+// denmaCheckMailFrom checks a bounce subdomain: one or more labels below the domain.
 func denmaCheckMailFrom(mailFrom, domain string) error {
 	if !reDenmaDomain.MatchString(mailFrom) || !strings.HasSuffix(mailFrom, "."+domain) || len(mailFrom) > 253 {
 		return fmt.Errorf("The bounce subdomain has to be under %s, such as bounce.%s.", domain, domain)
@@ -888,8 +846,7 @@ func (d *denmaCenters) centerSenders() ([]denmaCenterSender, error) {
 	return out, nil
 }
 
-// denmaDomainCampaign is a center's campaign that's scheduled or sending, or
-// its active automation or API key (What), with its sender.
+// denmaDomainCampaign is a scheduled or sending campaign, active automation or API key, with its sender.
 type denmaDomainCampaign struct {
 	Center string `db:"center"`
 	What   string `db:"what"`
@@ -897,10 +854,7 @@ type denmaDomainCampaign struct {
 	From   string `db:"from_email"`
 }
 
-// domainCampaigns are the scheduled and running campaigns, active
-// automations and API keys sending from a domain, of one center (slug) or
-// all (""): they were checked when they were scheduled, started, turned on
-// or made, not again as they send.
+// domainCampaigns are the scheduled or running campaigns, active automations and API keys sending from a domain.
 func (d *denmaCenters) domainCampaigns(dom, slug string) ([]denmaDomainCampaign, error) {
 	var ctrs []struct {
 		Name   string `db:"name"`
@@ -945,9 +899,7 @@ func (d *denmaCenters) domainCampaigns(dom, slug string) ([]denmaDomainCampaign,
 	return out, nil
 }
 
-// denmaCampaignsOnDomain refuses to take a domain from centers while their
-// campaigns are scheduled or sending from it, or their active automations or
-// API keys send from it.
+// denmaCampaignsOnDomain refuses to take a domain from centers whose campaigns, automations or keys use it.
 func denmaCampaignsOnDomain(camps []denmaDomainCampaign, dom string) error {
 	if len(camps) == 0 {
 		return nil
@@ -964,8 +916,7 @@ func denmaCampaignsOnDomain(camps []denmaDomainCampaign, dom string) error {
 		"or wait until it's finished; turn an automation off; delete an API key.", dom, strings.Join(names, ", ")))
 }
 
-// adoptSenders adds the domains of senders set before (every center's and
-// the hub's), for their centers.
+// adoptSenders adds the domains of existing senders (centers' and the hub's) for their centers.
 func (d *denmaCenters) adoptSenders() error {
 	senders, err := d.centerSenders()
 	if err != nil {
@@ -995,8 +946,7 @@ func (d *denmaCenters) adoptSenders() error {
 	return add(denmaSenderDomain(d.current().ko.String("app.from_email")), 0)
 }
 
-// watchDomains adds the senders' domains, then checks those due: every 2
-// minutes in a new domain's first hour, every 15 until it's ready, then daily.
+// watchDomains adds the senders' domains and checks those due (2 minutes, 15 minutes, then daily).
 func (d *denmaCenters) watchDomains() {
 	time.Sleep(15 * time.Second)
 	adopted := false
@@ -1050,8 +1000,7 @@ func (d *denmaCenters) domainCanSend(domain string) bool {
 	return ok
 }
 
-// addDomain adds a domain for centers (IDs), sets it up in SES and checks it.
-// It's added even if SES can't be reached, and the error returned.
+// addDomain adds a domain for centers (IDs), sets it up in SES and checks it; added even if SES fails.
 func (d *denmaCenters) addDomain(domain, mailFrom string, centers []int) (denmaDomainState, error) {
 	if _, err := d.db().Exec(`INSERT INTO denma.sending_domains (domain, mail_from) VALUES ($1, $2) ON CONFLICT DO NOTHING`, domain, mailFrom); err != nil {
 		return denmaDomainState{}, err
@@ -1180,8 +1129,7 @@ func (a *App) ViewDenmaDomains(c echo.Context) error {
 	return c.Render(http.StatusOK, "admin-denma-domains", v)
 }
 
-// ViewDenmaDomain renders a domain's page (views/denma-domain.html): its DNS
-// records, SES's checks and its centers.
+// ViewDenmaDomain renders a domain's page (views/denma-domain.html).
 func (a *App) ViewDenmaDomain(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -1219,8 +1167,7 @@ func (d *denmaCenters) domainsView(c echo.Context, only, title string) (denmaDom
 	return v, nil
 }
 
-// denmaDomainParam is the :domain of a request, if it's one of the sending
-// domains.
+// denmaDomainParam is the :domain of a request, if it's one of the sending domains.
 func (d *denmaCenters) domainParam(c echo.Context) (string, error) {
 	dom := strings.ToLower(c.Param("domain"))
 	var ok bool
@@ -1245,8 +1192,7 @@ func (d *denmaCenters) domainResp(c echo.Context, dom string, warn error) error 
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// DenmaAddDomain adds a sending domain, for the centers chosen, and sets it
-// up in SES.
+// DenmaAddDomain adds a sending domain for the centers chosen, and sets it up in SES.
 func (a *App) DenmaAddDomain(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -1316,10 +1262,7 @@ func (a *App) DenmaCheckDomain(c echo.Context) error {
 	return d.domainResp(c, dom, nil)
 }
 
-// DenmaFixDomain fixes one of a domain's issues in SES (denmaIssues): setup
-// (add it), dkim (start DKIM again), mail_from (start the bounce subdomain
-// again, or change it to mail_from), notifications or config_set (as the hub's
-// sender's domain). Each only when SES is in the state it's for.
+// DenmaFixDomain fixes one of a domain's issues in SES (denmaIssues), when SES is in the state it's for.
 func (a *App) DenmaFixDomain(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -1357,7 +1300,7 @@ func (a *App) DenmaFixDomain(c echo.Context) error {
 	case "setup":
 		err = d.setupDomain(ctx, s, dom, mailFrom)
 	case "dkim":
-		// Never for a domain SES has verified, whose records would change.
+		// Not for a domain SES has verified.
 		if !id.Exists || (id.DKIMOrigin != "" && id.DKIMOrigin != "AWS_SES") || (id.DKIM != "FAILED" && id.DKIM != "NOT_STARTED") {
 			return bad("DKIM can only be started again once it has failed.")
 		}
@@ -1435,9 +1378,7 @@ func (a *App) DenmaAddDomainCenter(c echo.Context) error {
 	return d.domainResp(c, dom, nil)
 }
 
-// DenmaRemoveDomainCenter stops a center sending from a domain, unless its
-// sender, a campaign scheduled or sending, an active automation or an API
-// key is on it.
+// DenmaRemoveDomainCenter stops a center sending from a domain, unless its sender or sending items use it.
 func (a *App) DenmaRemoveDomainCenter(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -1471,10 +1412,7 @@ func (a *App) DenmaRemoveDomainCenter(c echo.Context) error {
 	return d.domainResp(c, dom, nil)
 }
 
-// DenmaDeleteDomain removes a sending domain from the hub, unless a sender
-// (the hub's or a center's), a campaign scheduled or sending, an active
-// automation or an API key is on it. It stays in SES, as the server's role
-// can't delete identities: a superadmin deletes it in the SES console.
+// DenmaDeleteDomain removes a domain from the hub unless something sends from it; it stays in SES.
 func (a *App) DenmaDeleteDomain(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -1521,8 +1459,7 @@ func (a *App) DenmaDeleteDomain(c echo.Context) error {
 
 // In the centers: senders on their domains.
 
-// denmaCenterDomain is one of a center's sending domains, for its Config
-// page.
+// denmaCenterDomain is one of a center's sending domains, for its Config page.
 type denmaCenterDomain struct {
 	Domain  string `db:"domain" json:"domain"`
 	Status  string `db:"status" json:"status"`
@@ -1531,8 +1468,7 @@ type denmaCenterDomain struct {
 	Badge   string `db:"-" json:"badge"`
 }
 
-// denmaCenterDomains are the center's sending domains (none for the hub, or
-// without SES).
+// denmaCenterDomains are the center's sending domains (none for the hub, or without SES).
 func (a *App) denmaCenterDomains() ([]denmaCenterDomain, error) {
 	ctr := a.denmaCenterOf()
 	if ctr == nil || !denmaDomainsOn() {
@@ -1553,9 +1489,7 @@ func (a *App) denmaCenterDomains() ([]denmaCenterDomain, error) {
 	return out, nil
 }
 
-// denmaCheckSender refuses a sender (From) whose domain isn't one of the
-// center's sending domains. Its errors are for people (denmaBadRequest), or
-// HTTP errors.
+// denmaCheckSender refuses a sender (From) whose domain isn't one of the center's sending domains.
 func (a *App) denmaCheckSender(from string) error {
 	dom := denmaSenderDomain(from)
 	if dom == "" || a.denmaCenterOf() == nil || !denmaDomainsOn() {
@@ -1579,9 +1513,7 @@ func (a *App) denmaCheckSender(from string) error {
 	return fmt.Errorf("The sender has to be at one of the center's domains, which Amazon SES has to verify, and %s isn't one. %s A superadmin adds domains for centers on the hub's Sending domains page.", dom, have)
 }
 
-// denmaCheckSenderReady refuses to send (start a campaign, send a test) from
-// a domain SES hasn't verified, if it has said so. If SES couldn't be asked,
-// it's sent: SES itself refuses what it hasn't verified.
+// denmaCheckSenderReady refuses to send from a domain SES has said isn't verified (campaign start, test).
 func (a *App) denmaCheckSenderReady(from string) error {
 	if err := a.denmaCheckSender(from); err != nil {
 		return err
@@ -1596,9 +1528,7 @@ func (a *App) denmaCheckSenderReady(from string) error {
 	return fmt.Errorf("Amazon SES hasn't verified %s yet, so nothing can be sent from it. Its DNS records are on the hub's Sending domains page; it's checked again every few minutes.", dom)
 }
 
-// denmaDomainRefused reports whether SES has said it hasn't verified a
-// sending domain (false if it's not been checked yet, or SES couldn't be
-// asked: SES itself refuses what it hasn't verified).
+// denmaDomainRefused reports whether SES has said it hasn't verified a sending domain.
 func (a *App) denmaDomainRefused(dom string) bool {
 	var st struct {
 		Checked bool   `db:"checked"`
@@ -1615,14 +1545,7 @@ func (a *App) denmaDomainRefused(dom string) bool {
 	return st.Checked && !s.CanSend && !(s.Error != "" && !s.SES.Exists)
 }
 
-// denmaSystemSender is who a center's own e-mails are from: opt-in
-// confirmations (re-subscribing too), notifications, invites, password resets
-// and data exports. That's its sender, unless its domain isn't one of its
-// sending domains or SES has said it hasn't verified it (a new center's, at
-// first): then the hub's address (its "Superadmin e-mails from"), under the
-// center's name, with the center's sender as the Reply-To. Campaigns,
-// automations and transactional messages never use the hub's address: they
-// wait for, or are refused until, the center's domain.
+// denmaSystemSender is who a center's own e-mails are from: its sender, else the hub's address under its name.
 func (a *App) denmaSystemSender() (from, replyTo string) {
 	from = a.cfg.FromEmail
 	ctr := a.denmaCenterOf()
@@ -1649,9 +1572,7 @@ func (a *App) denmaSystemSender() (from, replyTo string) {
 	return (&mail.Address{Name: name, Address: hub.Address}).String(), from
 }
 
-// denmaSetSystemSender sets a center's own e-mail's sender, and Reply-To if
-// any: the center's default reply-to (cmd/denma_reply_to.go), else
-// denmaSystemSender's.
+// denmaSetSystemSender sets a center's own e-mail's sender and Reply-To (cmd/denma_reply_to.go).
 func (a *App) denmaSetSystemSender(m *models.Message) {
 	from, replyTo := a.denmaSystemSender()
 	if rt := a.denmaReplyTo(); rt != "" {
@@ -1666,12 +1587,7 @@ func (a *App) denmaSetSystemSender(m *models.Message) {
 	}
 }
 
-// denmaCheckHeaders refuses a message's own headers (a campaign's, or a
-// transactional message's) that the e-mail messenger would leave out
-// (email.DenmaHeaderProblem): a center's that would change who it's from,
-// past the sender checks (From, Sender, Return-Path, Resent-From,
-// Resent-Sender and X-SES-*), and anyone's with a line break, Bcc, Cc or To,
-// or an internal X-Denma-* header.
+// denmaCheckHeaders refuses a message's own headers that the e-mail messenger would drop.
 func (a *App) denmaCheckHeaders(hdrs models.Headers) error {
 	center := a.denmaCenterOf() != nil
 	for _, set := range hdrs {
@@ -1695,8 +1611,7 @@ func (a *App) denmaCheckHeaders(hdrs models.Headers) error {
 	return nil
 }
 
-// denmaCheckHubSender refuses a hub sender on a domain that isn't one of the
-// sending domains.
+// denmaCheckHubSender refuses a hub sender on a domain that isn't one of the sending domains.
 func (a *App) denmaCheckHubSender(from string) error {
 	if a.denmaInCenter() || !denmaDomainsOn() {
 		return nil
@@ -1712,8 +1627,7 @@ func (a *App) denmaCheckHubSender(from string) error {
 	return nil
 }
 
-// denmaBadRequest is a sender check's error as an HTTP error: a 400 with its
-// words, unless it's one already.
+// denmaBadRequest is a sender check's error as a 400 with its words, unless it's already an HTTP error.
 func denmaBadRequest(err error) error {
 	var he *echo.HTTPError
 	if errors.As(err, &he) {
@@ -1722,11 +1636,7 @@ func denmaBadRequest(err error) error {
 	return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 }
 
-// denmaCheckCampaignStart refuses to start or schedule a campaign whose
-// sender's domain SES hasn't verified, a draft that would go to no one or
-// whose e-mail can't be made (cmd/denma_start.go), doesn't show the center's
-// postal address or has images no longer in its Media (cmd/denma_address.go),
-// or one to another campaign's API list (cmd/denma_noconsent.go).
+// denmaCheckCampaignStart refuses to start or schedule a campaign that can't go out (cmd/denma_start.go).
 func (a *App) denmaCheckCampaignStart(id int, status string) error {
 	if status != models.CampaignStatusRunning && status != models.CampaignStatusScheduled {
 		return nil

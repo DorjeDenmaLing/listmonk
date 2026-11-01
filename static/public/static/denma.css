@@ -1,6 +1,4 @@
-/* denma: public pages without a design (the hub's) framed as a center's
-   default design (cmd/denma_design.go): a 600px card 32px down, no shadow,
-   the logo 90px high, its font. */
+/* denma: public pages without a design framed as a center's default design (cmd/denma_design.go). */
 body {
   font-family: "Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;
   line-height: 1.5;

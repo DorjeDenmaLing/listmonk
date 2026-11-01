@@ -298,7 +298,7 @@ func (a *App) ResetPage(c echo.Context) error {
 	)
 
 	// Validate token and email (don't delete it yet, as we may need it for POST).
-	data, err := tmptokens.Peek(a.tmpKey(email)) // denma: per center; a wrong token mustn't use up the right one's tries
+	data, err := tmptokens.Peek(a.tmpKey(email)) // denma: per center; Peek counts no check
 	if err != nil {
 		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
 	}
@@ -389,7 +389,7 @@ func (a *App) renderLoginPage(c echo.Context, loginErr error) error {
 		Name:     "nonce",
 		Value:    nonce,
 		HttpOnly: true,
-		Path:     a.urlCfg.AdminPath, // denma: was "/"; the admin's root path
+		Path:     a.urlCfg.AdminPath, // denma: the admin's root path
 		SameSite: http.SameSiteLaxMode,
 		Secure:   c.Scheme() == "https", // denma: as the session cookie
 	})

@@ -1,7 +1,4 @@
-{{- /* denma: an OpenAPI 3.1 description's operations, by tag, rendered by
-	denmaAPIDocs (assets/js/views/denma-center.js): the sending API's on
-	Config -> API, the sign-up webhooks' on Config -> Webhooks. Its argument
-	labels what each needs to authenticate ("Key", "Secret"). */ -}}
+{{- /* denma: an OpenAPI 3.1 description's operations, by tag (denmaAPIDocs in denma-center.js). */ -}}
 {{ define "denma-openapi-ops" -}}
 	<template x-for="g in groups" :key="g.name">
 		<section class="vstack gap-2">

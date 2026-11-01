@@ -1,44 +1,6 @@
 package main
 
-// denma: sign-up webhooks, the way other systems subscribe people to a
-// center: they don't send e-mail (that's the sending API, cmd/denma_api.go).
-// Each is made in the center's Config -> Webhooks (views/denma-webhooks.html),
-// with a name, the lists it signs people up to, tags to give everyone it
-// signs up (the center's, cmd/denma_tags.go), and the tags a request may give
-// (request_tags). There are two kinds:
-//
-//   - Form webhooks, for the forms on the center's website (Gravity Forms'
-//     Webhooks add-on, or any form that can POST), made by its admins
-//     (center:manage), at a secret address of their own, <center>/signup/<token>.
-//     Its address can end up in a page, so it can only start a double opt-in:
-//     its lists are double opt-in only, and whoever signs up confirms by e-mail
-//     before anything else is sent; an automation (cmd/denma_automations.go)
-//     can move them on to a single opt-in list once they've confirmed.
-//   - Server webhooks, for systems that vouch for the person's consent, such
-//     as rg-sync (a Retreat Guru registration with the newsletter box ticked),
-//     made only by superadmins, at <center>/signup/server with the secret as
-//     "Authorization: Bearer <secret>". It can subscribe people at once with
-//     "confirmed" and a consent record, to single opt-in lists too, and
-//     re-subscribe someone who unsubscribed (cmd/denma_resubscribe.go), at
-//     most denmaSignupResubPerDay a day in the center.
-//
-// What a request gives is written once (attributes, name, its tags): only when
-// it adds the person. An existing subscriber gets the lists and the webhook's
-// own tags, and their record is unchanged. Server webhooks are the exception:
-// they add to what the subscriber has, never replacing a value
-// (appendSubscriber), so that each registration's consent is kept.
-//
-// Attributes the center keeps itself (denmaReservedAttribs) can't be given: a
-// Form webhook drops them (a real sign-up is never refused for a form's
-// field names), a Server webhook refuses them, but for "consents".
-//
-// The opt-in checks apply (the shared blocklist, the domain check, at most 5
-// opt-in e-mails an address a day). A Form webhook takes at most its per_hour
-// sign-ups an hour, and the admins are told when it's reached; a Server
-// webhook at most denmaSignupServerPerMinute requests a minute. Tokens and
-// secrets are kept as their SHA-256, and shown once. The answer never says
-// whether the address was there already, or why someone can't be signed up
-// again. Log lines carry no addresses.
+// denma: sign-up webhooks (Form and Server) that subscribe people to a center.
 
 import (
 	"database/sql"
@@ -70,25 +32,17 @@ const (
 	denmaSignupDefaultPerHour  = 50      // a Form webhook's sign-ups an hour, to start with
 	denmaSignupMaxPerHour      = 200     // the most it can be given
 	denmaSignupServerPerMinute = 600     // a Server webhook's requests a minute
-	denmaSignupResubPerDay     = 10      // people Server webhooks re-subscribe at once in a center, in 24 hours
+	denmaSignupResubPerDay     = 10      // people Server webhooks re-subscribe at once, a day, per center
 	denmaSignupTagsPerDay      = 50      // tags a Server webhook creates, in 24 hours
 	denmaSignupMaxHooks        = 20      // webhooks a center can have
 	denmaSignupMaxLists        = 20      // lists a webhook can have
 	denmaSignupMaxTags         = 20      // tags a webhook can have, of each kind
 	denmaSignupMaxBody         = 1 << 16 // bytes
-	denmaSignupSecretPrefix    = "lms_"  // a Server webhook's secret, for secret scanners
+	denmaSignupSecretPrefix    = "lms_"  // a Server webhook's secret starts with this
 	denmaSignupHookCtx         = "denma_signup_hook"
 )
 
-// denmaReservedAttribs are attributes the center keeps itself: the consent
-// record and re-subscribing (cmd/denma_resubscribe.go), imports (the mark,
-// and the import a consent came from), and tags (given on their own); and
-// any starting auto_blocklist_ (the domain check, cmd/denma_emailcheck.go)
-// or denma_. No request can give them, but a Server webhook's consents, and
-// an import's consent_at and consent_source when it keeps them
-// (cmd/denma_imports.go). Admins' changes
-// keep a subscriber's (denmaKeepCenterAttribs), as imports do
-// (denma_keep_center_attribs, cmd/denma_features.go).
+// denmaReservedAttribs are attributes the center keeps itself; requests can't give them.
 var denmaReservedAttribs = []string{"consent_at", "consent_source", "consent_confirmed_at", "consents",
 	"resubscribed_at", "imported_at", "consent_import", "tags"}
 
@@ -96,8 +50,7 @@ func denmaIsReservedAttrib(k string) bool {
 	return slices.Contains(denmaReservedAttribs, k) || strings.HasPrefix(k, "auto_blocklist_") || strings.HasPrefix(k, "denma_")
 }
 
-// denmaReservedAttrib returns the first reserved attribute (by name) in
-// attribs, or "". consents is allowed with allowConsents.
+// denmaReservedAttrib returns the first reserved attribute in attribs, or "".
 func denmaReservedAttrib(attribs map[string]any, allowConsents bool) string {
 	keys := make([]string, 0, len(attribs))
 	for k := range attribs {
@@ -120,9 +73,7 @@ func denmaReservedAttribMsg(k string) string {
 	return fmt.Sprintf(`"attribs" can't give %q: it's an attribute the center keeps itself.`, k)
 }
 
-// denmaKeepCenterAttribs keeps the center's attributes (the reserved ones but
-// tags) out of an admin's change: those given are dropped, and subscriber
-// id's (0 for a new one) are kept.
+// denmaKeepCenterAttribs drops an admin's changes to the center's attributes.
 func (a *App) denmaKeepCenterAttribs(id int, attribs *models.JSON) error {
 	for k := range *attribs {
 		if k != "tags" && denmaIsReservedAttrib(k) {
@@ -135,7 +86,7 @@ func (a *App) denmaKeepCenterAttribs(id int, attribs *models.JSON) error {
 	var cur models.JSON
 	if err := a.db.Get(&cur, `SELECT CASE WHEN jsonb_typeof(attribs) = 'object' THEN attribs ELSE '{}' END FROM subscribers WHERE id = $1`, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil // listmonk says it's not found
+			return nil // not found
 		}
 		return err
 	}
@@ -150,12 +101,10 @@ func (a *App) denmaKeepCenterAttribs(id int, attribs *models.JSON) error {
 	return nil
 }
 
-// denmaSignupBadSecrets limits requests to /signup/server with secrets that
-// don't work, by client address.
+// denmaSignupBadSecrets limits failed /signup/server requests by client address.
 var denmaSignupBadSecrets = newDenmaThrottle(20, 15*time.Minute)
 
-// denmaTagHooksSQL records the webhook that created each tag, from the
-// activity log's "tags added to the center" (features version 46).
+// denmaTagHooksSQL records the webhook that created each tag.
 const denmaTagHooksSQL = `
 UPDATE denma_tags t SET hook_id = x.hook_id FROM (
     SELECT DISTINCT ON (tag) tag, (a.details->>'hook_id')::INT AS hook_id
@@ -181,9 +130,9 @@ CREATE TABLE IF NOT EXISTS denma_signup_hook_lists (
     list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
     PRIMARY KEY (hook_id, list_id)
 );
--- The tags it gives (the center's: renaming or deleting one changes them).
+-- The tags it gives.
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
--- Since features version 22: tokens kept as their SHA-256 (shown once).
+-- Tokens are kept hashed, with a hint.
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS token_hint TEXT NOT NULL DEFAULT '';
 DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
@@ -195,14 +144,14 @@ DO $$ BEGIN
         ALTER TABLE denma_signup_hooks ADD CONSTRAINT denma_signup_hooks_token_hash_key UNIQUE (token_hash);
     END IF;
 END $$;
--- Its kind, the tags a request may give, and each kind's settings.
+-- Its kind, request tags and each kind's settings.
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'form' CHECK (kind IN ('form', 'server'));
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS request_tags TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS per_hour INTEGER NOT NULL DEFAULT 50;      -- form
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS create_tags BOOLEAN NOT NULL DEFAULT FALSE; -- server
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS allowed_from TEXT[] NOT NULL DEFAULT '{}'; -- server
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT '';
-ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS old_token_hash TEXT NULL;                 -- server: the secret replaced
+ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS old_token_hash TEXT NULL; -- server: replaced secret
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS old_token_until TIMESTAMP WITH TIME ZONE NULL;
 ALTER TABLE denma_signup_hooks ADD COLUMN IF NOT EXISTS last_ip TEXT NOT NULL DEFAULT '';
 -- The Server webhook that created a tag, for denmaSignupTagsPerDay.
@@ -215,8 +164,7 @@ CREATE TABLE IF NOT EXISTS denma_signup_alerts (
     sent_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     PRIMARY KEY (hook_id, kind)
 );
--- Re-subscriptions at once ("confirmed") by Server webhooks, for the
--- center's denmaSignupResubPerDay. Kept two days.
+-- Re-subscriptions at once by Server webhooks, kept two days.
 CREATE TABLE IF NOT EXISTS denma_resub_usage (
     id         BIGSERIAL PRIMARY KEY,
     hook_id    INTEGER NULL REFERENCES denma_signup_hooks(id) ON DELETE SET NULL,
@@ -224,8 +172,7 @@ CREATE TABLE IF NOT EXISTS denma_resub_usage (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS denma_resub_usage_created ON denma_resub_usage (created_at);
--- Lists Server webhooks lost (deleted by the center's admins), for the
--- superadmins who made them to be told (signupLostLists).
+-- Lists Server webhooks lost when a center's admins deleted them.
 CREATE TABLE IF NOT EXISTS denma_signup_lost (
     hook_id   INTEGER NOT NULL REFERENCES denma_signup_hooks(id) ON DELETE CASCADE,
     list_name TEXT NOT NULL,
@@ -264,9 +211,7 @@ type denmaSignupHook struct {
 	LastUsed    *time.Time     `db:"-" json:"last_used_at"`
 	CreatedAt   time.Time      `db:"created_at" json:"created_at"`
 
-	// Its address: a Form webhook's with only the token's hint, but when it's
-	// made or given a new token (URL); a Server webhook's, and its secret
-	// only when it's made or given a new one.
+	// Its address and secret, shown in full only when made or renewed.
 	Address string `db:"-" json:"address"`
 	URL     string `db:"-" json:"url,omitempty"`
 	Secret  string `db:"-" json:"secret,omitempty"`
@@ -287,8 +232,7 @@ func initDenmaSignupAPIHandlers(g *echo.Group, a *App) {
 	g.DELETE("/api/denma/center/signup-hooks/:id", pm(a.DenmaDeleteSignupHook))
 }
 
-// initDenmaSignupPublicHandlers registers the webhooks' addresses, and their
-// description, in a center.
+// initDenmaSignupPublicHandlers registers the webhooks' addresses in a center.
 func initDenmaSignupPublicHandlers(g *echo.Group, a *App) {
 	if denmaHub != nil && a.ko.String("denma.center") != "" {
 		g.GET("/signup/openapi.json", a.DenmaSignupOpenAPI) // cmd/denma_signup_openapi.go
@@ -297,15 +241,13 @@ func initDenmaSignupPublicHandlers(g *echo.Group, a *App) {
 	}
 }
 
-// denmaIsSuperadmin is whether the request's user is a superadmin (in a
-// center, the only ones with the Super Admin role, cmd/denma_hierarchy.go).
+// denmaIsSuperadmin is whether the request's user is a superadmin (cmd/denma_hierarchy.go).
 func denmaIsSuperadmin(c echo.Context) bool {
 	u, ok := c.Get(auth.UserHTTPCtxKey).(auth.User)
 	return ok && u.ID > 0 && !denmaBound(u)
 }
 
-// denmaNewSignupToken makes a Form webhook's token (in its address) or a
-// Server webhook's secret, returning it, its hash and its hint.
+// denmaNewSignupToken makes a token or secret, returning it, its hash and its hint.
 func denmaNewSignupToken(kind string) (string, string, string, error) {
 	n, prefix := 32, ""
 	if kind == denmaSignupServer {
@@ -363,8 +305,7 @@ func (a *App) signupHook(id int) (denmaSignupHook, error) {
 	return h, nil
 }
 
-// signupHookToChange is a webhook the user may change: a Server webhook only
-// by a superadmin.
+// signupHookToChange is a webhook the user may change (a Server webhook only a superadmin).
 func (a *App) signupHookToChange(c echo.Context) (denmaSignupHook, error) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	h, err := a.signupHook(id)
@@ -401,9 +342,7 @@ type denmaSignupHookForm struct {
 	AllowedFrom []string `json:"allowed_from"`
 }
 
-// checkSignupForm trims and checks a webhook of a kind: a name, one or more of
-// the center's lists (double opt-in ones for a Form webhook), and any of its
-// tags; a Form webhook's hourly limit, a Server webhook's addresses.
+// checkSignupForm trims and checks a webhook's name, lists, tags and settings.
 func (a *App) checkSignupForm(c echo.Context, kind string) (denmaSignupHookForm, error) {
 	var f denmaSignupHookForm
 	if err := c.Bind(&f); err != nil {
@@ -494,9 +433,7 @@ func saveSignupLists(tx *sql.Tx, id int, listIDs []int) error {
 	return err
 }
 
-// DenmaCreateSignupHook makes a webhook, with a new token (a Form webhook's,
-// in its address) or secret (a Server webhook's), shown this once. Only a
-// superadmin makes a Server webhook.
+// DenmaCreateSignupHook makes a webhook, showing its token or secret once.
 func (a *App) DenmaCreateSignupHook(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -561,8 +498,7 @@ func (a *App) signupShowToken(h *denmaSignupHook, tok string) {
 	h.URL = strings.TrimSuffix(a.urlCfg.RootURL, "/") + "/signup/" + tok
 }
 
-// DenmaUpdateSignupHook renames a webhook or changes its lists, tags and
-// settings; its kind stays.
+// DenmaUpdateSignupHook renames a webhook or changes its lists, tags and settings.
 func (a *App) DenmaUpdateSignupHook(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -597,9 +533,7 @@ func (a *App) DenmaUpdateSignupHook(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{h})
 }
 
-// DenmaNewSignupHookKey gives a webhook a new token or secret, shown this
-// once. A Form webhook's old address stops working at once; a Server
-// webhook's old secret at once, or after "overlap_hours" (up to a week).
+// DenmaNewSignupHookKey gives a webhook a new token or secret (a Server one's old secret may overlap).
 func (a *App) DenmaNewSignupHookKey(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -635,8 +569,7 @@ func (a *App) DenmaNewSignupHookKey(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{h})
 }
 
-// DenmaDeleteSignupHook deletes a webhook; its address or secret stops
-// working.
+// DenmaDeleteSignupHook deletes a webhook.
 func (a *App) DenmaDeleteSignupHook(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -654,8 +587,7 @@ func (a *App) DenmaDeleteSignupHook(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
-// denmaSignupCount is each Form webhook's sign-ups this hour (center/ID),
-// for its per_hour.
+// denmaSignupCount is each Form webhook's sign-ups this hour, by center and ID.
 var denmaSignupCount = struct {
 	sync.Mutex
 	m map[string]*denmaSignupWindow
@@ -692,22 +624,17 @@ func denmaSignupField(fields map[string]string, key string, limit int) string {
 	return v
 }
 
-// denmaSignupRequest is what a Form webhook is sent: its fields (one value
-// each), and the attributes and tags it gives.
+// denmaSignupRequest is what a Form webhook is sent: fields, attributes and tags.
 type denmaSignupRequest struct {
 	Fields  map[string]string
 	Attribs map[string]any
 	Tags    []string
 }
 
-// reDenmaAttribField is an attribute given as its own field: attribs.<name>
-// or attribs[<name>].
+// reDenmaAttribField is an attribute given as its own field: attribs.<name> or attribs[<name>].
 var reDenmaAttribField = regexp.MustCompile(`^attribs(?:\.([^.\[\]]+)|\[([^\[\]]+)\])$`)
 
-// signupRequest reads a Form webhook's request: a JSON object, or a form.
-// Attributes are an "attribs" object, or each its own field (attribs.<name>
-// or attribs[<name>], as form builders can send them); tags, "tags" (a list,
-// or separated by commas).
+// signupRequest reads a Form webhook's request, a JSON object or a form.
 func signupRequest(c echo.Context) (denmaSignupRequest, error) {
 	req := c.Request()
 	req.Body = http.MaxBytesReader(c.Response(), req.Body, denmaSignupMaxBody)
@@ -779,8 +706,7 @@ func signupRequest(c echo.Context) (denmaSignupRequest, error) {
 	return out, nil
 }
 
-// DenmaSignup is a Form webhook's address: someone signing up on the center's
-// website.
+// DenmaSignup is a Form webhook's address, for sign-ups on the center's website.
 func (a *App) DenmaSignup(c echo.Context) error {
 	html := strings.Contains(c.Request().Header.Get(echo.HeaderAccept), "text/html")
 	reply := func(code int, msg string) error {
@@ -844,8 +770,7 @@ func (a *App) DenmaSignup(c echo.Context) error {
 		name = strings.Split(email, "@")[0]
 	}
 
-	// What it can't give is left out, and the rest of the sign-up goes on: a
-	// form's field names shouldn't lose anyone their sign-up.
+	// Reserved attributes are dropped; the sign-up goes on.
 	var dropped []string
 	if _, ok := fields["confirmed"]; ok {
 		dropped = append(dropped, "confirmed")
@@ -900,8 +825,7 @@ func (a *App) DenmaSignup(c echo.Context) error {
 		a.log.Printf("denma: error counting sign-up webhook %d's use: %v", h.ID, err)
 	}
 
-	// The consent record, as the web-signup Lambda kept it, and the
-	// attributes given; for someone new.
+	// The consent record and attributes given, for someone new.
 	website := map[string]any{}
 	for k, n := range map[string]int{"form_id": 20, "entry_id": 20, "page_url": 500} {
 		if v := denmaSignupField(fields, k, n); v != "" {
@@ -927,7 +851,7 @@ func (a *App) DenmaSignup(c echo.Context) error {
 		attribs = denmaWithNames(attribs, first, last) // a new subscriber's
 	}
 	result, isNew, err := a.signupSubscribe(email, name, listIDs, attribs)
-	if errors.Is(err, errDenmaOptinLimited) { // answered as sent: the limit would say they're new (cmd/denma_signupanswers.go)
+	if errors.Is(err, errDenmaOptinLimited) { // answered as sent (cmd/denma_signupanswers.go)
 		result, err = "opt-in limit reached: no e-mail sent", nil
 	}
 	if err != nil {
@@ -939,8 +863,7 @@ func (a *App) DenmaSignup(c echo.Context) error {
 		a.log.Printf("denma: error in sign-up webhook %d: %v", h.ID, err)
 		return reply(http.StatusInternalServerError, a.i18n.T("public.errorProcessingRequest"))
 	}
-	// Its tags, and those the request gave if they're new (the trigger keeps
-	// them to the center's).
+	// Its tags, and the request's if they're new.
 	give := append([]string{}, h.Tags...)
 	if isNew {
 		give = append(give, tags...)
@@ -970,17 +893,13 @@ func (a *App) DenmaSignup(c echo.Context) error {
 	return reply(http.StatusOK, a.i18n.T("public.subOptinPending"))
 }
 
-// signupSubscribe signs someone up to lists (double opt-in), returning what
-// became of it, for the log, and whether they're new. attribs are theirs only
-// if they're new: an existing subscriber's are kept.
+// signupSubscribe signs someone up to double opt-in lists, returning the outcome and if they're new.
 func (a *App) signupSubscribe(email, name string, listIDs []int, attribs map[string]any) (string, bool, error) {
 	optin := func(sub models.Subscriber, hasOptin bool) (string, error) {
 		if hasOptin {
 			return "confirmation sent", nil
 		}
-		// listmonk sends it only with Settings -> Privacy's "send opt-in
-		// confirmation" on; it's sent anyway, as a webhook's lists are all
-		// double opt-in.
+		// The opt-in e-mail is sent whatever Settings -> Privacy says.
 		if !a.ko.Bool("app.send_optin_confirmation") {
 			n, err := a.fnOptinNotify(sub, listIDs)
 			if err != nil {
@@ -1004,8 +923,7 @@ func (a *App) signupSubscribe(email, name string, listIDs []int, attribs map[str
 		}
 	}
 	if err == nil && sub.Status == models.SubscriberStatusBlockListed {
-		// An address that opted out before, and was deleted
-		// (cmd/denma_optouts.go): added blocklisted.
+		// An address that opted out and was deleted is added blocklisted (cmd/denma_optouts.go).
 		status, err := a.denmaResubscribe(sub, listIDs, consent)
 		return "opted out before: " + status, true, err
 	}
@@ -1035,8 +953,7 @@ func (a *App) signupSubscribe(email, name string, listIDs []int, attribs map[str
 	return "existing subscriber: " + r, false, err
 }
 
-// signupAlert notifies the admins about a webhook, at most once a day per
-// kind.
+// signupAlert notifies the admins about a webhook, at most once a day per kind.
 func (a *App) signupAlert(h denmaSignupHook, kind, what, detail string) {
 	res, err := a.db.Exec(`INSERT INTO denma_signup_alerts (hook_id, kind) VALUES ($1, $2)
 		ON CONFLICT (hook_id, kind) DO UPDATE SET sent_at = NOW() WHERE denma_signup_alerts.sent_at < NOW() - INTERVAL '1 day'`, h.ID, kind)
@@ -1050,8 +967,7 @@ func (a *App) signupAlert(h denmaSignupHook, kind, what, detail string) {
 	a.signupNotify(h, what, detail)
 }
 
-// signupNotify e-mails the center's admins and the superadmins about a
-// webhook.
+// signupNotify e-mails the center's admins and the superadmins about a webhook.
 func (a *App) signupNotify(h denmaSignupHook, what, detail string) {
 	center := a.ko.String("app.site_name")
 	a.log.Printf("denma: sign-up webhook %q %s", h.Name, what)
@@ -1072,15 +988,13 @@ func (a *App) signupNotify(h denmaSignupHook, what, detail string) {
 
 // ---- Server webhooks: POST <center>/signup/server ----
 
-// signupHookOf is the request's Server webhook (after DenmaSignupServer has
-// found it), for the activity log.
+// signupHookOf is the request's Server webhook, for the activity log.
 func signupHookOf(c echo.Context) denmaSignupHook {
 	h, _ := c.Get(denmaSignupHookCtx).(denmaSignupHook)
 	return h
 }
 
-// signupLog records what a Server webhook's request did: in the server log,
-// and the activity log's entry (by webhook, never the request).
+// signupLog records what a Server webhook's request did, in the server and activity logs.
 func (a *App) signupLog(c echo.Context, format string, args ...any) {
 	h := signupHookOf(c)
 	msg := fmt.Sprintf(format, args...)
@@ -1100,8 +1014,7 @@ type denmaSignupServerReq struct {
 	Confirmed bool           `json:"confirmed"`
 }
 
-// What became of someone a Server webhook signs up, for the activity log;
-// the answer is denmaSignupReceived for everyone.
+// The outcome for someone a Server webhook signs up, for the activity log.
 const (
 	denmaSignupReceived            = "received"
 	denmaSignupSubscribed          = "subscribed"
@@ -1111,23 +1024,7 @@ const (
 	denmaSignupNotSubscribed       = "not subscribed"
 )
 
-// DenmaSignupServer is a Server webhook's address: someone another system
-// signs up. With "confirmed" (and a consent record, denmaConsentAt) they're
-// subscribed at once; otherwise double opt-in lists send the confirmation
-// e-mail.
-//
-// Someone who unsubscribed from the center is re-subscribed at once with
-// "confirmed" and a consent dated after the opt-out, up to
-// denmaSignupResubPerDay a day in the center; otherwise they're sent the
-// re-subscription confirmation (cmd/denma_resubscribe.go). Complaints,
-// bounces and an older consent leave them alone.
-//
-// What's sent is added to the subscriber, never replacing anything
-// (appendSubscriber); their first consent is their consent_at and
-// consent_source. Tags are added; those the webhook may create are added to
-// the center's.
-//
-// The answer is the same whatever became of them; the activity log has it.
+// DenmaSignupServer is a Server webhook's address: another system signs someone up.
 func (a *App) DenmaSignupServer(c echo.Context) error {
 	if err := a.inCenter(); err != nil {
 		return err
@@ -1211,9 +1108,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	if len(r.Tags) > denmaAPIMaxTags {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(`"tags" can have at most %d tags.`, denmaAPIMaxTags))
 	}
-	// Its request tags, and if it may create tags, new ones and those it
-	// created: never another of the center's. Tags given by another name
-	// are the tag (cmd/denma_tagaliases.go).
+	// Its request tags and, if it may create tags, new ones and those it created.
 	given, err := a.denmaResolveTags(r.Tags)
 	if err != nil {
 		return denmaInternal(err)
@@ -1259,9 +1154,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	}
 	tags = append(tags, h.Tags...)
 
-	// Their consent: when (the latest of the record's, to compare with an
-	// opt-out), and the record's first as their consent_at and
-	// consent_source if they have none.
+	// The consent: the latest date, and the first as consent_at and consent_source if none.
 	var consentAt time.Time
 	if _, given := r.Attribs["consents"]; r.Confirmed || given { // the record is checked whenever it's given
 		if consentAt, err = denmaConsentAt(r.Attribs); err != nil {
@@ -1269,8 +1162,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		}
 	}
 
-	// New tags are added once the request is valid, before anything about
-	// the person, so that tags_created says nothing about them.
+	// New tags are added once the request is valid, before anything about the person.
 	created := []string{}
 	if len(newTags) > 0 {
 		if created, err = a.signupNewTags(h, newTags); err != nil {
@@ -1309,8 +1201,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		return c.JSON(http.StatusOK, okResp{result{Result: denmaSignupReceived, TagsCreated: created}})
 	}
 
-	// Them, added if they're new. An address that opted out before is added
-	// blocklisted (cmd/denma_optouts.go).
+	// Them, added if new (blocklisted if they opted out before, cmd/denma_optouts.go).
 	newName := name
 	if newName == "" {
 		newName = strings.Split(email, "@")[0]
@@ -1332,8 +1223,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		}
 	}
 
-	// Blocklisted: a complaint, a bounce, or a consent from before they
-	// unsubscribed.
+	// Blocklisted: a complaint, a bounce, or consent from before they unsubscribed.
 	blocked := sub.Status == models.SubscriberStatusBlockListed
 	vouched := r.Confirmed // their consent re-subscribes them at once
 	if blocked {
@@ -1355,8 +1245,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 				outcome = denmaSignupNotSubscribed
 				return done("consent from before they unsubscribed")
 			}
-			// An admin blocklisted them: consent from since then, or they
-			// confirm it themselves.
+			// An admin blocklisted them: consent since then, or they confirm it.
 			if !optedOut.Valid {
 				var at sql.NullTime
 				if err := a.db.Get(&at, `SELECT MAX(at) FROM denma_blocklisted_at WHERE subscriber_id = $1`, sub.ID); err != nil {
@@ -1373,9 +1262,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	if err := a.appendSubscriber(sub.ID, email, name, first, last, r.Attribs, tags); err != nil {
 		return denmaInternal(err)
 	}
-	// Signing up through another system that vouches for their consent lifts
-	// the API's fence; otherwise it's their sign-up, to confirm
-	// (cmd/denma_noconsent.go).
+	// Another system vouching for consent lifts the API's fence (cmd/denma_noconsent.go).
 	if r.Confirmed {
 		if err := denmaNoConsentLift(a.db, email); err != nil {
 			return denmaInternal(err)
@@ -1448,8 +1335,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		return done("")
 	}
 
-	// The lists: confirmed if single opt-in or "confirmed". Lists they'd
-	// unsubscribed from are as for anyone new.
+	// The lists: confirmed if single opt-in or "confirmed".
 	var rows []struct {
 		ListID int            `db:"list_id"`
 		Status string         `db:"status"`
@@ -1486,8 +1372,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 		outcome = denmaSignupNotSubscribed
 		return done("unsubscribed from the lists, or no consent")
 	case len(unconfirmed) > 0:
-		// The confirmation e-mail, with the opt-in checks (cmd/denma_emailcheck.go),
-		// within the day's (cmd/denma_consentcap.go).
+		// The confirmation e-mail, with the opt-in checks and the day's limit (cmd/denma_consentcap.go).
 		claim, ok, err := a.signupConsentClaim(h)
 		if err != nil {
 			return denmaInternal(err)
@@ -1517,10 +1402,7 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 	return done("")
 }
 
-// signupVouchedCheck runs the opt-in e-mail's checks (denmaCheckOptin) for a
-// sign-up vouched for, which isn't sent one: an address on the shared
-// blocklist, unless an admin enabled it here on purpose, or whose domain
-// can't receive mail, is blocklisted. It returns why, or "".
+// signupVouchedCheck runs the opt-in checks for a vouched sign-up, returning why it's blocklisted, or "".
 func (a *App) signupVouchedCheck(sub models.Subscriber) string {
 	if reason, shared := denmaSharedBlock(a.db, sub.Email); shared {
 		reason = denmaCenterReason(reason)
@@ -1538,9 +1420,7 @@ func (a *App) signupVouchedCheck(sub models.Subscriber) string {
 	return ""
 }
 
-// signupResubClaim takes one of the center's denmaSignupResubPerDay
-// re-subscriptions at once, if there's room, for a webhook: the claim's ID,
-// or 0 if there's none.
+// signupResubClaim takes one of the center's re-subscriptions at once, returning its ID or 0.
 func (a *App) signupResubClaim(hookID int) (int, error) {
 	tx, err := a.db.Beginx()
 	if err != nil {
@@ -1565,8 +1445,7 @@ func (a *App) signupResubClaim(hookID int) (int, error) {
 	return id, tx.Commit()
 }
 
-// signupResubUnclaim gives back a re-subscription claimed (signupResubClaim)
-// but not made.
+// signupResubUnclaim gives back a claim that wasn't used.
 func (a *App) signupResubUnclaim(id int) {
 	if id == 0 {
 		return
@@ -1576,9 +1455,7 @@ func (a *App) signupResubUnclaim(id int) {
 	}
 }
 
-// signupNewTags adds tags new to the center for a Server webhook, at most
-// denmaSignupTagsPerDay a day for it, returning those added; past that the
-// admins are told.
+// signupNewTags adds tags new to the center for a Server webhook, returning those added.
 func (a *App) signupNewTags(h denmaSignupHook, want []string) ([]string, error) {
 	tx, err := a.db.Beginx()
 	if err != nil {
@@ -1612,15 +1489,13 @@ func (a *App) signupNewTags(h denmaSignupHook, want []string) ([]string, error) 
 	return created, nil
 }
 
-// denmaConsentSkew is how far in the future a consent's time may be (the
-// other system's clock).
+// denmaConsentSkew is how far in the future a consent's time may be.
 const denmaConsentSkew = 5 * time.Minute
 
 // denmaConsentsMax is the most consent records a request can give.
 const denmaConsentsMax = 20
 
-// denmaConsentAt returns the latest "at" of attribs.consents, whose entries
-// each need "at" (RFC 3339) and "source".
+// denmaConsentAt returns the latest "at" of attribs.consents, each entry needing "at" and "source".
 func denmaConsentAt(attribs map[string]any) (time.Time, error) {
 	const need = `"confirmed" needs a consent record: "attribs": {"consents": [{"at": "<when they agreed, RFC 3339>", "source": "<how>"}]}.`
 	list, _ := attribs["consents"].([]any)
@@ -1649,8 +1524,7 @@ func denmaConsentAt(attribs map[string]any) (time.Time, error) {
 	return at, nil
 }
 
-// denmaFirstConsent is attribs.consents' earliest entry: when and its
-// source ("" if there's none, checked by denmaConsentAt).
+// denmaFirstConsent is attribs.consents' earliest entry: its time and source.
 func denmaFirstConsent(attribs map[string]any) (time.Time, string) {
 	var at time.Time
 	src := ""
@@ -1669,10 +1543,7 @@ func denmaFirstConsent(attribs map[string]any) (time.Time, string) {
 	return at, src
 }
 
-// appendSubscriber adds a Server webhook's name, attributes and tags to a
-// subscriber's, with their row locked, so that two requests at once both
-// count. The name replaces theirs only if it's a stand-in (denmaGivenName);
-// the attributes are added to theirs (denmaAppendJSON), and the tags too.
+// appendSubscriber adds a Server webhook's name, attributes and tags to a subscriber's, row locked.
 func (a *App) appendSubscriber(id int, email, name, first, last string, attribs map[string]any, tags []string) error {
 	tx, err := a.db.Beginx()
 	if err != nil {
@@ -1688,7 +1559,7 @@ func (a *App) appendSubscriber(id int, email, name, first, last string, attribs 
 	}
 	m := map[string]any{}
 	if err := json.Unmarshal(cur.Attribs, &m); err != nil || m == nil {
-		m = map[string]any{} // not an object: listmonk's own handling starts afresh too
+		m = map[string]any{} // not an object
 	}
 	m = denmaAppendJSON(m, map[string]any(attribs)).(map[string]any)
 	if len(tags) > 0 {
@@ -1714,8 +1585,7 @@ func (a *App) appendSubscriber(id int, email, name, first, last string, attribs 
 	return tx.Commit()
 }
 
-// denmaGivenName is a subscriber's name after a request gives one: theirs,
-// unless it's a stand-in (empty, their address or the part before its @).
+// denmaGivenName is a subscriber's name after a request gives one: theirs unless a stand-in.
 func denmaGivenName(cur, given, email string) string {
 	local, _, _ := strings.Cut(email, "@")
 	switch c := strings.ToLower(strings.TrimSpace(cur)); {
@@ -1728,10 +1598,7 @@ func denmaGivenName(cur, given, email string) string {
 	return cur
 }
 
-// denmaAppendJSON adds add to old (decoded JSON) without taking anything
-// away: what old doesn't have is added, objects are merged a key at a time,
-// arrays get the items they don't have yet, and a value old already has is
-// kept.
+// denmaAppendJSON adds add to old without taking anything away, merging objects and arrays.
 func denmaAppendJSON(old, add any) any {
 	if add == nil {
 		return old
@@ -1781,17 +1648,14 @@ func denmaJSONHas(list []any, v any) bool {
 	return false
 }
 
-// denmaJSONEqual compares decoded JSON values (encoding sorts objects' keys).
+// denmaJSONEqual compares decoded JSON values.
 func denmaJSONEqual(x, y any) bool {
 	a, err1 := json.Marshal(x)
 	b, err2 := json.Marshal(y)
 	return err1 == nil && err2 == nil && string(a) == string(b)
 }
 
-// signupLostLists tells the center's admins and the superadmins about the
-// lists Server webhooks have lost: a center's admin deleted them, and the
-// system using the webhook signs no one up to them any more. Run by the
-// minute's job (cmd/denma_api_events.go).
+// signupLostLists tells the admins about lists Server webhooks lost, from the minute's job.
 func (a *App) signupLostLists() {
 	var lost []struct {
 		HookID int            `db:"hook_id"`

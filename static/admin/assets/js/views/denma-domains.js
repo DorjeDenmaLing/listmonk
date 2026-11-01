@@ -1,6 +1,5 @@
 import { denmaAgo } from '../denma-ago.js';
-// denma: the hub's Sending domains pages (views/denma-domains.html, a list,
-// and views/denma-domain.html, one domain; cmd/denma_domains.go).
+// denma: the hub's Sending domains pages (cmd/denma_domains.go).
 import Alpine from 'alpinejs';
 import { api, urls } from '../main.js';
 import { centerPicker, centerTable } from '../denma-hub-ui.js';
@@ -182,8 +181,7 @@ function denmaDomain() {
       u.copyToClipboard(text);
     },
 
-    // The records still needed, as CSV to send to the center: a header row,
-    // then one row a record.
+    // The records still needed, as CSV to send to the center: a header row, then one row a record.
     copyAll() {
       const cell = (v) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
       const rows = [['Type', 'Host', 'Name', 'Value']]

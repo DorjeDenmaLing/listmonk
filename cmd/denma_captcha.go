@@ -7,9 +7,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// denmaPublicCaptcha is the public form's CAPTCHA check for the public
-// subscription API (/api/public/subscription), which listmonk didn't check
-// The token is a form field, as the form's.
+// denmaPublicCaptcha checks the public form's CAPTCHA token on /api/public/subscription.
 func (a *App) denmaPublicCaptcha(c echo.Context) error {
 	if !a.captcha.IsEnabled() {
 		return nil

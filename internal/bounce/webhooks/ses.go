@@ -149,9 +149,7 @@ func (s *SES) ProcessBounce(b []byte) (models.Bounce, error) {
 	}
 
 	// Look for the campaign ID in headers.
-	// denma: and the subscriber's, which e-mails without a campaign carry
-	// (the sending API's, cmd/denma_api_send.go), so that the hub finds
-	// their center (cmd/denma_bounces.go).
+	// denma: and the subscriber's, for e-mails without a campaign (cmd/denma_bounces.go).
 	campUUID, subUUID := "", ""
 	if !m.Mail.HeadersTruncated {
 		for _, h := range m.Mail.Headers {

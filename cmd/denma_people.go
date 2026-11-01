@@ -1,37 +1,6 @@
 package main
 
-// denma: people, and the centers they're users of. A person signs in once, at
-// /login (cmd/denma_login.go), with their e-mail address or username, their
-// password and, if they've turned it on, a two-factor code, and can be a user
-// of several centers. What signs them in is theirs, kept with the centers'
-// registry (denma.people). What they can do in a center is that center's:
-// their account there is an ordinary listmonk user with its own username,
-// role, list role and status, which the center's admins manage.
-// denma.memberships links the two, and only the hub reads it, so a center
-// doesn't learn of a person's other centers, their roles there, or anyone
-// else's users.
-//
-// A person's account in a center has password login but no password of its
-// own (listmonk's own sign-in can't let them in there), and the center's
-// admins can't change its e-mail address or password. Those are the person's,
-// changed on their Profile page in any of their centers, for all of them, as
-// is two-factor sign-in.
-//
-// New users are added by e-mail address (addMember). Someone new is e-mailed a
-// link to set their password; someone who already has an account is told
-// they can now sign in to this center with it. Either way the admin sees the
-// same, so adding someone doesn't tell them whether that person is another
-// center's user. Deleting a person's account in their last center deletes
-// the person.
-//
-// When a center loads, its users who aren't people yet become people with
-// their own password and two-factor key (adoptPeople). Accounts in different
-// centers with the same e-mail address become one person, who keeps the
-// password of the account adopted first.
-//
-// The hub's users, the superadmins, aren't people. They sign in to the hub
-// with listmonk's sign-in and open centers from there (cmd/denma_hub.go). A
-// username is a superadmin's or a person's, never both.
+// denma: people, who sign in once at /login and can be users of several centers (denma.people).
 
 import (
 	"bytes"
@@ -103,30 +72,27 @@ func denmaInitPeople(db *sqlx.DB) error {
 			PRIMARY KEY (center_id, center_user_id),
 			UNIQUE (person_id, center_id)
 		);
-		-- A person's set-password link (a new person's, or a forgotten
-		-- password's): its SHA-256, so the database can't sign anyone in.
+		-- A person's set-password link, as a SHA-256.
 		CREATE TABLE IF NOT EXISTS denma.person_tokens (
 			person_id  INTEGER PRIMARY KEY REFERENCES denma.people(id) ON DELETE CASCADE,
 			token_hash TEXT NOT NULL,
 			expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 		);
-		-- A person's new e-mail address, until they open the link sent to it
-		-- (DenmaLoginEmail): its token's SHA-256.
+		-- A person's new e-mail address until they open the link sent to it.
 		CREATE TABLE IF NOT EXISTS denma.person_email_changes (
 			person_id  INTEGER PRIMARY KEY REFERENCES denma.people(id) ON DELETE CASCADE,
 			email      TEXT NOT NULL,
 			token_hash TEXT NOT NULL,
 			expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 		);
-		-- Browsers that have signed in to an account (cmd/denma_throttle.go):
-		-- their cookie's SHA-256, and the account's limit key.
+		-- Browsers that have signed in to an account (cmd/denma_throttle.go).
 		CREATE TABLE IF NOT EXISTS denma.login_devices (
 			token_hash TEXT PRIMARY KEY,
 			account    TEXT NOT NULL,
 			created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 			used_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 		);
-		-- Center admins' set-password links, from before people.
+		-- Drops the old invites table.
 		DROP TABLE IF EXISTS denma.invites;`)
 	return err
 }
@@ -187,8 +153,7 @@ func (d *denmaCenters) personByEmail(q sqlx.Queryer, email string) (*denmaPerson
 	return &p, err
 }
 
-// memberships returns a person's accounts, in centers that are enabled, by
-// center name.
+// memberships returns a person's accounts in enabled centers, by center name.
 func (d *denmaCenters) memberships(personID int) ([]denmaMembership, error) {
 	var out []denmaMembership
 	err := d.db().Select(&out, `SELECT m.person_id, m.center_id, m.center_user_id, c.slug, c.name, c.schema_name
@@ -197,8 +162,7 @@ func (d *denmaCenters) memberships(personID int) ([]denmaMembership, error) {
 	return out, err
 }
 
-// allMemberships is memberships in every center, enabled or not, for
-// changes that must reach all of a person's accounts.
+// allMemberships is memberships in every center, enabled or not.
 func (d *denmaCenters) allMemberships(q sqlx.Queryer, personID int) ([]denmaMembership, error) {
 	var out []denmaMembership
 	err := sqlx.Select(q, &out, `SELECT m.person_id, m.center_id, m.center_user_id, c.slug, c.name, c.schema_name
@@ -206,8 +170,7 @@ func (d *denmaCenters) allMemberships(q sqlx.Queryer, personID int) ([]denmaMemb
 	return out, err
 }
 
-// centersOf returns the person's accounts that they can sign in to now: in
-// running centers, and enabled there.
+// centersOf returns the person's accounts they can sign in to now.
 func (d *denmaCenters) centersOf(personID int) ([]denmaMembership, error) {
 	ms, err := d.memberships(personID)
 	if err != nil {
@@ -233,8 +196,7 @@ func (d *denmaCenters) centersOf(personID int) ([]denmaMembership, error) {
 	return out, nil
 }
 
-// usernameTaken reports whether a username is a person's (but personID's)
-// or a superadmin's.
+// usernameTaken reports whether a username is a person's (but personID's) or a superadmin's.
 func (d *denmaCenters) usernameTaken(q sqlx.Queryer, username string, personID int) (bool, error) {
 	var taken bool
 	err := sqlx.Get(q, &taken, `SELECT EXISTS (SELECT 1 FROM denma.people WHERE LOWER(username) = LOWER($1) AND id <> $2)
@@ -243,8 +205,7 @@ func (d *denmaCenters) usernameTaken(q sqlx.Queryer, username string, personID i
 	return taken, err
 }
 
-// freeUsername is username if no one has it, else one made from it and the
-// center's slug that no one has.
+// freeUsername is username if no one has it, else one made from it and the center's slug.
 func (d *denmaCenters) freeUsername(q sqlx.Queryer, username, slug string) (string, error) {
 	uname := username
 	for i := 1; ; i++ {
@@ -259,9 +220,7 @@ func (d *denmaCenters) freeUsername(q sqlx.Queryer, username, slug string) (stri
 	}
 }
 
-// eachAccount runs a statement on every one of a person's accounts, in their
-// centers' schemas: q's S. is the schema, $1 the account's ID, and args the
-// rest.
+// eachAccount runs a statement on each of a person's accounts: q's S. is the schema, $1 the account's ID.
 func (d *denmaCenters) eachAccount(tx *sqlx.Tx, personID int, q string, args ...any) error {
 	ms, err := d.allMemberships(tx, personID)
 	if err != nil {
@@ -275,14 +234,12 @@ func (d *denmaCenters) eachAccount(tx *sqlx.Tx, personID int, q string, args ...
 	return nil
 }
 
-// endSessions signs a person out of all their centers, but for the session
-// keep (in any of them).
+// endSessions signs a person out of all their centers, but for the session keep.
 func (d *denmaCenters) endSessions(tx *sqlx.Tx, personID int, keep string) error {
 	return d.eachAccount(tx, personID, `DELETE FROM S.sessions WHERE data->>'user_id' = $1::TEXT AND id <> $2`, keep)
 }
 
-// setPassword sets a person's password, forgets their set-password link and
-// signs them out everywhere but the session keep.
+// setPassword sets a person's password and signs them out everywhere but the session keep.
 func (d *denmaCenters) setPassword(personID int, password, keep string) error {
 	tx, err := d.db().Beginx()
 	if err != nil {
@@ -301,8 +258,7 @@ func (d *denmaCenters) setPassword(personID int, password, keep string) error {
 	return tx.Commit()
 }
 
-// setTwofa turns a person's two-factor sign-in on (with key) or off (""),
-// and shows it in every one of their accounts.
+// setTwofa turns a person's two-factor sign-in on (with key) or off ("") in every account.
 func (d *denmaCenters) setTwofa(personID int, key string) error {
 	tx, err := d.db().Beginx()
 	if err != nil {
@@ -322,8 +278,7 @@ func (d *denmaCenters) setTwofa(personID int, key string) error {
 	return tx.Commit()
 }
 
-// newToken makes a person's set-password link token, replacing any earlier
-// one.
+// newToken makes a person's set-password link token, replacing any earlier one.
 func (d *denmaCenters) newToken(personID int, ttl time.Duration) (string, error) {
 	token, err := generateRandomString(tmpAuthTokenLen)
 	if err != nil {
@@ -336,8 +291,7 @@ func (d *denmaCenters) newToken(personID int, ttl time.Duration) (string, error)
 	return token, err
 }
 
-// tokenPerson returns the person a set-password link is for, or nil if it's
-// not (or no longer) good.
+// tokenPerson returns the person a set-password link is for, or nil if it's not good.
 func (d *denmaCenters) tokenPerson(email, token string) (*denmaPerson, error) {
 	if email == "" || len(token) < tmpAuthTokenLen {
 		return nil, nil
@@ -362,10 +316,7 @@ func (d *denmaCenters) loginURL() string {
 	return strings.TrimSuffix(d.current().urlCfg.RootURL, "/") + denmaLoginPath
 }
 
-// adoptPeople makes a center's users people, on every load (adopt): each
-// one that isn't one yet, but the superadmins' accounts. Their password and
-// two-factor key move to the person; an account with the e-mail address of
-// someone who's a person already becomes theirs.
+// adoptPeople makes a center's users people, on every load, but the superadmins' accounts.
 func (d *denmaCenters) adoptPeople(c *denmaCenter, db *sqlx.DB) error {
 	var users []struct {
 		ID        int         `db:"id"`
@@ -444,11 +395,7 @@ type denmaInvite struct {
 	Sent bool   // the e-mail went
 }
 
-// addMember makes the person with u's e-mail address (a new one, with u's
-// username and name, if there's none) a user of ctr, as u (its username,
-// name, role, list role and status), and e-mails them: a new person (or one
-// who hasn't set a password yet) a link to set their password, anyone else
-// that they can now sign in to this center.
+// addMember makes the person with u's e-mail address a user of ctr, and e-mails them.
 func (d *denmaCenters) addMember(ctr *denmaCenter, u auth.User) (auth.User, denmaInvite, error) {
 	db := d.db()
 	email := strings.ToLower(strings.TrimSpace(u.Email.String))
@@ -459,8 +406,7 @@ func (d *denmaCenters) addMember(ctr *denmaCenter, u auth.User) (auth.User, denm
 	}
 	isNew := p == nil
 	if isNew {
-		// Their username, or one made from it if someone has it (anywhere:
-		// the center isn't told, nor whose it is); the invite says it.
+		// Their username, or one made from it if someone has it.
 		uname, err := d.freeUsername(db, u.Username, ctr.Slug)
 		if err != nil {
 			return auth.User{}, denmaInvite{}, err
@@ -516,11 +462,7 @@ func (d *denmaCenters) addMember(ctr *denmaCenter, u auth.User) (auth.User, denm
 	return user, inv, nil
 }
 
-// sendInvite e-mails a person who's been made a user of ctr, in its
-// notification look (header and footer from its e-mail templates, which
-// --static-dir may replace wholesale, so the invite itself is defined here,
-// added to them when the center loads: denmaAddInviteTpl): with link, to set
-// their password; without, that they can sign in.
+// sendInvite e-mails a person made a user of ctr: a link to set their password, or that they can sign in.
 func (d *denmaCenters) sendInvite(ctr *denmaCenter, p *denmaPerson, link string) bool {
 	app := ctr.app
 	site := app.ko.String("app.site_name")
@@ -547,7 +489,7 @@ func (d *denmaCenters) sendInvite(ctr *denmaCenter, p *denmaPerson, link string)
 		Subject: subject,
 		Body:    b,
 	}
-	app.denmaSetSystemSender(&msg) // the hub's address until SES has verified the center's (cmd/denma_domains.go)
+	app.denmaSetSystemSender(&msg) // cmd/denma_domains.go
 	if err := app.emailMsgr.Push(msg); err != nil {
 		lo.Printf("denma: error sending the invite to %s: %v", p.Email, err)
 		return false
@@ -555,9 +497,7 @@ func (d *denmaCenters) sendInvite(ctr *denmaCenter, p *denmaPerson, link string)
 	return true
 }
 
-// denmaAddInviteTpl adds the invite to a center's e-mail templates, before
-// they're first used (html/template can't add to, or copy, a set that has
-// been executed).
+// denmaAddInviteTpl adds the invite to a center's e-mail templates, before they're first used.
 func denmaAddInviteTpl(tpls *template.Template) error {
 	_, err := tpls.New("denma-invite").Parse(denmaInviteTpl)
 	return err
@@ -584,9 +524,7 @@ func (a *App) denmaCenterOf() *denmaCenter {
 	return denmaHub.get(a.ko.String("denma.center"))
 }
 
-// denmaMemberOf returns the person whose account in this center the user
-// with this ID is, or nil (an API user, a superadmin's account, the hub, one
-// install).
+// denmaMemberOf returns the person whose account in this center the user with this ID is, or nil.
 func (a *App) denmaMemberOf(userID int) (*denmaPerson, error) {
 	if !a.denmaInCenter() {
 		return nil, nil
@@ -603,18 +541,13 @@ func (a *App) denmaMemberOf(userID int) (*denmaPerson, error) {
 	return &p, nil
 }
 
-// denmaIsMember reports whether a user is a person's account (or might be:
-// on an error, yes), for listmonk's own password reset, which isn't theirs
-// (cmd/auth.go).
+// denmaIsMember reports whether a user is a person's account (yes on an error).
 func (a *App) denmaIsMember(userID int) bool {
 	p, err := a.denmaMemberOf(userID)
 	return p != nil || err != nil
 }
 
-// denmaCheckUserUnique refuses a hub user's username that's a person's
-// (/login tells them apart by username), or that could be a person's e-mail
-// address (an @), which /login would take for the hub user's. An existing
-// user (id) keeps their username. Centers' usernames are their own.
+// denmaCheckUserUnique refuses a hub user's username that's a person's or could be a person's e-mail address.
 func (a *App) denmaCheckUserUnique(u auth.User, id int) error {
 	if denmaHub == nil || a.denmaInCenter() || u.Type == auth.UserTypeAPI {
 		return nil
@@ -634,9 +567,7 @@ func (a *App) denmaCheckUserUnique(u auth.User, id int) error {
 	return nil
 }
 
-// denmaCreateMember adds a user in a center (listmonk's CreateUser, once
-// it's checked the form): a person, by e-mail address (addMember). API users
-// are listmonk's.
+// denmaCreateMember adds a user in a center: a person, by e-mail address (addMember).
 func (a *App) denmaCreateMember(c echo.Context, u auth.User) (bool, error) {
 	ctr := a.denmaCenterOf()
 	if ctr == nil || u.Type == auth.UserTypeAPI {
@@ -650,10 +581,7 @@ func (a *App) denmaCreateMember(c echo.Context, u auth.User) (bool, error) {
 	return true, c.JSON(http.StatusOK, okResp{user})
 }
 
-// denmaUpdateMember saves a person's account in a center (listmonk's
-// UpdateUser, once it's checked the form and that the editor may): its
-// username, name, roles and status. Their e-mail address and password stay
-// theirs. Other users (API users) are listmonk's, and stay API users.
+// denmaUpdateMember saves a person's account in a center: username, name, roles and status.
 func (a *App) denmaUpdateMember(c echo.Context, id int, u auth.User) (bool, error) {
 	if !a.denmaInCenter() {
 		return false, nil
@@ -678,7 +606,7 @@ func (a *App) denmaUpdateMember(c echo.Context, id int, u auth.User) (bool, erro
 	user, err := a.core.UpdateUser(id, auth.User{
 		Username:      u.Username,
 		Name:          u.Name,
-		PasswordLogin: true, // with no password: theirs is the person's
+		PasswordLogin: true, // no password of its own
 		Type:          auth.UserTypeUser,
 		UserRoleID:    u.UserRoleID,
 		ListRoleID:    u.ListRoleID,
@@ -695,8 +623,7 @@ func (a *App) denmaUpdateMember(c echo.Context, id int, u auth.User) (bool, erro
 	return true, c.JSON(http.StatusOK, okResp{user})
 }
 
-// denmaUsersDeleted forgets the deleted users' memberships, and deletes the
-// people who were users of this center only.
+// denmaUsersDeleted forgets the deleted users' memberships and the people who were users of this center only.
 func (a *App) denmaUsersDeleted(ids []int) {
 	if !a.denmaInCenter() {
 		return
@@ -717,8 +644,7 @@ func (a *App) denmaUsersDeleted(ids []int) {
 	}
 }
 
-// denmaProfileReq is a Profile save: listmonk's, with the current password,
-// which changing the e-mail address or the password needs.
+// denmaProfileReq is a Profile save: listmonk's, with the current password.
 type denmaProfileReq struct {
 	auth.User
 	CurrentPassword string `json:"current_password"`
@@ -728,14 +654,7 @@ type denmaProfileReq struct {
 var errDenmaCurrentPassword = echo.NewHTTPError(http.StatusForbidden,
 	"Your current password is needed to change your e-mail address or password.")
 
-// denmaUpdateOwnAccount saves a person's Profile (listmonk's
-// UpdateUserProfile): their name and password, for every one of their
-// centers, and a new e-mail address once they open the link sent to it
-// (DenmaLoginEmail): an address someone typed in isn't theirs until then,
-// and a center adding that address would give them its account (addMember).
-// Changing either needs the current password, so that a session someone
-// else has can't take the account. Others' Profiles (the hub's users,
-// superadmins) need it too, and are listmonk's to save.
+// denmaUpdateOwnAccount saves a person's Profile: name and password for all their centers; a new address once its link is opened.
 func (a *App) denmaUpdateOwnAccount(c echo.Context) (bool, error) {
 	user := auth.GetUser(c)
 	p, err := a.denmaMemberOf(user.ID)
@@ -793,7 +712,7 @@ func (a *App) denmaUpdateOwnAccount(c echo.Context) (bool, error) {
 			return true, denmaInternal(err)
 		}
 	}
-	// Taken or not, the link is sent: the answer doesn't say whose an address is.
+	// Taken or not, the link is sent.
 	if newEmail {
 		if err := a.denmaSendEmailChange(p, email); err != nil {
 			return true, denmaInternal(err)
@@ -815,9 +734,7 @@ func (a *App) denmaUpdateOwnAccount(c echo.Context) (bool, error) {
 	return true, c.JSON(http.StatusOK, okResp{res})
 }
 
-// denmaCheckHubProfile refuses a hub user's Profile save that changes their
-// e-mail address or password without their current password; listmonk
-// saves the rest. It leaves the request's body for listmonk to read.
+// denmaCheckHubProfile refuses a hub user's Profile save that changes their e-mail or password without the current one.
 func (a *App) denmaCheckHubProfile(c echo.Context, user auth.User) (bool, error) {
 	b, err := io.ReadAll(c.Request().Body)
 	if err != nil {
@@ -836,8 +753,7 @@ func (a *App) denmaCheckHubProfile(c echo.Context, user auth.User) (bool, error)
 	return false, nil
 }
 
-// denmaSendEmailChange e-mails a person's new address a link to make it
-// theirs (DenmaLoginEmail), from their first center as denmaSendReset does.
+// denmaSendEmailChange e-mails a person's new address a link to make it theirs (DenmaLoginEmail).
 func (a *App) denmaSendEmailChange(p *denmaPerson, email string) error {
 	token, err := generateRandomString(tmpAuthTokenLen)
 	if err != nil {
@@ -864,12 +780,11 @@ func (a *App) denmaSendEmailChange(p *denmaPerson, email string) error {
 	}
 	subject, body := notifs.GetTplSubject("Confirm your new e-mail address", msg.Bytes())
 	m := models.Message{To: []string{email}, Subject: subject, Body: body}
-	a.denmaSetSystemSender(&m) // the hub's address until SES has verified the center's (cmd/denma_domains.go)
+	a.denmaSetSystemSender(&m) // cmd/denma_domains.go
 	return a.emailMsgr.Push(m)
 }
 
-// denmaEnableTOTP turns on a person's two-factor sign-in, for every one of
-// their centers (listmonk's EnableTOTP, once it has the secret and code).
+// denmaEnableTOTP turns on a person's two-factor sign-in for every one of their centers.
 func (a *App) denmaEnableTOTP(c echo.Context, secret, code, password string) (bool, error) {
 	p, err := a.denmaMemberOf(auth.GetUser(c).ID)
 	if err != nil || p == nil {
@@ -890,8 +805,7 @@ func (a *App) denmaEnableTOTP(c echo.Context, secret, code, password string) (bo
 	return true, c.JSON(http.StatusOK, okResp{true})
 }
 
-// denmaDisableTOTP turns off a person's two-factor sign-in, with their
-// password (listmonk's DisableTOTP, once it has the password).
+// denmaDisableTOTP turns off a person's two-factor sign-in, with their password.
 func (a *App) denmaDisableTOTP(c echo.Context, password string) (bool, error) {
 	p, err := a.denmaMemberOf(auth.GetUser(c).ID)
 	if err != nil || p == nil {
@@ -909,8 +823,7 @@ func (a *App) denmaDisableTOTP(c echo.Context, password string) (bool, error) {
 	return true, c.JSON(http.StatusOK, okResp{true})
 }
 
-// denmaPersonPassword is nil if password is the person's, else wrong (or the
-// error of too many wrong ones, cmd/denma_throttle.go).
+// denmaPersonPassword is nil if password is the person's, else wrong (or the throttle's error).
 func (a *App) denmaPersonPassword(personID int, password string, wrong error) error {
 	ok, err := denmaCurrentPassword("person:"+strconv.Itoa(personID), func() (bool, error) { return denmaHub.passwordOK(personID, password) })
 	switch {
@@ -926,8 +839,7 @@ func (a *App) denmaPersonPassword(personID int, password string, wrong error) er
 	return nil
 }
 
-// denmaHubPassword is nil if password is the hub user's, else wrong (or the
-// error of too many wrong ones).
+// denmaHubPassword is nil if password is the hub user's, else wrong (or the throttle's error).
 func (a *App) denmaHubPassword(user auth.User, password string, wrong error) error {
 	ok, err := denmaCurrentPassword("hub:"+strconv.Itoa(user.ID), func() (bool, error) {
 		_, err := a.core.LoginUser(user.Username, password)
@@ -950,8 +862,7 @@ func (d *denmaCenters) passwordOK(personID int, password string) (bool, error) {
 	return ok, err
 }
 
-// denmaTOTPIssuer is the name authenticator apps show for the code: for a
-// person, the hub's, as the code is for all their centers.
+// denmaTOTPIssuer is the name authenticator apps show for the code.
 func (a *App) denmaTOTPIssuer() string {
 	if a.denmaInCenter() {
 		return denmaHub.current().cfg.SiteName
@@ -959,8 +870,7 @@ func (a *App) denmaTOTPIssuer() string {
 	return a.cfg.SiteName
 }
 
-// initDenmaPeopleHandlers registers switching centers (in a center) and the
-// hub's People page and its API.
+// initDenmaPeopleHandlers registers switching centers and the hub's People page and API.
 func initDenmaPeopleHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/switch/:slug"), a.DenmaSwitchCenter)
 	g.GET(path.Join(uriAdmin, "/people"), a.ViewDenmaPeople)
@@ -970,8 +880,7 @@ func initDenmaPeopleAPIHandlers(g *echo.Group, a *App) {
 	g.DELETE("/api/denma/people/:id/twofa", hasID(a.DenmaPersonTwofaOff))
 }
 
-// DenmaSwitchCenter signs a person into another of their centers, from the
-// menu under their picture (partials/denma/topnav.html).
+// DenmaSwitchCenter signs a person into another of their centers.
 func (a *App) DenmaSwitchCenter(c echo.Context) error {
 	p, err := a.denmaMemberOf(auth.GetUser(c).ID)
 	if err != nil {
@@ -995,9 +904,7 @@ func (a *App) DenmaSwitchCenter(c echo.Context) error {
 	return echo.NewHTTPError(http.StatusNotFound, "You're not a user of that center, or your account there is disabled.")
 }
 
-// enter signs someone into a center as their account there, and records it
-// in the center's activity log. It doesn't say where they came from (another
-// of their centers): that's not the center's to know.
+// enter signs someone into a center as their account there, and records it in its activity log.
 func (d *denmaCenters) enter(c echo.Context, m denmaMembership) (*denmaCenter, error) {
 	ctr := d.get(m.Slug)
 	if ctr == nil {
@@ -1010,8 +917,7 @@ func (d *denmaCenters) enter(c echo.Context, m denmaMembership) (*denmaCenter, e
 	if user.Status != auth.UserStatusEnabled {
 		return nil, echo.NewHTTPError(http.StatusForbidden, "Your account in that center is disabled.")
 	}
-	// The center's session cookie (its auth names it for the center), and
-	// the admin at /admin shows it (cmd/denma_place.go).
+	// The center's session cookie, and the admin at /admin shows it (cmd/denma_place.go).
 	if err := ctr.app.auth.SaveSession(user, "", c); err != nil {
 		return nil, err
 	}
@@ -1033,8 +939,7 @@ type denmaOtherCenter struct {
 	Name string `db:"name" json:"name"`
 }
 
-// denmaOtherCenters lists, for the menu under a person's picture, their
-// other centers than slug's, where userID is their account.
+// denmaOtherCenters lists the person's other centers than slug's, for their menu.
 func denmaOtherCenters(slug string, userID int) []denmaOtherCenter {
 	if denmaHub == nil || slug == "" {
 		return nil
@@ -1071,8 +976,7 @@ type denmaPeopleView struct {
 	People []denmaPersonRow
 }
 
-// ViewDenmaPeople renders the hub's People page (views/denma-people.html):
-// everyone who signs in at /login, their centers and their role in each.
+// ViewDenmaPeople renders the hub's People page: everyone who signs in at /login.
 func (a *App) ViewDenmaPeople(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {
@@ -1083,7 +987,7 @@ func (a *App) ViewDenmaPeople(c echo.Context) error {
 		return denmaInternal(err)
 	}
 
-	// Their accounts, from every center that has people: one query.
+	// Their accounts, from every center that has people.
 	var centers []struct {
 		ID     int    `db:"id"`
 		Slug   string `db:"slug"`
@@ -1126,8 +1030,7 @@ func (a *App) ViewDenmaPeople(c echo.Context) error {
 	})
 }
 
-// DenmaPersonTwofaOff turns off a person's two-factor sign-in, for someone
-// who has lost their phone.
+// DenmaPersonTwofaOff turns off a person's two-factor sign-in, for someone who lost their phone.
 func (a *App) DenmaPersonTwofaOff(c echo.Context) error {
 	d, err := a.hub(c)
 	if err != nil {

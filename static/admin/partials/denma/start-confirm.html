@@ -1,8 +1,4 @@
-{{/*
-	denma: the confirmation before a campaign is started or scheduled, with
-	what's about to be sent and to how many (assets/js/denma-start.js,
-	cmd/denma_start.go). In the campaign page and the Campaigns list.
-*/}}
+{{/* denma: the confirmation before a campaign is started or scheduled (cmd/denma_start.go). */}}
 {{ define "denma-start-confirm" -}}
 <dialog class="denma-start-confirm" x-ref="startDialog" @close="denmaStartDone(false)" data-testid="start-confirm">
 	<template x-if="startConfirm">

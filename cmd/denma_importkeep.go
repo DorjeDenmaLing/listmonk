@@ -1,14 +1,6 @@
 package main
 
-// denma: what the import's preview (cmd/denma_importpreview.go) keeps and
-// limits, so that a large file doesn't take the server's memory:
-//
-//   - one preview at a time in the process (denmaPreviewTurn, as image
-//     uploads are: cmd/denma_media.go);
-//   - the file is read from the upload as a stream, never whole into memory;
-//   - the page uploads a file once: it's kept in a temp file for a few
-//     minutes (one per person and center), and the page then sends only a
-//     token and the settings. The import, or a new file, ends it.
+// denma: what the import's preview (cmd/denma_importpreview.go) keeps and limits.
 
 import (
 	"context"
@@ -45,8 +37,7 @@ var (
 	denmaPreviewSlots = make(chan struct{}, denmaPreviewsMax)
 )
 
-// denmaPreviewWait waits for the center's turn, and gives the way to end it, or
-// the context's error if it ends first.
+// denmaPreviewWait waits for the center's turn and returns the way to end it.
 func denmaPreviewWait(ctx context.Context, center string) (func(), error) {
 	t, _ := denmaPreviewTurns.LoadOrStore(center, make(chan struct{}, 1))
 	turn := t.(chan struct{})
@@ -86,8 +77,7 @@ func denmaKeptKey(center string, user int) string {
 	return fmt.Sprintf("%s/%d", center, user)
 }
 
-// dirOK makes the folder for the files, and clears the old ones in it the
-// first time.
+// dirOK makes the folder for the files and clears the old ones in it.
 func (k *denmaKeptFiles) dirOK() error {
 	if k.dir != "" {
 		return nil
@@ -106,8 +96,7 @@ func (k *denmaKeptFiles) dirOK() error {
 	return nil
 }
 
-// put keeps the file read from src for key, in place of its last, and gives
-// its token.
+// put keeps the file read from src for key, and gives its token.
 func (k *denmaKeptFiles) put(key, name string, src io.Reader) (string, error) {
 	k.mu.Lock()
 	err := k.dirOK()
@@ -163,8 +152,7 @@ func (k *denmaKeptFiles) put(key, name string, src io.Reader) (string, error) {
 	}
 }
 
-// open opens the file kept for key with the token (and keeps it longer), or
-// is false if there's none.
+// open opens the file kept for key with the token, or is false if there's none.
 func (k *denmaKeptFiles) open(key, token string) (*os.File, *denmaKeptFile, bool) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -206,10 +194,7 @@ func (k *denmaKeptFiles) expire(key string, f *denmaKeptFile) {
 	}
 }
 
-// denmaPreviewForm reads a preview's request, as multipart/form-data, without
-// holding the file in memory: its settings (params), and the file, which is
-// kept and given a token, or the token of one kept already. The file is
-// opened, and its name and token are given.
+// denmaPreviewForm reads a preview's multipart request: its settings, and the file or its token.
 func (a *App) denmaPreviewForm(c echo.Context, key string) (params string, f *os.File, name, token string, err error) {
 	mr, err := c.Request().MultipartReader()
 	if err != nil {

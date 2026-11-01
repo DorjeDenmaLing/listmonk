@@ -1,7 +1,4 @@
-// denma: the hub's Centers page (views/denma-centers.html): every center with
-// its subscribers and its sending for a date range (as on the dashboard,
-// views/denma-hub.js), to open, enable or disable. ?status= (running,
-// starting, error, disabled) opens it filtered.
+// denma: the hub's Centers page (views/denma-centers.html).
 import Alpine from 'alpinejs';
 import { api, urls } from '../main.js';
 import * as s from '../denma-stats.js';

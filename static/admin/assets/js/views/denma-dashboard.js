@@ -1,16 +1,4 @@
-// denma: "Campaign performance" and "Bounces and complaints" at the top of the
-// dashboard (partials/denma/dashboard.html), for a date range compared with the
-// previous period of the same length. Campaigns count in the period they
-// started sending.
-//   Total sends        sum of campaigns' sent counts
-//   Delivery rate      (sent - bounces) / sent; complaints were delivered
-//   Open rate          unique openers per campaign / delivered
-//   Click rate         unique clickers per campaign / delivered
-//   Clicks per opens   unique clickers / unique openers
-//   Unsubscribed rate  people who unsubscribed in the period (not bounce
-//                      removals) / delivered
-// Bounce rates divide by the same sends. Health bands follow Amazon SES: it
-// reviews an account at a 5% bounce or 0.1% complaint rate.
+// denma: "Campaign performance" and "Bounces and complaints" for a date range, against the one before.
 import Alpine from 'alpinejs';
 import { urls } from '../main.js';
 import * as s from '../denma-stats.js';

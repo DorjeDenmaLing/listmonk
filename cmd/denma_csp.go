@@ -1,31 +1,6 @@
 package main
 
-// denma: Content-Security-Policy. Centers share the hub's domain, so a
-// center's content shown there as a page would run as whoever views it: a
-// superadmin's hub session (every center's settings and users), and the
-// session of any other center they're signed into. Center admins write
-// campaign and template HTML and can upload any file, so:
-//
-//   - Admin pages, the hub's and the centers', run only the admin's own
-//     scripts: its files, and its inline <script>s, which carry a nonce made
-//     for each page (CSPNonce, cmd/public.go). Event-handler attributes
-//     (onerror=…), javascript: links and scripts in frames a page's content
-//     adds don't run, wherever center HTML is shown in the admin (the rich
-//     text and visual editors). Alpine still evaluates its own attributes (it
-//     needs 'unsafe-eval'), so the rich text editor's content is x-ignore
-//     (partials/richtext-editor.html). They also fetch, post and stream
-//     only from the site (connect-src, form-action).
-//   - Public pages (sign-in, opt-in, unsubscribe...) show the center's
-//     design, so they run only the app's scripts too, with a nonce of their
-//     own (denmaPublicCSP), and the captchas'.
-//   - Pages that show center content (previews, view in browser for
-//     campaigns and automations, the archive, uploads) are sandboxed: no
-//     scripts, and an origin of their own, so nothing in them acts as the
-//     viewer. A script upload is served as text, so that no page on the
-//     origin runs it ('self').
-//
-// And the admin API takes no changes sent from another site
-// (denmaSameSite), which the session cookie would make the admin's.
+// denma: Content-Security-Policy, sandboxing of center content, and the admin API's same-site check.
 
 import (
 	"crypto/rand"
@@ -39,8 +14,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// denmaAdminCSP sets an admin page's policy and returns its nonce, for its
-// inline <script>s.
+// denmaAdminCSP sets an admin page's policy and returns its nonce for inline <script>s.
 func denmaAdminCSP(c echo.Context) string {
 	nonce := denmaNonce()
 	c.Response().Header().Set("Content-Security-Policy", "script-src 'self' 'nonce-"+nonce+"' 'unsafe-eval'; "+
@@ -48,10 +22,7 @@ func denmaAdminCSP(c echo.Context) string {
 	return nonce
 }
 
-// denmaPublicCSP adds a public page's policy and returns its nonce, for its
-// inline <script>s. It's added, so that a sandboxed page keeps its sandbox.
-// Its forms post only here and it frames only the captcha (no sign-in
-// lookalike, no framed admin), but a sandboxed page keeps its forms.
+// denmaPublicCSP adds a public page's policy (keeping any sandbox) and returns its nonce.
 func denmaPublicCSP(c echo.Context) string {
 	nonce := denmaNonce()
 	h := c.Response().Header()
@@ -71,10 +42,7 @@ func denmaNonce() string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
-// denmaSameSite refuses a change to the admin API (/api, but its public
-// routes) sent from another site: an Origin, or with none a Referer, that
-// isn't this site (a sandboxed page's is "null"). Requests with neither, from
-// programs, go through.
+// denmaSameSite refuses a change to the admin API (not its public routes) sent from another site.
 func denmaSameSite(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		r := c.Request()
@@ -97,19 +65,13 @@ func denmaSameSite(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// denmaSandboxPolicy keeps a page to itself: no scripts or plugins, an origin
-// of its own, and links, forms and new windows as usual.
+// denmaSandboxPolicy keeps a page to itself: no scripts or plugins, its own origin.
 const denmaSandboxPolicy = "sandbox allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation; object-src 'none'"
 
-// reDenmaContentPath matches the paths, under the hub's or a center's root,
-// that show campaign, automation or template HTML: the admin's previews, view
-// in browser (campaigns', and automations', cmd/denma_automations.go), and the
-// public archive. Any ID segment, not only digits: one the route takes in
-// another form ("+5") must not escape it.
+// reDenmaContentPath matches the paths that show campaign, automation or template HTML, any ID segment.
 var reDenmaContentPath = regexp.MustCompile(`^/(api/campaigns/[^/]+/(preview|preview/archive|text)|api/templates/([^/]+/)?preview|campaign/[^/]+/[^/]+|automation/[^/]+/[^/]+|archive|archive\.xml|archive/.+)$`)
 
-// denmaDigits is a route's :id if it's digits only, else "" (strconv.Atoi
-// takes "+5", which the paths above wouldn't match).
+// denmaDigits is a route's :id if it's digits only, else "".
 func denmaDigits(s string) string {
 	if strings.Trim(s, "0123456789") != "" {
 		return ""
@@ -117,10 +79,7 @@ func denmaDigits(s string) string {
 	return s
 }
 
-// denmaSandbox sandboxes the response to a request for p (under app's root)
-// if it shows content: a content path, or one of app's uploads, which may be
-// any file (HTML or SVG with scripts included). PDFs aren't: browsers won't
-// show them sandboxed, and their scripts don't run as the page.
+// denmaSandbox sandboxes the response for p if it shows content: a content path or an upload (not PDFs).
 func denmaSandbox(app *App, h http.Header, p string) {
 	upload := denmaUploadPath(app, p)
 	if !reDenmaContentPath.MatchString(p) && !upload {
@@ -136,7 +95,7 @@ func denmaSandbox(app *App, h http.Header, p string) {
 		return
 	}
 	if upload {
-		// An upload's forms post nowhere: no sign-in page on our domain.
+		// An upload's forms post nowhere.
 		h.Set("Content-Security-Policy", denmaSandboxPolicy+"; form-action 'none'")
 		return
 	}
@@ -150,8 +109,7 @@ var denmaUploadShown = map[string]bool{
 	".zip": true, ".doc": true, ".docx": true, ".xls": true, ".xlsx": true, ".ppt": true, ".pptx": true,
 }
 
-// denmaUploadPath reports whether p is one of app's uploads, served by it
-// (filesystem, or S3 through it).
+// denmaUploadPath reports whether p is one of app's uploads (filesystem, or S3 through it).
 func denmaUploadPath(app *App, p string) bool {
 	if app == nil {
 		return false

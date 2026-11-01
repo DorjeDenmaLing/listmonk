@@ -1,33 +1,6 @@
 package main
 
-// denma: signing up again after unsubscribing. Unsubscribing blocklists
-// someone in the center (cmd/denma_unsubscribe.go), and listmonk then leaves
-// them out of every sign-up. Here, someone blocklisted who signs up again
-// themselves, on the public form or a sign-up webhook, is sent a
-// confirmation e-mail, and stays blocklisted until they confirm. Confirming
-// (listmonk's opt-in link and page, with the link's token,
-// cmd/denma_optintoken.go) takes them off the blocklist and subscribes them
-// to the lists they signed up for, not those they left.
-//
-// Those who complained, hard-bounced or failed the domain check
-// (cmd/denma_emailcheck.go) aren't sent one. Someone who complained never
-// comes back (cmd/denma_optouts.go); an admin can enable those who bounced.
-//
-// Sign-up webhooks (cmd/denma_signup.go) do the same; a Server webhook with
-// "confirmed" (the caller vouches that they ticked the box themselves, as
-// rg-sync's Retreat Guru registrations do) re-subscribes them at once,
-// without the e-mail.
-//
-// Everything else that adds someone (imports, admins' list changes, other API
-// calls) leaves a blocklisted subscriber out, as listmonk does: under CASL,
-// an e-mail asking for consent again has to be one they asked for. An admin
-// can send the confirmation from the subscriber's page when they've asked
-// for it (/api/denma/subscribers/resubscribe), without a consent record:
-// confirming is theirs.
-//
-// An address is sent at most one such e-mail a day (and counts towards the
-// opt-in limit, cmd/denma_optins.go); a sign-up in between adds its lists to
-// the one sent. The link works for denmaResubTTL.
+// denma: re-subscribing someone who unsubscribed, once they confirm by e-mail.
 
 import (
 	"database/sql"
@@ -60,8 +33,7 @@ const (
 	denmaResubNotBlocked = "not_blocklisted"
 )
 
-// denmaResubscribeSQL makes the pending re-subscriptions' table, in a center
-// (denmaFeaturesSQL).
+// denmaResubscribeSQL makes the pending re-subscriptions' table, in a center (denmaFeaturesSQL).
 const denmaResubscribeSQL = `
 CREATE TABLE IF NOT EXISTS denma_resubscribes (
     subscriber_id INTEGER PRIMARY KEY REFERENCES subscribers(id) ON DELETE CASCADE,
@@ -70,14 +42,12 @@ CREATE TABLE IF NOT EXISTS denma_resubscribes (
     sent_at       TIMESTAMP WITH TIME ZONE NULL,
     created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
--- When an address was last sent the e-mail: by address, as deleting and
--- adding them again starts a new denma_resubscribes row.
+-- When an address was last sent the e-mail, by address.
 CREATE TABLE IF NOT EXISTS denma_resub_sent (
     email_hash TEXT PRIMARY KEY,
     sent_at    TIMESTAMP WITH TIME ZONE NOT NULL
 );
--- When each subscriber was last blocklisted (since features version 46): a
--- Server webhook's consent must be newer than an admin's blocklisting.
+-- When each subscriber was last blocklisted.
 CREATE TABLE IF NOT EXISTS denma_blocklisted_at (
     subscriber_id INTEGER PRIMARY KEY REFERENCES subscribers(id) ON DELETE CASCADE,
     at            TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
@@ -97,8 +67,7 @@ CREATE TRIGGER denma_note_blocklisted_update AFTER UPDATE OF status ON subscribe
     FOR EACH ROW WHEN (NEW.status = 'blocklisted' AND OLD.status IS DISTINCT FROM NEW.status) EXECUTE FUNCTION denma_note_blocklisted();
 `
 
-// denmaResubscribe starts a blocklisted subscriber's re-subscription to
-// listIDs, sending them the confirmation e-mail.
+// denmaResubscribe starts a blocklisted subscriber's re-subscription to listIDs, sending the e-mail.
 func (a *App) denmaResubscribe(sub models.Subscriber, listIDs []int, attribs map[string]any) (string, error) {
 	if sub.Status != models.SubscriberStatusBlockListed {
 		return denmaResubNotBlocked, nil
@@ -134,8 +103,7 @@ func (a *App) denmaResubscribe(sub models.Subscriber, listIDs []int, attribs map
 	if row.SentAt.Valid && time.Since(row.SentAt.Time) < denmaResubEvery {
 		return denmaResubAlready, nil
 	}
-	// Claim the address's e-mail for the day at once, so two requests can't
-	// both send; given back if it isn't sent.
+	// Claims the address's e-mail for the day, given back if it isn't sent.
 	claimed, prev, err := a.denmaResubClaim(sub.Email)
 	if err != nil {
 		return "", err
@@ -154,8 +122,7 @@ func (a *App) denmaResubscribe(sub models.Subscriber, listIDs []int, attribs map
 	if err != nil {
 		return "", err
 	}
-	// Through the opt-in checks: the shared blocklist (nothing sent), the
-	// domain check and the opt-in limit.
+	// Through the opt-in checks: shared blocklist, domain check and opt-in limit.
 	send := denmaCheckOptin(func(sub models.Subscriber, _ []int) (int, error) {
 		return 1, a.denmaSendResub(sub, lists)
 	}, a.db, a.ko)
@@ -172,10 +139,7 @@ func (a *App) denmaResubscribe(sub models.Subscriber, listIDs []int, attribs map
 	return denmaResubSent, nil
 }
 
-// denmaResubClaim takes an address's re-subscription e-mail for the day, if
-// it hasn't had one in denmaResubEvery: whether it did, and the time it was
-// last sent before (to give the claim back). Rows older than that are
-// dropped.
+// denmaResubClaim takes an address's e-mail for the day, returning whether it did and the last send.
 func (a *App) denmaResubClaim(email string) (bool, sql.NullTime, error) {
 	var out []struct {
 		Prev sql.NullTime `db:"prev"`
@@ -204,9 +168,7 @@ func (a *App) denmaResubUnclaim(email string, prev sql.NullTime) {
 	}
 }
 
-// denmaResubRefused says why a blocklisted subscriber can't subscribe again,
-// or "" if they can: a complaint (denmaResubComplained) or an address that
-// can't receive mail (denmaResubBounced) keeps them out.
+// denmaResubRefused says why a blocklisted subscriber can't subscribe again, or "" if they can.
 func (a *App) denmaResubRefused(sub models.Subscriber) (string, error) {
 	var why struct {
 		Complained bool `db:"complained"`
@@ -240,8 +202,7 @@ func (a *App) denmaListsByID(ids pq.Int64Array) ([]models.List, error) {
 	return lists, err
 }
 
-// denmaSendResub sends the confirmation: listmonk's opt-in e-mail, with the
-// lists signed up for.
+// denmaSendResub sends the confirmation: listmonk's opt-in e-mail, with the lists signed up for.
 func (a *App) denmaSendResub(sub models.Subscriber, lists []models.List) error {
 	q := url.Values{}
 	for _, l := range lists {
@@ -256,8 +217,7 @@ func (a *App) denmaSendResub(sub models.Subscriber, lists []models.List) error {
 	return a.notifs.Notify([]string{sub.Email}, a.i18n.T("subscribers.optinSubject")+": "+a.ko.String("app.site_name"), notifs.TplSubscriberOptin, out, hdr)
 }
 
-// denmaResubPending is a blocklisted subscriber's pending re-subscription's
-// lists, if they have one that hasn't expired.
+// denmaResubPending is a blocklisted subscriber's unexpired pending re-subscription lists.
 func (a *App) denmaResubPending(subID int) ([]models.List, models.JSON, error) {
 	var row struct {
 		ListIDs pq.Int64Array `db:"list_ids"`
@@ -276,10 +236,7 @@ func (a *App) denmaResubPending(subID int) ([]models.List, models.JSON, error) {
 	return lists, row.Attribs, err
 }
 
-// denmaResubOptin is listmonk's opt-in page (OptinPage) for a blocklisted
-// subscriber with a pending re-subscription: its lists to confirm, and
-// confirming, or that the link is out of date. done is false for anyone else,
-// whom listmonk's page handles.
+// denmaResubOptin is listmonk's opt-in page for a blocklisted subscriber's pending re-subscription.
 func (a *App) denmaResubOptin(c echo.Context, subUUID string, confirm bool) (bool, error) {
 	if !reUUID.MatchString(subUUID) {
 		return false, nil
@@ -333,11 +290,7 @@ func denmaListIDs(lists []models.List) []int {
 	return ids
 }
 
-// denmaResubMore is the lists, besides ids, that confirming a subscriber's
-// re-subscription to ids also subscribes them to: those active automations
-// add them to, that they unsubscribed from (an automation never re-adds
-// someone who unsubscribed, which this confirmation undoes). The page asks
-// them to confirm the center's e-mails, not lists, which are internal.
+// denmaResubMore is the extra lists confirming a re-subscription also subscribes them to.
 func (a *App) denmaResubMore(subID int, ids []int) ([]int, error) {
 	more := []int{}
 	if !denmaAutomationsOn(a) {
@@ -352,11 +305,7 @@ func (a *App) denmaResubMore(subID int, ids []int) ([]int, error) {
 	return more, err
 }
 
-// denmaResubConfirm takes a subscriber off the blocklist and confirms their
-// subscriptions to lists: each is made unconfirmed, then confirmed, as an
-// opt-in is, so that automations that confirming them sets off run
-// (cmd/denma_automations.go), such as the one moving website signups on. own:
-// they confirmed it themselves (attribs.consent_confirmed_at).
+// denmaResubConfirm unblocklists a subscriber and confirms lists; own: they confirmed it themselves.
 func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta models.JSON, own bool, consentAt ...time.Time) error {
 	ids := denmaListIDs(lists)
 	more, err := a.denmaResubMore(subID, ids)
@@ -381,8 +330,7 @@ func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta mo
 			return err
 		}
 	}
-	// A consent is only good for what came before it: they may have
-	// unsubscribed since it was read.
+	// Refuses a consent dated before an opt-out made since it was read.
 	if len(consentAt) > 0 {
 		var newer bool
 		if err := tx.Get(&newer, `WITH s AS (SELECT email FROM subscribers WHERE id = $1 FOR UPDATE)
@@ -393,10 +341,7 @@ func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta mo
 			return errDenmaResubStale
 		}
 	}
-	// Their opt-out goes (cmd/denma_optouts.go), and their address's
-	// variants': confirming is their consent, from the same mailbox. A
-	// complaint's stays, and enabling them is refused. So does the fence on
-	// those the API added (cmd/denma_noconsent.go).
+	// Their opt-out goes (cmd/denma_optouts.go), and their address variants'; a complaint's stays.
 	if _, err := tx.Exec(`DELETE FROM denma_optouts o USING subscribers s WHERE s.id = $1 AND o.kind = 'unsubscribed'
 		AND (o.email_hash = denma_email_hash(s.email) OR o.canon_hash = denma_canon_hash(s.email))`, subID); err != nil {
 		return err
@@ -405,8 +350,7 @@ func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta mo
 		WHERE email_hash = (SELECT denma_email_hash(email) FROM subscribers WHERE id = $1)`, subID); err != nil {
 		return err
 	}
-	// Their first consent (consent_at, consent_source) is kept, if they have
-	// one: resubscribed_at records this one.
+	// Their first consent is kept if they have one; resubscribed_at records this one.
 	if _, err := tx.Exec(`UPDATE subscribers s SET status = 'enabled', updated_at = NOW(),
 		attribs = x.b || $2::JSONB || jsonb_strip_nulls(jsonb_build_object('consent_at', x.b->'consent_at', 'consent_source', x.b->'consent_source'))
 		FROM (SELECT CASE WHEN jsonb_typeof(attribs) = 'object' THEN attribs ELSE '{}'::JSONB END AS b FROM subscribers WHERE id = $1) x
@@ -433,10 +377,7 @@ func (a *App) denmaResubConfirm(subID int, lists []models.List, attribs, meta mo
 	return tx.Commit()
 }
 
-// denmaResubForm is the public form's (and API's) sign-up of an existing
-// subscriber who's blocklisted (processSubForm), to the lists listUUIDs.
-// Whatever became of it, they're told to check their e-mail: whoever typed
-// the address isn't told why someone was blocklisted.
+// denmaResubForm is the public form's sign-up of a blocklisted subscriber to lists listUUIDs.
 func (a *App) denmaResubForm(sub models.Subscriber, listUUIDs []string) (bool, error) {
 	var ids []int
 	if err := a.db.Select(&ids, `SELECT id FROM lists WHERE uuid = ANY($1::UUID[])`, pq.Array(listUUIDs)); err != nil {
@@ -457,10 +398,7 @@ func initDenmaResubscribeHandlers(g *echo.Group, a *App) {
 	g.POST("/api/denma/subscribers/resubscribe", a.auth.Perm(a.DenmaResubscribe, "subscribers:manage"))
 }
 
-// DenmaResubscribe sends someone who's blocklisted, and asked an admin for
-// it, the re-subscription confirmation: {email, list_ids}. It says what
-// became of it (status: sent, already_sent, complained, bounced or
-// not_blocklisted).
+// DenmaResubscribe sends the re-subscription confirmation {email, list_ids} and says what became of it.
 func (a *App) DenmaResubscribe(c echo.Context) error {
 	var req struct {
 		Email   string `json:"email"`
@@ -491,8 +429,7 @@ func (a *App) DenmaResubscribe(c echo.Context) error {
 		}
 		return err
 	}
-	// Within the admins' daily cap (cmd/denma_consentcap.go), given back if
-	// nothing is sent.
+	// Within the admins' daily cap (cmd/denma_consentcap.go), given back if nothing is sent.
 	claim, err := a.denmaConsentClaim("resubscribe")
 	if err != nil {
 		return err

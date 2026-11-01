@@ -1,9 +1,4 @@
-{{/*
-	denma: the campaign's plain-text version, in place of listmonk's switch
-	(partials/campaign-content.html) when the center makes it automatically
-	(cmd/denma_features.go; assets/js/denma-campaign.js). It's folded away
-	under its title until opened.
-*/}}
+{{/* denma: the campaign's folded plain-text version (cmd/denma_features.go). */}}
 {{ define "denma-plain-text" -}}
 <template x-if="canEdit && form.content_type !== 'plain'">
 	<details class="denma-plain-text" data-testid="plain-text">

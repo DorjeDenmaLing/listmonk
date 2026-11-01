@@ -485,7 +485,7 @@ func initUrlConfig(ko *koanf.Koanf) *UrlConfig {
 	// It's used as the base path for all admin/static asset URLs.
 	var rootPath string
 	if u, err := url.Parse(root); err == nil {
-		rootPath = strings.TrimSuffix(u.Path, "/") + "/" // denma: was "/" + path, giving "//c/x" under a subpath
+		rootPath = strings.TrimSuffix(u.Path, "/") + "/" // denma: no double slash under a subpath
 	}
 
 	return &UrlConfig{
@@ -875,7 +875,7 @@ func initNotifs(fs stuffbin.FileSystem, i *i18n.I18n, em *email.Emailer, u *UrlC
 		lo.Println("system e-mail templates are plaintext")
 	}
 
-	return notifs.New(notifs.Opt{ // denma: was notifs.Initialize
+	return notifs.New(notifs.Opt{ // denma: one notifier per center
 		FromEmail:    ko.String("app.from_email"),
 		SystemEmails: ko.Strings("app.notify_emails"),
 		ContentType:  contentType,
@@ -1001,19 +1001,14 @@ func initHTTPServer(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.Fi
 	return srv
 }
 
-// initHTTPRouter sets up the app's HTTP routes without starting a listener.
-// denma: split out of initHTTPServer so that each center gets a router; reads
-// the app's own config.
+// denma: initHTTPRouter sets up an app's routes without a listener, one router per center.
 func initHTTPRouter(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.FileSystem, app *App) *echo.Echo {
 	ko := app.ko
 
 	// Initialize the HTTP server.
 	var srv = echo.New()
 	srv.HideBanner = true
-	// denma: a client's IP (RealIP: the activity log, opt-in IPs) is taken
-	// from X-Forwarded-For only when the request comes from a proxy on a
-	// private or loopback address (the web server); any other client's is its
-	// own address, whatever headers it sends.
+	// denma: X-Forwarded-For is trusted only from private or loopback proxies.
 	srv.IPExtractor = echo.ExtractIPFromXFFHeader()
 
 	// Register app (*App) to be injected into all HTTP handlers.
@@ -1461,7 +1456,7 @@ func initAuth(co *core.Core, db *sql.DB, ko *koanf.Koanf) (bool, *auth.Auth) {
 			Type:          auth.UserTypeAPI,
 		}
 		u.UserRole.ID = auth.SuperAdminRoleID
-		denmaLegacyAPIUser(u) // denma: was a.CacheAPIUser(u) (cmd/denma_noapiusers.go)
+		denmaLegacyAPIUser(u) // denma: cmd/denma_noapiusers.go
 
 		lo.Println(`WARNING: Remove the admin_username and admin_password fields from the TOML configuration file. If you are using APIs, create and use new credentials. Users are now managed via the Admin -> Settings -> Users dashboard.`)
 	}

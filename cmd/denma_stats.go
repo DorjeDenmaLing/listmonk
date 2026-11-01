@@ -1,11 +1,6 @@
 package main
 
-// denma: the subscriber figures behind the dashboard and Analytics
-// (assets/js/denma-stats.js, views/denma-analytics.js). They used to be SQL
-// sent from the browser to the subscribers API; SQL queries are off now
-// (cmd/denma_search.go), so each figure is named here and its SQL stays on
-// the server. A `search` (cmd/denma_search.go) narrows any of them, such as
-// to a mailbox provider's domains.
+// denma: the subscriber figures behind the dashboard and Analytics, each named here with its SQL.
 
 import (
 	"fmt"
@@ -20,18 +15,14 @@ import (
 	"github.com/lib/pq"
 )
 
-// Subscribed to a list, other than waiting on a double opt-in: a website
-// signup on a double opt-in holding list isn't a subscriber until it confirms.
+// Subscribed to a list, other than waiting on a double opt-in.
 const denmaNotPendingSQL = `subscribers.id IN (SELECT sl.subscriber_id FROM subscriber_lists sl JOIN lists l ON l.id = sl.list_id
 	WHERE NOT (l.optin = 'double' AND sl.status = 'unconfirmed'))`
 
-// denmaOwnUnsubSQL is an opt-out (denma_optouts) that's someone's own
-// unsubscribe, not an import's or a complaint.
+// denmaOwnUnsubSQL is an opt-out (denma_optouts) that's someone's own unsubscribe.
 const denmaOwnUnsubSQL = `kind = 'unsubscribed' AND source = 'unsubscribe'`
 
-// denmaStatSQL is a figure's SQL condition. from and to bound the period
-// (for new, unsub and removed); campaign is the campaign (for received, opens
-// and clicks).
+// denmaStatSQL is a figure's SQL condition, bounded by from and to, or by campaign.
 func denmaStatSQL(metric string, from, to time.Time, campaign int) (string, error) {
 	var (
 		f       = pq.QuoteLiteral(from.UTC().Format(time.RFC3339Nano)) + "::TIMESTAMPTZ"
@@ -64,8 +55,7 @@ func denmaStatSQL(metric string, from, to time.Time, campaign int) (string, erro
 		}
 		return between("subscribers.created_at") + " AND " + denmaNotPendingSQL, nil
 
-	// Unsubscribed themselves in the period: their opt-out
-	// (cmd/denma_optouts.go), not a list row an admin's add or a move made.
+	// Unsubscribed themselves in the period: their opt-out (cmd/denma_optouts.go).
 	case "unsub":
 		if err := needPeriod(); err != nil {
 			return "", err
@@ -81,8 +71,7 @@ func denmaStatSQL(metric string, from, to time.Time, campaign int) (string, erro
 			" AND (subscribers.status = 'blocklisted' OR NOT EXISTS (SELECT 1 FROM subscriber_lists sl" +
 			" WHERE sl.subscriber_id = subscribers.id AND sl.status <> 'unsubscribed'))", nil
 
-	// Sent the campaign: on one of its lists when it started (confirmed, if
-	// the list is double opt-in), and not blocklisted before then.
+	// Sent the campaign: on one of its lists when it started (confirmed if double opt-in), not blocklisted then.
 	case "received":
 		if err := needCampaign(); err != nil {
 			return "", err
@@ -111,11 +100,7 @@ func denmaStatSQL(metric string, from, to time.Time, campaign int) (string, erro
 	return "", fmt.Errorf("unknown figure %q", metric)
 }
 
-// DenmaStatSubscribers returns the subscribers in a figure, like the
-// subscribers API: { total, results } (per_page=1 for just the total).
-//
-//	GET /api/denma/stats/subscribers?metric=new&from=<RFC 3339>&to=...&search=...&per_page=all
-//	GET /api/denma/stats/subscribers?metric=opens&campaign=12&search=domain:gmail.com
+// DenmaStatSubscribers returns the subscribers in a figure: { total, results }.
 func (a *App) DenmaStatSubscribers(c echo.Context) error {
 	var (
 		user = auth.GetUser(c)
@@ -176,11 +161,7 @@ const denmaStatPageMax = 1000
 // denmaGrowthEdgesMax is the most bucket edges DenmaStatGrowth takes.
 const denmaGrowthEdgesMax = 400
 
-// DenmaStatGrowth counts the new, unsub and removed figures of a period, in
-// the buckets between its edges: unsub by their opt-out's date, removed by
-// their first bounce in the period.
-//
-//	GET /api/denma/stats/growth?from=<RFC 3339>&to=...&edge=...&edge=...
+// DenmaStatGrowth counts the new, unsub and removed figures of a period, per bucket.
 func (a *App) DenmaStatGrowth(c echo.Context) error {
 	qp := c.QueryParams()
 	bad := func(msg string) error { return echo.NewHTTPError(http.StatusBadRequest, msg) }
@@ -258,9 +239,7 @@ func (a *App) DenmaStatGrowth(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// denmaProvidersSQL is, by provider, who received, opened and clicked each
-// campaign in $1, as the received, opens and clicks figures count them, of the
-// subscribers on a list in $2 (all if empty).
+// denmaProvidersSQL is, by provider, who received, opened and clicked each campaign in $1.
 const denmaProvidersSQL = `WITH camp AS (
 	SELECT id, started_at, max_subscriber_id FROM campaigns WHERE id = ANY($1::INT[])
 ), prov AS MATERIALIZED (
@@ -282,13 +261,7 @@ SELECT 'active', 0, p.provider, COUNT(*) FROM subscribers JOIN prov p ON p.id = 
 UNION ALL
 SELECT 'unsub', 0, p.provider, COUNT(*) FROM subscribers JOIN prov p ON p.id = subscribers.id WHERE UNSUB GROUP BY 3`
 
-// DenmaStatProviders returns the Mailbox providers figures in one request:
-// active subscribers and unsubscribes in the period, by provider, and each
-// campaign's received, opens and clicks by provider.
-//
-//	GET /api/denma/stats/providers?id=12&id=13&from=<RFC 3339>&to=...
-//	{ "active": { "gmail": 120, ..., "other": 80 }, "unsub": {...},
-//	  "campaigns": { "12": { "received": {...}, "opens": {...}, "clicks": {...} } } }
+// DenmaStatProviders returns the Mailbox providers figures in one request.
 func (a *App) DenmaStatProviders(c echo.Context) error {
 	var (
 		user = auth.GetUser(c)
@@ -339,15 +312,7 @@ func (a *App) DenmaStatProviders(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
-// DenmaUntrackedCampaigns returns the IDs of the campaigns whose opens are
-// counted only in total, not per subscriber: all their views are without one
-// (sent while individual tracking was off, as before production turned it
-// on), or they started before Maintenance deleted the center's analytics. A
-// deleted subscriber's views are anonymous too, but leave a campaign with
-// others counted. Open and click rates leave them out (denma-stats.js
-// isTracked), as the hub's figures do (denmaTrackedCampSQL).
-//
-//	GET /api/denma/stats/untracked
+// DenmaUntrackedCampaigns returns the IDs of campaigns whose opens are counted only in total.
 func (a *App) DenmaUntrackedCampaigns(c echo.Context) error {
 	ids := []int{}
 	if err := a.db.Select(&ids, `SELECT id FROM (

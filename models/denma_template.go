@@ -22,18 +22,14 @@ const DenmaTplTimeMax = 5 * time.Second
 // ErrDenmaTplTime is returned when a template runs longer than DenmaTplTimeMax.
 var ErrDenmaTplTime = errors.New("the template took over 5 seconds")
 
-// A render past denmaTplFreeTime runs for denmaTplRunTime in each
-// denmaTplRunTime + denmaTplPauseTime.
+// A render past denmaTplFreeTime runs for denmaTplRunTime in each denmaTplRunTime + denmaTplPauseTime.
 const (
 	denmaTplFreeTime  = 100 * time.Millisecond
 	denmaTplRunTime   = 10 * time.Millisecond
 	denmaTplPauseTime = 90 * time.Millisecond
 )
 
-// DenmaTplBuffer is a bytes.Buffer for rendering templates, which slows a long
-// render, and stops it at DenmaTplOutputMax or DenmaTplTimeMax. The time is
-// checked at each write, including those of the empty texts that
-// DenmaTplGuardHTML adds.
+// DenmaTplBuffer is a bytes.Buffer for rendering templates that slows and then limits a render.
 type DenmaTplBuffer struct {
 	bytes.Buffer
 	start, paused time.Time
@@ -68,8 +64,7 @@ func (b *DenmaTplBuffer) Reset() {
 // ErrDenmaTplLoop is returned for a template that calls itself.
 var ErrDenmaTplLoop = errors.New("a template can't call itself")
 
-// DenmaTplGuardHTML passes on Parse's or AddParseTree's result, failing if the
-// templates call each other in a loop, and adding the time checks.
+// DenmaTplGuardHTML passes on a parse result, failing on template loops and adding time checks.
 func DenmaTplGuardHTML(t *template.Template, err error) (*template.Template, error) {
 	if err != nil {
 		return t, err
@@ -105,9 +100,7 @@ func denmaTplGuard(trees map[string]*parse.Tree) error {
 	return nil
 }
 
-// denmaTplAddChecks starts l and the lists inside it (loops' bodies among
-// them) with an empty text, whose write checks the render's time. A list that
-// has one is left as it is.
+// denmaTplAddChecks starts each list with an empty text whose write checks the render's time.
 func denmaTplAddChecks(l *parse.ListNode) {
 	if l == nil {
 		return

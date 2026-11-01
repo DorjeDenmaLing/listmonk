@@ -1,6 +1,4 @@
-// denma: campaign calendar (views/denma-calendar.html). Campaigns come from
-// /api/campaigns with the user's own session, so they're limited to the
-// lists the user can see.
+// denma: campaign calendar (views/denma-calendar.html), from /api/campaigns with the user's own session.
 import Alpine from 'alpinejs';
 import { api, urls } from '../main.js';
 
@@ -25,8 +23,7 @@ function dayKey(d) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
-// The day a campaign belongs on: when it went out for sent/sending ones,
-// its scheduled time for scheduled ones and drafts that have a send date.
+// The day a campaign belongs on: when it went out, or its scheduled time.
 function whenOf(c) {
   const t = (c.status === 'scheduled' || c.status === 'draft')
     ? c.send_at
@@ -50,9 +47,7 @@ function component() {
       await this.loadHours();
     },
 
-    // With sending hours on, scheduled campaigns outside them go when they
-    // open, and running ones wait if they're closed now: the scheduled ones
-    // are shown then (cmd/denma_sendwindow_next.go).
+    // With sending hours on, scheduled ones are shown when they open (cmd/denma_sendwindow_next.go).
     async loadHours() {
       const now = new Date();
       const waiting = this.campaigns.filter((c) => (c.status === 'scheduled' && c.when) || c.status === 'running');
