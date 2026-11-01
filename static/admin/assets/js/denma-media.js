@@ -191,12 +191,17 @@ export function denmaMedia() {
       }
     },
 
-    // Asks before a file is deleted, saying what shows it (cmd/denma_mediause.go).
+    // Asks before a file is deleted, saying what shows it; a file in campaigns sent or on their way isn't (cmd/denma_mediause.go).
     async denmaConfirmDelete(id) {
       let uses;
+      let sent;
       try {
-        uses = (await api('media', `/denma/media/${id}/uses`)).uses;
+        ({ uses, sent } = await api('media', `/denma/media/${id}/uses`));
       } catch (err) {
+        return false;
+      }
+      if (sent && sent.length) {
+        u.toast(`This file is in e-mails sent or on their way, by ${sent.join('; ')}, so it can't be deleted.`, 'error', 8000);
         return false;
       }
       if (!uses.length) return u.confirm();
