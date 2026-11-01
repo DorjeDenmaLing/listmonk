@@ -65,7 +65,7 @@ function denmaAutomation() {
 
   return {
     denmaTagAutocomplete,
-    ...denmaUnsaved({ save() { return this.onSubmit(); } }),
+    ...denmaUnsaved({ skip: ['active'], save() { return this.onSubmit(); } }), // the switch saves active itself
     init() {
       this.denmaUnsavedInit();
     },

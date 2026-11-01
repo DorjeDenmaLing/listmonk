@@ -65,6 +65,7 @@ function denmaCenter() {
         utm_domains: this.utm.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean),
       };
       const res = await api('center', '/denma/center', 'PUT', data);
+      this.denmaSaved();
       if (!res.reloading) {
         u.toast('Saved. The center is sending a campaign; the changes apply when it has finished.', 'success');
         return;
