@@ -1,4 +1,4 @@
-> **This is Listmonk Shambhala, a fork.** It runs many Shambhala centers in one process, each in its own schema, on the `ddl` branch. Its own code is in `denma_*` files. What follows, and `docs/`, is upstream listmonk's and doesn't describe the fork.
+> **This is Listmonk Shambhala, a fork.** It runs many Shambhala centers in one process, each in its own schema, on the `ddl` branch. Its own code is in `denma_*` files. What follows is upstream listmonk's and doesn't describe the fork.
 
 <a href="https://zerodha.tech"><img src="https://zerodha.tech/static/images/github-badge.svg" align="right" /></a>
 
