@@ -104,7 +104,7 @@ func TestDenmaPNGToJPEG(t *testing.T) {
 	if err != nil || out.jpeg || out.heavy == 0 {
 		t.Fatalf("%d KB transparent PNG that doesn't compress: jpeg %v, refused %v (err %v)", len(heavy)>>10, out.jpeg, out.heavy > 0, err)
 	}
-	if _, _, _, err := (&App{}).denmaMediaStore("a.png", "image/png", out); err == nil {
+	if _, _, _, err := (&App{}).denmaMediaStore("a.png", "image/png", out, bytes.NewReader(heavy)); err == nil {
 		t.Errorf("it isn't refused on upload")
 	}
 }

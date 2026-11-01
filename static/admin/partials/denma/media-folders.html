@@ -74,14 +74,33 @@
 	<template x-if="shown">
 		<div class="dialog-card content">
 			<header class="dialog-head hstack justify-between">
-				<h4 class="dialog-title denma-break" x-text="shown.filename"></h4>
-				<span class="text-light text-8" x-text="`${shownIndex + 1} of ${denmaFiles.length}`"></span>
+				<template x-if="!renaming">
+					<div class="hstack gap-1 denma-media-name">
+						<h4 class="dialog-title denma-break" x-text="denmaName(shown)" data-testid="media-name"></h4>
+						{{- if .CanManage }}
+						<button type="button" class="ghost small icon" aria-label="Rename" title="Rename" @click="denmaStartRename()" data-testid="btn-rename">{{ Icon "edit-2" }}</button>
+						{{- end }}
+					</div>
+				</template>
+				{{- if .CanManage }}
+				<template x-if="renaming">
+					<form class="denma-media-rename" @submit.prevent="denmaRename()">
+						<span class="hstack gap-2">
+							<input x-model="renameTo" maxlength="200" required aria-label="Name" autocomplete="off" x-init="$el.focus(); $el.select()" @keydown.escape.stop.prevent="renaming = false" data-testid="media-label" />
+							<button type="submit" class="small" data-variant="primary" :disabled="!renameTo.trim() || renameBusy" :aria-busy="renameBusy" data-testid="btn-save-name">{{ $root.L.T "globals.buttons.save" }}</button>
+							<button type="button" class="small outline" @click="renaming = false">{{ $root.L.T "globals.buttons.cancel" }}</button>
+						</span>
+						<small data-hint>Only the name shown in Media changes: the file keeps its address, so e-mails still show it.</small>
+					</form>
+				</template>
+				{{- end }}
+				<span class="text-light text-8" x-show="!renaming" data-testid="media-position" x-text="`${shownIndex + 1} of ${denmaFiles.length}`"></span>
 			</header>
 			<section class="dialog-body denma-media-preview-body">
 				<button type="button" class="ghost icon denma-media-step" aria-label="Previous" title="Previous (←)" :disabled="shownIndex === 0" @click="denmaStep(-1)" data-testid="btn-prev">{{ Icon "chevron-left" }}</button>
 				<div class="denma-media-preview-view">
 					<template x-if="denmaIsImage(shown)">
-						<img :src="shown.url" :alt="shown.filename" @load="denmaMeasure($event.target)" />
+						<img :src="shown.url" :alt="denmaName(shown)" @load="denmaMeasure($event.target)" />
 					</template>
 					<template x-if="!denmaIsImage(shown)">
 						<span class="denma-media-preview-ext" x-text="denmaExt(shown.filename)"></span>
@@ -112,7 +131,7 @@
 				<span class="hstack gap-3">
 					<a :href="shown.url" target="_blank" rel="noopener noreferrer" class="button outline small" data-testid="btn-open">{{ Icon "open-in-new" "denma-icons.svg" }} Open in a new tab</a>
 					{{- if .CanManage }}
-					<button type="button" class="outline small" data-variant="danger" @click="onDelete(shown.id, shown.filename)" data-testid="btn-preview-delete">{{ Icon "trash-2" }} {{ $root.L.T "globals.buttons.delete" }}</button>
+					<button type="button" class="outline small" data-variant="danger" @click="onDelete(shown.id, denmaName(shown))" data-testid="btn-preview-delete">{{ Icon "trash-2" }} {{ $root.L.T "globals.buttons.delete" }}</button>
 					{{- end }}
 					<button type="button" class="small" @click="$refs.denmaPreview.close()">{{ $root.L.T "globals.buttons.close" }}</button>
 				</span>

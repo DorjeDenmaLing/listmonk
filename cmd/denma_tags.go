@@ -54,8 +54,8 @@ const denmaPreviewTextMax = 200
 
 // denmaInstallColumns adds the columns on a new install, before the queries are prepared.
 func denmaInstallColumns(db *sqlx.DB) {
-	if _, err := db.Exec(denmaCampaignColumnsSQL); err != nil {
-		lo.Fatalf("denma: error adding the campaign tags column and failed sends: %v", err)
+	if _, err := db.Exec(denmaCampaignColumnsSQL + denmaMediaLabelSQL); err != nil {
+		lo.Fatalf("denma: error adding the campaign tags column, failed sends and media labels: %v", err)
 	}
 }
 

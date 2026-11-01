@@ -67,20 +67,20 @@ func (v denmaMediaView) FolderName() string {
 	return ""
 }
 
-// denmaQueryMedia is listmonk's media query, in a folder or in none.
+// denmaQueryMedia is listmonk's media query, by label or name, in a folder or in none.
 func (a *App) denmaQueryMedia(folder, query string, offset, limit int) ([]media.Media, int, error) {
-	if folder == "" {
-		return a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, query, offset, limit)
-	}
 	in := `EXISTS (SELECT 1 FROM denma_media_folder_files f WHERE f.media_id = m.id AND f.folder_id = $5)`
 	id, _ := strconv.Atoi(folder)
-	if folder == "none" {
+	switch folder {
+	case "":
+		in, id = `$5 = 0`, 0
+	case "none":
 		in = `NOT EXISTS (SELECT 1 FROM denma_media_folder_files f WHERE f.media_id = m.id) AND $5 = 0`
 		id = 0
 	}
 	out := []media.Media{}
 	if err := a.db.Select(&out, `SELECT COUNT(*) OVER () AS total, m.* FROM media m
-		WHERE ($1 = '' OR m.filename ILIKE $1) AND m.provider = $2 AND `+in+`
+		WHERE (m.denma_label ILIKE $1 OR m.filename ILIKE $1) AND m.provider = $2 AND `+in+`
 		ORDER BY m.created_at DESC OFFSET $3 LIMIT $4`,
 		"%"+strings.ToLower(query)+"%", a.cfg.MediaUpload.Provider, offset, limit, id); err != nil {
 		return nil, 0, echo.NewHTTPError(http.StatusInternalServerError,
@@ -257,7 +257,8 @@ func initDenmaMediaFolderHandlers(g *echo.Group, a *App) {
 	g.PUT("/api/denma/media/folders/:id", pm(hasID(a.DenmaRenameMediaFolder), "media:manage"))
 	g.DELETE("/api/denma/media/folders/:id", pm(hasID(a.DenmaDeleteMediaFolder), "media:manage"))
 	g.PUT("/api/denma/media/folder", pm(a.DenmaMoveMedia, "media:manage"))
-	g.GET("/api/denma/media/:id/uses", pm(hasID(a.DenmaMediaUses), "media:manage")) // cmd/denma_mediause.go
+	g.GET("/api/denma/media/:id/uses", pm(hasID(a.DenmaMediaUses), "media:manage"))    // cmd/denma_mediause.go
+	g.PUT("/api/denma/media/:id/label", pm(hasID(a.DenmaRenameMedia), "media:manage")) // cmd/denma_medianames.go
 }
 
 // plural is one or many, by n.

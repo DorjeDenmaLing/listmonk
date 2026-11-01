@@ -21,6 +21,8 @@ export async function denmaToFolder(ids) {
 
 // Uploaded PNGs saved as JPEGs: [chosen name, stored name].
 const converted = [];
+// Uploads already in Media: [chosen name, its name there].
+const existing = [];
 // Uploads that failed: "name: why".
 const failed = [];
 
@@ -30,16 +32,22 @@ export function denmaUploadFailed(file, err) {
   return null;
 }
 
-// denmaUploaded is an uploaded file's ID (null if none), noting a PNG saved as a JPEG.
+// denmaUploaded is an uploaded file's ID (null if none, or already in Media), noting a PNG saved as a JPEG.
 export function denmaUploaded(file, m) {
   if (!m) return null;
-  if (/\.png$/i.test(file.name) && /\.jpg$/i.test(m.filename || '')) converted.push([file.name, m.filename]);
+  const name = m.label || m.filename || '';
+  if (m.existing) {
+    existing.push([file.name, name]);
+    return null;
+  }
+  if (/\.png$/i.test(file.name) && /\.jpg$/i.test(name)) converted.push([file.name, name]);
   return m.id;
 }
 
 // denmaUploadToast is the toast after an upload, naming failures and PNGs saved as JPEGs, or null.
 export function denmaUploadToast() {
   const lines = [...failed];
+  existing.forEach(([chosen, name]) => lines.push(chosen === name ? `${chosen} is already in Media.` : `${chosen} is already in Media, as ${name}.`));
   if (converted.length === 1) {
     lines.push(`${converted[0][0]} was saved as ${converted[0][1]}: PNGs over 1 MB are saved as JPEGs, which are much smaller.`);
   } else if (converted.length) {
@@ -48,6 +56,7 @@ export function denmaUploadToast() {
   if (!lines.length) return null;
   const toast = { message: lines.join(' '), variant: failed.length ? 'danger' : 'info', duration: failed.length ? 15000 : 10000 };
   converted.length = 0;
+  existing.length = 0;
   failed.length = 0;
   return toast;
 }
@@ -63,10 +72,14 @@ export function denmaMedia() {
     shownInfo: { dims: '', size: '' },
     moved: false,
     folderEdit: { id: 0, name: '', busy: false },
+    renaming: false,
+    renameTo: '',
+    renameBusy: false,
 
     niceDate: u.niceDate,
     denmaIsImage: (m) => (m.content_type || '').startsWith('image/'),
     denmaExt: (name) => (name.split('.').pop() || '').toUpperCase(),
+    denmaName: (m) => m.label || m.filename,
 
     // ---- The preview.
 
@@ -80,6 +93,7 @@ export function denmaMedia() {
     },
 
     denmaShow(i) {
+      this.renaming = false;
       this.shownIndex = i;
       this.shown = this.denmaFiles[i];
       const m = this.shown;
@@ -106,6 +120,30 @@ export function denmaMedia() {
       this.shown = null;
       // Files moved out of the folder shown, and the counts, are as they were.
       if (this.moved) u.reload();
+    },
+
+    // ---- Renaming: the label only, not the file's address (cmd/denma_medianames.go).
+
+    denmaStartRename() {
+      this.renameTo = this.denmaName(this.shown);
+      this.renameBusy = false;
+      this.renaming = true;
+    },
+
+    async denmaRename() {
+      const m = this.shown;
+      this.renameBusy = true;
+      let out;
+      try {
+        out = await api('media', `/denma/media/${m.id}/label`, 'PUT', { label: this.renameTo });
+      } catch (err) {
+        this.renameBusy = false;
+        return;
+      }
+      m.label = out.label;
+      this.renaming = false;
+      this.moved = true;
+      u.toast(`Renamed ${out.label}`);
     },
 
     denmaFolderOf(id) {

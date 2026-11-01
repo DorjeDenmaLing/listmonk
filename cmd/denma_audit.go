@@ -186,7 +186,7 @@ func denmaAuditTarget(a *App, c echo.Context, route string) (string, string) {
 		"templates":   `SELECT name FROM templates WHERE id = $1`,
 		"subscribers": `SELECT email FROM subscribers WHERE id = $1`,
 		"users":       `SELECT username FROM users WHERE id = $1`,
-		"media":       `SELECT filename FROM media WHERE id = $1`,
+		"media":       `SELECT COALESCE(NULLIF(denma_label, ''), filename) FROM media WHERE id = $1`,
 		"roles":       `SELECT name FROM roles WHERE id = $1`,
 		"automations": `SELECT name FROM denma_automations WHERE id = $1`,
 		"people":      `SELECT username FROM denma.people WHERE id = $1`,
@@ -768,6 +768,8 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return fmt.Sprintf(verb+" %s", strings.Join(tags, ", "), who)
 	case "POST /api/denma/media/folders": // cmd/denma_mediafolders.go
 		return fmt.Sprintf("Added the media folder %q", str("name"))
+	case "PUT /api/denma/media/:id/label": // cmd/denma_medianames.go
+		return fmt.Sprintf("Renamed media file %s to %q", target, denmaMediaLabel(str("label")))
 	case "PUT /api/denma/media/folders/:id":
 		return fmt.Sprintf("Renamed media folder %s to %q", target, str("name"))
 	case "DELETE /api/denma/media/folders/:id":

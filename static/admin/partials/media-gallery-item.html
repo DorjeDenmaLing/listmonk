@@ -26,22 +26,22 @@
 {{- $canManage := .CanManage -}}
 {{- $m := .Media -}}
 <figure class="card">
-	<a class="thumb" href="{{ $m.URL }}" {{ if $picker }}@click.prevent="onPick({{ ToJSON $m }})"{{ else }}target="_blank" rel="noopener noreferrer" @click="denmaPreview($event, {{ $m.ID }})" @dragstart="denmaDrag($event, {{ $m.ID }})"{{ end }} title="{{ $m.Filename }}">{{/* denma: a click previews it, dragging it moves it to a folder (denma-media.js) */}}
+	<a class="thumb" href="{{ $m.URL }}" {{ if $picker }}@click.prevent="onPick({{ ToJSON $m }})"{{ else }}target="_blank" rel="noopener noreferrer" @click="denmaPreview($event, {{ $m.ID }})" @dragstart="denmaDrag($event, {{ $m.ID }})"{{ end }} title="{{ $m.Name }}">{{/* denma: a click previews it, dragging it moves it to a folder (denma-media.js); its label */}}
 		{{- if $m.ThumbURL.Valid }}
-			<img src="{{ $m.ThumbURL.String }}" alt="{{ $m.Filename }}" />
+			<img src="{{ $m.ThumbURL.String }}" alt="{{ $m.Name }}" />{{/* denma: its label */}}
 		{{- else }}
 			<span class="ext">{{ $m.Filename | ext | trimPrefix "." | upper }}</span>
 		{{- end }}
 	</a>
 	<figcaption>
-		<span class="filename" title="{{ $m.Filename }}">{{ $m.Filename }}</span>
+		<span class="filename" title="{{ $m.Name }}">{{ $m.Name }}</span>{{/* denma: its label */}}
 		<span class="text-light text-8">{{ NiceDate $m.CreatedAt }}</span>
 	</figcaption>
 	{{- if $canManage }}
 		<ot-dropdown class="actions">
 			<button popovertarget="media-actions-{{ $m.ID }}" type="button" class="ghost small icon" aria-label="{{ $root.L.T "globals.buttons.more" }}">{{ Icon "more-vertical" }}</button>
 			<menu popover id="media-actions-{{ $m.ID }}">
-				<button type="button" role="menuitem" class="ghost" data-variant="danger" data-cy="btn-delete" @click.prevent="onDelete({{ $m.ID }}, {{ ToJSON $m.Filename }})">{{ Icon "trash-2" }} {{ $root.L.T "globals.buttons.delete" }}</button>
+				<button type="button" role="menuitem" class="ghost" data-variant="danger" data-cy="btn-delete" @click.prevent="onDelete({{ $m.ID }}, {{ ToJSON $m.Name }})">{{/* denma: its label */}}{{ Icon "trash-2" }} {{ $root.L.T "globals.buttons.delete" }}</button>
 			</menu>
 		</ot-dropdown>
 	{{- end }}

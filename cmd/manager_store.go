@@ -106,9 +106,9 @@ func (s *store) GetAttachment(mediaID int) (models.Attachment, error) {
 	}
 
 	return models.Attachment{
-		Name:    m.Filename,
+		Name:    denmaAttachmentName(m), // denma: its label (cmd/denma_medianames.go)
 		Content: b,
-		Header:  manager.MakeAttachmentHeader(m.Filename, "base64", m.ContentType),
+		Header:  manager.MakeAttachmentHeader(denmaAttachmentName(m), "base64", m.ContentType), // denma
 	}, nil
 }
 

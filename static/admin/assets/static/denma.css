@@ -2709,6 +2709,25 @@ dialog.denma-media-preview {
     }
   }
 
+  .denma-media-name {
+    min-width: 0;
+  }
+
+  .denma-media-rename {
+    flex: 1;
+    min-width: 0;
+
+    input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    small {
+      display: block;
+      margin-block-start: var(--space-1);
+    }
+  }
+
   .denma-media-preview-ext {
     font-size: var(--text-4, 2rem);
     font-weight: 600;

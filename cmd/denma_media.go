@@ -86,27 +86,25 @@ type denmaMedia struct {
 	width, height int
 	jpeg          bool  // a PNG saved as a JPEG
 	heavy         int64 // bytes of a PNG with transparency still over denmaMediaPNGToJPEG: refused
+	label         string
 }
 
-// denmaMediaStore is the name and content type to store an upload under (.jpg for a PNG saved as a JPEG).
-func (a *App) denmaMediaStore(fName, contentType string, m denmaMedia) (string, string, denmaMedia, error) {
+// denmaMediaStore is the name and content type to store an upload under: a hash of what's stored (.jpg for a PNG saved as a JPEG), with fName its label.
+func (a *App) denmaMediaStore(fName, contentType string, m denmaMedia, src io.ReadSeeker) (string, string, denmaMedia, error) {
 	if m.heavy > 0 {
 		return "", "", m, echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(
 			"This PNG has transparent parts and would still be %.1f MB at %d px, too large for e-mails. Save it without transparency (it will be stored as a JPEG) or make it smaller, and upload it again.",
 			float64(m.heavy)/(1<<20), denmaMediaMaxSize))
 	}
-	if !m.jpeg {
-		return fName, contentType, m, nil
+	if m.jpeg {
+		fName, contentType = strings.TrimSuffix(fName, filepath.Ext(fName))+".jpg", "image/jpeg"
 	}
-	name := strings.TrimSuffix(fName, filepath.Ext(fName)) + ".jpg"
-	if _, err := a.core.GetMedia(0, "", name, a.media); err == nil {
-		suffix, err := generateRandomString(6)
-		if err != nil {
-			return fName, contentType, denmaMedia{}, nil
-		}
-		name = appendSuffixToFilename(name, suffix)
+	m.label = denmaMediaLabel(fName)
+	name, err := denmaHashName(m.reader(src), filepath.Ext(fName))
+	if _, serr := src.Seek(0, io.SeekStart); err != nil || serr != nil {
+		return "", "", m, echo.NewHTTPError(http.StatusInternalServerError, a.i18n.Ts("media.errorReadingFile", "error", fmt.Sprint(err, serr)))
 	}
-	return name, "image/jpeg", m, nil
+	return name, contentType, m, nil
 }
 
 // reader is what to store.

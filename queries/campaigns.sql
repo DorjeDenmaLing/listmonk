@@ -45,7 +45,8 @@ camp AS (
 ),
 med AS (
     INSERT INTO campaign_media (campaign_id, media_id, filename)
-        (SELECT (SELECT id FROM camp), id, filename FROM media WHERE id=ANY($20::INT[]))
+        -- denma. A file's label (cmd/denma_medianames.go).
+        (SELECT (SELECT id FROM camp), id, COALESCE(NULLIF(denma_label, ''), filename) FROM media WHERE id=ANY($20::INT[]))
 ),
 insLists AS (
     INSERT INTO campaign_lists (campaign_id, list_id, list_name)
@@ -446,7 +447,8 @@ med AS (
 ),
 medi AS (
     INSERT INTO campaign_media (campaign_id, media_id, filename)
-        (SELECT $1 AS campaign_id, id, filename FROM media WHERE id=ANY($19::INT[]))
+        -- denma. A file's label (cmd/denma_medianames.go).
+        (SELECT $1 AS campaign_id, id, COALESCE(NULLIF(denma_label, ''), filename) FROM media WHERE id=ANY($19::INT[]))
         ON CONFLICT (campaign_id, media_id) DO NOTHING
 )
 INSERT INTO campaign_lists (campaign_id, list_id, list_name)

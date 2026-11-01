@@ -142,9 +142,12 @@ func (a *App) UploadMedia(c echo.Context) error {
 	}
 
 	// Upload the file to the media store.
-	opt := a.denmaOptimizeImage(fName, ext, src)                                               // denma: cmd/denma_media.go
-	if fName, contentType, opt, err = a.denmaMediaStore(fName, contentType, opt); err != nil { // denma: a PNG saved as a JPEG is .jpg; a large transparent one refused
+	opt := a.denmaOptimizeImage(fName, ext, src)                                                                           // denma: cmd/denma_media.go
+	if fName, contentType, opt, err = a.denmaMediaStore(filepath.Base(file.Filename), contentType, opt, src); err != nil { // denma: a hashed name, labelled; a PNG saved as a JPEG is .jpg; a large transparent one refused
 		return err
+	}
+	if m, ok := a.denmaMediaHave(fName); ok { // denma: the same contents again are the file in Media (cmd/denma_medianames.go)
+		return c.JSON(http.StatusOK, okResp{m})
 	}
 	fName, err = a.media.Put(fName, contentType, opt.reader(src))
 	if err != nil {
@@ -215,6 +218,7 @@ func (a *App) UploadMedia(c echo.Context) error {
 		cleanUp = true
 		return err
 	}
+	m = a.denmaLabelMedia(m, opt.label) // denma: the name it was uploaded with (cmd/denma_medianames.go)
 
 	return c.JSON(http.StatusOK, okResp{m})
 }

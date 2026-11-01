@@ -498,7 +498,7 @@ function component(camp, sel) {
         }
       } else if (t === 'attach' && !this.form.media.some((x) => x.id === m.id)) {
         this.form.media.push(new MediaTag({
-          id: m.id, filename: m.filename, url: m.url, thumb_url: m.thumb_url, created_at: m.created_at,
+          id: m.id, filename: m.label || m.filename, url: m.url, thumb_url: m.thumb_url, created_at: m.created_at, // denma: its label
         }));
       }
 

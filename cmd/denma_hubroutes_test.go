@@ -113,6 +113,7 @@ var denmaHubRoutes = []string{
 	"POST /webhooks/service/:service",
 	"PUT /api/denma/centers/:slug/status",
 	"PUT /api/denma/mcp/connector",
+	"PUT /api/denma/media/:id/label",
 	"PUT /api/denma/media/folder",
 	"PUT /api/denma/media/folders/:id",
 	"PUT /api/profile",
