@@ -22,13 +22,13 @@ jobs:
       REPO: ${{ github.repository }}
       FINISHED: ${{ github.event.workflow_run.updated_at }}
     steps:
-      - name: Delete the deploys' runs and deployment records
+      - name: Delete earlier runs and the deployment records
         run: |
           set -eu
           runs() {
             gh api --paginate "repos/$REPO/actions/workflows/$1/runs?status=completed" --jq '.workflow_runs[].id'
           }
-          for id in $(runs denma-deploy.yml); do
+          for id in $(runs denma-deploy.yml) $(runs denma-ci.yml); do
             gh api -X DELETE "repos/$REPO/actions/runs/$id" --silent
           done
           for id in $(gh api --paginate "repos/$REPO/deployments?environment=production" \

@@ -1,14 +1,7 @@
-# denma: checks every push and pull request to ddl, and every deploy first
-# (denma-deploy.yml): builds the fork, vets it, runs the tests, starts it in
-# multi-center mode (the hub and a new center, DDL) and checks
-# /health/centers, and looks for known vulnerabilities.
+# denma: the checks every deploy runs first (denma-deploy.yml), and a weekly vulnerability scan.
 name: DDL checks
 
 on:
-  push:
-    branches: [ddl]
-  pull_request:
-    branches: [ddl]
   workflow_call:
   workflow_dispatch:
   schedule:
