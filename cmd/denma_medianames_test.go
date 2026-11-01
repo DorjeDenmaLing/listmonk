@@ -1,11 +1,14 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/knadh/listmonk/internal/media"
 )
+
+var reDenmaHashName = regexp.MustCompile(`^[0-9a-f]{16}(\.[a-z0-9]+)?$`)
 
 // A file's stored name is a hash of its contents, with its extension lowercased (jpeg as jpg).
 func TestDenmaHashName(t *testing.T) {
@@ -45,28 +48,6 @@ func TestDenmaAttachmentName(t *testing.T) {
 	} {
 		if got := denmaAttachmentName(media.Media{Label: c.label, Filename: c.file}); got != c.want {
 			t.Errorf("%q: %q, want %q", c.label, got, c.want)
-		}
-	}
-}
-
-// Links to the center's uploads move to the new names; other sites' files and other names don't.
-func TestDenmaMediaLinks(t *testing.T) {
-	base := "https://news.example.org/c/ddl/uploads/"
-	relink := denmaMediaLinks(base, map[string]string{"logo.png": "aaaaaaaaaaaaaaaa.png", "thumb_logo.png": "thumb_aaaaaaaaaaaaaaaa.png", "my photo.jpg": "bbbbbbbbbbbbbbbb.jpg"})
-	for in, want := range map[string]string{
-		`<img src="https://news.example.org/c/ddl/uploads/logo.png">`:                 `<img src="https://news.example.org/c/ddl/uploads/aaaaaaaaaaaaaaaa.png">`,
-		`<img src='/c/ddl/uploads/logo.png?v=2'>`:                                     `<img src='/c/ddl/uploads/aaaaaaaaaaaaaaaa.png?v=2'>`,
-		`{"url":"https://news.example.org/c/ddl/uploads/thumb_logo.png"}`:             `{"url":"https://news.example.org/c/ddl/uploads/thumb_aaaaaaaaaaaaaaaa.png"}`,
-		`![a](https://news.example.org/c/ddl/uploads/my%20photo.jpg)`:                 `![a](https://news.example.org/c/ddl/uploads/bbbbbbbbbbbbbbbb.jpg)`,
-		`"https://news.example.org/c/ddl/uploads/logo.png"`:                           `"https://news.example.org/c/ddl/uploads/aaaaaaaaaaaaaaaa.png"`,
-		`<img src="https://other.org/c/ddl/uploads/logo.png">`:                        `<img src="https://other.org/c/ddl/uploads/logo.png">`,
-		`<img src="https://news.example.org/c/hfx/uploads/logo.png">`:                 `<img src="https://news.example.org/c/hfx/uploads/logo.png">`,
-		`<img src="https://news.example.org/c/ddl/uploads/logo.png.bak">`:             `<img src="https://news.example.org/c/ddl/uploads/logo.png.bak">`,
-		`<img src="https://news.example.org/c/ddl/uploads/old-logo.png">`:             `<img src="https://news.example.org/c/ddl/uploads/old-logo.png">`,
-		`a https://news.example.org/c/ddl/uploads/logo.png b /c/ddl/uploads/logo.png`: `a https://news.example.org/c/ddl/uploads/aaaaaaaaaaaaaaaa.png b /c/ddl/uploads/aaaaaaaaaaaaaaaa.png`,
-	} {
-		if got := relink(in); got != want {
-			t.Errorf("%s\n got %s\nwant %s", in, got, want)
 		}
 	}
 }

@@ -252,7 +252,7 @@ func main() {
 // denma: buildApp builds an App from a config, DB and queries, and starts its workers; one per center.
 func buildApp(ko *koanf.Koanf, db *sqlx.DB, queries *models.Queries, withNotifs bool) *App {
 	lo := denmaLog(ko)          // denma: the app's own log lines (cmd/denma_logs.go)
-	denmaInitMediaNames(ko, db) // denma: hashed names and labels, before anything reads them (cmd/denma_medianames.go)
+	denmaInitMediaNames(ko, db) // denma: media labels, before anything reads them (cmd/denma_medianames.go)
 	var (
 		// Initialize static global config.
 		cfg = initConstConfig(ko)
