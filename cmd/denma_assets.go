@@ -4,7 +4,19 @@ package main
 // them on every page: their address has the app's CustomAssetVersion, new
 // whenever the app, and so its Appearance settings, is rebuilt.
 
-import "github.com/labstack/echo/v4"
+import (
+	"crypto/md5"
+	"fmt"
+	"sync"
+
+	"github.com/labstack/echo/v4"
+)
+
+// denmaAssetVersion is the build's AssetVersion, for the icon sprites'
+// addresses, which are cached for a year.
+var denmaAssetVersion = sync.OnceValue(func() string {
+	return fmt.Sprintf("%x", md5.Sum([]byte(buildString)))[0:10]
+})
 
 // denmaCustomAssetCache lets the browser alone (private) keep the file, when
 // it's asked for by the current version.

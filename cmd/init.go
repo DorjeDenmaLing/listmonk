@@ -1302,7 +1302,7 @@ func initTplFuncs(i *i18n.I18n, u *UrlConfig) template.FuncMap {
 			}
 
 			name = template.HTMLEscapeString(name)
-			return template.HTML(fmt.Sprintf(`<svg class="icon"><use href="%sadmin/static/%s#icon-%s"></use></svg>`, u.AdminPath, f, name)) // denma: AdminPath
+			return template.HTML(fmt.Sprintf(`<svg class="icon"><use href="%sadmin/static/%s?v=%s#icon-%s"></use></svg>`, u.AdminPath, f, denmaAssetVersion(), name)) // denma: AdminPath, versioned
 		},
 		// Auto-generated colour gradient CSS avatar.
 		"Avatar": makeAvatar,
