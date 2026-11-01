@@ -27,7 +27,7 @@
     --foreground: light-dark(#09090b, #f7f8f8);
     --card-foreground: light-dark(#09090b, #f7f8f8);
     --secondary-foreground: light-dark(#574747, #eceef1);
-    --muted-foreground: light-dark(#6b6b6b, #8a8f98);
+    --muted-foreground: light-dark(#7a7a7a, #8a8f98);
     --faint-foreground: light-dark(#a1a1aa, #767a83);
     --primary: light-dark(#0055d4, #4f8ce6);
     --ring: light-dark(#0055d4, #4f8ce6);
@@ -807,16 +807,6 @@ td > .empty-state {
         padding: 0;
     }
 
-    /* denma: the subject and preview text as an inbox shows them. */
-    .preview-inbox {
-        margin: 0;
-        padding: var(--space-3) var(--space-4);
-        border-block-end: 1px solid var(--border);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
     #iframe {
         border: 0;
         max-height: 100%;
@@ -1084,44 +1074,6 @@ section.campaigns {
     }
 }
 
-/* denma: the confirmation before a campaign is started or scheduled
-   (partials/denma/start-confirm.html). */
-.denma-start-confirm {
-    width: min(92vw, 36rem);
-
-    .denma-start-details {
-        display: grid;
-        grid-template-columns: max-content 1fr;
-        gap: var(--space-2) var(--space-4);
-        margin: 0;
-
-        > div {
-            display: contents;
-        }
-
-        dt {
-            color: var(--muted-foreground);
-            font-weight: var(--font-normal);
-        }
-
-        dd {
-            margin: 0;
-            overflow-wrap: anywhere;
-        }
-    }
-
-    .denma-start-note {
-        margin: var(--space-4) 0 0;
-        padding: var(--space-2) var(--space-3);
-        border-radius: var(--radius-small);
-        background: var(--muted);
-
-        &[data-variant="danger"] {
-            color: var(--danger);
-        }
-    }
-}
-
 /* Campaign editor */
 section.campaign {
     .page-content.card.editor {
@@ -1160,25 +1112,9 @@ section.campaign {
         }
     }
 
-    /* The content editor is as tall as the screen, whichever format. */
     .editor .editor-body {
         position: relative;
-        min-height: 100dvh;
-    }
-
-    .code-editor {
-        height: 100dvh;
-    }
-
-    /* The card is the editor's frame here, so no border of its own. */
-    visual-editor {
-        border: 0;
-        border-radius: 0;
-    }
-
-    visual-editor iframe {
-        display: block;
-        min-height: 100dvh;
+        min-height: 65vh;
     }
 
     [role="tabpanel"] {
@@ -1204,25 +1140,11 @@ section.campaign {
     }
 
     richtext-editor {
-        display: flex;
-        flex-direction: column;
-        min-height: 100dvh;
-
-        .rte-content {
-            flex: 1;
-        }
+        display: block;
     }
 
     .plain-editor {
-        min-height: 100dvh;
-    }
-
-    /* denma: the plain-text version folds out of the editor card's foot,
-       so it takes the card's edge instead of a border of its own. */
-    .denma-plain-text {
-        border: 0;
-        border-block-start: 1px solid var(--border);
-        border-radius: 0 0 var(--radius-medium) var(--radius-medium);
+        min-height: 65vh;
     }
 
     .alt-body textarea {
@@ -1241,94 +1163,6 @@ section.templates {
 
     .editor-body {
         margin-block: var(--space-3);
-    }
-}
-
-/* denma: the template editor's top row (partials/denma/template-head.html). */
-#app[data-sidebar-layout] > main:has(.denma-template-head) {
-    padding-block-start: var(--space-3);
-}
-
-.card:has(> .denma-template-head) {
-    padding-block-start: var(--space-3);
-}
-
-.denma-template-head {
-    align-items: flex-end;
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
-
-    .denma-template-name,
-    .denma-template-type {
-        flex: 1 1 16rem;
-        margin-block-end: 0;
-        width: auto;
-    }
-
-    .denma-template-type {
-        flex: 0 1 14rem;
-    }
-
-    .back {
-        align-items: center;
-        display: inline-flex;
-        height: 2.5rem;
-
-        .icon {
-            font-size: var(--text-1);
-            margin: 0;
-        }
-    }
-
-    .badge {
-        align-self: center;
-    }
-}
-
-/* denma: the tags a template can use, under its editor
-   (partials/denma/template-tags.html). */
-.denma-template-tags {
-    margin-block-start: var(--space-3);
-
-    .denma-tags-title {
-        align-items: center;
-        display: inline-flex;
-        flex-wrap: wrap;
-        gap: var(--space-2);
-    }
-
-    ul {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-    }
-
-    li {
-        align-items: center;
-        border-block-start: 1px solid var(--border);
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-1) var(--space-3);
-        padding: var(--space-2) var(--space-4);
-    }
-
-    .denma-tag-copy {
-        background: none;
-        border: 0;
-        color: inherit;
-        cursor: copy;
-        padding: 0;
-
-        code {
-            overflow-wrap: anywhere;
-        }
-    }
-
-    .denma-tag-what {
-        color: var(--muted-foreground);
-        flex: 1 1 100%;
-        font-size: var(--text-8);
     }
 }
 
