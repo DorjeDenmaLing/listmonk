@@ -110,7 +110,7 @@ func (a *App) GetTemplate(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, okResp{out})
+	return c.JSON(http.StatusOK, okResp{denmaMarkVisual([]models.Template{out}, a.denmaVisualTemplate())[0]}) // denma: the default visual template marked (cmd/denma_features.go)
 }
 
 // GetTemplates handles retrieval of templates.
@@ -124,7 +124,7 @@ func (a *App) GetTemplates(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, okResp{out})
+	return c.JSON(http.StatusOK, okResp{denmaMarkVisual(out, a.denmaVisualTemplate())}) // denma: the default visual template marked (cmd/denma_features.go)
 }
 
 // PreviewTemplate renders the HTML preview of a template in the DB.

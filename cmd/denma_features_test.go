@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/knadh/listmonk/models"
 	"github.com/lib/pq"
 )
 
@@ -58,5 +60,35 @@ func TestDenmaFeaturesDeadlockRetried(t *testing.T) {
 	calls = 0
 	if err := denmaRetryDeadlock(func() error { calls++; return fmt.Errorf("x: %w", &pq.Error{Code: "42P01"}) }); err == nil || calls != 1 {
 		t.Fatalf("another error: got %v after %d calls, want it at once", err, calls)
+	}
+}
+
+// The templates API marks only the default visual template, beside listmonk's fields.
+func TestDenmaMarkVisual(t *testing.T) {
+	tpls := []models.Template{
+		{Base: models.Base{ID: 1}, Name: "Sample Template", Type: models.TemplateTypeCampaign, IsDefault: true},
+		{Base: models.Base{ID: 5}, Name: "DDL Default Template", Type: models.TemplateTypeCampaignVisual},
+		{Base: models.Base{ID: 7}, Name: "DDL Welcome Template", Type: models.TemplateTypeCampaignVisual},
+	}
+	out := denmaMarkVisual(tpls, 5)
+	if out[0].VisualDefault || !out[1].VisualDefault || out[2].VisualDefault {
+		t.Fatalf("marked %v %v %v, want only template 5", out[0].VisualDefault, out[1].VisualDefault, out[2].VisualDefault)
+	}
+	b, err := json.Marshal(out[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"id":5`, `"name":"DDL Default Template"`, `"is_default":false`, `"visual_default":true`} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("%s lacks %s", b, want)
+		}
+	}
+	if denmaMarkVisual(tpls, 1)[0].VisualDefault {
+		t.Fatal("an HTML template was marked the visual default")
+	}
+	for _, o := range denmaMarkVisual(tpls, 0) {
+		if o.VisualDefault {
+			t.Fatal("marked a template with no visual default")
+		}
 	}
 }

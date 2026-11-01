@@ -774,6 +774,21 @@ func (a *App) denmaVisualTemplate() int {
 	return id
 }
 
+// denmaTemplateOut is a template as the API gives it, marked if it's the default visual template.
+type denmaTemplateOut struct {
+	models.Template
+	VisualDefault bool `json:"visual_default"`
+}
+
+// denmaMarkVisual marks the default visual template (id) among tpls.
+func denmaMarkVisual(tpls []models.Template, id int) []denmaTemplateOut {
+	out := make([]denmaTemplateOut, len(tpls))
+	for i, t := range tpls {
+		out[i] = denmaTemplateOut{t, id != 0 && t.ID == id && t.Type == models.TemplateTypeCampaignVisual}
+	}
+	return out
+}
+
 // denmaTemplateType is template id's type ("" if there's none).
 func (a *App) denmaTemplateType(id int) string {
 	var typ string
