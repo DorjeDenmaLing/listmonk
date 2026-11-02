@@ -1,6 +1,6 @@
 #!/bin/sh
-# denma: builds the fork as a release does, for the workflows
-# (denma-ci.yml, denma-deploy.yml): the admin assets (Bun), the Go binary for
+# denma: builds the fork as a release does, for the update builds (listmonk-infra's
+# CodeBuild project): the admin assets (Bun), the Go binary for
 # linux/<goarch> (amd64 by default), then bundles the templates and assets into
 # it with stuffbin (Makefile STATIC). Dev builds the same way (docker/start.sh
 # in the project folder).
