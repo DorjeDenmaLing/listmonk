@@ -451,6 +451,9 @@ func (a *App) denmaCheckCampaign(o *campReq, c echo.Context) error {
 	if o.ReplyTo, err = denmaCheckReplyTo(o.ReplyTo); err != nil { // cmd/denma_reply_to.go
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
+	if err := a.denmaCheckAttachments(o.MediaIDs); err != nil { // cmd/denma_attachlimit.go
+		return err
+	}
 
 	o.SubscriberTags = denmaNormTags(o.SubscriberTags)
 	if len(o.SubscriberTags) == 0 {

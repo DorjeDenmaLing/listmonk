@@ -188,6 +188,11 @@
 				<span><input type="checkbox" role="switch" x-model="form.plain_text_auto" data-testid="plain-text-auto" /> Make the plain-text version automatically</span>
 				<small data-hint>For e-mail apps that don't show HTML. A campaign can still have its own.</small>
 			</label>
+			<label data-field data-testid="center-attachment-limit">{{/* cmd/denma_attachlimit.go */}}
+				Attachment limit (MB)
+				<input type="number" min="0" max="25" step="1" required x-model.number="form.attachment_max_mb" data-testid="attachment-max-mb" />
+				<small data-hint>The most a campaign's attachments can come to, up to 25 MB. 0 removes attachments from campaigns.</small>
+			</label>
 			<div data-field data-testid="visual-template">
 				Default visual template: <strong>{{ or $d.VisualTemplate "none" }}</strong>
 				<small data-hint>New campaigns start from it. Change it in <a href="{{ URI "/admin/templates" }}">Campaigns &rarr; Templates</a>.</small>

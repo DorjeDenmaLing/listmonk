@@ -14,8 +14,13 @@
 		{{- template "empty-state" }}
 	</template>
 
+	{{- if gt $root.Data.DenmaAttachMB 0 }}{{/* denma: cmd/denma_attachlimit.go */}}
+	<small data-hint>Up to {{ $root.Data.DenmaAttachMB }} MB in all. For larger files, put them in Media and link to them.</small>
 	<footer class="hstack justify-center">
 		<button type="button" data-variant="primary" @click="onOpenMedia('attach')" :disabled="!canEdit" data-cy="btn-attach">{{ Icon "plus" }} {{ $root.L.T "campaigns.addAttachments" }}</button>
 	</footer>
+	{{- else }}
+	<small data-hint>This center doesn't send attachments (Config &rarr; General). Remove these to start the campaign.</small>
+	{{- end }}
 </div>
 {{- end }}

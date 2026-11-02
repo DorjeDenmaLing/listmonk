@@ -29,6 +29,7 @@ var denmaCenterFields = []string{
 	"denma.timezone", "denma.send_window", // cmd/denma_sendwindow.go
 	"denma.postal_address",                 // cmd/denma_address.go
 	"denma.website", "denma.contact_email", // cmd/denma_footer.go
+	"denma.attachment_max_mb", // cmd/denma_attachlimit.go
 }
 
 // denmaPermissions adds our permissions to listmonk's, and drops subscribers:sql_query.
@@ -99,6 +100,8 @@ type denmaCenterForm struct {
 	PostalAddress string `json:"postal_address"` // cmd/denma_address.go
 	Website       string `json:"website"`        // cmd/denma_footer.go
 	ContactEmail  string `json:"contact_email"`
+
+	AttachmentMaxMB *int `json:"attachment_max_mb"` // cmd/denma_attachlimit.go; left out, it stays
 }
 
 var denmaFormKeys = map[string]string{
@@ -108,6 +111,7 @@ var denmaFormKeys = map[string]string{
 	"utm_domains": "denma.utm_domains", "daily_cap": "denma.daily_cap", "reply_to": "denma.reply_to",
 	"time_zone": "denma.timezone", "send_window": "denma.send_window", "postal_address": "denma.postal_address",
 	"website": "denma.website", "contact_email": "denma.contact_email",
+	"attachment_max_mb": "denma.attachment_max_mb",
 }
 
 type denmaCenterView struct {
@@ -338,6 +342,13 @@ func (a *App) DenmaUpdateCenter(c echo.Context) error {
 	}
 	if f.DailyCap < 0 || f.DailyCap > denmaMaxDailyCap {
 		return bad(fmt.Sprintf("The daily cap has to be from 0 (no cap) to %d.", denmaMaxDailyCap))
+	}
+	if f.AttachmentMaxMB == nil {
+		mb := a.denmaAttachMB()
+		f.AttachmentMaxMB = &mb
+	}
+	if *f.AttachmentMaxMB < 0 || *f.AttachmentMaxMB > denmaAttachCeilingMB {
+		return bad(fmt.Sprintf("The attachment limit has to be from 0 (no attachments) to %d MB.", denmaAttachCeilingMB))
 	}
 	f.TimeZone = strings.TrimSpace(f.TimeZone)
 	if err := f.SendWindow.check(f.TimeZone); err != nil { // cmd/denma_sendwindow.go

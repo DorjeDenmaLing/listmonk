@@ -1644,6 +1644,9 @@ func (a *App) denmaCheckCampaignStart(id int, status string) error {
 	if err := a.denmaCheckOptinStart(id); err != nil { // cmd/denma_optincampaigns.go
 		return err
 	}
+	if err := a.denmaCheckCampaignAttachments(id); err != nil { // cmd/denma_attachlimit.go
+		return err
+	}
 	if err := a.denmaCheckRecipients(id); err != nil {
 		return err
 	}

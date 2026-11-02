@@ -19,7 +19,7 @@ import (
 )
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL.
-const denmaFeaturesVersion = 64
+const denmaFeaturesVersion = 65
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't have them yet.
 var denmaFeatureDefaults = map[string]any{
@@ -34,6 +34,7 @@ var denmaFeatureDefaults = map[string]any{
 	"denma.postal_address":         "", // cmd/denma_address.go
 	"denma.website":                "", // cmd/denma_footer.go
 	"denma.contact_email":          "",
+	"denma.attachment_max_mb":      denmaAttachDefaultMB, // cmd/denma_attachlimit.go
 }
 
 // features installs the features' triggers in a center, with its settings.

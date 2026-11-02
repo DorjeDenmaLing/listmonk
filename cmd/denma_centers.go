@@ -56,6 +56,7 @@ var denmaCenterOwnSettings = []string{
 	"denma.visual_template",               // cmd/denma_features.go
 	"denma.reply_to",                      // cmd/denma_reply_to.go
 	"denma.timezone", "denma.send_window", // cmd/denma_sendwindow.go
+	"denma.attachment_max_mb", // cmd/denma_attachlimit.go
 }
 
 // denmaCenterSettingsPath reports whether a path is a settings page or API, which only the hub has.
