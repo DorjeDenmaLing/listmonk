@@ -1,0 +1,35 @@
+{{- /* denma: new commits on the fork's branch (cmd/denma_updates.go, assets/js/views/denma-updates.js). */ -}}
+{{ define "denma-updates-notice" }}
+<p class="denma-hub-alert" x-data="denmaUpdates" x-cloak x-show="newer || busy" data-testid="updates-notice">
+	{{ Icon "download-cloud" }}
+	<span x-text="busy ? stateText : `${info?.ahead} new ${info?.ahead === 1 ? 'update is' : 'updates are'} available.`"></span>
+	<a href="{{ URI "/admin/system" }}#updates">Review</a>
+</p>
+<script type="module" src="{{ URI "/admin/static/js/views/denma-updates.js" }}?v={{ .AssetVersion }}" defer></script>
+{{ end }}
+
+{{ define "denma-updates" }}
+<article class="card denma-updates" id="updates" x-data="denmaUpdates" x-cloak data-testid="updates">
+	<header class="mb-4 hstack justify-between">
+		<h5>{{ Icon "download-cloud" }} Updates</h5>
+		<button type="button" class="outline small" @click="load(true)" :disabled="checking" :aria-busy="checking" data-testid="updates-check">Check now</button>
+	</header>
+	<p class="text-light" x-show="info?.error" x-text="info?.error" data-testid="updates-error"></p>
+	<p class="text-light" x-show="info?.checking" data-testid="updates-checking">Looking for new commits…</p>
+	<p x-show="stateText" x-text="stateText" data-testid="updates-state"></p>
+	<p x-show="info && !info.error && info.status === 'identical'" data-testid="updates-none">This server has the newest commit.</p>
+	<p x-show="info && !info.error && ['behind', 'diverged'].includes(info.status)" data-testid="updates-diverged">This server's commit isn't on the branch's history, so it can't be updated from here.</p>
+	<template x-if="newer">
+		<div class="vstack gap-4">
+			<p><strong x-text="`${info.ahead} new ${info.ahead === 1 ? 'commit' : 'commits'}`"></strong> since <code x-text="short(info.running)"></code>.</p>
+			<ul class="unstyled vstack gap-1" data-testid="updates-commits">
+				<template x-for="c in shown" :key="c.sha">
+					<li class="denma-break"><code x-text="short(c.sha)"></code> <span x-text="c.message"></span></li>
+				</template>
+			</ul>
+			<div><button type="button" data-variant="primary" @click="onUpdate" :disabled="busy" data-testid="updates-start">Update now</button></div>
+		</div>
+	</template>
+</article>
+<script type="module" src="{{ URI "/admin/static/js/views/denma-updates.js" }}?v={{ $.AssetVersion }}" defer></script>
+{{ end }}

@@ -69,6 +69,8 @@ var denmaHubRoutes = []string{
 	"GET /api/denma/audit",
 	"GET /api/denma/hub/analytics",
 	"GET /api/denma/hub/stats",
+	"GET /api/denma/hub/update",
+	"POST /api/denma/hub/update",
 	"GET /api/denma/media/:id/uses",
 	"GET /api/denma/media/folders",
 	"GET /api/events",

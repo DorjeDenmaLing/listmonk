@@ -673,6 +673,8 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return "Turned off " + label("automation")
 	case "POST /api/denma/centers":
 		return fmt.Sprintf("Created center %s %q", str("slug"), str("name"))
+	case "POST /api/denma/hub/update":
+		return "Asked to update the server to " + str("commit")
 	case "PUT /api/denma/centers/:slug/status":
 		return fmt.Sprintf("Set center %s to %s", target, str("status"))
 	case "POST /api/denma/subscribers/resubscribe":

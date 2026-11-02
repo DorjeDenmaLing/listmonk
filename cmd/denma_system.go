@@ -22,7 +22,7 @@ import (
 const denmaSourceURL = "https://github.com/DorjeDenmaLing/listmonk"
 
 // denmaBuildCommit finds the commit in a build string.
-var denmaBuildCommit = regexp.MustCompile(`(?:#|dev )([0-9a-f]{7,40})\b`)
+var denmaBuildCommit = regexp.MustCompile(`(?:#|dev |ddl )([0-9a-f]{7,40})\b`)
 
 type denmaSystemView struct {
 	adminView

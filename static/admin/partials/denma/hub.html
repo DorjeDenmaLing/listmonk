@@ -4,6 +4,7 @@
 	<header class="page-header">
 		<h1 class="page-title" x-text="selected ? selected.name : 'All centers'">All centers</h1>
 	</header>
+	{{ template "denma-updates-notice" . }}
 	<p class="denma-hub-alert" x-show="problems.text" data-testid="hub-problems">
 		{{ Icon "alert-triangle" }} <span x-text="problems.text"></span> <a :href="problems.url">See them on Centers</a>
 	</p>
