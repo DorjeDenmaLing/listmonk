@@ -57,7 +57,7 @@ var denmaPermInfos = map[string]denmaPermInfo{
 	},
 	"tx:send": {
 		Label: "Send single e-mails",
-		What:  "Send one e-mail from a template. For Claude, through an MCP key: the admin has no page for it.",
+		What:  "Send one e-mail from a template. The admin has no page for it, and MCP keys can't.",
 	},
 	"campaigns:get": {
 		Label: "See campaigns on their lists",

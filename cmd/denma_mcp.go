@@ -110,7 +110,7 @@ var denmaMCPBlocked = []string{
 	"/api/denma/center/api-keys", "/api/denma/center/api", "/api/denma/center/signup-hooks", "/api/denma/center/mcp-keys",
 	"/api/settings", "/api/admin", "/api/logs", "/api/about", "/api/events", "/api/profile", "/api/logout", "/api/login",
 	"/api/denma/audit", "/api/subscribers/{}/optin", "/api/denma/subscribers/resubscribe",
-	"/api/users", "/api/roles", "/api/maintenance",
+	"/api/users", "/api/roles", "/api/maintenance", "/api/tx",
 }
 
 // denmaMCPMaxFrom is the most addresses a connector's allowed_from can have.
@@ -164,9 +164,9 @@ func denmaMCPAllowed(p, method string, personal bool) string {
 	return ""
 }
 
-// denmaMCPNoKeyPerms are permissions a key can't have: SQL, bounce webhooks, settings, people, roles.
+// denmaMCPNoKeyPerms are permissions a key can't have: SQL, bounce webhooks, transactional e-mails, settings, people, roles.
 var denmaMCPNoKeyPerms = map[string]bool{
-	"subscribers:sql_query": true, "webhooks:post_bounce": true,
+	"subscribers:sql_query": true, "webhooks:post_bounce": true, "tx:send": true,
 	"settings:get": true, "settings:manage": true, "settings:maintain": true,
 	"users:get": true, "users:manage": true, "roles:get": true, "roles:manage": true,
 }
@@ -276,6 +276,18 @@ type denmaMCPCtxKey struct{}
 func denmaMCPOf(c echo.Context) (denmaMCPReq, bool) {
 	m, ok := c.Request().Context().Value(denmaMCPCtxKey{}).(denmaMCPReq)
 	return m, ok
+}
+
+// denmaMCPTestTo is an error unless a request through a key sends its test e-mail only to the key's user.
+func (a *App) denmaMCPTestTo(c echo.Context, emails []string) error {
+	if _, ok := denmaMCPOf(c); !ok {
+		return nil
+	}
+	own := strings.ToLower(strings.TrimSpace(auth.GetUser(c).Email.String))
+	if len(emails) == 1 && own != "" && strings.ToLower(strings.TrimSpace(emails[0])) == own {
+		return nil
+	}
+	return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Through an MCP key, test e-mails go only to your own address (%s).", own))
 }
 
 // denmaMCPCaller is who's calling: a key, or the connector with a person.

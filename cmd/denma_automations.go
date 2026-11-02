@@ -1662,6 +1662,9 @@ func (a *App) DenmaTestAutomation(c echo.Context) error {
 	if !f.SendEmail {
 		return echo.NewHTTPError(http.StatusBadRequest, "It doesn't send an e-mail.")
 	}
+	if err := a.denmaMCPTestTo(c, []string{f.TestEmail}); err != nil {
+		return err
+	}
 	email, err := a.importer.SanitizeEmail(f.TestEmail)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Enter the address to send the test to.")

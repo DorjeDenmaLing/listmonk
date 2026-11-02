@@ -762,6 +762,9 @@ func (a *App) TestCampaign(c echo.Context) error {
 	if len(req.SubscriberEmails) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("campaigns.noSubsToTest"))
 	}
+	if err := a.denmaMCPTestTo(c, req.SubscriberEmails); err != nil { // denma: cmd/denma_mcp.go
+		return err
+	}
 	if err := a.denmaCheckSenderReady(req.FromEmail); err != nil { // denma: cmd/denma_domains.go
 		return denmaBadRequest(err)
 	}

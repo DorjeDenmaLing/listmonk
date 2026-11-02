@@ -1,11 +1,17 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/knadh/listmonk/internal/auth"
+	"github.com/labstack/echo/v4"
 	"github.com/lib/pq"
+	null "gopkg.in/volatiletech/null.v6"
 )
 
 // mcpTestUser is a user with a role's permissions and a list role.
@@ -128,6 +134,85 @@ func TestDenmaMCPNoKeyPerms(t *testing.T) {
 		if !denmaMCPNoKeyPerms[p] {
 			t.Errorf("a key can have %s", p)
 		}
+	}
+}
+
+func TestDenmaMCPNoTx(t *testing.T) {
+	if !denmaMCPNoKeyPerms["tx:send"] {
+		t.Error("a key can have tx:send")
+	}
+	for _, m := range []string{"POST", "GET"} {
+		if denmaMCPAllowed("/api/tx", m, true) == "" {
+			t.Errorf("%s /api/tx is allowed", m)
+		}
+	}
+
+	// Not offered on the keys' page.
+	raw, _ := json.Marshal([]denmaMCPPermGroup{
+		{Group: "campaigns", Permissions: []string{"campaigns:get_all"}},
+		{Group: "transactional", Permissions: []string{"tx:send"}},
+	})
+	a := &App{cfg: &Config{PermissionsRaw: raw}}
+	for _, g := range a.mcpPermGroups() {
+		for _, p := range g.Permissions {
+			if p == "tx:send" {
+				t.Errorf("group %s offers tx:send", g.Group)
+			}
+		}
+		if g.Group == "transactional" {
+			t.Error("the transactional group is offered, empty")
+		}
+	}
+
+	// Not effective for a key that has it.
+	known := map[string]struct{}{"tx:send": {}, "campaigns:get_all": {}}
+	for _, u := range []auth.User{
+		mcpTestUser(5, []string{"tx:send", "campaigns:get_all"}, nil),
+		mcpTestUser(auth.SuperAdminRoleID, nil, nil),
+	} {
+		eff := denmaMCPUser(u, []string{"tx:send", "campaigns:get_all"}, known)
+		if eff.HasPerm("tx:send") || !eff.HasPerm("campaigns:get_all") {
+			t.Errorf("a key's effective permissions %v", eff.PermissionsMap)
+		}
+	}
+}
+
+func TestDenmaMCPTestTo(t *testing.T) {
+	a := &App{}
+	ctx := func(viaKey bool) echo.Context {
+		r := httptest.NewRequest(http.MethodPost, "/api/campaigns/1/test", nil)
+		if viaKey {
+			r = r.WithContext(context.WithValue(r.Context(), denmaMCPCtxKey{}, denmaMCPReq{KeyID: 1}))
+		}
+		c := echo.New().NewContext(r, httptest.NewRecorder())
+		u := mcpTestUser(5, nil, nil)
+		u.Email = null.StringFrom("Me@Example.org")
+		c.Set(auth.UserHTTPCtxKey, u)
+		return c
+	}
+	for _, emails := range [][]string{{"me@example.org"}, {"  ME@example.ORG "}} {
+		if err := a.denmaMCPTestTo(ctx(true), emails); err != nil {
+			t.Errorf("%q through a key: %v", emails, err)
+		}
+	}
+	for _, emails := range [][]string{{"other@example.org"}, {"me@example.org", "other@example.org"}, {"me@example.org", "me@example.org"}, {}, nil, {""}} {
+		err := a.denmaMCPTestTo(ctx(true), emails)
+		he, ok := err.(*echo.HTTPError)
+		if !ok || he.Code != http.StatusBadRequest || !strings.Contains(he.Message.(string), "me@example.org") {
+			t.Errorf("%q through a key: %v", emails, err)
+		}
+	}
+	for _, emails := range [][]string{{"other@example.org"}, {"a@example.org", "b@example.org"}, {}, nil} {
+		if err := a.denmaMCPTestTo(ctx(false), emails); err != nil {
+			t.Errorf("%q not through a key: %v", emails, err)
+		}
+	}
+
+	// A user with no address can't be sent to.
+	c := ctx(true)
+	c.Set(auth.UserHTTPCtxKey, mcpTestUser(5, nil, nil))
+	if err := a.denmaMCPTestTo(c, []string{""}); err == nil {
+		t.Error("a user with no address got a test")
 	}
 }
 
