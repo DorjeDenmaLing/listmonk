@@ -126,7 +126,7 @@ func (a *App) ViewCampaign(c echo.Context) error {
 	id := getID(c)
 
 	switch c.Param("tab") {
-	case "content", "attribs", "archive":
+	case "content", "attribs": // denma: no archive tab (cmd/denma_noarchive.go)
 		return c.Redirect(http.StatusFound, fmt.Sprintf("%s/campaigns/%d#tab=%s", uriAdmin, id, c.Param("tab")))
 	}
 
@@ -940,6 +940,7 @@ func (a *App) validateCampaignFields(c campReq) (campReq, error) {
 		// If there's no slug set, set it to NULL in the DB.
 		c.ArchiveSlug.Valid = false
 	}
+	c.Archive, c.ArchiveSlug = false, null.String{} // denma: cmd/denma_noarchive.go
 
 	return c, nil
 }

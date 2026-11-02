@@ -283,7 +283,6 @@ function component(camp, sel) {
       }
 
       const data = {
-        archive_slug: this.form.subject,
         name: p.name,
         subject: p.subject,
         preview_text: p.preview_text, // denma
@@ -325,9 +324,7 @@ function component(camp, sel) {
         this.onCreate();
       } else if (this.canEdit) {
         this.onSave();
-      } else if (this.canArchive) {
-        this.onSaveArchive();
-      }
+      } // denma: no archive to save
     },
 
     async onStart() {

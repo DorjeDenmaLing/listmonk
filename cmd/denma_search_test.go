@@ -199,7 +199,7 @@ func TestDenmaSearchHostileSearches(t *testing.T) {
 		`UNION SELECT email FROM center_halifax.subscribers PWNED`, `center_halifax.subscribers.email:PWNED`,
 		`pg_sleep(5)`, `name:"'||pg_sleep(5)||'PWNED"`, `x');SELECT pg_sleep(5);--PWNED`,
 		`status:"enabled' OR 'PWNED"`, `type:"public' OR 'PWNED"`, `optin:"double'--PWNED"`, `format:"html'PWNED"`,
-		`archive:"yes' OR 'PWNED"`, `bounced:"hard' OR 'PWNED"`, `subscribers>"1 OR PWNED"`, `opens>1;PWNED`,
+		`bounced:"hard' OR 'PWNED"`, `subscribers>"1 OR PWNED"`, `opens>1;PWNED`,
 		`$1 $$PWNED$$ %query% %order%`, `name=%query%PWNED`, `(((PWNED)))`, `NOT NOT -PWNED`,
 		`"PWNED` + "\x00" + `'"`, "name:PWNED\t'x", `name:"PWNED` + "\n" + `'; SELECT 1"`,
 	}
@@ -221,7 +221,7 @@ func TestDenmaSearchHostileSearches(t *testing.T) {
 func TestDenmaSearchFuzz(t *testing.T) {
 	keys := []string{"", "", "name", "email", "domain", "status", "list", "unsubscribed", "created", "opened", "clicked",
 		"bounced", "tag", "attr.city", "attr.a.b", "has", "id", "type", "optin", "subscribers", "campaign", "mailed",
-		"subject", "from", "format", "template", "archive", "opens", "scheduled", "nope", "attr."}
+		"subject", "from", "format", "template", "opens", "scheduled", "nope", "attr."}
 	ops := []string{":", "=", "!=", ">", ">=", "<", "<="}
 	bits := []string{"PWNED", "'", `\`, `"`, " ", "(", ")", ";", "--", "/*", "$$", "%", "_", "*", ".", ":", "-", "E'",
 		"x", "5", "-1", "2024-01-31", "30d", "any", "none", "OR", "1=1", "Newsletter", "Spring", "\x00", "hard", "yes"}
@@ -317,7 +317,6 @@ func TestDenmaSearchErrors(t *testing.T) {
 		{denmaLists, "campaign:spring", "matches several campaigns"},
 		{denmaLists, "type:temp", "type is public"},
 		{denmaLists, "subscribers>many", "is a number"},
-		{denmaCampaigns, "archive:maybe", "archive is yes or no"},
 		{denmaCampaigns, "template:nope", "there's no template called"},
 		{denmaCampaigns, "list:nope", "there's no list called"},
 		{denmaCampaigns, "format:pdf", "format is richtext"},
@@ -422,7 +421,6 @@ func TestDenmaSearchCompiles(t *testing.T) {
 		{denmaLists, `type:public`, `((l.type = 'public'))`},
 		{denmaLists, `Newsletter`, `((l.name ILIKE '%Newsletter%'))`},
 		{denmaLists, `subscribers>10`, `(((SELECT COUNT(*) FROM subscriber_lists dsl WHERE dsl.list_id = l.id AND dsl.status <> 'unsubscribed') > 10))`},
-		{denmaCampaigns, `archive:yes`, `((c.archive))`},
 		{denmaCampaigns, `template:default`, `((c.template_id = 4))`},
 		{denmaCampaigns, `"Last call: Autumn"`, `(((c.name ILIKE '%Last call: Autumn%' OR c.subject ILIKE '%Last call: Autumn%')))`},
 		{denmaCampaigns, `call: x`, `(((c.name ILIKE '%call:%' OR c.subject ILIKE '%call:%') AND (c.name ILIKE '%x%' OR c.subject ILIKE '%x%')))`},

@@ -617,8 +617,6 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return "Sent a test of " + label("campaign")
 	case "PUT /api/campaigns/:id/status":
 		return fmt.Sprintf("Set %s to %s", label("campaign"), str("status"))
-	case "PUT /api/campaigns/:id/archive":
-		return "Changed the archive settings of " + label("campaign")
 	case "POST /api/media":
 		return "Uploaded " + label("media file")
 	case "POST /api/subscribers/:id/optin":

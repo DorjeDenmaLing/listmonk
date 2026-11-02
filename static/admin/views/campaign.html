@@ -56,7 +56,6 @@
 			<a role="tab" aria-disabled="true">{{ Icon "file-text" }} {{ .L.T "campaigns.content" }}</a>
 			<a role="tab" aria-disabled="true">{{ Icon "code" }} {{ .L.T "globals.terms.attribs" }}</a>
 			<a role="tab" aria-disabled="true">{{ Icon "paperclip" }} {{ .L.T "campaigns.attachments" }}</a>
-			<a role="tab" aria-disabled="true">{{ Icon "archive" }} {{ .L.T "campaigns.archive" }}</a>
 		</div>
 
 		{{ template "campaign-form" dict "Root" . "IsNew" $isNew "CanManage" $canManage "CanSend" $canSend }}
@@ -67,7 +66,6 @@
 				<button type="button" role="tab" id="content">{{ Icon "align-left" }} {{ .L.T "campaigns.content" }}</button>
 				<button type="button" role="tab" id="attribs">{{ Icon "code" }} {{ .L.T "globals.terms.attribs" }} <span x-cloak x-show="form.attribsStr.trim() !== '' && form.attribsStr.trim() !== '{}'">{{ Icon "check-circle" }}</span></button>
 				<button type="button" role="tab" id="attachments">{{ Icon "paperclip" }} {{ .L.T "campaigns.attachments" }} <span x-cloak x-show="form.media.length" x-text="`(${form.media.length})`"></span></button>
-				<button type="button" role="tab" id="archive">{{ Icon "archive" }} {{ .L.T "campaigns.archive" }} <span x-cloak x-show="form.archive">{{ Icon "check-circle" }}</span></button>
 			</div>
 
 			<ot-dropdown class="content-settings" x-cloak x-show="activeTab === 'content'">
@@ -118,7 +116,6 @@
 			<div role="tabpanel">{{ template "campaign-content" dict "Root" . "CanManage" $canManage "CanSend" $canSend }}</div>
 			<div role="tabpanel">{{ template "campaign-attribs" dict "Root" . "CanManage" $canManage "CanSend" $canSend }}</div>
 			<div role="tabpanel">{{ template "campaign-attachments" dict "Root" . "CanManage" $canManage "CanSend" $canSend }}</div>
-			<div role="tabpanel">{{ template "campaign-archive" dict "Root" . "CanManage" $canManage "CanSend" $canSend }}</div>
 		</ot-tabs>
 	{{- end }}
 

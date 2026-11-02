@@ -30,7 +30,7 @@ const (
 var denmaSearchKeys = map[denmaKind]string{
 	denmaSubscribers: "email, name, domain, status, list, confirmed, unconfirmed, unsubscribed, created, updated, opened, clicked, bounced, tag, attr.<name>, has, id",
 	denmaLists:       "name, type, optin, status, subscribers, campaign, mailed, created, updated, id",
-	denmaCampaigns:   "name, subject, from, status, type, format, tag, list, template, created, updated, started, scheduled, sent, opens, clicks, bounces, archive, id",
+	denmaCampaigns:   "name, subject, from, status, type, format, tag, list, template, created, updated, started, scheduled, sent, opens, clicks, bounces, id",
 }
 
 // denmaSearch compiles a subscriber search into an SQL condition in *query, emptying *search.
@@ -509,15 +509,6 @@ func (p *denmaParser) campaignTerm(key, op, v string) (string, error) {
 		return denmaNum("(SELECT COUNT(*) FROM bounces db WHERE db.campaign_id = c.id)", key, op, v)
 	case "id":
 		return denmaNum("c.id", key, op, v)
-
-	case "archive":
-		switch strings.ToLower(v) {
-		case "yes", "true":
-			return denmaIs(key, op, "c.archive")
-		case "no", "false":
-			return denmaIs(key, op, "NOT c.archive")
-		}
-		return "", fmt.Errorf("archive is yes or no, not %q", v)
 
 	case "list":
 		sub := "EXISTS (SELECT 1 FROM campaign_lists dcl WHERE dcl.campaign_id = c.id"

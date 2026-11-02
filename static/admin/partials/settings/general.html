@@ -88,6 +88,7 @@
 		</label>
 	</fieldset>
 
+	{{- if false }}{{/* denma: no public archive (cmd/denma_noarchive.go) */}}
 	<fieldset class="card" data-keywords="public archive rss feed campaigns">
 		<legend>{{ .L.T "campaigns.archive" }}</legend>
 		<label data-field>
@@ -101,6 +102,7 @@
 			<small data-hint>{{ .L.T "settings.general.enablePublicArchiveRSSContentHelp" }}</small>
 		</label>
 	</fieldset>
+	{{- end }}
 
 	{{- if false }}{{/* denma: no update checks (cmd/main.go) */}}
 	<fieldset class="card" data-keywords="check updates version announcements notifications">
