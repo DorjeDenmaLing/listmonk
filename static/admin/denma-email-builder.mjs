@@ -1,7 +1,7 @@
 // Adds to the visual builder's bundle in dist/: the "System sans" font (each
-// device's own) for the e-mail and every block, and a Border radius and Border
-// color for Image blocks. Fails the build if the bundle doesn't have the places
-// they're added to.
+// device's own) for the e-mail and every block, a Border radius and Border
+// color for Image blocks, and the e-mail's own font shown in its Styles. Fails
+// the build if the bundle doesn't have the places they're changed in.
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -18,6 +18,9 @@ const EDITS = [
   ['"MODERN_SERIF","BOOK_SERIF","MONOSPACE"]', `"MODERN_SERIF","BOOK_SERIF","MONOSPACE","${KEY}"]`, 6],
   [MONO, `${MONO};case"${KEY}":return'${FONTS}'`, 6],
   [MONO_OPTION, `${MONO_OPTION},{key:"${KEY}",label:"System sans",value:'${FONTS}'}`, 1],
+  // The e-mail's Styles show its font (not always Modern sans).
+  ['v.jsx(EC,{label:"Font family",defaultValue:"MODERN_SANS",onChange:t=>r({...e,fontFamily:t})})',
+    'v.jsx(EC,{label:"Font family",defaultValue:e.fontFamily??"MODERN_SANS",onChange:t=>r({...e,fontFamily:t})})', 1],
   // Image borders: the Image block's style allows borderRadius and borderColor, its <img> has them (a 1px
   // border, following the corners), its panel has their controls.
   ['Ey=Pb.object({style:Pb.object({padding:yy,', `Ey=Pb.object({style:Pb.object({borderRadius:Pb.number().optional().nullable(),borderColor:${COLOR},padding:yy,`, 1],
