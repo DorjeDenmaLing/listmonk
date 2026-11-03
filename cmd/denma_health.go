@@ -83,10 +83,14 @@ func (d *denmaCenters) countStuck(was map[string]denmaCampaignMoved) (int, map[s
 			continue
 		}
 		open := a.denmaHours().open(now)
+		centerAtLimit := false
+		if cc := denmaCenterCounter(a.ko); cc != nil {
+			centerAtLimit = !cc.Status().FreesAt.IsZero()
+		}
 		for _, r := range running {
 			key := fmt.Sprintf("%s/%d", slug, r.ID)
 			m, ok := was[key]
-			if !ok || m.sent != r.Sent || !open || atLimit {
+			if !ok || m.sent != r.Sent || !open || atLimit || centerAtLimit {
 				m = denmaCampaignMoved{sent: r.Sent, at: now}
 			}
 			moved[key] = m
