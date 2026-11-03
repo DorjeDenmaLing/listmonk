@@ -213,13 +213,18 @@ function markdownOn(win, source) {
   }
 }
 
+// denmaVersioned adds the build's version (visual-editor.js's ?v=) to a frame file's address.
+export function denmaVersioned(url) {
+  const v = new URL(document.querySelector('script[src*="/js/visual-editor.js"]')?.src || location.href).searchParams.get('v');
+  return v ? `${url}?v=${v}` : url;
+}
+
 // denmaEditorFrame gives the builder's frame our stylesheet and Markdown tools.
 export function denmaEditorFrame(iframe, base) {
   const doc = iframe.contentDocument;
-  const v = new URL(document.querySelector('script[src*="/js/visual-editor.js"]')?.src || location.href).searchParams.get('v');
   const css = doc.createElement('link');
   css.rel = 'stylesheet';
-  css.href = new URL(`${base}/../denma-email-builder.css${v ? `?v=${v}` : ''}`, location.href).href;
+  css.href = new URL(denmaVersioned(`${base}/../denma-email-builder.css`), location.href).href;
   doc.head.appendChild(css);
 
   // The settings panel is made again for each block selected.

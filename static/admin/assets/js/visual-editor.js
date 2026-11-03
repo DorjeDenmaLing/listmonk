@@ -1,6 +1,6 @@
 // <visual-editor> is a WebComponent wrapping the self-hosted email-builder UMD
 // (loaded on demand into an iframe).
-import { denmaEditorFrame } from './denma-visual-editor.js'; // denma: the builder on phones
+import { denmaEditorFrame, denmaVersioned } from './denma-visual-editor.js'; // denma: the builder on phones, its file's version
 class VisualEditor extends HTMLElement {
   constructor() {
     super();
@@ -65,7 +65,7 @@ class VisualEditor extends HTMLElement {
       }
       const s = this.iframe.contentDocument.createElement('script');
       s.id = 'email-builder-script';
-      s.src = `${this._base}/email-builder.umd.js`;
+      s.src = denmaVersioned(`${this._base}/email-builder.umd.js`); // denma: new address each build
       s.onload = () => resolve();
       s.onerror = reject;
       this.iframe.contentDocument.head.appendChild(s);
