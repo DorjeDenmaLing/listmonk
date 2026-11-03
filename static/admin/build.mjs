@@ -22,6 +22,7 @@ async function build() {
 
   // Verbatim static assets (icons, images) and stylesheets.
   await cp(path.join(root, 'assets/static'), dist, { recursive: true });
+  await (await import('./denma-email-builder.mjs')).patchFonts(dist); // denma: the System sans font
   await cp(path.join(root, 'assets/css/style.css'), path.join(dist, 'style.css'));
   // Rich text editor styles, loaded only on pages that render the editor partial.
   await cp(path.join(root, 'assets/css/richtext.css'), path.join(dist, 'richtext.css'));
