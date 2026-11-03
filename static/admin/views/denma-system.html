@@ -13,7 +13,7 @@
 
 	{{- if $h }}<div class="mb-6">{{ template "denma-updates" . }}</div>{{ end }}
 	<div class="row">
-		<div class="col-6">
+		<div class="col-6 vstack gap-6">
 			<article class="card">
 				<header class="mb-4"><h5>{{ Icon "activity" }} Resources</h5></header>
 				<dl class="vstack gap-4">
@@ -34,26 +34,6 @@
 					<div class="hstack justify-between"><dt>CPU cores</dt><dd class="text-light">{{ $s.NumCPU }}</dd></div>
 				</dl>
 			</article>
-		</div>
-
-		<div class="col-6">
-			<article class="card">
-				<header class="mb-4"><h5>{{ Icon "info" }} listmonk</h5></header>
-				<dl class="vstack gap-4">
-					<div class="hstack justify-between"><dt>Version</dt><dd class="text-light">{{ $a.Version }}</dd></div>
-					<div class="hstack justify-between"><dt>Build</dt><dd class="text-light denma-break">{{ $a.Build }}</dd></div>
-					<div class="hstack justify-between"><dt>Source</dt><dd class="denma-break">
-						{{- if $d.CommitURL }}<a href="{{ $d.CommitURL }}" target="_blank" rel="noopener" data-testid="system-commit">Commit {{ $d.Commit }}</a>
-						{{- else }}<a href="{{ DenmaSourceURL }}" target="_blank" rel="noopener">GitHub</a>{{ end }}</dd></div>
-					<div class="hstack justify-between"><dt>Go</dt><dd class="text-light">{{ $a.GoVersion }}</dd></div>
-					{{- with $h }}{{ with .Startup }}{{ if .Total }}
-					<div class="hstack justify-between"><dt>Centers at start</dt><dd class="text-light">{{ .Loaded }} of {{ .Total }} loaded in {{ .Took }}, {{ .Ago }}</dd></div>
-					{{- end }}{{ end }}{{ end }}
-				</dl>
-			</article>
-		</div>
-
-		<div class="col-6">
 			<article class="card">
 				<header class="mb-4"><h5>{{ Icon "inbox" }} Database</h5></header>
 				<dl class="vstack gap-4">
@@ -82,20 +62,7 @@
 					{{- end }}
 				</dl>
 			</article>
-		</div>
-
-		<div class="col-6">
-			<article class="card">
-				<header class="mb-4"><h5>{{ Icon "monitor" }} Host</h5></header>
-				<dl class="vstack gap-4">
-					<div class="hstack justify-between"><dt>Hostname</dt><dd class="text-light denma-break">{{ $a.Host.Hostname }}</dd></div>
-					<div class="hstack justify-between"><dt>Platform</dt><dd class="text-light">{{ $a.Host.OS }} / {{ $a.Host.Machine }}</dd></div>
-				</dl>
-			</article>
-		</div>
-
-		{{- with $h }}
-		<div class="col-6">
+			{{- with $h }}
 			<article class="card" data-testid="system-uploads">
 				<header class="mb-4"><h5>{{ Icon "upload" }} Uploads</h5></header>
 				<dl class="vstack gap-4">
@@ -121,9 +88,32 @@
 					{{- end }}
 				</dl>
 			</article>
+			{{- end }}
 		</div>
 
-		<div class="col-6">
+		<div class="col-6 vstack gap-6">
+			<article class="card">
+				<header class="mb-4"><h5>{{ Icon "info" }} listmonk</h5></header>
+				<dl class="vstack gap-4">
+					<div class="hstack justify-between"><dt>Version</dt><dd class="text-light">{{ $a.Version }}</dd></div>
+					<div class="hstack justify-between"><dt>Build</dt><dd class="text-light denma-break">{{ $a.Build }}</dd></div>
+					<div class="hstack justify-between"><dt>Source</dt><dd class="denma-break">
+						{{- if $d.CommitURL }}<a href="{{ $d.CommitURL }}" target="_blank" rel="noopener" data-testid="system-commit">Commit {{ $d.Commit }}</a>
+						{{- else }}<a href="{{ DenmaSourceURL }}" target="_blank" rel="noopener">GitHub</a>{{ end }}</dd></div>
+					<div class="hstack justify-between"><dt>Go</dt><dd class="text-light">{{ $a.GoVersion }}</dd></div>
+					{{- with $h }}{{ with .Startup }}{{ if .Total }}
+					<div class="hstack justify-between"><dt>Centers at start</dt><dd class="text-light">{{ .Loaded }} of {{ .Total }} loaded in {{ .Took }}, {{ .Ago }}</dd></div>
+					{{- end }}{{ end }}{{ end }}
+				</dl>
+			</article>
+			<article class="card">
+				<header class="mb-4"><h5>{{ Icon "monitor" }} Host</h5></header>
+				<dl class="vstack gap-4">
+					<div class="hstack justify-between"><dt>Hostname</dt><dd class="text-light denma-break">{{ $a.Host.Hostname }}</dd></div>
+					<div class="hstack justify-between"><dt>Platform</dt><dd class="text-light">{{ $a.Host.OS }} / {{ $a.Host.Machine }}</dd></div>
+				</dl>
+			</article>
+			{{- with $h }}
 			<article class="card" data-testid="system-jobs">
 				<header class="mb-4"><h5>{{ Icon "clock" }} Background jobs</h5></header>
 				<dl class="vstack gap-4">
@@ -139,17 +129,19 @@
 				<p class="text-light text-8 mt-4">Each center checks new contacts' e-mail domains and sends due automations every minute. Bounces arrive from the mail provider for all centers at the hub; if none have come in a long while, check its bounce notifications.</p>
 			</article>
 			<article class="card" x-data="denmaSharedUnblock">
-				<h3>Take an address off the shared blocklist</h3>
+				<header class="mb-4"><h5>{{ Icon "user-check" }} Take an address off the shared blocklist</h5></header>
 				<form class="hstack gap-3" @submit.prevent="onSubmit">
 					<input type="email" x-model="email" required aria-label="E-mail address" placeholder="name@example.org" data-testid="shared-unblock-email" />
 					<button type="submit" data-testid="shared-unblock">Take off</button>
 				</form>
 				<p class="text-light text-8 mt-4">Centers that blocklisted it keep it so until their admins enable it.</p>
 			</article>
+			{{- end }}
 		</div>
-		<script type="module" src="{{ URI "/admin/static/js/views/denma-system.js" }}?v={{ $.AssetVersion }}" defer></script>
-		{{- end }}
 	</div>
+	{{- if $h }}
+	<script type="module" src="{{ URI "/admin/static/js/views/denma-system.js" }}?v={{ $.AssetVersion }}" defer></script>
+	{{- end }}
 </section>
 
 {{ template "admin-footer" . -}}
