@@ -1,0 +1,77 @@
+{{/* denma: an item's history: its versions, what changed since each, restoring one (assets/js/denma-versions.js). */}}
+{{ define "denma-history-button" -}}
+<button type="button" class="outline" data-testid="btn-history" @click="denmaHistoryOpen">{{ Icon "clock" }} History</button>
+{{- end }}
+
+{{ define "denma-history" -}}
+<dialog class="denma-history" x-ref="denmaHistoryDialog" data-testid="history-dialog">
+	<div class="dialog-card">
+		<header class="dialog-head">
+			<h4 class="dialog-title" x-text="history.changes ? 'Changed since ' + history.changesOf : 'History'"></h4>
+		</header>
+		<section class="dialog-body" :aria-busy="history.loading">
+			<template x-if="!history.changes">
+				<div>
+					<p data-hint>Each save is kept: the last 30, for a year, or for 60 days after a campaign is sent.</p>
+					<ol class="denma-history-list">
+						<template x-for="(v, i) in history.items" :key="v.id">
+							<li data-testid="history-item">
+								<div><strong x-text="denmaHistoryWhen(v)"></strong> <span class="text-light" x-text="denmaHistoryWho(v)"></span></div>
+								<div class="text-7" x-text="denmaHistoryWhat(v, i)"></div>
+								<div class="hstack gap-2">
+									<template x-if="denmaHistoryCanPreview()">
+										<button type="button" class="outline" data-testid="history-view" @click="denmaHistoryView(v)">{{ Icon "eye" }} View</button>
+									</template>
+									<button type="button" class="outline" data-testid="history-changes" @click="denmaHistoryChanges(v)">Changes since</button>
+									<template x-if="denmaHistoryCanRestore() && (v.set_aside || v.version !== denmaVersion)">
+										<button type="button" class="outline" data-testid="history-restore" @click="denmaHistoryRestore(v)">Restore</button>
+									</template>
+								</div>
+							</li>
+						</template>
+					</ol>
+				</div>
+			</template>
+			<template x-if="history.changes">
+				<div data-testid="history-changes-list">
+					<template x-if="history.changes.length === 0">
+						<p>Nothing has changed since.</p>
+					</template>
+					<template x-for="c in history.changes" :key="c.label">
+						<section class="denma-history-change">
+							<h5 x-text="c.label"></h5>
+							<template x-if="c.lines === undefined">
+								<p><span class="text-light">Then:</span> <span x-text="c.then"></span><br /><span class="text-light">Now:</span> <span x-text="c.now"></span></p>
+							</template>
+							<template x-if="c.lines === null">
+								<p class="text-light">Too long to compare line by line.</p>
+							</template>
+							<template x-if="Array.isArray(c.lines)">
+								<pre class="denma-history-diff"><template x-for="(l, k) in c.lines" :key="k"><span :class="l.add ? 'denma-added' : 'denma-removed'" x-text="(l.add ? '+ ' : '- ') + l.text + '\n'"></span></template></pre>
+							</template>
+						</section>
+					</template>
+				</div>
+			</template>
+		</section>
+		<footer class="dialog-foot align-right">
+			<template x-if="history.changes">
+				<button type="button" class="outline" @click="history.changes = null">Back</button>
+			</template>
+			<button type="button" class="outline" @click="$refs.denmaHistoryDialog.close()">Close</button>
+		</footer>
+	</div>
+</dialog>
+{{- end }}
+
+{{/* Who else has it open, and whether it's been saved since (assets/js/denma-versions.js denmaEditing). */}}
+{{ define "denma-editing-notice" -}}
+<template x-if="denmaEditingText()">
+	<p class="denma-editing-notice" role="status" data-testid="editing-notice">
+		<span x-text="denmaEditingText()"></span>
+		<template x-if="editing.changed && !(denmaDirty && denmaDirty())">
+			<button type="button" class="outline" data-testid="editing-load" @click="denmaEditingLoad">Load it</button>
+		</template>
+	</p>
+</template>
+{{- end }}

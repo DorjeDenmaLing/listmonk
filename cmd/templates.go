@@ -207,6 +207,7 @@ func (a *App) CreateTemplate(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	a.denmaCreatedBy(c, "template", out.ID) // denma: its history names who made it (cmd/denma_versions.go)
 
 	// If it's a transactional template, cache it in the manager
 	// to be used for arbitrary incoming tx message pushes.
@@ -253,7 +254,7 @@ func (a *App) UpdateTemplate(c echo.Context) error {
 	if err := a.denmaCheckTemplate(id, o); err != nil { // denma: a design that works, and the center's own (cmd/denma_design.go)
 		return err
 	}
-	out, err := a.core.UpdateTemplate(id, o.Name, o.Subject, []byte(o.Body), o.BodySource)
+	out, err := a.denmaUpdateTemplate(c, id, o) // denma: only over the version it started from (cmd/denma_versions.go)
 	if err != nil {
 		return err
 	}

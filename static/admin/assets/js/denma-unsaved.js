@@ -88,6 +88,11 @@ export function denmaUnsaved({ skip = [], save }) {
       return saved !== null && JSON.stringify(this._denmaSnapshot()) !== JSON.stringify(saved);
     },
 
+    // The form as last saved (or loaded), or null (denma-versions.js).
+    denmaSavedForm() {
+      return saved && JSON.parse(JSON.stringify(saved));
+    },
+
     // Called once a save has gone through.
     denmaSaved() {
       saved = this._denmaSnapshot();

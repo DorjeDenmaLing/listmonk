@@ -110,6 +110,9 @@ type Campaign struct {
 	DenmaRetryAt null.Time `db:"denma_retry_at" json:"-"`
 	DenmaFailed  int       `db:"denma_failed" json:"denma_failed"`
 
+	// denma: its version, which a save must give (cmd/denma_versions.go).
+	DenmaVersion int `db:"denma_version" json:"version"`
+
 	// denma: how many opened and clicked, nil if not counted (cmd/denma_campaign_people.go).
 	DenmaPeople *DenmaCampaignPeople `db:"-" json:"-"`
 

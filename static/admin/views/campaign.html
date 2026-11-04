@@ -38,6 +38,7 @@
 		</div>
 		{{- if $showRight }}
 			<div class="col-6 col-end hstack justify-end">
+				{{- if $showPreview }}{{ template "denma-history-button" . }}{{ end }}{{/* denma: its versions */}}
 				{{- if $showPreview }}
 					<button type="button" class="outline" data-cy="btn-preview" @click="onPreviewContent" aria-keyshortcuts="F9">{{ Icon "eye" }} {{ .L.T "campaigns.preview" }}</button>
 				{{- end }}
@@ -47,6 +48,7 @@
 			</div>
 		{{- end }}
 	</header>
+	{{- if not $isNew }}{{ template "denma-editing-notice" . }}{{ end }}{{/* denma: who else is editing it */}}
 
 	{{- with $d.DenmaFailures }}{{ template "denma-send-failures" dict "Root" $ "F" . "Campaign" $c "CanResend" (and $canManage $canSend) }}{{ end }}{{/* denma: cmd/denma_retries.go */}}
 
@@ -120,6 +122,7 @@
 	{{- end }}
 
 	{{ template "campaign-preview" . }}
+	{{- if not $isNew }}{{ template "denma-history" . }}{{ end }}{{/* denma: its versions (partials/denma/history.html) */}}
 	{{ template "denma-start-confirm" . }}{{/* denma */}}
 	{{- if not $isNew }}{{ template "media-picker" . }}{{ end }}
 </section>

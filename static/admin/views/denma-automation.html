@@ -23,6 +23,7 @@
 				<span x-text="form.active ? 'On' : 'Off'"></span>
 			</label>
 			{{- end }}
+			{{- if not $isNew }}{{ template "denma-history-button" . }}{{ end }}
 			{{- if $canManage }}
 			<button type="submit" data-variant="primary" data-testid="btn-save" :aria-busy="isLoading('automation')" :disabled="isLoading('automation')">
 				{{ Icon "save" }} Save
@@ -30,6 +31,7 @@
 			{{- end }}
 		</div>
 	</header>
+	{{- if not $isNew }}{{ template "denma-editing-notice" . }}{{ end }}
 
 	<div class="page-content content vstack gap-6">
 		{{- if not $isNew }}{{ with $a.Broken }}
@@ -295,6 +297,7 @@
 		{{- end }}
 		{{- end }}
 	</div>
+	{{- if not $isNew }}{{ template "denma-history" . }}{{ end }}
 </form>
 
 <script nonce="{{ .CSPNonce }}">window._denmaTestEmail = {{ $d.Profile.Email.String }};</script>

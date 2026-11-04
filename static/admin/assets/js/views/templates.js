@@ -7,6 +7,7 @@ import {
 import * as u from '../utils.js';
 import { denmaTemplateTags } from '../denma-template-tags.js'; // denma: the tags a template can use
 import { denmaUnsaved } from '../denma-unsaved.js'; // denma: asks before leaving unsaved
+import { denmaEditing, denmaHistory, denmaVersions } from '../denma-versions.js'; // denma: saves over the version it started from; its history; who else is editing
 
 // previewMixin provides the shared state + handlers for the template-preview dialog.
 function previewMixin() {
@@ -80,6 +81,9 @@ function templateForm(tpl, isNew) {
     ...previewMixin(),
     ...denmaTemplateTags(window._denmaContact), // denma
     ...denmaUnsaved({ save() { return this.isNew ? this.createTemplate() : this.updateTemplate(); } }), // denma
+    ...denmaVersions({ kind: 'template', version: t.version, id() { return this.form.id; }, base() { return this.denmaSavedForm(); } }), // denma
+    ...denmaHistory({ kind: 'template', id() { return this.form.id; } }), // denma
+    ...denmaEditing({ kind: 'template', id() { return this.form.id; } }), // denma
     isNew,
 
     form: {
@@ -106,6 +110,7 @@ function templateForm(tpl, isNew) {
 
     init() {
       this.denmaUnsavedInit(); // denma: denma-unsaved.js
+      this.denmaEditingStart(); // denma: denma-versions.js
     },
 
     onSubmit() {
@@ -132,7 +137,7 @@ function templateForm(tpl, isNew) {
     },
 
     async updateTemplate() {
-      const data = await api('templates', `/templates/${this.form.id}`, 'PUT', this._payload());
+      const data = await this.denmaPut(`/templates/${this.form.id}`, this._payload()); // denma: over the version it started from (denma-versions.js)
       u.toast(i18n.ts('globals.messages.updated', { name: data.name })); // denma: saved without reloading
       this.denmaSaved(); // denma: denma-unsaved.js
     },

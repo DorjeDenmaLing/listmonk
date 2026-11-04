@@ -13,6 +13,7 @@ import { denmaTagAutocomplete } from '../denma-tags-ui.js'; // denma: subscriber
 import { denmaFailures } from '../denma-failures.js'; // denma: failed sends
 import { denmaStartConfirm } from '../denma-start.js'; // denma: the start confirmation
 import { denmaUnsaved } from '../denma-unsaved.js'; // denma: asks before leaving unsaved
+import { denmaEditing, denmaHistory, denmaVersions } from '../denma-versions.js'; // denma: saves over the version it started from; its history; who else is editing
 
 // Media tag for <ot-taginput> attachments.
 class MediaTag {
@@ -52,6 +53,9 @@ function component(camp, sel) {
     ...denmaFailures(), // denma
     ...denmaStartConfirm(), // denma
     ...denmaUnsaved({ skip: ['testEmails', 'status', 'uuid'], save() { return this.isNew ? this.onCreate() : (this.canEdit ? this.onSave() : this.onSaveArchive()); } }), // denma
+    ...denmaVersions({ kind: 'campaign', version: c.version, id() { return this.form.id; }, base() { const f = this.denmaSavedForm(); return f && this._payload.call({ form: f }); } }), // denma
+    ...denmaHistory({ kind: 'campaign', id() { return this.form.id; }, canRestore() { return this.canEdit; } }), // denma
+    ...denmaEditing({ kind: 'campaign', id() { return this.form.id; } }), // denma
     isNew,
     activeTab: 'campaign',
     contentReady: false,
@@ -133,6 +137,7 @@ function component(camp, sel) {
         }
       });
       this.denmaUnsavedInit(); // denma: denma-unsaved.js
+      this.denmaEditingStart(); // denma: denma-versions.js
     },
 
     // ===============
@@ -310,7 +315,7 @@ function component(camp, sel) {
         return;
       }
 
-      const d = await api('campaigns', `/campaigns/${this.form.id}`, 'PUT', p);
+      const d = await this.denmaPut(`/campaigns/${this.form.id}`, p); // denma: over the version it started from (denma-versions.js)
       this.denmaAfterSave(d); // denma: the plain text made from it
       this._saved = true;
       this.form.archive_slug = d.archive_slug || this.form.archive_slug;

@@ -18,6 +18,7 @@
 		{{- if .CanManage }}
 			<button type="submit" data-variant="primary" data-testid="btn-save" :disabled="isLoading('templates')" :aria-busy="isLoading('templates')" aria-keyshortcuts="Control+S">{{ Icon "save" }} {{ $r.L.T "globals.buttons.save" }}</button>
 		{{- end }}
+		{{- if not .IsNew }}{{ template "denma-history-button" $r }}{{ end }}
 		<button type="button" class="outline" data-testid="btn-preview" @click="onPreviewBody" aria-keyshortcuts="F9">{{ Icon "eye" }} {{ $r.L.T "templates.preview" }}</button>
 	</div>
 </div>

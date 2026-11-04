@@ -61,7 +61,7 @@ func denmaInstallColumns(db *sqlx.DB) {
 
 // denmaHubColumns adds the hub's campaign tags, failed sends, daily limit and logo; run on every start.
 func denmaHubColumns(db *sqlx.DB) {
-	if _, err := db.Exec(denmaCampaignColumnsSQL +
+	if _, err := db.Exec(denmaCampaignColumnsSQL + denmaVersionColumnsSQL +
 		`INSERT INTO settings (key, value) VALUES ('denma.daily_limit', '0'), ('denma.daily_reserve', '5'),
 			('denma.admin_logo_url', '""'), ('denma.admin_icon_url', '""'), ('denma.audit_days', '365')
 			ON CONFLICT (key) DO NOTHING;` + denmaMoveSlidingWindowSQL); err != nil {

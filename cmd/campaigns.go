@@ -35,6 +35,8 @@ type campReq struct {
 
 	// This is only relevant to campaign test requests.
 	SubscriberEmails pq.StringArray `json:"subscribers"`
+
+	DenmaVersion int `json:"version"` // denma: the version the save started from (cmd/denma_versions.go)
 }
 
 // campContentReq wraps params coming from API requests for converting
@@ -499,6 +501,7 @@ func (a *App) CreateCampaign(c echo.Context) error {
 	if err := a.denmaSaveCampaign(out.ID, &o, &out); err != nil { // denma: cmd/denma_tags.go
 		return err
 	}
+	a.denmaCreatedBy(c, "campaign", out.ID) // denma: its history names who made it (cmd/denma_versions.go)
 
 	return c.JSON(http.StatusOK, okResp{out})
 }
@@ -550,11 +553,8 @@ func (a *App) UpdateCampaign(c echo.Context) error {
 		o = c
 	}
 
-	out, err := a.core.UpdateCampaign(id, o.Campaign, o.ListIDs, o.MediaIDs)
+	out, err := a.denmaUpdateCampaign(c, id, &o) // denma: only over the version it started from (cmd/denma_versions.go)
 	if err != nil {
-		return err
-	}
-	if err := a.denmaSaveCampaign(id, &o, &out); err != nil { // denma: cmd/denma_tags.go
 		return err
 	}
 

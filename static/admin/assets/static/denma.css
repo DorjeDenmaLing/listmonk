@@ -3080,3 +3080,78 @@ section.campaign {
         font-size: var(--text-8);
     }
 }
+
+/* Choosing whose edit to keep, when two people saved the same thing (denma-versions.js). */
+fieldset.denma-conflict {
+    border: 0;
+    margin: var(--space-3, 0.75rem) 0 0;
+    padding: 0;
+
+    legend {
+        font-weight: 600;
+        padding: 0;
+    }
+
+    label {
+        display: block;
+        overflow-wrap: anywhere;
+    }
+}
+
+/* An item's history (partials/denma/history.html). */
+dialog.denma-history .dialog-card {
+    max-width: min(48rem, 100%);
+}
+
+ol.denma-history-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+
+    li {
+        border-top: 1px solid var(--border);
+        overflow-wrap: anywhere;
+        padding: 0.6rem 0;
+    }
+
+    .hstack {
+        flex-wrap: wrap;
+        margin-top: 0.4rem;
+    }
+}
+
+section.denma-history-change {
+    overflow-wrap: anywhere;
+
+    h5 {
+        margin: 0.8rem 0 0.2rem;
+    }
+}
+
+pre.denma-history-diff {
+    max-height: 50vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+
+    .denma-added {
+        background: color-mix(in srgb, var(--success, #2e7d32) 15%, transparent);
+    }
+
+    .denma-removed {
+        background: color-mix(in srgb, var(--danger, #c62828) 15%, transparent);
+    }
+}
+
+/* Someone else editing, or saved since (partials/denma/history.html). */
+p.denma-editing-notice {
+    align-items: center;
+    background: var(--muted, #f4f4f5);
+    border-radius: var(--radius, 0.4rem);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0 0 0.8rem;
+    overflow-wrap: anywhere;
+    padding: 0.5rem 0.8rem;
+}

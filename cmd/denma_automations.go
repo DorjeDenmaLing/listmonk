@@ -292,6 +292,7 @@ type denmaAutomation struct {
 	FromEmail         string         `db:"from_email" json:"from_email"`
 	DelayMinutes      int            `db:"delay_minutes" json:"delay_minutes"`
 	Active            bool           `db:"active" json:"active"`
+	Version           int            `db:"denma_version" json:"version"`
 	ActiveSince       null.Time      `db:"active_since" json:"active_since"`
 	CreatedAt         time.Time      `db:"created_at" json:"created_at"`
 	UpdatedAt         time.Time      `db:"updated_at" json:"updated_at"`
@@ -357,6 +358,7 @@ LEFT JOIN campaigns c ON c.id = a.trigger_campaign_id`
 
 // denmaAutoForm is what the automation page saves.
 type denmaAutoForm struct {
+	Version           int      `json:"version"` // the version the save started from (cmd/denma_versions.go)
 	Name              string   `json:"name"`
 	TriggerType       string   `json:"trigger_type"`
 	ListIDs           []int    `json:"list_ids"`
@@ -1530,6 +1532,19 @@ func (a *App) DenmaSaveAutomation(c echo.Context) error {
 		return denmaInternal(err)
 	}
 	defer tx.Rollback()
+	// Only over the version it started from; who saves it, for its history (cmd/denma_versions.go).
+	if isNew {
+		err = denmaSaveAs(c, tx)
+	} else {
+		err = denmaBeginSave(c, tx, "automation", id, f.Version)
+	}
+	if err != nil {
+		var he *echo.HTTPError
+		if errors.As(err, &he) {
+			return err
+		}
+		return denmaInternal(err)
+	}
 
 	tplID := null.NewInt(f.TemplateID, f.TemplateID > 0)
 	campID := null.NewInt(f.TriggerCampaignID, f.TriggerCampaignID > 0)

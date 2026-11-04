@@ -4,6 +4,7 @@ import { api, urls, ListTag } from '../main.js';
 import * as u from '../utils.js';
 import { denmaTagAutocomplete } from '../denma-tags-ui.js';
 import { denmaUnsaved } from '../denma-unsaved.js';
+import { denmaEditing, denmaHistory, denmaVersions } from '../denma-versions.js';
 
 const UNITS = { minutes: 1, hours: 60, days: 1440 };
 
@@ -63,8 +64,15 @@ function denmaAutomation() {
   return {
     denmaTagAutocomplete,
     ...denmaUnsaved({ skip: ['active'], save() { return this.onSubmit(); } }), // the switch saves active itself
+    // Saves over the version it started from (denma-versions.js).
+    ...denmaVersions({ kind: 'automation', version: a.version, id() { return a.id; }, base() { return this.denmaLoaded; } }),
+    ...denmaHistory({ kind: 'automation', id() { return a.id; } }),
+    ...denmaEditing({ kind: 'automation', id() { return a.id; } }),
+    denmaLoaded: null,
     init() {
       this.denmaUnsavedInit();
+      this.$nextTick(() => { this.denmaLoaded = this.data(); });
+      this.denmaEditingStart();
     },
     form: {
       name: a.name || '',
@@ -170,7 +178,7 @@ function denmaAutomation() {
         return;
       }
       if (a.id) {
-        await api('automation', `/denma/automations/${a.id}`, 'PUT', this.data());
+        await this.denmaPut(`/denma/automations/${a.id}`, this.data());
         u.reload({ message: 'Saved', variant: 'success' });
         return;
       }

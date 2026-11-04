@@ -19,7 +19,7 @@ import (
 )
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL.
-const denmaFeaturesVersion = 65
+const denmaFeaturesVersion = 66
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't have them yet.
 var denmaFeatureDefaults = map[string]any{
@@ -91,6 +91,10 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 		if _, err := tx.Exec(`UPDATE settings SET value = 'true'::JSONB WHERE key = 'denma.unsubscribe_everywhere'`); err != nil {
 			return err
 		}
+	}
+	// Automations' tables first: their versions are in denmaFeaturesSQL (cmd/denma_versions.go).
+	if _, err := tx.Exec(denmaAutoTables); err != nil {
+		return fmt.Errorf("making the automations' tables: %w", err)
 	}
 	if _, err := tx.Exec(denmaFeaturesSQL); err != nil {
 		return fmt.Errorf("installing the triggers: %w", err)
@@ -220,6 +224,12 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 49 {
 		if _, err := tx.Exec(`DELETE FROM settings WHERE key = 'denma.design_template'`); err != nil {
 			return fmt.Errorf("removing the design setting: %w", err)
+		}
+	}
+	// What's there is each item's first version (cmd/denma_versions.go).
+	if ver < 66 {
+		if _, err := tx.Exec(denmaVersionsStartSQL); err != nil {
+			return fmt.Errorf("keeping the first versions: %w", err)
 		}
 	}
 	// An import's joins and tags start automations only if asked (cmd/denma_imports.go).
@@ -763,7 +773,7 @@ CREATE INDEX IF NOT EXISTS denma_subscribers_tags ON subscribers USING GIN ((att
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';
 INSERT INTO denma_tags (tag) SELECT DISTINCT t FROM campaigns, unnest(denma_tags) t
     WHERE NOT EXISTS (SELECT 1 FROM denma_tag_aliases a WHERE a.alias = t) ON CONFLICT DO NOTHING;
-` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaSharedAppliedSQL + denmaOptinTokenSQL + denmaNamesSQL + denmaCampaignStatsSQL + denmaMessagesSQL + denmaConsentCapSQL + denmaPrevContactsSQL + denmaImportBlocklistSQL + denmaTrigramSQL
+` + denmaPreviewTextSQL + denmaReplyToSQL + denmaReplyToMoveSQL + denmaRetriesSQL + denmaResubscribeSQL + denmaSignupSQL + denmaOptOutsSQL + denmaAPISQL + denmaNoConsentSQL + denmaSharedAppliedSQL + denmaOptinTokenSQL + denmaNamesSQL + denmaCampaignStatsSQL + denmaMessagesSQL + denmaConsentCapSQL + denmaPrevContactsSQL + denmaImportBlocklistSQL + denmaTrigramSQL + denmaVersionsSQL
 
 // denmaVisualTemplate is the center's default visual template's ID (0 for none), from the database.
 func (a *App) denmaVisualTemplate() int {

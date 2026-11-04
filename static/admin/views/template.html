@@ -17,6 +17,7 @@
 		<div class="page-content content">
 			<section class="card">
 				{{ template "denma-template-head" dict "Root" . "T" $t "IsNew" $isNew "CanManage" $canManage }}{{/* denma: back, name, Save and Preview in one row */}}
+				{{- if not $isNew }}{{ template "denma-editing-notice" . }}{{ end }}{{/* denma: who else is editing it */}}
 
 				<template x-if="form.type === 'tx'">
 					<label data-field>
@@ -61,6 +62,7 @@
 	</form>
 
 	{{ template "template-preview" . }}
+	{{- if not $isNew }}{{ template "denma-history" . }}{{ end }}{{/* denma: its versions (partials/denma/history.html) */}}
 </section>
 
 <script type="module" src="{{ URI "/admin/static/js/views/templates.js" }}?v={{ .AssetVersion }}" defer></script>

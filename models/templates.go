@@ -29,6 +29,8 @@ type Template struct {
 	BodySource null.String `db:"body_source" json:"body_source,omitempty"`
 	IsDefault  bool        `db:"is_default" json:"is_default"`
 
+	DenmaVersion int `db:"denma_version" json:"version"` // denma: which a save must give (cmd/denma_versions.go)
+
 	// Only relevant to tx (transactional) templates.
 	SubjectTpl  *txttpl.Template   `json:"-"`
 	Tpl         *template.Template `json:"-"`

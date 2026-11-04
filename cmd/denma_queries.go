@@ -33,6 +33,14 @@ UPDATE subscriber_lists SET status='confirmed', meta=meta || ($3::JSONB - '` + d
 UPDATE subscriber_lists SET status='unsubscribed', updated_at=NOW()
     WHERE subscriber_id = (SELECT id FROM sub);`,
 
+	// Templates with their version (cmd/denma_versions.go).
+	"get-templates": `SELECT id, name, type, subject,
+    (CASE WHEN $2 = false THEN body ELSE '' END) as body,
+    (CASE WHEN $2 = false THEN body_source ELSE NULL END) as body_source,
+    is_default, denma_version, created_at, updated_at
+    FROM templates WHERE ($1 = 0 OR id = $1) AND ($3 = '' OR type = $3::template_type)
+    ORDER BY created_at;`,
+
 	// Unique views and clicks are people's, not the anonymous ones.
 	"get-campaign-analytics-unique-counts": `WITH intval AS (
     SELECT CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMP - $2::TIMESTAMP)) / 86400) >= 7 THEN 'day' ELSE 'hour' END
