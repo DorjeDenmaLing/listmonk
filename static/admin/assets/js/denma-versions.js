@@ -332,11 +332,6 @@ function diffLines(x, y) {
 const htmlLines = (s) => (s || '').replace(/>\s*</g, '>\n<').split('\n').map((l) => l.trim()).filter(Boolean);
 const textLines = (s) => (s || '').split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
 
-// The lines removed and added between two HTML texts, or null if they're too long to compare.
-export function denmaDiff(a, b) {
-  return diffLines(htmlLines(a), htmlLines(b));
-}
-
 // The text HTML shows, a line for each block; parsed inert, never run.
 function shownText(html) {
   const doc = new DOMParser().parseFromString(html || '', 'text/html');
