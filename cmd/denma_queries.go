@@ -33,11 +33,11 @@ UPDATE subscriber_lists SET status='confirmed', meta=meta || ($3::JSONB - '` + d
 UPDATE subscriber_lists SET status='unsubscribed', updated_at=NOW()
     WHERE subscriber_id = (SELECT id FROM sub);`,
 
-	// Templates with their version (cmd/denma_versions.go).
+	// Templates with their version (cmd/denma_versions.go), 0 in a schema without versions.
 	"get-templates": `SELECT id, name, type, subject,
     (CASE WHEN $2 = false THEN body ELSE '' END) as body,
     (CASE WHEN $2 = false THEN body_source ELSE NULL END) as body_source,
-    is_default, denma_version, created_at, updated_at
+    is_default, COALESCE((to_jsonb(templates) ->> 'denma_version')::INT, 0) AS denma_version, created_at, updated_at
     FROM templates WHERE ($1 = 0 OR id = $1) AND ($3 = '' OR type = $3::template_type)
     ORDER BY created_at;`,
 
