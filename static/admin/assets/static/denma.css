@@ -3111,13 +3111,57 @@ ol.denma-history-list {
     li {
         border-top: 1px solid var(--border);
         overflow-wrap: anywhere;
-        padding: 0.6rem 0;
     }
 
-    .hstack {
-        flex-wrap: wrap;
-        margin-top: 0.4rem;
+    li:first-of-type {
+        border-top: 0;
     }
+
+    button.denma-history-row {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        border-radius: var(--radius, 0.4rem);
+        box-shadow: none;
+        color: inherit;
+        cursor: pointer;
+        display: flex;
+        font: inherit;
+        gap: 0.5rem;
+        height: auto;
+        justify-content: space-between;
+        padding: 0.6rem 0.4rem;
+        text-align: left;
+        width: 100%;
+
+        &:hover {
+            background: var(--muted, #f4f4f5);
+        }
+
+        .icon {
+            flex: none;
+            opacity: 0.5;
+        }
+    }
+
+    .denma-history-what {
+        display: block;
+        font-size: 0.9em;
+    }
+
+    li.is-aside .denma-history-row {
+        color: var(--muted-foreground);
+        font-style: italic;
+    }
+
+    .badge {
+        margin-left: 0.3rem;
+    }
+}
+
+.denma-history-actions {
+    flex-wrap: wrap;
+    margin-bottom: 0.4rem;
 }
 
 section.denma-history-change {

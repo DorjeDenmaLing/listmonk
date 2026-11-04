@@ -296,13 +296,10 @@ export function denmaVersions({
   };
 }
 
-// ---- The history: an item's versions, what changed since each, and restoring one as a new version.
+// ---- The history: an item's versions, what each save changed, and restoring one as a new version.
 
-// The lines removed and added between two texts, or null if they're too long to compare.
-export function denmaDiff(a, b) {
-  const split = (s) => (s || '').replace(/>\s*</g, '>\n<').split('\n').map((l) => l.trim()).filter(Boolean);
-  const x = split(a);
-  const y = split(b);
+// The lines removed and added between two lists of lines, or null if they're too long to compare.
+function diffLines(x, y) {
   if (x.length > 3000 || y.length > 3000) {
     return null;
   }
@@ -332,29 +329,102 @@ export function denmaDiff(a, b) {
   return out;
 }
 
-// A version's differences from now, by group: [{label, then, now, lines}].
-function changesSince(kind, then, now) {
-  const t = NORM[kind](then);
-  const n = NORM[kind](now);
-  return GROUPS[kind].filter(([, keys]) => keys.some((k) => !same(t[k], n[k]))).map(([label, keys]) => {
-    if (label === 'Content') {
-      return { label, lines: denmaDiff(t.body, n.body) };
+const htmlLines = (s) => (s || '').replace(/>\s*</g, '>\n<').split('\n').map((l) => l.trim()).filter(Boolean);
+const textLines = (s) => (s || '').split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+
+// The lines removed and added between two HTML texts, or null if they're too long to compare.
+export function denmaDiff(a, b) {
+  return diffLines(htmlLines(a), htmlLines(b));
+}
+
+// The text HTML shows, a line for each block; parsed inert, never run.
+function shownText(html) {
+  const doc = new DOMParser().parseFromString(html || '', 'text/html');
+  doc.querySelectorAll('head, style, script, template, noscript').forEach((e) => e.remove());
+  doc.querySelectorAll('br').forEach((e) => e.replaceWith('\n'));
+  doc.querySelectorAll('td, th').forEach((e) => e.append(' '));
+  doc.querySelectorAll('p, div, h1, h2, h3, h4, h5, h6, li, tr, table, ul, ol, blockquote, pre, section').forEach((e) => e.append('\n'));
+  return textLines(doc.body ? doc.body.textContent : '');
+}
+
+// A version's content as lines: its HTML where it's written by hand, else the text it shows.
+function contentLines(kind, d) {
+  if (kind === 'campaign' && ['markdown', 'plain'].includes(d.content_type)) {
+    return textLines(d.body);
+  }
+  const byHand = kind === 'campaign' ? d.content_type === 'html' : !d.body_source;
+  return byHand ? htmlLines(d.body) : shownText(d.body);
+}
+
+// The groups a list of changed fields is in; the plain text is made from the content, so it goes with it.
+function groupsOf(kind, changed) {
+  const gs = GROUPS[kind].filter(([, keys]) => keys.some((k) => changed(k)));
+  return gs.some(([l]) => l === 'Content') ? gs.filter(([l]) => l !== 'Plain text') : gs;
+}
+
+// Fields shown by name: lists and attachments.
+const NAMED = { lists: 'name', media: 'filename' };
+
+// The names of the IDs in key, from either version.
+function named(key, idList, a, b) {
+  const names = {};
+  [a, b].forEach((d) => (d[key] || []).forEach((x) => {
+    if (x && typeof x === 'object') {
+      names[x.id] = x[NAMED[key]] || `#${x.id}`;
     }
-    const show = (v) => keys.map((k) => peek(v[k])).join(' · ');
-    return { label, then: show(t), now: show(n) };
+  }));
+  return idList.length ? idList.map((i) => names[i] || `#${i}`).join(', ') : '(none)';
+}
+
+// What changed from version a to b, by group: [{label, before, after}] or [{label, lines}].
+function changesBetween(kind, a, b) {
+  const x = NORM[kind](a);
+  const y = NORM[kind](b);
+  return groupsOf(kind, (k) => !same(x[k], y[k])).map(([label, keys]) => {
+    if (label === 'Content') {
+      const lines = diffLines(contentLines(kind, x), contentLines(kind, y));
+      if (!lines || lines.length) {
+        return { label, lines };
+      }
+    }
+    const show = (n) => keys.map((k) => (NAMED[k] ? named(k, n[k], a, b) : peek(n[k]))).join(' · ');
+    return { label, before: show(x), after: show(y) };
   });
 }
 
-// What a version's list row says it is.
+// What a version's row says it is.
 function describe(kind, v, last) {
   if (v.set_aside) {
-    return 'Not saved: set aside when someone else had saved';
+    return 'Edit not kept: someone else saved first';
   }
   if (!v.changed || v.changed.length === 0) {
     return last && !v.saved_by ? 'As it was when the history began' : 'Created';
   }
-  const labels = GROUPS[kind].filter(([, keys]) => keys.some((k) => v.changed.includes(k))).map(([l]) => l);
-  return `Changed: ${labels.join(', ')}`;
+  const labels = groupsOf(kind, (k) => v.changed.includes(k)).map(([l]) => l);
+  return labels.length ? `Changed: ${labels.join(', ')}` : 'Changed';
+}
+
+// The version items[i] was made from: for an edit set aside, the one it started from; else the save before it.
+function baseOf(items, i) {
+  const v = items[i];
+  const from = v.set_aside && items.find((x) => !x.set_aside && x.version === v.version);
+  return from || items.slice(i + 1).find((x) => !x.set_aside) || null;
+}
+
+// When, as people say it: "Today, 10:04", "Yesterday, 15:20", "3 Nov, 9:12", "3 Nov 2025, 9:12".
+function when(t) {
+  const d = new Date(t);
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const today = new Date().setHours(0, 0, 0, 0);
+  const days = Math.round((today - new Date(t).setHours(0, 0, 0, 0)) / 864e5);
+  if (days === 0) {
+    return `Today, ${time}`;
+  }
+  if (days === 1) {
+    return `Yesterday, ${time}`;
+  }
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return `${d.toLocaleDateString([], { day: 'numeric', month: 'short', year: sameYear ? undefined : 'numeric' })}, ${time}`;
 }
 
 // A version's content in the page's own preview dialog (partials/campaign-preview.html, template-preview.html).
@@ -381,11 +451,11 @@ export function denmaHistory({ kind, id, canRestore = () => true }) {
   const preview = PREVIEW[kind] || null;
   return {
     history: {
-      items: [], loading: false, changes: null, changesOf: null,
+      items: [], loading: false, open: null, changes: null,
     },
 
     async denmaHistoryOpen() {
-      this.history.changes = null;
+      this.denmaHistoryBack();
       this.history.loading = true;
       this.$refs.denmaHistoryDialog.showModal();
       try {
@@ -395,10 +465,28 @@ export function denmaHistory({ kind, id, canRestore = () => true }) {
       }
     },
 
+    // One version: what its save changed, with View and Restore.
+    async denmaHistoryShow(i) {
+      const v = this.history.items[i];
+      const base = baseOf(this.history.items, i);
+      const get = (x) => api('versions', `/denma/versions/${kind}/${id.call(this)}/${x.id}`);
+      this.history.loading = true;
+      try {
+        const [one, before] = await Promise.all([get(v), base ? get(base) : null]);
+        this.history.changes = before ? changesBetween(kind, before.data, { ...before.data, ...one.data }) : null;
+        this.history.open = { ...v, index: i };
+      } finally {
+        this.history.loading = false;
+      }
+    },
+
+    denmaHistoryBack() {
+      this.history.open = null;
+      this.history.changes = null;
+    },
+
     denmaHistoryWhen(v) {
-      return new Date(v.saved_at).toLocaleString([], {
-        day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
-      });
+      return when(v.saved_at);
     },
 
     denmaHistoryWho(v) {
@@ -412,12 +500,18 @@ export function denmaHistory({ kind, id, canRestore = () => true }) {
       return describe(kind, v, i === this.history.items.length - 1);
     },
 
+    // What's there now: the newest save.
+    denmaHistoryCurrent(v) {
+      const now = this.history.items.find((x) => !x.set_aside);
+      return !!now && now.id === v.id;
+    },
+
     denmaHistoryCanPreview() {
       return !!preview;
     },
 
-    denmaHistoryCanRestore() {
-      return canRestore.call(this);
+    denmaHistoryCanRestore(v) {
+      return canRestore.call(this) && !this.denmaHistoryCurrent(v);
     },
 
     async denmaHistoryView(v) {
@@ -429,19 +523,11 @@ export function denmaHistory({ kind, id, canRestore = () => true }) {
       return api('versions', `/denma/versions/${kind}/${id.call(this)}/now`);
     },
 
-    async denmaHistoryChanges(v) {
-      this.history.loading = true;
-      try {
-        const [one, now] = await Promise.all([api('versions', `/denma/versions/${kind}/${id.call(this)}/${v.id}`), this._denmaNow()]);
-        this.history.changesOf = `${this.denmaHistoryWhen(v)}, ${this.denmaHistoryWho(v)}`;
-        this.history.changes = changesSince(kind, { ...now.data, ...one.data }, now.data);
-      } finally {
-        this.history.loading = false;
-      }
-    },
-
     async denmaHistoryRestore(v) {
-      const ask = () => u.confirm(`Restore the version of ${this.denmaHistoryWhen(v)}? It's saved as a new version, `
+      const at = new Date(v.saved_at).toLocaleString([], {
+        day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
+      });
+      const ask = () => u.confirm(`Restore the version of ${at}? It's saved as a new version, `
         + 'so nothing is lost: what\'s there now stays in the history.');
       if (!(await (this.denmaUnsavedFirst ? this.denmaUnsavedFirst('restoring', ask) : ask()))) {
         return;
