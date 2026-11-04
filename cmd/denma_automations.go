@@ -1592,6 +1592,11 @@ func (a *App) DenmaSaveAutomation(c echo.Context) error {
 			return denmaInternal(err)
 		}
 	}
+	if !isNew {
+		if err := denmaEndSave(tx, "automation", id, f.Version); err != nil { // cmd/denma_versions.go
+			return denmaInternal(err)
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return denmaInternal(err)
 	}

@@ -31,7 +31,7 @@ const (
 	denmaVersionAsideMax  = 5 << 20
 )
 
-// denmaVersionColumnsSQL gives campaigns and templates their version, in the hub too (denmaHubColumns).
+// denmaVersionColumnsSQL gives campaigns and templates their version, in the hub and a new install too.
 const denmaVersionColumnsSQL = `
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_version INT NOT NULL DEFAULT 1;
 ALTER TABLE templates ADD COLUMN IF NOT EXISTS denma_version INT NOT NULL DEFAULT 1;
@@ -263,6 +263,44 @@ func denmaBeginSave(c echo.Context, tx *sqlx.Tx, kind string, id, version int) e
 	return nil
 }
 
+// denmaEndSave gives the item back the version its save started from if the save changed nothing.
+func denmaEndSave(tx *sqlx.Tx, kind string, id, version int) error {
+	k := denmaVersionKinds[kind]
+	var cur int
+	if err := tx.Get(&cur, `SELECT denma_version FROM `+k.table+` WHERE id = $1`, id); err != nil || cur == version {
+		return err
+	}
+	_, err := tx.Exec(`UPDATE `+k.table+` SET denma_version = $2 WHERE id = $1 AND denma_version_data($3, $1) =
+		(SELECT data FROM denma_versions WHERE `+k.col+` = $1 AND NOT set_aside ORDER BY id DESC LIMIT 1)`, id, version, k.table)
+	return err
+}
+
+// denmaInFirstVersion runs fn on a new item in a transaction, without a new version, and keeps the result as its first.
+func denmaInFirstVersion(db *sqlx.DB, kind string, id int, fn func(*sqlx.Tx) error) error {
+	k := denmaVersionKinds[kind]
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`SELECT set_config('denma.bumped', ',' || $1 || ':' || $2::TEXT || ',', true)`, k.table, id); err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		return err
+	}
+	var has bool
+	if err := tx.Get(&has, `SELECT to_regclass('denma_versions') IS NOT NULL`); err != nil {
+		return err
+	}
+	if has {
+		if _, err := tx.Exec(`UPDATE denma_versions SET data = denma_version_data($2, $1) WHERE `+k.col+` = $1`, id, k.table); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // denmaUpdateCampaign saves a campaign over the version it started from (UpdateCampaign).
 func (a *App) denmaUpdateCampaign(c echo.Context, id int, o *campReq) (models.Campaign, error) {
 	tx, err := a.db.Beginx()
@@ -284,6 +322,9 @@ func (a *App) denmaUpdateCampaign(c echo.Context, id int, o *campReq) (models.Ca
 		id, pq.Array(tags), o.PreviewText, o.ReplyTo); err != nil {
 		return models.Campaign{}, denmaInternal(err)
 	}
+	if err := denmaEndSave(tx, "campaign", id, o.DenmaVersion); err != nil {
+		return models.Campaign{}, denmaInternal(err)
+	}
 	if err := tx.Commit(); err != nil {
 		return models.Campaign{}, denmaInternal(err)
 	}
@@ -302,6 +343,9 @@ func (a *App) denmaUpdateTemplate(c echo.Context, id int, o models.Template) (mo
 	}
 	if err := a.core.DenmaUpdateTemplateTx(tx, id, o.Name, o.Subject, []byte(o.Body), o.BodySource); err != nil {
 		return models.Template{}, err
+	}
+	if err := denmaEndSave(tx, "template", id, o.DenmaVersion); err != nil {
+		return models.Template{}, denmaInternal(err)
 	}
 	if err := tx.Commit(); err != nil {
 		return models.Template{}, denmaInternal(err)

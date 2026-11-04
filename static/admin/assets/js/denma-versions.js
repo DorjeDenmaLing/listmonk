@@ -100,6 +100,8 @@ const GROUPS = {
 };
 
 const NOUN = { campaign: 'campaign', template: 'template', automation: 'automation' };
+const LOADING = { campaign: 'campaigns', template: 'templates', automation: 'automation' }; // each editor's Save
+const STOP = Symbol('stop'); // the save ends without an answer
 
 // The merge of mine and theirs from base (null: unknown, so every difference is asked about):
 // [merged save, the groups both changed differently].
@@ -224,25 +226,42 @@ export function denmaVersions({
 }) {
   return {
     denmaVersion: version || 0,
+    denmaSaving: false,
 
     // Saves over the version it started from. Merged with someone else's save, it saves the merge and reloads
     // the page to show it; the promise then doesn't resolve, nor if the person cancels.
     async denmaPut(uri, payload) {
+      if (this.denmaSaving) {
+        return new Promise(() => {}); // a save is under way
+      }
+      const store = window.Alpine.store('admin');
+      this.denmaSaving = true;
+      store.loading[LOADING[kind]] = true;
+      let out;
+      try {
+        out = await this.denmaPutOnce(uri, payload);
+      } finally {
+        this.denmaSaving = false;
+        store.loading[LOADING[kind]] = false;
+      }
+      return out === STOP ? new Promise(() => {}) : out;
+    },
+
+    async denmaPutOnce(uri, payload) {
       let from = base.call(this);
       let save = payload;
+      let ver = this.denmaVersion;
       for (let tries = 0; tries < 3; tries += 1) {
         // eslint-disable-next-line no-await-in-loop
-        const r = await put(uri, { ...save, version: this.denmaVersion });
+        const r = await put(uri, { ...save, version: ver });
         if (r.data !== undefined) {
-          if (r.data && r.data.version) {
-            this.denmaVersion = r.data.version;
-          }
+          this.denmaVersion = (r.data && r.data.version) || ver;
           if (this.editing) {
             this.editing.changed = false;
           }
           if (tries > 0) {
             u.reload({ message: 'Saved, merged with the other changes.', variant: 'success' });
-            return new Promise(() => {});
+            return STOP;
           }
           return r.data;
         }
@@ -258,16 +277,16 @@ export function denmaVersions({
           // eslint-disable-next-line no-await-in-loop
           const choice = await ask(kind, now, clashes);
           if (!choice) {
-            return new Promise(() => {}); // nothing saved; the page keeps the edit
+            return STOP; // nothing saved; the page keeps the edit
           }
           const theirs = clashes.filter((c) => choice[c.label] === 'theirs');
           theirs.forEach((c) => c.keys.forEach((k) => { merged[k] = c.theirs[k]; }));
           if (theirs.length) {
             // eslint-disable-next-line no-await-in-loop
-            await api('versions', `/denma/versions/${kind}/${item}/aside`, 'POST', { version: this.denmaVersion, data: save });
+            await api('versions', `/denma/versions/${kind}/${item}/aside`, 'POST', { version: ver, data: save });
           }
         }
-        this.denmaVersion = now.version;
+        ver = now.version;
         from = now.data;
         save = merged;
       }

@@ -52,7 +52,7 @@ func denmaInitAudit(db *sqlx.DB) error {
 }
 
 // Requests that change nothing, though they're not GETs.
-var denmaAuditSkip = regexp.MustCompile(`/preview|^POST /api/campaigns/:id/(text|content)$|^POST /admin/subscribers`)
+var denmaAuditSkip = regexp.MustCompile(`/preview|^POST /api/campaigns/:id/(text|content)$|^POST /admin/subscribers|^POST /api/denma/editing/`)
 
 // GETs that are logged.
 var denmaAuditGets = map[string]bool{

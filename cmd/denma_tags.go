@@ -54,12 +54,12 @@ const denmaPreviewTextMax = 200
 
 // denmaInstallColumns adds the columns on a new install, before the queries are prepared.
 func denmaInstallColumns(db *sqlx.DB) {
-	if _, err := db.Exec(denmaCampaignColumnsSQL + denmaMediaLabelSQL); err != nil {
-		lo.Fatalf("denma: error adding the campaign tags column, failed sends and media labels: %v", err)
+	if _, err := db.Exec(denmaCampaignColumnsSQL + denmaMediaLabelSQL + denmaVersionColumnsSQL); err != nil {
+		lo.Fatalf("denma: error adding the campaign tags column, failed sends, media labels and versions: %v", err)
 	}
 }
 
-// denmaHubColumns adds the hub's campaign tags, failed sends, daily limit and logo; run on every start.
+// denmaHubColumns adds the hub's campaign tags, failed sends, versions, daily limit and logo; run on every start.
 func denmaHubColumns(db *sqlx.DB) {
 	if _, err := db.Exec(denmaCampaignColumnsSQL + denmaVersionColumnsSQL +
 		`INSERT INTO settings (key, value) VALUES ('denma.daily_limit', '0'), ('denma.daily_reserve', '5'),
@@ -465,14 +465,18 @@ func (a *App) denmaCheckCampaign(o *campReq, c echo.Context) error {
 	return a.denmaUnknownTags(o.SubscriberTags)
 }
 
-// denmaSaveCampaign saves a campaign's tags, preview text and reply-to into out, after listmonk's save.
+// denmaSaveCampaign saves a new campaign's tags, preview text and reply-to into out and its first version.
 func (a *App) denmaSaveCampaign(id int, o *campReq, out *models.Campaign) error {
 	tags := o.SubscriberTags
 	if tags == nil {
 		tags = []string{}
 	}
-	if _, err := a.db.Exec(`UPDATE campaigns SET denma_tags = $2, denma_preview_text = $3, denma_reply_to = $4 WHERE id = $1`,
-		id, pq.Array(tags), o.PreviewText, o.ReplyTo); err != nil {
+	err := denmaInFirstVersion(a.db, "campaign", id, func(tx *sqlx.Tx) error {
+		_, err := tx.Exec(`UPDATE campaigns SET denma_tags = $2, denma_preview_text = $3, denma_reply_to = $4 WHERE id = $1`,
+			id, pq.Array(tags), o.PreviewText, o.ReplyTo)
+		return err
+	})
+	if err != nil {
 		a.log.Printf("denma: error saving campaign %d's tags, preview text and reply-to: %v", id, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "Error saving the campaign's tags, preview text and reply-to.")
 	}
