@@ -3190,8 +3190,9 @@ pre.denma-history-diff {
 /* Someone else editing, or saved since (partials/denma/history.html). */
 p.denma-editing-notice {
     align-items: center;
-    background: var(--muted, #f4f4f5);
+    background: var(--tone-red-bg);
     border-radius: var(--radius, 0.4rem);
+    color: var(--tone-red);
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
