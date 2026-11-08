@@ -171,8 +171,19 @@ END $$;`
 // denmaImportBounced is a blocklist import's reason for addresses that bounced.
 const denmaImportBounced = "bounced"
 
+// denmaImportAllLists refuses imports to a user who can't change every list.
+func denmaImportAllLists(c echo.Context) error {
+	if u := auth.GetUser(c); !denmaManageAllLists(&u) {
+		return echo.NewHTTPError(http.StatusForbidden, "Importing needs access to all lists.")
+	}
+	return nil
+}
+
 // denmaImportStart records an import in denma_imports and gives its session the number.
 func (a *App) denmaImportStart(c echo.Context, opt *subimporter.SessionOpt) error {
+	if err := denmaImportAllLists(c); err != nil {
+		return err
+	}
 	if opt.Mode != subimporter.ModeSubscribe {
 		if opt.DenmaConsent {
 			return echo.NewHTTPError(http.StatusBadRequest, "Consent records are kept only when subscribing.")

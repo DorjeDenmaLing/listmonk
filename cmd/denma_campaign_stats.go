@@ -44,6 +44,11 @@ func (a *App) DenmaCampaignOutcomes(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.errorInvalidIDs", "error", err.Error()))
 	}
+	for _, id := range ids {
+		if err := a.checkCampaignPerm(auth.PermTypeGet, id, c); err != nil {
+			return err
+		}
+	}
 	out := struct {
 		UnsubsSince *time.Time             `json:"unsubscribes_since"`
 		Results     []denmaCampaignOutcome `json:"results"`

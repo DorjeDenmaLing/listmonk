@@ -24,6 +24,10 @@ type importView struct {
 
 // ViewImport renders the HTML view for the subscriber CSV import page.
 func (a *App) ViewImport(c echo.Context) error {
+	if err := denmaImportAllLists(c); err != nil { // denma: imports need every list (cmd/denma_imports.go)
+		return err
+	}
+
 	// Get the lists the user can access.
 	allLists, err := a.getViewableLists(c)
 	if err != nil {

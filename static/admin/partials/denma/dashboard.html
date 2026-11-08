@@ -2,7 +2,7 @@
 {{ define "denma-dashboard" }}
 {{- $d := .Data -}}
 {{- $perf := and ($d.Can "campaigns:get" "campaigns:get_all") ($d.Can "campaigns:get_analytics") ($d.Can "subscribers:get" "subscribers:get_all") -}}
-{{- $bounces := $d.Can "bounces:get" -}}
+{{- $bounces := and ($d.Can "bounces:get") $d.DenmaAllLists -}}
 {{- if or $perf $bounces }}
 <div class="vstack gap-6 denma-dash" x-data="denmaDashboard({ performance: {{ $perf }}, bounces: {{ $bounces }} })">
 	{{- if $perf }}

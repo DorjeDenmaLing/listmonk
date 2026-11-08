@@ -523,6 +523,9 @@ func (a *App) DenmaSetCenterStatus(c echo.Context) error {
 
 // denmaTplFuncs adds the hub's template functions (for the sidebar) to an App's; u is its URLs.
 func denmaTplFuncs(funcs template.FuncMap, u *UrlConfig) {
+	// DenmaAllLists and DenmaManageAllLists report whether a user may see, or change, every list.
+	funcs["DenmaAllLists"] = func(user auth.User) bool { return denmaAllLists(&user) }
+	funcs["DenmaManageAllLists"] = func(user auth.User) bool { return denmaManageAllLists(&user) }
 	// DenmaHubURL is the hub's dashboard, or "" without multi-center.
 	funcs["DenmaHubURL"] = func() string {
 		if denmaHub == nil {

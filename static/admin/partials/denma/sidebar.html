@@ -59,10 +59,10 @@
 					<li><a href="{{ URI "/admin/subscribers" }}?status=subscribed" {{ IsNav $p "subscribers.subscribed" }} data-cy="subscribed">{{ template "denma-icon" "email-check-outline" }}<span>Subscribers</span></a></li>
 					<li><a href="{{ URI "/admin/subscribers" }}?status=blocklisted" {{ IsNav $p "subscribers.blocklisted" }} data-cy="blocklisted">{{ template "denma-icon" "cancel" }}<span>Blocklisted</span></a></li>
 					{{- end }}
-					{{- if Can $u "subscribers:import" }}
+					{{- if and (Can $u "subscribers:import") (DenmaManageAllLists $u) }}
 					<li><a href="{{ URI "/admin/subscribers/import" }}" {{ IsNav $p "subscribers.import" }} data-cy="import">{{ template "denma-icon" "file-upload-outline" }}<span>{{ .L.T "menu.import" }}</span></a></li>
 					{{- end }}
-					{{- if Can $u "bounces:get" }}
+					{{- if and (Can $u "bounces:get") (DenmaAllLists $u) }}
 					<li><a href="{{ URI "/admin/subscribers/bounces" }}" {{ IsNav $p "subscribers.bounces" }} data-cy="bounces">{{ template "denma-icon" "email-bounce" }}<span>{{ .L.T "globals.terms.bounces" }}</span></a></li>
 					{{- end }}
 					{{- if Can $u "subscribers:get_all" }}{{/* cmd/denma_tags.go */}}

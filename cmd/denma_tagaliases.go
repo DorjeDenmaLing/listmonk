@@ -69,6 +69,9 @@ func (a *App) DenmaSetTagAliases(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
+	if err := a.denmaAllSubscribers(c); err != nil {
+		return err
+	}
 	tag := denmaNormTags([]string{req.Tag})
 	if len(tag) != 1 {
 		return echo.NewHTTPError(http.StatusBadRequest, "Name one tag.")

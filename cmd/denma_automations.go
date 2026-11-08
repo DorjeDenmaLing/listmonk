@@ -1204,7 +1204,10 @@ func (a *App) ViewDenmaAutomation(c echo.Context) error {
 			out.Held = err.Error()
 		}
 	}
-	if err := a.db.Select(&out.Lists, `SELECT id, name, type::TEXT, optin::TEXT, '' AS subject FROM lists ORDER BY name`); err != nil {
+	u := auth.GetUser(c)
+	allLists, listIDs := u.GetPermittedLists(auth.PermTypeGet | auth.PermTypeManage)
+	if err := a.db.Select(&out.Lists, `SELECT id, name, type::TEXT, optin::TEXT, '' AS subject FROM lists
+		WHERE $1 OR id = ANY($2) ORDER BY name`, allLists, pq.Array(listIDs)); err != nil {
 		return denmaInternal(err)
 	}
 	if err := a.db.Select(&out.Templates, `SELECT id, name, type::TEXT, '' AS optin, subject FROM templates
@@ -1213,8 +1216,8 @@ func (a *App) ViewDenmaAutomation(c echo.Context) error {
 	}
 	// The latest campaigns (and the automation's, if it's older).
 	if err := a.db.Select(&out.Campaigns, `SELECT id, name, status::TEXT AS type, '' AS optin, subject FROM campaigns
-		WHERE id IN (SELECT id FROM campaigns ORDER BY created_at DESC LIMIT 200) OR id = $1
-		ORDER BY created_at DESC`, out.Automation.TriggerCampaignID); err != nil {
+		WHERE $2 AND (id IN (SELECT id FROM campaigns ORDER BY created_at DESC LIMIT 200) OR id = $1)
+		ORDER BY created_at DESC`, out.Automation.TriggerCampaignID, denmaManageAllLists(&u)); err != nil {
 		return denmaInternal(err)
 	}
 	return c.Render(http.StatusOK, "admin-denma-automation", out)
@@ -1255,7 +1258,7 @@ func (a *App) denmaAutoListField(c echo.Context, ids []int) ([]int, error) {
 
 // denmaAutoAllLists refuses tag or campaign triggers or tag changes to a user without every list.
 func denmaAutoAllLists(c echo.Context, trigger string, tagActions bool) error {
-	if u := auth.GetUser(c); denmaAllLists(&u) {
+	if u := auth.GetUser(c); denmaManageAllLists(&u) {
 		return nil
 	}
 	switch {

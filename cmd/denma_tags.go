@@ -70,6 +70,9 @@ func denmaHubColumns(db *sqlx.DB) {
 	if err := denmaDeleteAPIUsers(db, "the hub"); err != nil { // cmd/denma_noapiusers.go
 		lo.Fatalf("denma: error deleting the hub's API users: %v", err)
 	}
+	if err := denmaCryptoFuncs(db); err != nil { // cmd/denma_centers.go
+		lo.Fatalf("denma: %v", err)
+	}
 }
 
 // denmaTagActiveSQL is true for an active subscriber (alias subscribers); the campaign queries use it too.
@@ -164,7 +167,8 @@ func initDenmaTagAPIHandlers(g *echo.Group, a *App) {
 
 type denmaTagsView struct {
 	adminView
-	Tags []denmaTagCount
+	Tags      []denmaTagCount
+	CanChange bool // may add, rename, merge and delete tags
 }
 
 // ViewDenmaTags renders Subscribers -> Tags.
@@ -177,7 +181,9 @@ func (a *App) ViewDenmaTags(c echo.Context) error {
 	if err != nil {
 		return denmaInternal(err)
 	}
-	return c.Render(http.StatusOK, "admin-denma-tags", denmaTagsView{adminView: v, Tags: tags})
+	u := auth.GetUser(c)
+	canChange := denmaManageAllLists(&u) && u.HasPerm("subscribers:manage")
+	return c.Render(http.StatusOK, "admin-denma-tags", denmaTagsView{adminView: v, Tags: tags, CanChange: canChange})
 }
 
 // DenmaGetTags returns the center's tags with their counts.
@@ -193,8 +199,8 @@ func (a *App) DenmaGetTags(c echo.Context) error {
 // denmaAllSubscribers returns an error unless the user may change every subscriber.
 func (a *App) denmaAllSubscribers(c echo.Context) error {
 	u := auth.GetUser(c)
-	if !denmaAllLists(&u) || !u.HasPerm("subscribers:manage") {
-		return echo.NewHTTPError(http.StatusForbidden, "Changing a tag for everyone needs access to all subscribers.")
+	if !denmaManageAllLists(&u) || !u.HasPerm("subscribers:manage") {
+		return echo.NewHTTPError(http.StatusForbidden, "Changing the center's tags needs access to all subscribers.")
 	}
 	return nil
 }
@@ -205,6 +211,9 @@ func (a *App) DenmaAddTag(c echo.Context) error {
 		Tag string `json:"tag"`
 	}
 	if err := c.Bind(&req); err != nil {
+		return err
+	}
+	if err := a.denmaAllSubscribers(c); err != nil {
 		return err
 	}
 	tag := denmaNormTags([]string{req.Tag})
@@ -426,9 +435,15 @@ func (a *App) DenmaTagSubscribers(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
-// denmaAllLists reports whether a user has access to every list.
+// denmaAllLists reports whether a user may see every list.
 func denmaAllLists(u *auth.User) bool {
 	all, _ := u.GetPermittedLists(auth.PermTypeGet | auth.PermTypeManage)
+	return all
+}
+
+// denmaManageAllLists reports whether a user may change every list.
+func denmaManageAllLists(u *auth.User) bool {
+	all, _ := u.GetPermittedLists(auth.PermTypeManage)
 	return all
 }
 
@@ -459,7 +474,7 @@ func (a *App) denmaCheckCampaign(o *campReq, c echo.Context) error {
 	if len(o.SubscriberTags) == 0 {
 		return nil
 	}
-	if u := auth.GetUser(c); !denmaAllLists(&u) {
+	if u := auth.GetUser(c); !denmaManageAllLists(&u) {
 		return echo.NewHTTPError(http.StatusForbidden, "Sending to tags needs access to all lists.")
 	}
 	return a.denmaUnknownTags(o.SubscriberTags)

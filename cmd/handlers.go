@@ -94,7 +94,7 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		g.GET(path.Join(uriAdmin, "/templates/new"), a.ViewNewTemplate)
 		g.GET(path.Join(uriAdmin, "/templates/:id"), hasID(a.ViewTemplate))
 		g.GET(path.Join(uriAdmin, "/subscribers/import"), a.ViewImport)
-		g.GET(path.Join(uriAdmin, "/subscribers/bounces"), a.ViewBounces)
+		g.GET(path.Join(uriAdmin, "/subscribers/bounces"), denmaBouncesAllLists(a.ViewBounces)) // denma: every list (cmd/denma_bounces.go)
 		g.GET(path.Join(uriAdmin, "/subscribers"), a.ViewSubscribers)
 		g.POST(path.Join(uriAdmin, "/subscribers"), a.ViewSubscribers)
 		g.GET(path.Join(uriAdmin, "/subscribers/lists/:id"), hasID(a.ViewSubscribers))
@@ -151,9 +151,9 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		g.GET("/api/health", a.HealthCheck)
 		g.GET("/api/config", a.GetServerConfig)
 		g.GET("/api/lang/:lang", a.GetI18nLang)
-		g.GET("/api/dashboard/charts", pm(a.GetDashboardCharts, "subscribers:get_all")) // denma: needs a permission
-		g.GET("/api/dashboard/counts", pm(a.GetDashboardCounts, "subscribers:get_all")) // denma: needs a permission
-		g.GET("/api/dashboard/campaigns", a.GetDashboardCampaigns)
+		g.GET("/api/dashboard/charts", pm(a.GetDashboardCharts, "subscribers:get_all"))                      // denma: needs a permission
+		g.GET("/api/dashboard/counts", pm(a.GetDashboardCounts, "subscribers:get_all"))                      // denma: needs a permission
+		g.GET("/api/dashboard/campaigns", pm(a.GetDashboardCampaigns, "campaigns:get_all", "campaigns:get")) // denma: needs a permission
 
 		g.GET("/api/settings", pm(a.GetSettings, "settings:get"))
 		g.PUT("/api/settings", pm(a.UpdateSettings, "settings:manage"))
@@ -162,7 +162,7 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		g.POST("/api/admin/reload", pm(a.ReloadApp, "settings:manage"))
 		g.GET("/api/logs", pm(a.GetLogs, "settings:get"))
 		g.GET("/api/events", pm(a.EventStream, "settings:get"))
-		g.GET("/api/about", a.GetAboutInfo)
+		g.GET("/api/about", pm(a.GetAboutInfo, "settings:get")) // denma: needs a permission
 
 		g.GET("/api/subscribers", pm(a.QuerySubscribers, "subscribers:get_all", "subscribers:get"))
 		g.GET("/api/subscribers/:id", pm(hasID(a.GetSubscriber), "subscribers:get_all", "subscribers:get"))
@@ -181,11 +181,11 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		g.DELETE("/api/subscribers/:id", pm(hasID(a.DeleteSubscriber), "subscribers:manage"))
 		g.DELETE("/api/subscribers", pm(a.DeleteSubscribers, "subscribers:manage"))
 
-		g.GET("/api/bounces", pm(a.GetBounces, "bounces:get"))
-		g.PUT("/api/bounces/blocklist", pm(a.BlocklistBouncedSubscribers, "bounces:manage"))
-		g.GET("/api/bounces/:id", pm(hasID(a.GetBounce), "bounces:get"))
-		g.DELETE("/api/bounces", pm(a.DeleteBounces, "bounces:manage"))
-		g.DELETE("/api/bounces/:id", pm(hasID(a.DeleteBounce), "bounces:manage"))
+		g.GET("/api/bounces", pm(denmaBouncesAllLists(a.GetBounces), "bounces:get"))                               // denma: every list
+		g.PUT("/api/bounces/blocklist", pm(denmaBouncesAllLists(a.BlocklistBouncedSubscribers), "bounces:manage")) // denma: every list
+		g.GET("/api/bounces/:id", pm(hasID(denmaBouncesAllLists(a.GetBounce)), "bounces:get"))                     // denma: every list
+		g.DELETE("/api/bounces", pm(denmaBouncesAllLists(a.DeleteBounces), "bounces:manage"))                      // denma: every list
+		g.DELETE("/api/bounces/:id", pm(hasID(denmaBouncesAllLists(a.DeleteBounce)), "bounces:manage"))            // denma: every list
 
 		// Subscriber operations based on arbitrary SQL queries.
 		// These aren't very REST-like.

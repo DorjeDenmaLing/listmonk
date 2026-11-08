@@ -163,6 +163,9 @@ func (d denmaImportAddr) blocked() string {
 
 // DenmaImportPreview reads an import's file and settings and says what it would do.
 func (a *App) DenmaImportPreview(c echo.Context) error {
+	if err := denmaImportAllLists(c); err != nil {
+		return err
+	}
 	user := auth.GetUser(c)
 	key := denmaKeptKey(a.ko.String("denma.center"), user.ID)
 	params, f, upload, token, err := a.denmaPreviewForm(c, key)

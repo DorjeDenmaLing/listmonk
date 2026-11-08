@@ -20,6 +20,7 @@ import (
 	"github.com/gofrs/uuid/v5"
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/koanf/v2"
+	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/bounce/webhooks"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
@@ -546,4 +547,24 @@ func (d *denmaCenters) findInCenters(q, arg string) ([]string, error) {
 		return nil, err
 	}
 	return slugs, nil
+}
+
+// denmaBouncesAllLists lets the center's bounces be seen by users with every list, and changed by those who may change every list.
+func denmaBouncesAllLists(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		u := auth.GetUser(c)
+		ok := denmaAllLists(&u)
+		if c.Request().Method != http.MethodGet {
+			ok = denmaManageAllLists(&u)
+		}
+		if !ok {
+			return echo.NewHTTPError(http.StatusForbidden, "The center's bounces need access to all lists.")
+		}
+		return next(c)
+	}
+}
+
+// DenmaAllLists reports whether the page's user may see every list.
+func (v adminView) DenmaAllLists() bool {
+	return denmaAllLists(&v.Profile)
 }

@@ -1,7 +1,7 @@
 {{ define "admin-denma-tags" -}}
 {{ template "admin-header" . }}
 {{- $d := .Data -}}
-{{- $canManage := $d.Can "subscribers:manage" -}}
+{{- $canManage := $d.CanChange -}}
 
 {{/* denma: Subscribers -> Tags, the center's subscriber tags (cmd/denma_tags.go). */}}
 <section class="denma-tags" x-data="denmaTags">

@@ -14,6 +14,7 @@ import (
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
+	null "gopkg.in/volatiletech/null.v6"
 )
 
 // dashboardCampaignCount is the number of recent campaigns to show on the dashboard.
@@ -123,6 +124,9 @@ func (a *App) GetDashboardCampaigns(c echo.Context) error {
 // getDashboardCampaigns queries recent campaigns to show on the dashboard.
 func (a *App) getDashboardCampaigns(c echo.Context) (models.Campaigns, error) {
 	user := auth.GetUser(c)
+	if !user.HasPerm(auth.PermCampaignsGetAll) && !user.HasPerm(auth.PermCampaignsGet) { // denma: only for those who may see campaigns
+		return models.Campaigns{}, nil
+	}
 
 	// Either the user has campaigns:get_all permission and can view all campaigns,
 	// or the campaigns are filtered by the lists the user has get|manage access to.
@@ -157,6 +161,7 @@ func (a *App) getDashboardCampaigns(c echo.Context) (models.Campaigns, error) {
 	for i := range camps {
 		camps[i].Body = ""
 		camps[i].BodySource.Valid = false
+		camps[i].AltBody = null.String{} // denma: the plain text too
 	}
 
 	return camps, nil
