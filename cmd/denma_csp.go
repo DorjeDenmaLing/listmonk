@@ -42,13 +42,23 @@ func denmaNonce() string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
-// denmaSameSite refuses a change to the admin API (not its public routes) sent from another site.
+// reDenmaPlaceLink matches the admin links that change which center the admin shows.
+var reDenmaPlaceLink = regexp.MustCompile(`^/admin/(switch/[^/]+|centers/[^/]+/open|hub)/?$`)
+
+// denmaSameSite refuses a change to the admin or a sign-in sent from another site.
 func denmaSameSite(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		r := c.Request()
 		p := r.URL.Path
-		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions ||
-			!strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/api/public/") {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+			if s := r.Header.Get("Sec-Fetch-Site"); (s == "cross-site" || s == "same-site") && reDenmaPlaceLink.MatchString(p) {
+				return echo.NewHTTPError(http.StatusForbidden, "This link came from another site.")
+			}
+			return next(c)
+		}
+		admin := (strings.HasPrefix(p, "/api/") && !strings.HasPrefix(p, "/api/public/")) ||
+			p == "/admin" || strings.HasPrefix(p, "/admin/") || p == denmaLoginPath || strings.HasPrefix(p, denmaLoginPath+"/")
+		if !admin {
 			return next(c)
 		}
 		from := r.Header.Get("Origin")

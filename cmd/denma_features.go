@@ -19,7 +19,7 @@ import (
 )
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL.
-const denmaFeaturesVersion = 66
+const denmaFeaturesVersion = 67
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't have them yet.
 var denmaFeatureDefaults = map[string]any{
@@ -224,6 +224,12 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 49 {
 		if _, err := tx.Exec(`DELETE FROM settings WHERE key = 'denma.design_template'`); err != nil {
 			return fmt.Errorf("removing the design setting: %w", err)
+		}
+	}
+	// pgcrypto's gen_salt with a cost, for passwords (cmd/denma_login.go).
+	if ver < 67 {
+		if err := denmaCryptoFuncs(tx); err != nil {
+			return err
 		}
 	}
 	// What's there is each item's first version (cmd/denma_versions.go).

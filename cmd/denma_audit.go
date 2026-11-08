@@ -271,7 +271,7 @@ func (a *App) denmaAuditWrite(c echo.Context, route, target, targetName string, 
 	}
 
 	if strings.HasPrefix(route, denmaLoginPath) || strings.HasPrefix(route, "/admin/login") {
-		redact = func(v any) any { return denmaRedact(denmaRedactPersonal(v)) }
+		redact = func(v any) any { return denmaRedact(denmaRedactPersonal(denmaWithoutTyped(v))) }
 	}
 	if q := req.URL.Query(); len(q) > 0 {
 		details["query"] = redact(map[string][]string(q))
@@ -470,6 +470,29 @@ func (d *denmaCenters) pruneAuditLog() {
 
 // Keys whose values aren't recorded.
 var denmaSecretKey = regexp.MustCompile(`(?i)pass|secret|token|otp|totp|api_?key|access_?key|private|^code$|^key$|cookie|session|nonce`)
+
+// denmaWithoutTyped is a sign-in's values without the username or address typed: the entry names the account.
+func denmaWithoutTyped(v any) any {
+	switch t := v.(type) {
+	case map[string][]string:
+		out := make(map[string][]string, len(t))
+		for k, x := range t {
+			if k != "username" && k != "email" {
+				out[k] = x
+			}
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, x := range t {
+			if k != "username" && k != "email" {
+				out[k] = x
+			}
+		}
+		return out
+	}
+	return v
+}
 
 // denmaRedact is a request's values without secrets, with long text and lists cut.
 func denmaRedact(v any) any {

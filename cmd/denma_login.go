@@ -30,6 +30,14 @@ const (
 	// The signing-in-so-far cookie, for the two-factor code and choosing a center.
 	denmaLoginCookie = "denma_login"
 	denmaLoginTTL    = 10 * time.Minute
+
+	// denmaBcryptCost is the bcrypt cost of new password hashes.
+	denmaBcryptCost = "12"
+	// denmaNoPasswordHash is checked against when there's no password to check, so every check takes as long.
+	denmaNoPasswordHash = "$2a$12$FHT9nTCWk6htoCQ5SrkeG.c4xyc09C6iyRwB5CBton0y3A/SC1Q2W"
+
+	// denmaForgotTime is how long /login/forgot takes to answer, at least.
+	denmaForgotTime = 1500 * time.Millisecond
 )
 
 // loginRoute hands the sign-in pages to the hub's router, reporting whether it did.
@@ -167,8 +175,11 @@ func (a *App) DenmaLogin(c echo.Context) error {
 		}
 	}()
 
+	// Every answer clears the place, so none tells a superadmin from anyone else (cmd/denma_place.go).
+	denmaSetPlace(c, "")
+
 	// Not too many guesses (cmd/denma_throttle.go): past the limit the password isn't checked.
-	account := a.denmaPersonKey(username)
+	account, personID := a.denmaPersonKey(username)
 	if err := a.denmaPasswordWait(c, account); err != nil {
 		return a.renderLoginPage(c, err)
 	}
@@ -186,18 +197,21 @@ func (a *App) DenmaLogin(c echo.Context) error {
 		if next != uriAdmin && !strings.HasPrefix(next, uriAdmin+"/") {
 			c.Request().Form.Set("next", uriAdmin) // read already, by FormValue
 		}
-		denmaSetPlace(c, "") // the admin at /admin is the hub's (cmd/denma_place.go)
 		return a.LoginPage(c)
 	}
 
 	var p denmaPerson
+	if personID == 0 {
+		_, _ = a.db.Exec(`SELECT crypt($1, $2)`, password, denmaNoPasswordHash) // as long as a real check
+		return invalid()
+	}
 	err := a.db.Get(&p, `SELECT `+denmaPersonCols+` FROM denma.people p
-		WHERE (LOWER(p.username) = LOWER($1) OR LOWER(p.email) = LOWER($1))
-		AND p.password IS NOT NULL AND crypt($2, p.password) = p.password`, username, password)
+		WHERE p.id = $1 AND crypt($2, COALESCE(p.password, $3)) = p.password`, personID, password, denmaNoPasswordHash)
 	if err != nil || username == "" || password == "" {
 		return invalid()
 	}
 	a.denmaPasswordResult(c, account, true)
+	a.denmaRehash(`denma.people`, p.ID, password)
 	return a.denmaPasswordOK(c, &p, next)
 }
 
@@ -338,7 +352,14 @@ func (a *App) DenmaLoginCenters(c echo.Context) error {
 
 // DenmaForgot e-mails a person a link to set a new password, and has the hub do so for a superadmin.
 func (a *App) DenmaForgot(c echo.Context) error {
+	start := time.Now()
 	email := strings.ToLower(strings.TrimSpace(c.FormValue("email")))
+	// As long whoever it is: a superadmin's e-mail is sent before the answer (doForgotPassword).
+	defer func() {
+		if d := time.Since(start); d < denmaForgotTime {
+			time.Sleep(denmaForgotTime - d)
+		}
+	}()
 	// Limited by address and client (cmd/denma_throttle.go); the page says the same.
 	if !denmaForgotAllowed(c, email) {
 		return c.Render(http.StatusOK, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.resetLinkSent")))
@@ -349,7 +370,7 @@ func (a *App) DenmaForgot(c echo.Context) error {
 			a.log.Printf("denma: error finding the person for a forgotten password: %v", err)
 		}
 		if p != nil {
-			a.denmaSendReset(p)
+			go a.denmaSendReset(p)
 		}
 	}
 	return a.ForgotPage(c)
@@ -359,11 +380,11 @@ func (a *App) DenmaForgot(c echo.Context) error {
 func (a *App) denmaSendReset(p *denmaPerson) {
 	token, err := denmaHub.newToken(p.ID, passwordResetTTL)
 	if err != nil {
-		a.log.Printf("denma: error making a reset link for %s: %v", p.Email, err)
+		a.log.Printf("denma: error making a reset link for person %d: %v", p.ID, err)
 		return
 	}
 	if ms, err := denmaHub.centersOf(p.ID); err != nil {
-		a.log.Printf("denma: error finding the centers of %s for a reset link: %v", p.Email, err)
+		a.log.Printf("denma: error finding the centers of person %d for a reset link: %v", p.ID, err)
 	} else if len(ms) > 0 {
 		if ctr := denmaHub.get(ms[0].Slug); ctr != nil {
 			a = ctr.app
@@ -422,7 +443,7 @@ func (a *App) DenmaLoginReset(c echo.Context) error {
 
 	// The link goes with the new password (setPassword).
 	if err := denmaHub.setPassword(p.ID, password, ""); err != nil {
-		a.log.Printf("denma: error setting %s's password: %v", p.Email, err)
+		a.log.Printf("denma: error setting person %d's password: %v", p.ID, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
 	}
 	return a.denmaPasswordOK(c, p, "")
@@ -535,4 +556,12 @@ func (a *App) denmaCheckNoOIDC(set *models.Settings) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "OIDC sign-in can't be turned on: everyone signs in at /login.")
 	}
 	return nil
+}
+
+// denmaRehash stores a password just checked with the current bcrypt cost, if its hash has a lower one.
+func (a *App) denmaRehash(table string, id int, password string) {
+	if _, err := a.db.Exec(`UPDATE `+table+` SET password = crypt($2, gen_salt('bf', `+denmaBcryptCost+`))
+		WHERE id = $1 AND password NOT LIKE '$2a$`+denmaBcryptCost+`$%'`, id, password); err != nil {
+		a.log.Printf("denma: error updating a password's hash: %v", err)
+	}
 }

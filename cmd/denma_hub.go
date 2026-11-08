@@ -383,8 +383,8 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "Enter the center's name.")
 	case !reDenmaSlug.MatchString(req.Slug) || len(req.Slug) > 50:
 		return echo.NewHTTPError(http.StatusBadRequest, "The address can have lowercase letters, digits and single hyphens.")
-	case !strHasLen(req.AdminUsername, 3, 200) || !reUsername.MatchString(req.AdminUsername):
-		return echo.NewHTTPError(http.StatusBadRequest, "The admin's username needs at least 3 letters, digits or _-.@")
+	case !strHasLen(req.AdminUsername, 3, 200) || !reUsername.MatchString(req.AdminUsername) || strings.Contains(req.AdminUsername, "@"):
+		return echo.NewHTTPError(http.StatusBadRequest, "The admin's username needs at least 3 letters, digits or _-.")
 	case !strHasLen(req.AdminName, 1, 200):
 		return echo.NewHTTPError(http.StatusBadRequest, "Enter the admin's name.")
 	}

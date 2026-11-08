@@ -150,14 +150,20 @@ func denmaAccountKey(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }
 
-// denmaPersonKey is the account a /login sign-in counts under: the person whose username or e-mail it is.
-func (a *App) denmaPersonKey(name string) string {
-	var id int
-	if err := a.db.Get(&id, `SELECT id FROM denma.people WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1) LIMIT 1`,
-		strings.TrimSpace(name)); err == nil {
-		return "person:" + strconv.Itoa(id)
+// denmaPersonKey is the account a /login sign-in counts under, and the person signing in (0 if none).
+func (a *App) denmaPersonKey(name string) (string, int) {
+	if id := a.denmaPersonNamed(name); id != 0 {
+		return "person:" + strconv.Itoa(id), id
 	}
-	return denmaAccountKey(name)
+	return denmaAccountKey(name), 0
+}
+
+// denmaPersonNamed is the person whose e-mail address name is, else whose username, or 0.
+func (a *App) denmaPersonNamed(name string) int {
+	var id int
+	_ = a.db.Get(&id, `SELECT id FROM denma.people WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)
+		ORDER BY LOWER(email) = LOWER($1) DESC, id LIMIT 1`, strings.TrimSpace(name))
+	return id
 }
 
 // denmaPasswordWait is the error for a password that may not be tried now, or nil.

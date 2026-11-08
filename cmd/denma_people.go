@@ -44,7 +44,7 @@ const (
 
 var (
 	errDenmaUsernameTaken = echo.NewHTTPError(http.StatusBadRequest, "Username already taken")
-	errDenmaUsernameAt    = echo.NewHTTPError(http.StatusBadRequest, "A superadmin's username can't have an @: it could be someone's e-mail address.")
+	errDenmaUsernameAt    = echo.NewHTTPError(http.StatusBadRequest, "A username can't have an @: it could be someone's e-mail address.")
 	errDenmaEmailTaken    = echo.NewHTTPError(http.StatusBadRequest, "E-mail address already taken")
 )
 
@@ -93,7 +93,13 @@ func denmaInitPeople(db *sqlx.DB) error {
 			used_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 		);
 		-- Drops the old invites table.
-		DROP TABLE IF EXISTS denma.invites;`)
+		DROP TABLE IF EXISTS denma.invites;
+		-- The users each center's admins added, for their daily limit.
+		CREATE TABLE IF NOT EXISTS denma.center_invites (
+			center_id INTEGER NOT NULL REFERENCES denma.centers(id) ON DELETE CASCADE,
+			added_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS center_invites_center ON denma.center_invites (center_id, added_at);`)
 	return err
 }
 
@@ -196,10 +202,10 @@ func (d *denmaCenters) centersOf(personID int) ([]denmaMembership, error) {
 	return out, nil
 }
 
-// usernameTaken reports whether a username is a person's (but personID's) or a superadmin's.
+// usernameTaken reports whether a username is a person's username or e-mail address (but personID's) or a superadmin's.
 func (d *denmaCenters) usernameTaken(q sqlx.Queryer, username string, personID int) (bool, error) {
 	var taken bool
-	err := sqlx.Get(q, &taken, `SELECT EXISTS (SELECT 1 FROM denma.people WHERE LOWER(username) = LOWER($1) AND id <> $2)
+	err := sqlx.Get(q, &taken, `SELECT EXISTS (SELECT 1 FROM denma.people WHERE (LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)) AND id <> $2)
 		OR EXISTS (SELECT 1 FROM `+pq.QuoteIdentifier(d.baseSchema)+`.users WHERE LOWER(username) = LOWER($1) AND type = 'user')`,
 		username, personID)
 	return taken, err
@@ -246,7 +252,7 @@ func (d *denmaCenters) setPassword(personID int, password, keep string) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`UPDATE denma.people SET password = crypt($2, gen_salt('bf')), updated_at = NOW() WHERE id = $1`, personID, password); err != nil {
+	if _, err := tx.Exec(`UPDATE denma.people SET password = crypt($2, gen_salt('bf', `+denmaBcryptCost+`)), updated_at = NOW() WHERE id = $1`, personID, password); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM denma.person_tokens WHERE person_id = $1`, personID); err != nil {
@@ -358,7 +364,7 @@ func (d *denmaCenters) adoptPeople(c *denmaCenter, db *sqlx.DB) error {
 			pid := 0
 			if p != nil {
 				pid = p.ID
-				lo.Printf("denma: center %s: user %s is %s, who signs in with their own password", c.Slug, u.Username, p.Email)
+				lo.Printf("denma: center %s: user %s is person %d, who signs in with their own password", c.Slug, u.Username, p.ID)
 			} else {
 				uname, err := d.freeUsername(tx, u.Username, c.Slug)
 				if err != nil {
@@ -453,7 +459,7 @@ func (d *denmaCenters) addMember(ctr *denmaCenter, u auth.User) (auth.User, denm
 	if !p.HasPassword {
 		token, err := d.newToken(p.ID, denmaInviteTTL)
 		if err != nil {
-			lo.Printf("denma: error making the set-password link for %s: %v", p.Email, err)
+			lo.Printf("denma: error making the set-password link for person %d: %v", p.ID, err)
 			return user, inv, nil
 		}
 		inv.URL = d.resetURL(p, token)
@@ -476,7 +482,7 @@ func (d *denmaCenters) sendInvite(ctr *denmaCenter, p *denmaPerson, link string)
 		"Days":     int(denmaInviteTTL.Hours() / 24),
 	})
 	if err != nil {
-		lo.Printf("denma: error rendering the invite for %s: %v", p.Email, err)
+		lo.Printf("denma: error rendering the invite for person %d: %v", p.ID, err)
 		return false
 	}
 	subject := fmt.Sprintf("You can now manage %s's mailing lists", site)
@@ -491,7 +497,7 @@ func (d *denmaCenters) sendInvite(ctr *denmaCenter, p *denmaPerson, link string)
 	}
 	app.denmaSetSystemSender(&msg) // cmd/denma_domains.go
 	if err := app.emailMsgr.Push(msg); err != nil {
-		lo.Printf("denma: error sending the invite to %s: %v", p.Email, err)
+		lo.Printf("denma: error sending the invite to person %d: %v", p.ID, err)
 		return false
 	}
 	return true
@@ -547,15 +553,18 @@ func (a *App) denmaIsMember(userID int) bool {
 	return p != nil || err != nil
 }
 
-// denmaCheckUserUnique refuses a hub user's username that's a person's or could be a person's e-mail address.
+// denmaCheckUserUnique refuses a username that could be an e-mail address, and a hub user's that's a person's.
 func (a *App) denmaCheckUserUnique(u auth.User, id int) error {
-	if denmaHub == nil || a.denmaInCenter() || u.Type == auth.UserTypeAPI {
+	if denmaHub == nil || u.Type == auth.UserTypeAPI {
 		return nil
 	}
 	if strings.Contains(u.Username, "@") {
 		if cur, err := a.core.GetUser(id, "", ""); id == 0 || err != nil || !strings.EqualFold(cur.Username, u.Username) {
 			return errDenmaUsernameAt
 		}
+	}
+	if a.denmaInCenter() {
+		return nil
 	}
 	var taken bool
 	if err := a.db.Get(&taken, `SELECT EXISTS (SELECT 1 FROM denma.people WHERE LOWER(username) = LOWER($1))`, u.Username); err != nil {
@@ -567,15 +576,38 @@ func (a *App) denmaCheckUserUnique(u auth.User, id int) error {
 	return nil
 }
 
+// denmaInvitesPerDay is how many users a center's admins may add in a day, each sent an e-mail.
+const denmaInvitesPerDay = 20
+
 // denmaCreateMember adds a user in a center: a person, by e-mail address (addMember).
 func (a *App) denmaCreateMember(c echo.Context, u auth.User) (bool, error) {
 	ctr := a.denmaCenterOf()
 	if ctr == nil || u.Type == auth.UserTypeAPI {
 		return false, nil
 	}
+	if err := a.denmaCheckUserUnique(u, 0); err != nil {
+		return true, err
+	}
+	limited := !denmaIsSuperadmin(c)
+	if limited {
+		var n int
+		if err := a.db.Get(&n, `WITH old AS (DELETE FROM denma.center_invites WHERE added_at < NOW() - INTERVAL '1 day')
+			SELECT COUNT(*) FROM denma.center_invites WHERE center_id = $1 AND added_at >= NOW() - INTERVAL '1 day'`, ctr.ID); err != nil {
+			return true, denmaInternal(err)
+		}
+		if n >= denmaInvitesPerDay {
+			return true, echo.NewHTTPError(http.StatusTooManyRequests,
+				fmt.Sprintf("Your center's admins have added %d users in the last day. Try again tomorrow, or ask a superadmin.", denmaInvitesPerDay))
+		}
+	}
 	user, _, err := denmaHub.addMember(ctr, u)
 	if err != nil {
 		return true, err
+	}
+	if limited {
+		if _, err := a.db.Exec(`INSERT INTO denma.center_invites (center_id) VALUES ($1)`, ctr.ID); err != nil {
+			a.log.Printf("denma: error counting an added user: %v", err)
+		}
 	}
 	a.denmaHideTwofa(c, &user) // cmd/denma_hierarchy.go
 	return true, c.JSON(http.StatusOK, okResp{user})
@@ -599,6 +631,9 @@ func (a *App) denmaUpdateMember(c echo.Context, id int, u auth.User) (bool, erro
 
 	if u.Name == "" {
 		u.Name = u.Username
+	}
+	if err := a.denmaCheckUserUnique(u, id); err != nil {
+		return true, err
 	}
 	if err := a.denmaCheckAssign(c, auth.UserTypeUser, u.UserRoleID, u.ListRoleID); err != nil {
 		return true, err

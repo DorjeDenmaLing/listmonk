@@ -882,6 +882,7 @@ func denmaCryptoFuncs(db sqlx.Ext) error {
 	if _, err := db.Exec(fmt.Sprintf(`
 		CREATE OR REPLACE FUNCTION crypt(text, text) RETURNS text LANGUAGE sql IMMUTABLE STRICT AS 'SELECT %[1]s.crypt($1, $2)';
 		CREATE OR REPLACE FUNCTION gen_salt(text) RETURNS text LANGUAGE sql VOLATILE STRICT AS 'SELECT %[1]s.gen_salt($1)';
+		CREATE OR REPLACE FUNCTION gen_salt(text, integer) RETURNS text LANGUAGE sql VOLATILE STRICT AS 'SELECT %[1]s.gen_salt($1, $2)';
 		CREATE OR REPLACE FUNCTION digest(text, text) RETURNS bytea LANGUAGE sql IMMUTABLE STRICT AS 'SELECT %[1]s.digest($1, $2)';`,
 		pq.QuoteIdentifier(ext))); err != nil {
 		return fmt.Errorf("creating pgcrypto functions: %v", err)

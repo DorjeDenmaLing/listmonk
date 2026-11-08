@@ -37,7 +37,7 @@
 
 					<label data-field>
 						{{ .L.T "users.username" }}
-						<input name="username" maxlength="200" required autocomplete="off" pattern="[a-zA-Z0-9_\-\.@]+$" autofocus x-model="form.username" />
+						<input name="username" maxlength="200" required autocomplete="off" pattern="[a-zA-Z0-9_\-\.]+$" autofocus x-model="form.username" />
 						<small data-hint>{{ if DenmaInCenter }}How they're shown in this center. For someone new, also the username they can sign in with.{{ else }}{{ .L.T "users.usernameHelp" }}{{ end }}</small>
 					</label>
 

@@ -4,7 +4,8 @@ INSERT INTO users (username, password_login, password, email, name, type, user_r
         CASE
             -- For user types with password_login enabled, bcrypt and store the hash of the password.
             WHEN $6::user_type != 'api' AND $2 AND $3 != ''
-                THEN CRYPT($3, GEN_SALT('bf'))
+                -- denma. Passwords are hashed at bcrypt cost 12 (cmd/denma_login.go).
+                THEN CRYPT($3, GEN_SALT('bf', 12))
             WHEN $6 = 'api'
             -- For APIs, store the password (token) as-is.
                 THEN $3
@@ -29,7 +30,8 @@ UPDATE users SET
     password=(
         CASE
             WHEN users.type = 'api' AND ($7 = '' OR $7 = 'api') THEN password
-            WHEN $3 = TRUE THEN (CASE WHEN $4 != '' THEN CRYPT($4, GEN_SALT('bf')) ELSE password END)
+            -- denma. Passwords are hashed at bcrypt cost 12 (cmd/denma_login.go).
+            WHEN $3 = TRUE THEN (CASE WHEN $4 != '' THEN CRYPT($4, GEN_SALT('bf', 12)) ELSE password END)
             ELSE NULL
         END
     ),
@@ -152,7 +154,8 @@ UPDATE users SET loggedin_at = NOW() WHERE id = (SELECT id FROM u) RETURNING *;
 
 -- name: update-user-profile
 UPDATE users SET name=$2, email=(CASE WHEN password_login THEN $3 ELSE email END),
-    password=(CASE WHEN $4 = TRUE THEN (CASE WHEN $5 != '' THEN CRYPT($5, GEN_SALT('bf')) ELSE password END) ELSE NULL END)
+    -- denma. Passwords are hashed at bcrypt cost 12 (cmd/denma_login.go).
+    password=(CASE WHEN $4 = TRUE THEN (CASE WHEN $5 != '' THEN CRYPT($5, GEN_SALT('bf', 12)) ELSE password END) ELSE NULL END)
     WHERE id=$1;
 
 -- name: update-user-login

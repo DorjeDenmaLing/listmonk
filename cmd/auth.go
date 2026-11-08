@@ -478,6 +478,7 @@ func (a *App) doLogin(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	a.denmaRehash("users", user.ID, password) // denma: the current bcrypt cost (cmd/denma_login.go)
 
 	// If TOTP is enabled for the user, create a temp token and redirect to the 2FA page.
 	if user.TwofaType == models.TwofaTypeTOTP {
