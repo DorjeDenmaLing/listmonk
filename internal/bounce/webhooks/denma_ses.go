@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"time"
 )
 
@@ -15,6 +16,9 @@ var DenmaSESTopicAllowed func(arn string) bool
 
 // denmaSNSClient fetches SNS certificates and subscription URLs.
 var denmaSNSClient = &http.Client{Timeout: 10 * time.Second}
+
+// reDenmaSNSHost is SNS's host in a region, such as sns.ca-central-1.amazonaws.com.
+var reDenmaSNSHost = regexp.MustCompile(`^sns\.[a-z]{2}(-gov|-iso[a-z]?)?-[a-z]+-[0-9]\.amazonaws\.com(\.cn)?$`)
 
 // denmaCheckNotif refuses a notification from a topic that isn't the hub's.
 func denmaCheckNotif(n sesNotif) error {

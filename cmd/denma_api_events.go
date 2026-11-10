@@ -287,6 +287,7 @@ func denmaAPIPauseReason(r denmaAPIRates) string {
 }
 
 // apiCheckPause pauses the center's sending if its bounces or complaints call for it.
+// Complaints count when they're about a campaign, or any once the API has sent e-mails of its own.
 func (a *App) apiCheckPause() {
 	st, err := a.apiState()
 	if err != nil || st.PausedAt != nil {
@@ -301,7 +302,8 @@ func (a *App) apiCheckPause() {
 		(SELECT COALESCE(SUM(sent), 0) FROM campaigns WHERE started_at >= $1)
 			+ (SELECT COALESCE(SUM(sent), 0) FROM denma_api_messages WHERE created_at >= $1) AS sends,
 		(SELECT COUNT(*) FROM bounces WHERE type = 'hard' AND created_at >= $1) AS hard,
-		(SELECT COUNT(*) FROM bounces WHERE type = 'complaint' AND created_at >= $1) AS complaints`, since); err != nil {
+		(SELECT COUNT(*) FROM bounces WHERE type = 'complaint' AND created_at >= $1
+			AND (campaign_id IS NOT NULL OR EXISTS (SELECT 1 FROM denma_api_messages WHERE created_at >= $1 AND sent > 0))) AS complaints`, since); err != nil {
 		a.log.Printf("denma: error checking the API's bounce rates: %v", err)
 		return
 	}

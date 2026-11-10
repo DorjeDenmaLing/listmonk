@@ -128,3 +128,20 @@ func TestDenmaSESRecipient(t *testing.T) {
 		}
 	}
 }
+
+// A signing certificate is fetched only from SNS's own host in a region.
+func TestDenmaSNSHost(t *testing.T) {
+	for host, ok := range map[string]bool{
+		"sns.ca-central-1.amazonaws.com":    true,
+		"sns.us-east-1.amazonaws.com":       true,
+		"sns.us-gov-west-1.amazonaws.com":   true,
+		"sns.cn-north-1.amazonaws.com.cn":   true,
+		"sns.s3.amazonaws.com":              false,
+		"sns.example.amazonaws.com":         false,
+		"sns.ca-central-1.amazonaws.com.eu": false,
+	} {
+		if reDenmaSNSHost.MatchString(host) != ok {
+			t.Errorf("%s: allowed %v, want %v", host, !ok, ok)
+		}
+	}
+}

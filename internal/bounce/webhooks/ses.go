@@ -232,7 +232,7 @@ func (s *SES) getCert(certURL string) (*x509.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !sesRegCertURL.MatchString(certURL) {
+	if !sesRegCertURL.MatchString(certURL) || !reDenmaSNSHost.MatchString(u.Hostname()) { // denma: an SNS region's host
 		return nil, fmt.Errorf("invalid SNS certificate URL: %v", u.Host)
 	}
 
