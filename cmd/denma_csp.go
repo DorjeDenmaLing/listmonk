@@ -14,12 +14,41 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// denmaAdminFramed are the admin pages the admin shows in a frame; no other admin page can be framed.
+var denmaAdminFramed = []string{"/admin/campaigns/media/fragment"}
+
 // denmaAdminCSP sets an admin page's policy and returns its nonce for inline <script>s.
 func denmaAdminCSP(c echo.Context) string {
 	nonce := denmaNonce()
+	ancestors := "'none'"
+	for _, p := range denmaAdminFramed {
+		if strings.HasSuffix(c.Request().URL.Path, p) {
+			ancestors = "'self'"
+		}
+	}
 	c.Response().Header().Set("Content-Security-Policy", "script-src 'self' 'nonce-"+nonce+"' 'unsafe-eval'; "+
-		"object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'; connect-src 'self'")
+		"object-src 'none'; base-uri 'self'; frame-ancestors "+ancestors+"; frame-src 'self'; form-action 'self'; connect-src 'self'")
 	return nonce
+}
+
+// denmaHeaders gives every answer nosniff and a referrer policy.
+func denmaHeaders(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		h := c.Response().Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		return next(c)
+	}
+}
+
+// denmaFormBody is whether an admin API change has a body other than JSON or a multipart upload; previews take a form.
+func denmaFormBody(r *http.Request) bool {
+	p := strings.TrimRight(r.URL.Path, "/")
+	if r.ContentLength == 0 || strings.HasSuffix(p, "/preview") || strings.HasSuffix(p, "/text") {
+		return false
+	}
+	t := strings.ToLower(strings.TrimSpace(strings.SplitN(r.Header.Get(echo.HeaderContentType), ";", 2)[0]))
+	return t != echo.MIMEApplicationJSON && t != echo.MIMEMultipartForm
 }
 
 // denmaPublicCSP adds a public page's policy (keeping any sandbox) and returns its nonce.
@@ -45,7 +74,7 @@ func denmaNonce() string {
 // reDenmaPlaceLink matches the admin links that change which center the admin shows.
 var reDenmaPlaceLink = regexp.MustCompile(`^/admin/(switch/[^/]+|centers/[^/]+/open|hub)/?$`)
 
-// denmaSameSite refuses a change to the admin or a sign-in sent from another site.
+// denmaSameSite refuses a change to the admin or a sign-in sent from another site, and an admin API change sent as a form.
 func denmaSameSite(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		r := c.Request()
@@ -65,18 +94,20 @@ func denmaSameSite(next echo.HandlerFunc) echo.HandlerFunc {
 		if from == "" {
 			from = r.Header.Get("Referer")
 		}
-		if from == "" {
-			return next(c)
+		if from != "" {
+			if u, err := url.Parse(from); err != nil || u.Host == "" || !strings.EqualFold(u.Host, r.Host) {
+				return echo.NewHTTPError(http.StatusForbidden, "This request came from another site.")
+			}
 		}
-		if u, err := url.Parse(from); err != nil || u.Host == "" || !strings.EqualFold(u.Host, r.Host) {
-			return echo.NewHTTPError(http.StatusForbidden, "This request came from another site.")
+		if strings.HasPrefix(p, "/api/") && denmaFormBody(r) {
+			return echo.NewHTTPError(http.StatusUnsupportedMediaType, "Send JSON (Content-Type: application/json).")
 		}
 		return next(c)
 	}
 }
 
 // denmaSandboxPolicy keeps a page to itself: no scripts or plugins, its own origin.
-const denmaSandboxPolicy = "sandbox allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation; object-src 'none'"
+const denmaSandboxPolicy = "sandbox allow-forms allow-popups allow-popups-to-escape-sandbox; object-src 'none'"
 
 // reDenmaContentPath matches the paths that show campaign, automation or template HTML, any ID segment.
 var reDenmaContentPath = regexp.MustCompile(`^/(api/campaigns/[^/]+/(preview|preview/archive|text)|api/templates/([^/]+/)?preview|campaign/[^/]+/[^/]+|automation/[^/]+/[^/]+|archive|archive\.xml|archive/.+)$`)

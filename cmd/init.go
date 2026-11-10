@@ -1024,6 +1024,7 @@ func initHTTPRouter(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.Fi
 	})
 	srv.Use(denmaBodyLimit)  // denma: no request over 64 MB, cmd/denma_audit.go
 	srv.Use(denmaSameSite)   // denma: no admin API changes from other sites, cmd/denma_csp.go
+	srv.Use(denmaHeaders)    // denma: nosniff and a referrer policy, cmd/denma_csp.go
 	srv.Use(denmaAudit(app)) // denma: the activity log, cmd/denma_audit.go
 
 	tplFuncs := initTplFuncs(i, urlCfg)

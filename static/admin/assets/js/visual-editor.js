@@ -130,7 +130,7 @@ class VisualEditor extends HTMLElement {
   }
 
   _onMessage(msg) {
-    if (msg.data === 'visualeditor.select-media') {
+    if (msg.data === 'visualeditor.select-media' && msg.source === this.iframe?.contentWindow) { // denma: only its own canvas
       this.dispatchEvent(new CustomEvent('visual-media', { bubbles: true }));
     }
   }

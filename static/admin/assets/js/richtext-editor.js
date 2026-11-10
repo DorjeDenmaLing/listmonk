@@ -25,6 +25,8 @@ const TOGGLES = {
 const sanitizeToDOMFragment = (html) => {
   const tpl = document.createElement('template');
   tpl.innerHTML = html || '';
+  tpl.content.querySelectorAll('iframe, frame, object, embed').forEach((el) => el.remove()); // denma: no frames in the editor (cmd/denma_csp.go)
+  tpl.content.querySelectorAll('[style*="position"]').forEach((el) => el.style.removeProperty('position')); // denma: nothing laid over the editor
   return document.importNode(tpl.content, true);
 };
 
