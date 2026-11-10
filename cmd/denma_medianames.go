@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -27,6 +28,9 @@ const denmaMediaLabelMax = 200
 // denmaMediaLabelSQL adds the label column.
 const denmaMediaLabelSQL = `ALTER TABLE media ADD COLUMN IF NOT EXISTS denma_label TEXT NOT NULL DEFAULT '';`
 
+// reDenmaMediaExt is a stored name's extension; a file's other extensions are left off.
+var reDenmaMediaExt = regexp.MustCompile(`^[a-z0-9]{1,8}$`)
+
 // denmaHashName is the stored name of contents r with extension ext.
 func denmaHashName(r io.Reader, ext string) (string, error) {
 	h := sha256.New()
@@ -34,10 +38,10 @@ func denmaHashName(r io.Reader, ext string) (string, error) {
 		return "", err
 	}
 	name := hex.EncodeToString(h.Sum(nil)[:8])
-	switch ext = strings.ToLower(strings.TrimPrefix(ext, ".")); ext {
-	case "":
+	switch ext = strings.ToLower(strings.TrimPrefix(ext, ".")); {
+	case !reDenmaMediaExt.MatchString(ext):
 		return name, nil
-	case "jpeg":
+	case ext == "jpeg":
 		ext = "jpg"
 	}
 	return name + "." + ext, nil

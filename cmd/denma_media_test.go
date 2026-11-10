@@ -110,21 +110,39 @@ func TestDenmaPNGToJPEG(t *testing.T) {
 }
 
 // Decoding is refused past denmaMediaMaxDecode: a 48 MP phone photo is
-// processed, a 16-bit PNG of 64 MP isn't.
+// processed, a 16-bit PNG of 64 MP isn't, nor a progressive JPEG of 48 MP.
 func TestDenmaDecodeSize(t *testing.T) {
 	for _, c := range []struct {
-		name string
-		cfg  image.Config
-		ok   bool
+		name        string
+		cfg         image.Config
+		progressive bool
+		ok          bool
 	}{
-		{"48 MP JPEG", image.Config{ColorModel: color.YCbCrModel, Width: 8000, Height: 6000}, true},
-		{"40 MP RGBA PNG", image.Config{ColorModel: color.NRGBAModel, Width: 8000, Height: 5000}, true},
-		{"64 MP 16-bit PNG", image.Config{ColorModel: color.NRGBA64Model, Width: 8000, Height: 8000}, false},
-		{"100 MP JPEG", image.Config{ColorModel: color.YCbCrModel, Width: 10000, Height: 10000}, false},
-		{"100 MP GIF", image.Config{ColorModel: color.Palette{color.Black}, Width: 10000, Height: 10000}, true},
+		{"48 MP JPEG", image.Config{ColorModel: color.YCbCrModel, Width: 8000, Height: 6000}, false, true},
+		{"24 MP progressive JPEG", image.Config{ColorModel: color.YCbCrModel, Width: 6000, Height: 4000}, true, true},
+		{"48 MP progressive JPEG", image.Config{ColorModel: color.YCbCrModel, Width: 8000, Height: 6000}, true, false},
+		{"40 MP RGBA PNG", image.Config{ColorModel: color.NRGBAModel, Width: 8000, Height: 5000}, false, true},
+		{"64 MP 16-bit PNG", image.Config{ColorModel: color.NRGBA64Model, Width: 8000, Height: 8000}, false, false},
+		{"100 MP JPEG", image.Config{ColorModel: color.YCbCrModel, Width: 10000, Height: 10000}, false, false},
+		{"100 MP GIF", image.Config{ColorModel: color.Palette{color.Black}, Width: 10000, Height: 10000}, false, true},
 	} {
-		if ok := denmaDecodeSize(c.cfg) <= denmaMediaMaxDecode; ok != c.ok {
-			t.Errorf("%s: processed %v, want %v (%d MB)", c.name, ok, c.ok, denmaDecodeSize(c.cfg)>>20)
+		if ok := denmaDecodeSize(c.cfg, c.progressive) <= denmaMediaMaxDecode; ok != c.ok {
+			t.Errorf("%s: processed %v, want %v (%d MB)", c.name, ok, c.ok, denmaDecodeSize(c.cfg, c.progressive)>>20)
 		}
+	}
+}
+
+func TestDenmaJPEGProgressive(t *testing.T) {
+	var b bytes.Buffer
+	_ = jpeg.Encode(&b, image.NewGray(image.Rect(0, 0, 8, 8)), nil)
+	baseline := b.Bytes()
+	if denmaJPEGProgressive(baseline) {
+		t.Error("a baseline JPEG is taken as progressive")
+	}
+	if !denmaJPEGProgressive(bytes.Replace(baseline, []byte{0xFF, 0xC0}, []byte{0xFF, 0xC2}, 1)) {
+		t.Error("a progressive JPEG isn't")
+	}
+	if !denmaJPEGProgressive(baseline[:20]) {
+		t.Error("a JPEG whose frame header wasn't read isn't taken as progressive")
 	}
 }

@@ -59,3 +59,8 @@ func (c *Core) DenmaQueryCampaigns(cond string, statuses, tags []string, typ, or
 func (c *Core) DenmaDB() *sqlx.DB {
 	return c.db
 }
+
+// denmaSearchTimeout ends the transaction's statements after 30 seconds.
+func denmaSearchTimeout(tx *sqlx.Tx) {
+	_, _ = tx.Exec(`SET LOCAL statement_timeout = '30s'`)
+}

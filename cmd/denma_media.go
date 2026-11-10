@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/disintegration/imaging"
 	"github.com/labstack/echo/v4"
@@ -25,10 +26,16 @@ const (
 	denmaMediaQuality   = 82        // JPEG
 	denmaMediaMaxDecode = 512 << 20 // bytes an image's decoding may take
 	denmaMediaPNGToJPEG = 1 << 20   // bytes: a larger PNG without transparency is saved as a JPEG
+	denmaJPEGHeadMax    = 1 << 20   // bytes of a JPEG read for its frame header
 )
 
-// denmaMediaTurn is the turn to process an uploaded image: one at a time.
-var denmaMediaTurn = make(chan struct{}, 1)
+// denmaMediaTurn is the turn to process an uploaded image: one at a time, with at most denmaMediaWaitMax waiting.
+var (
+	denmaMediaTurn    = make(chan struct{}, 1)
+	denmaMediaWaiting atomic.Int32
+)
+
+const denmaMediaWaitMax = 4
 
 // denmaMediaLimit wraps the media upload: an image too large to decode is refused, and images go one at a time.
 func (a *App) denmaMediaLimit(next echo.HandlerFunc) echo.HandlerFunc {
@@ -42,17 +49,27 @@ func (a *App) denmaMediaLimit(next echo.HandlerFunc) echo.HandlerFunc {
 			return next(c)
 		}
 		if src, err := file.Open(); err == nil {
-			cfg, _, err := image.DecodeConfig(src)
+			cfg, format, err := image.DecodeConfig(src)
+			var head []byte
+			if _, serr := src.Seek(0, io.SeekStart); err == nil && serr == nil && format == "jpeg" {
+				head, _ = io.ReadAll(io.LimitReader(src, denmaJPEGHeadMax))
+			}
 			src.Close()
-			if err == nil && denmaDecodeSize(cfg) > denmaMediaMaxDecode {
+			if err == nil && denmaDecodeSize(cfg, format == "jpeg" && denmaJPEGProgressive(head)) > denmaMediaMaxDecode {
 				return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf(
 					"The image is %d x %d pixels, too large to process. Make it smaller (say, 4000 px on its longer side) and upload it again.",
 					cfg.Width, cfg.Height))
 			}
 		}
+		if denmaMediaWaiting.Add(1) > denmaMediaWaitMax {
+			denmaMediaWaiting.Add(-1)
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "Other images are being uploaded. Try again in a minute.")
+		}
 		select {
 		case denmaMediaTurn <- struct{}{}:
+			denmaMediaWaiting.Add(-1)
 		case <-c.Request().Context().Done():
+			denmaMediaWaiting.Add(-1)
 			return c.Request().Context().Err()
 		}
 		defer func() { <-denmaMediaTurn }()
@@ -60,8 +77,8 @@ func (a *App) denmaMediaLimit(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// denmaDecodeSize is about how much memory decoding an image takes (its pixels, and imaging's RGBA copy).
-func denmaDecodeSize(cfg image.Config) int64 {
+// denmaDecodeSize is about how much memory decoding an image takes (its pixels, imaging's RGBA copy, and a progressive JPEG's coefficients).
+func denmaDecodeSize(cfg image.Config, progressive bool) int64 {
 	bpp := int64(4)
 	switch cfg.ColorModel {
 	case color.RGBA64Model, color.NRGBA64Model:
@@ -75,6 +92,16 @@ func denmaDecodeSize(cfg image.Config) int64 {
 	default:
 		if _, ok := cfg.ColorModel.(color.Palette); ok {
 			bpp = 1
+		}
+	}
+	if progressive {
+		switch cfg.ColorModel {
+		case color.GrayModel:
+			bpp += 4
+		case color.CMYKModel:
+			bpp += 16
+		default:
+			bpp += 12
 		}
 	}
 	return int64(cfg.Width) * int64(cfg.Height) * (bpp + 4)
@@ -148,7 +175,7 @@ func denmaOptimize(orig []byte) (denmaMedia, error) {
 	if err != nil {
 		return denmaMedia{}, err
 	}
-	if denmaDecodeSize(cfg) > denmaMediaMaxDecode {
+	if denmaDecodeSize(cfg, format == "jpeg" && denmaJPEGProgressive(orig)) > denmaMediaMaxDecode {
 		return denmaMedia{}, nil // refused before (denmaMediaLimit)
 	}
 	tooBig := cfg.Width > denmaMediaMaxSize || cfg.Height > denmaMediaMaxSize
@@ -250,6 +277,16 @@ func denmaJPEGSegments(b []byte, f func(marker byte, seg []byte)) int {
 		i += 2 + n
 	}
 	return -1
+}
+
+// denmaJPEGProgressive is whether the JPEG is progressive, or its frame header isn't in b.
+func denmaJPEGProgressive(b []byte) bool {
+	baseline, progressive := false, false
+	denmaJPEGSegments(b, func(marker byte, _ []byte) {
+		baseline = baseline || marker == 0xC0 || marker == 0xC1
+		progressive = progressive || marker == 0xC2
+	})
+	return progressive || !baseline
 }
 
 // denmaJPEGStrip is the JPEG without its metadata (EXIF, XMP, IPTC, comments), or the original if unreadable.

@@ -409,6 +409,7 @@ func (s *Session) ExtractZIP(srcPath string, maxCSVs int) (string, []string, err
 		s.log.Printf("error creating temporary directory for extracting ZIP: %v", err)
 		return "", nil, err
 	}
+	defer denmaDropOnFail(dir, &failed) // denma: removes it if extracting fails (denma.go)
 
 	files := make([]string, 0, len(z.File))
 	for _, f := range z.File {
@@ -444,7 +445,7 @@ func (s *Session) ExtractZIP(srcPath string, maxCSVs int) (string, []string, err
 		}
 		defer out.Close()
 
-		if _, err := io.Copy(out, src); err != nil {
+		if err := denmaCopyCSV(out, src); err != nil { // denma: at most denmaCSVMax (denma.go)
 			s.log.Printf("error extracting to '%s/%s': '%v'", dir, fName, err)
 			return "", nil, err
 		}

@@ -120,3 +120,12 @@ func denmaTooLong(v reflect.Value) bool {
 	}
 	return false
 }
+
+// denmaTplData is the message as a template sees it: its campaign without the compiled templates.
+func (m *CampaignMessage) denmaTplData() *CampaignMessage {
+	d := *m
+	c := *m.Campaign
+	c.Tpl, c.SubjectTpl, c.AltBodyTpl, c.HeaderTpls = nil, nil, nil, nil
+	d.Campaign = &c
+	return &d
+}

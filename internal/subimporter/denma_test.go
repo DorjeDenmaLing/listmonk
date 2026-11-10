@@ -94,3 +94,18 @@ func TestDenmaUTF8Reader(t *testing.T) {
 		}
 	}
 }
+
+func TestDenmaCopyCSV(t *testing.T) {
+	var b bytes.Buffer
+	if err := denmaCopyCSV(&b, io.LimitReader(zeros{}, denmaCSVMax)); err != nil || b.Len() != denmaCSVMax {
+		t.Errorf("a CSV of the most allowed: %v, %d bytes", err, b.Len())
+	}
+	b.Reset()
+	if err := denmaCopyCSV(&b, io.LimitReader(zeros{}, denmaCSVMax+10)); err != errDenmaCSVTooBig {
+		t.Errorf("a CSV over the most allowed: %v", err)
+	}
+}
+
+type zeros struct{}
+
+func (zeros) Read(p []byte) (int, error) { clear(p); return len(p), nil }

@@ -31,10 +31,11 @@ func (m *Manager) NewCampaignMessage(c *models.Campaign, s models.Subscriber) (C
 // and applies the resultant bytes to Message.body to be used in messages.
 func (m *CampaignMessage) render() error {
 	out := models.DenmaTplBuffer{} // denma: limits the output
+	data := m.denmaTplData()       // denma: without the compiled templates (denma_template.go)
 
 	// Render the subject if it's a template.
 	if m.Campaign.SubjectTpl != nil {
-		if err := m.Campaign.SubjectTpl.ExecuteTemplate(&out, models.ContentTpl, m); err != nil {
+		if err := m.Campaign.SubjectTpl.ExecuteTemplate(&out, models.ContentTpl, data); err != nil {
 			return err
 		}
 		m.subject = out.String()
@@ -42,7 +43,7 @@ func (m *CampaignMessage) render() error {
 	}
 
 	// Compile the main template.
-	if err := m.Campaign.Tpl.ExecuteTemplate(&out, models.BaseTpl, m); err != nil {
+	if err := m.Campaign.Tpl.ExecuteTemplate(&out, models.BaseTpl, data); err != nil {
 		return err
 	}
 	m.body = denmaAddPreviewText(m.Campaign, out.Bytes()) // denma: denma_preview_text.go
@@ -51,7 +52,7 @@ func (m *CampaignMessage) render() error {
 	if m.Campaign.ContentType != models.CampaignContentTypePlain && m.Campaign.AltBody.Valid {
 		if m.Campaign.AltBodyTpl != nil {
 			b := models.DenmaTplBuffer{} // denma: limits the output
-			if err := m.Campaign.AltBodyTpl.ExecuteTemplate(&b, models.ContentTpl, m); err != nil {
+			if err := m.Campaign.AltBodyTpl.ExecuteTemplate(&b, models.ContentTpl, data); err != nil {
 				return err
 			}
 			m.altBody = b.Bytes()
@@ -75,7 +76,7 @@ func (m *CampaignMessage) render() error {
 					continue
 				}
 				hdrOut.Reset()
-				if err := tpl.ExecuteTemplate(&hdrOut, models.ContentTpl, m); err != nil {
+				if err := tpl.ExecuteTemplate(&hdrOut, models.ContentTpl, data); err != nil {
 					return fmt.Errorf("error rendering header %q: %v", hdr, err)
 				}
 				m.headers[i][hdr] = hdrOut.String()

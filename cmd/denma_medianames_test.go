@@ -23,6 +23,11 @@ func TestDenmaHashName(t *testing.T) {
 	if !strings.HasSuffix(d, ".jpg") || strings.Contains(e, ".") || !reDenmaHashName.MatchString(e) {
 		t.Errorf("jpeg %q, none %q", d, e)
 	}
+	for _, ext := range []string{".h<b>", ".a b", ".x;y", `.q"`, ".toolongext"} {
+		if n, _ := denmaHashName(strings.NewReader("one"), ext); n != strings.TrimSuffix(a, ".png") {
+			t.Errorf("%s: %q, want no extension", ext, n)
+		}
+	}
 }
 
 func TestDenmaMediaLabel(t *testing.T) {

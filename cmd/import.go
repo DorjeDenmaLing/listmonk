@@ -129,6 +129,8 @@ func (a *App) ImportSubscribers(c echo.Context) error {
 			a.i18n.Ts("import.errorCopyingFile", "error", err.Error()))
 	}
 	defer out.Close()
+	upload := &denmaImportFiles{paths: []string{out.Name()}} // denma: removed once read (denma_imports.go)
+	defer upload.drop()                                      // denma: or if the import doesn't start
 
 	if _, err = io.Copy(out, src); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError,
@@ -148,7 +150,7 @@ func (a *App) ImportSubscribers(c echo.Context) error {
 	go sess.Start()
 
 	if strings.HasSuffix(strings.ToLower(file.Filename), ".csv") {
-		go sess.LoadCSV(out.Name(), rune(opt.Delim[0]))
+		upload.load(sess, out.Name(), rune(opt.Delim[0])) // denma: then removes the files
 	} else {
 		// Only 1 CSV from the ZIP is considered. If multiple files have
 		// to be processed, counting the net number of lines (to track progress),
@@ -163,7 +165,7 @@ func (a *App) ImportSubscribers(c echo.Context) error {
 				a.i18n.Ts("import.errorProcessingZIP", "error", err.Error()))
 		}
 
-		go sess.LoadCSV(dir+"/"+files[0], rune(opt.Delim[0]))
+		upload.load(sess, dir+"/"+files[0], rune(opt.Delim[0]), dir) // denma: then removes the files
 	}
 
 	return c.JSON(http.StatusOK, okResp{a.importer.GetStats()})

@@ -157,6 +157,7 @@ func (c *Core) QuerySubscribers(searchStr, queryExp string, listIDs []int, subSt
 		return nil, 0, echo.NewHTTPError(http.StatusBadRequest, c.i18n.Ts("subscribers.errorPreparingQuery", "error", pqErrMsg(err)))
 	}
 	defer tx.Rollback()
+	denmaSearchTimeout(tx) // denma: denma.go
 
 	var out models.Subscribers
 	if err := tx.Select(&out, stmt, pq.Array(listIDs), subStatus, searchStr, offset, limit, subscriberStatus); err != nil {
@@ -599,6 +600,7 @@ func (c *Core) getSubscriberCount(searchStr, queryExp, subStatus, subscriberStat
 		return 0, echo.NewHTTPError(http.StatusBadRequest, c.i18n.Ts("subscribers.errorPreparingQuery", "error", pqErrMsg(err)))
 	}
 	defer tx.Rollback()
+	denmaSearchTimeout(tx) // denma: denma.go
 
 	// Execute the readonly query and get the count of results.
 	total := 0

@@ -199,3 +199,20 @@ func TestDenmaTemplateChecksChangeNothing(t *testing.T) {
 		t.Errorf("got %s\nwant %s", b.String(), want.String())
 	}
 }
+
+func TestDenmaTplDataHidesTemplates(t *testing.T) {
+	probe := `{{ if or .Campaign.Tpl .Campaign.SubjectTpl .Campaign.AltBodyTpl .Campaign.HeaderTpls }}reached{{ else }}hidden{{ end }}`
+	c := &models.Campaign{}
+	c.SubjectTpl = txttpl.Must(txttpl.New(models.ContentTpl).Parse(probe))
+	c.Tpl = template.Must(template.New(models.BaseTpl).Parse(probe))
+	m := CampaignMessage{Campaign: c}
+	if err := m.render(); err != nil {
+		t.Fatal(err)
+	}
+	if m.subject != "hidden" || !strings.Contains(string(m.body), "hidden") {
+		t.Errorf("a template reached the compiled templates: subject %q, body %q", m.subject, m.body)
+	}
+	if c.Tpl == nil || c.SubjectTpl == nil {
+		t.Error("the campaign lost its compiled templates")
+	}
+}

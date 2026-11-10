@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"database/sql"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -214,4 +215,25 @@ func denmaFileToUTF8(path string, l *log.Logger) error {
 		l.Printf("the file isn't UTF-8: read as %s", enc)
 	}
 	return os.WriteFile(path, out, 0o600)
+}
+
+// denmaCSVMax is the most a CSV extracted from a ZIP can be.
+const denmaCSVMax = 64 << 20
+
+var errDenmaCSVTooBig = fmt.Errorf("the CSV file in the ZIP is over %d MB", denmaCSVMax>>20)
+
+// denmaCopyCSV copies a CSV out of a ZIP, at most denmaCSVMax.
+func denmaCopyCSV(out io.Writer, src io.Reader) error {
+	n, err := io.Copy(out, io.LimitReader(src, denmaCSVMax+1))
+	if err == nil && n > denmaCSVMax {
+		err = errDenmaCSVTooBig
+	}
+	return err
+}
+
+// denmaDropOnFail removes the extraction folder if extracting failed.
+func denmaDropOnFail(dir string, failed *bool) {
+	if *failed {
+		os.RemoveAll(dir)
+	}
 }

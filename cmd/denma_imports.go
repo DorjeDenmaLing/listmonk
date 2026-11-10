@@ -5,6 +5,7 @@ package main
 import (
 	"database/sql"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -410,4 +411,33 @@ func (a *App) denmaImportDatesPreview(p *denmaImportPreview, addrs []string, ent
 	}
 	p.BlockDates = d
 	return nil
+}
+
+// denmaImportFiles are an import's uploaded and extracted files.
+type denmaImportFiles struct {
+	paths   []string
+	loading bool
+}
+
+// drop removes the files, unless the import is reading them.
+func (f *denmaImportFiles) drop() {
+	if !f.loading {
+		for _, p := range f.paths {
+			os.RemoveAll(p)
+		}
+	}
+}
+
+// load imports the CSV at path, then removes the files and the extra ones.
+func (f *denmaImportFiles) load(sess *subimporter.Session, path string, delim rune, extra ...string) {
+	f.loading = true
+	paths := append(f.paths, extra...)
+	go func() {
+		defer func() {
+			for _, p := range paths {
+				os.RemoveAll(p)
+			}
+		}()
+		sess.LoadCSV(path, delim)
+	}()
 }

@@ -360,6 +360,16 @@ func TestDenmaSearchSQL(t *testing.T) {
 			t.Errorf("%q: %v", s, err)
 		}
 	}
+	// At most 100 terms and 2,000 characters.
+	if _, err := a.denmaSearchSQL(denmaSubscribers, auth.User{}, strings.Repeat("a OR ", 100)+"a"); err == nil || !strings.Contains(err.Error(), "101 terms") {
+		t.Errorf("101 terms: %v", err)
+	}
+	if _, err := a.denmaSearchSQL(denmaSubscribers, auth.User{}, strings.Repeat("a", 2001)); err == nil || !strings.Contains(err.Error(), "over 2000") {
+		t.Errorf("2,001 characters: %v", err)
+	}
+	if _, err := a.denmaSearchSQL(denmaSubscribers, auth.User{}, strings.Repeat("(a) OR ", 99)+"a"); err != nil {
+		t.Errorf("100 terms: %v", err)
+	}
 	// At the limits.
 	for _, c := range []struct {
 		kind   denmaKind

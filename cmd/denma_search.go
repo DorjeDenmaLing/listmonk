@@ -100,7 +100,13 @@ func (a *App) denmaSearchSQL(kind denmaKind, user auth.User, search string) (str
 	if strings.ContainsRune(search, 0) || !utf8.ValidString(search) {
 		return "", echo.NewHTTPError(http.StatusBadRequest, "Search: it has characters that aren't text")
 	}
+	if len(search) > denmaSearchMax {
+		return "", echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Search: it's over %d characters", denmaSearchMax))
+	}
 	toks := denmaLex(search)
+	if n := denmaTerms(toks); n > denmaSearchTerms {
+		return "", echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Search: it has %d terms, more than %d", n, denmaSearchTerms))
+	}
 	if len(toks) == 0 {
 		if strings.TrimSpace(search) != "" {
 			return "", echo.NewHTTPError(http.StatusBadRequest, "Search: it has nothing to search for")
@@ -116,6 +122,23 @@ func (a *App) denmaSearchSQL(kind denmaKind, user auth.User, search string) (str
 		return "", echo.NewHTTPError(http.StatusBadRequest, "Search: "+err.Error())
 	}
 	return "(" + cond + ")", nil
+}
+
+// A search is at most denmaSearchMax bytes and denmaSearchTerms terms.
+const (
+	denmaSearchMax   = 2000
+	denmaSearchTerms = 100
+)
+
+// denmaTerms counts the search's words and key:value terms.
+func denmaTerms(toks []denmaTok) int {
+	n := 0
+	for _, t := range toks {
+		if t.kind == denmaTokWord || t.kind == denmaTokTerm {
+			n++
+		}
+	}
+	return n
 }
 
 // ---- Tokens ----
