@@ -1,0 +1,4 @@
+# Vulnerabilities govulncheck says the code reaches that don't apply here (.github/denma-vulncheck.sh).
+# One a line: its ID, then why. Each fails the builds again once a fixed version exists.
+GO-2026-6875 echo's reverse-proxy middleware, which the fork doesn't use
+GO-2026-6872 echo's rate limiter, which the fork doesn't use
