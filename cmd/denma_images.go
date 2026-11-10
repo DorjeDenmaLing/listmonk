@@ -15,7 +15,33 @@ import (
 	"github.com/lib/pq"
 )
 
-var reDenmaImgSrc = regexp.MustCompile(`(?i)<img\b[^>]*?\ssrc\s*=\s*["']([^"']+)["']`)
+var (
+	reDenmaImgSrc = regexp.MustCompile(`(?i)<img\b[^>]*?\ssrc\s*=\s*["']([^"']+)["']`)
+	reDenmaImg    = regexp.MustCompile(`(?i)<img\b[^>]*>`)
+	reDenmaImgAlt = regexp.MustCompile(`(?i)\salt\s*=\s*(?:"([^"]*)"|'([^']*)')`)
+)
+
+// denmaUploadName is the file name under an uploads address (base) that src shows, or "".
+func denmaUploadName(u *url.URL, base, src string) string {
+	src = html.UnescapeString(src)
+	var rest string
+	switch {
+	case strings.HasPrefix(src, base):
+		rest = src[len(base):]
+	case u.Path != "" && u.Path != "/" && strings.HasPrefix(src, u.Path):
+		rest = src[len(u.Path):]
+	default:
+		return ""
+	}
+	if i := strings.IndexAny(rest, "?#"); i >= 0 {
+		rest = rest[:i]
+	}
+	name, err := url.PathUnescape(rest)
+	if err != nil || strings.Contains(name, "/") {
+		return ""
+	}
+	return name
+}
 
 // denmaUploadNames is the file names under an uploads address (base) that an e-mail's images show.
 func denmaUploadNames(base string, body []byte) []string {
@@ -25,26 +51,61 @@ func denmaUploadNames(base string, body []byte) []string {
 	}
 	var names []string
 	for _, m := range reDenmaImgSrc.FindAllSubmatch(body, -1) {
-		src := html.UnescapeString(string(m[1]))
-		var rest string
-		switch {
-		case strings.HasPrefix(src, base):
-			rest = src[len(base):]
-		case u.Path != "" && u.Path != "/" && strings.HasPrefix(src, u.Path):
-			rest = src[len(u.Path):]
-		default:
-			continue
+		if name := denmaUploadName(u, base, string(m[1])); name != "" && !slices.Contains(names, name) {
+			names = append(names, name)
 		}
-		if i := strings.IndexAny(rest, "?#"); i >= 0 {
-			rest = rest[:i]
-		}
-		name, err := url.PathUnescape(rest)
-		if err != nil || name == "" || strings.Contains(name, "/") || slices.Contains(names, name) {
-			continue
-		}
-		names = append(names, name)
 	}
 	return names
+}
+
+var denmaOrdinals = []string{"first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"}
+
+// denmaImageLabels names each file as the admin knows its image: by its alt text, else by its place in the e-mail.
+func denmaImageLabels(base string, body []byte, names []string) []string {
+	u, err := url.Parse(base)
+	if err != nil {
+		return names
+	}
+	labels := make([]string, len(names))
+	for i, tag := range reDenmaImg.FindAll(body, -1) {
+		m := reDenmaImgSrc.FindSubmatch(tag)
+		if m == nil {
+			continue
+		}
+		at := slices.Index(names, denmaUploadName(u, base, string(m[1])))
+		if at < 0 || labels[at] != "" {
+			continue
+		}
+		alt := ""
+		if a := reDenmaImgAlt.FindSubmatch(tag); a != nil {
+			alt = strings.Join(strings.Fields(html.UnescapeString(string(a[1])+string(a[2]))), " ")
+		}
+		switch {
+		case alt != "":
+			if r := []rune(alt); len(r) > 60 {
+				alt = string(r[:59]) + "…"
+			}
+			labels[at] = `"` + alt + `"`
+		case i < len(denmaOrdinals):
+			labels[at] = "the " + denmaOrdinals[i] + " image"
+		default:
+			labels[at] = fmt.Sprintf("image %d", i+1)
+		}
+	}
+	for i, l := range labels {
+		if l == "" {
+			labels[i] = names[i]
+		}
+	}
+	return labels
+}
+
+// denmaCapital is s with its first letter capitalised.
+func denmaCapital(s string) string {
+	if s == "" || s[0] < 'a' || s[0] > 'z' {
+		return s
+	}
+	return string(s[0]-32) + s[1:]
 }
 
 // denmaMediaNames is the files in the center's uploads that an e-mail's images show.
@@ -91,12 +152,17 @@ func (a *App) denmaNotInMedia(names []string) []string {
 // denmaCheckImages refuses an e-mail with images missing from the center's Media or the hub's.
 func (a *App) denmaCheckImages(body []byte) error {
 	if names := a.denmaMediaNames(body); len(names) > 0 {
-		switch missing := a.denmaNotInMedia(names); len(missing) {
+		missing := a.denmaNotInMedia(names)
+		labels := denmaImageLabels(a.media.GetURL(""), body, missing)
+		switch len(missing) {
 		case 0:
 		case 1:
-			return fmt.Errorf("The image %s isn't in the center's Media any more, so it would be missing from the e-mail. Upload it again and put it back in, or take it out.", missing[0])
+			if strings.HasPrefix(labels[0], "the ") {
+				return fmt.Errorf("%s in the e-mail isn't in the center's Media any more, so it would be missing. Upload it again and put it back in, or take it out.", denmaCapital(labels[0]))
+			}
+			return fmt.Errorf("The image %s isn't in the center's Media any more, so it would be missing from the e-mail. Upload it again and put it back in, or take it out.", labels[0])
 		default:
-			return fmt.Errorf("These images aren't in the center's Media any more, so they would be missing from the e-mail: %s. Upload them again and put them back in, or take them out.", orList(missing, "and"))
+			return fmt.Errorf("These images aren't in the center's Media any more, so they would be missing from the e-mail: %s. Upload them again and put them back in, or take them out.", orList(labels, "and"))
 		}
 	}
 	switch old := a.denmaHubImages(body); len(old) {

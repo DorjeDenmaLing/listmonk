@@ -85,3 +85,26 @@ func TestDenmaFileLink(t *testing.T) {
 		t.Errorf("named: %q", got)
 	}
 }
+
+// A missing image is named by its alt text, else by its place among the
+// e-mail's images, once; a file no image shows keeps its name.
+func TestDenmaImageLabels(t *testing.T) {
+	const base = "https://news.example.org/c/halifax/uploads/"
+	body := `<img src="https://cdn.example.com/logo.png" alt="Logo">
+		<img src="/c/halifax/uploads/a.png" alt="  Autumn &amp; retreat
+		poster ">
+		<IMG SRC='https://news.example.org/c/halifax/uploads/b.png' ALT="">
+		<img alt='Again' src="/c/halifax/uploads/b.png">`
+	got := denmaImageLabels(base, []byte(body), []string{"a.png", "b.png", "gone.png"})
+	want := `"Autumn & retreat poster"|the third image|gone.png`
+	if strings.Join(got, "|") != want {
+		t.Errorf("denmaImageLabels = %q, want %q", strings.Join(got, "|"), want)
+	}
+	long := `<img src="/c/halifax/uploads/a.png" alt="` + strings.Repeat("x", 80) + `">`
+	if got := denmaImageLabels(base, []byte(long), []string{"a.png"}); len([]rune(got[0])) != 62 {
+		t.Errorf("a long alt is cut to 60 characters, got %q", got[0])
+	}
+	if got := denmaCapital("the second image"); got != "The second image" {
+		t.Errorf("denmaCapital = %q", got)
+	}
+}
