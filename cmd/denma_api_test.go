@@ -410,6 +410,13 @@ func TestDenmaLinkHosts(t *testing.T) {
 		"<a href=\"https:/\t/evil.example\">":                    "evil.example",
 		"<a href=\"https://good.example\n.evil.example/\">":      "good.example.evil.example",
 		"<p>See https://good.example\nThanks</p>":                "good.example",
+		`<a href=htt&Tab;ps://evil.example/x>`:                   "evil.example",
+		`<a href=htt&NewLine;ps://evil.example/x>`:               "evil.example",
+		`<a href=" &#9;//evil.example/x">`:                       "evil.example",
+		`<a href=\\evil.example/x>`:                              "evil.example",
+		`<a href="{{ TrackLink "//evil.example/x" . }}">`:        "evil.example",
+		`<a href="ftp://evil.example/x">`:                        "evil.example",
+		`<a href="mailto:ana@center.org">Write</a>`:              "",
 	} {
 		if got := strings.Join(denmaTextLinkHosts(in), ","); got != want {
 			t.Errorf("%s: %q, want %q", in, got, want)
@@ -420,6 +427,7 @@ func TestDenmaLinkHosts(t *testing.T) {
 		"ht\ntps://evil.example":              "evil.example",
 		"https://good.example\n.evil.example": "good.example,good.example.evil.example",
 		"Order 12\nhttps://good.example/x":    "good.example",
+		"//evil.example/x":                    "evil.example",
 	} {
 		if got := strings.Join(denmaLinkHosts(in), ","); got != want {
 			t.Errorf("value %q: %q, want %q", in, got, want)
@@ -436,5 +444,12 @@ func TestDenmaLinkHosts(t *testing.T) {
 	}
 	if err := denmaCheckRendered(allowed, "", `<a href="https:/`+`/evil.example">`); err == nil {
 		t.Error("a link a template made was allowed")
+	}
+	// A tracked link's destination is checked as the address it is.
+	if err := denmaCheckRendered(allowed, "", denmaAsLinks([]string{"//evil.example/login"})...); err == nil {
+		t.Error("a tracked link to //host was allowed")
+	}
+	if err := denmaCheckRendered(allowed, "", denmaAsLinks([]string{"https://www.center.org/a?b=1&c=2", "/relative"})...); err != nil {
+		t.Errorf("tracked links to the center's own: %v", err)
 	}
 }

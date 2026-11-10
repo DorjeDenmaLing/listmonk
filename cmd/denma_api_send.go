@@ -26,6 +26,7 @@ import (
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
 	"github.com/lib/pq"
+	xhtml "golang.org/x/net/html"
 	null "gopkg.in/volatiletech/null.v6"
 )
 
@@ -810,9 +811,12 @@ func (a *App) DenmaAPICreateCampaign(c echo.Context) error {
 	if o, err = a.validateCampaignFields(o); err != nil {
 		return denmaBadRequest(err)
 	}
+	if strings.ContainsRune(o.Name+o.Subject+o.Body+o.AltBody.String, 0) {
+		return echo.NewHTTPError(http.StatusBadRequest, "The e-mail has a null character, which can't be kept. Take it out.")
+	}
 	camp, err := a.core.CreateCampaign(o.Campaign, o.ListIDs, nil)
 	if err != nil {
-		return err
+		return denmaInternal(err)
 	}
 	if err := a.denmaSaveCampaign(camp.ID, &o, &camp); err != nil { // its reply-to (cmd/denma_reply_to.go)
 		_ = a.core.DeleteCampaign(camp.ID)
@@ -1376,8 +1380,11 @@ func (a *App) apiCancelCampaign(id int, status string) error {
 
 // ---- Where the links a key sends go ----
 
-// reDenmaLink finds links in decoded text: http(s) addresses and protocol-relative ones (//host).
-var reDenmaLink = regexp.MustCompile(`(?i)\bhttps?:[/\\]*([^/\\\s"'<>()\[\]{}^|?#]+)|(?:=|url\()\s*["']?\s*[/\\]{2}([^/\\\s"'<>()]+)`)
+// reDenmaLink finds links in decoded text: http(s) addresses, other schemes' (x://host) and protocol-relative ones (//host).
+var reDenmaLink = regexp.MustCompile("(?i)\\b(?:https?:[/\\\\]*|[a-z][a-z0-9+.\\-]*:[/\\\\]{2,})([^/\\\\\\s\"'<>()\\[\\]{}^|?#]+)|(?:=|url\\(|[\"'`])\\s*[\"']?\\s*[/\\\\]{2}([^/\\\\\\s\"'<>()`]+)")
+
+// reDenmaRelLink is a protocol-relative address that's a whole value (//host/...).
+var reDenmaRelLink = regexp.MustCompile(`^[/\\]{2,}([^/\\\s"'<>()?#]+)`)
 
 // reDenmaCSSEscape is a CSS escape: a backslash and up to 6 hex digits.
 var reDenmaCSSEscape = regexp.MustCompile(`\\([0-9a-fA-F]{1,6})\s?`)
@@ -1409,17 +1416,51 @@ func denmaLinkText(s string) string {
 	return reDenmaAttrValue.ReplaceAllStringFunc(s, denmaDropTabNL)
 }
 
-// denmaTextLinkHosts returns the hosts of the links in a text.
+// denmaTextLinkHosts returns the hosts of the links in a text, and in its HTML attributes as a browser reads them.
 func denmaTextLinkHosts(t string) []string {
 	var out []string
-	for _, m := range reDenmaLink.FindAllStringSubmatch(denmaLinkText(t), -1) {
-		h := m[1] + m[2]
+	add := func(h string) {
 		if i := strings.LastIndex(h, "@"); i >= 0 {
 			h = h[i+1:] // user@host
 		}
-		if h != "" {
-			out = append(out, strings.ToLower(h))
+		if h = strings.ToLower(h); h != "" && !slices.Contains(out, h) {
+			out = append(out, h)
 		}
+	}
+	scan := func(s string) {
+		for _, m := range reDenmaLink.FindAllStringSubmatch(denmaLinkText(s), -1) {
+			add(m[1] + m[2])
+		}
+	}
+	scan(t)
+	if !strings.Contains(t, "<") {
+		return out
+	}
+	z := xhtml.NewTokenizer(strings.NewReader(t))
+	for {
+		switch z.Next() {
+		case xhtml.ErrorToken:
+			return out
+		case xhtml.StartTagToken, xhtml.SelfClosingTagToken:
+			for more := true; more; {
+				var v []byte
+				_, v, more = z.TagAttr()
+				// An address without its tabs, newlines and the spaces and control characters around it.
+				u := strings.TrimFunc(denmaDropTabNL(string(v)), func(r rune) bool { return r <= ' ' })
+				if m := reDenmaRelLink.FindStringSubmatch(u); m != nil {
+					add(m[1])
+				}
+				scan(u)
+			}
+		}
+	}
+}
+
+// denmaAsLinks is addresses as HTML links, for denmaTextLinkHosts.
+func denmaAsLinks(urls []string) []string {
+	out := make([]string, 0, len(urls))
+	for _, u := range urls {
+		out = append(out, `<a href="`+html.EscapeString(u)+`">`)
 	}
 	return out
 }
@@ -1494,14 +1535,24 @@ func denmaLinkAllowed(host string, domains []string) bool {
 // denmaLinkHosts returns the hosts of the links in values' text, at any depth.
 func denmaLinkHosts(values ...any) []string {
 	var out []string
+	add := func(hosts []string) {
+		for _, h := range hosts {
+			if !slices.Contains(out, h) {
+				out = append(out, h)
+			}
+		}
+	}
 	var walk func(v any)
 	walk = func(v any) {
 		switch t := v.(type) {
 		case string:
-			out = append(out, denmaTextLinkHosts(t)...)
+			add(denmaTextLinkHosts(t))
 			// A value that's one address may go in an href.
-			if u := strings.TrimSpace(denmaDropTabNL(t)); u != strings.TrimSpace(t) && !strings.ContainsAny(u, " ") {
-				out = append(out, denmaTextLinkHosts(u)...)
+			if u := strings.TrimSpace(denmaDropTabNL(t)); !strings.ContainsAny(u, " ") {
+				add(denmaTextLinkHosts(u))
+				if m := reDenmaRelLink.FindStringSubmatch(u); m != nil {
+					add([]string{strings.ToLower(m[1])})
+				}
 			}
 		case map[string]any:
 			for _, x := range t {
@@ -1618,7 +1669,7 @@ func denmaCheckCampaignLinks(slug string, m models.Message) error {
 			return err
 		}
 	}
-	if err := denmaCheckRendered(allowed, m.Campaign.TemplateBody, append([]string{m.Subject, string(m.Body), string(m.AltBody)}, dests...)...); err != nil {
+	if err := denmaCheckRendered(allowed, m.Campaign.TemplateBody, append([]string{m.Subject, string(m.Body), string(m.AltBody)}, denmaAsLinks(dests)...)...); err != nil {
 		var he *echo.HTTPError
 		if errors.As(err, &he) {
 			return fmt.Errorf("not sent: %v", he.Message)
