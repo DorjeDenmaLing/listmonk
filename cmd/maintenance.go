@@ -133,7 +133,7 @@ func (a *App) ExportCampaignAnalytics(c echo.Context) error {
 
 	var (
 		hdr = c.Response().Header()
-		wr  = csv.NewWriter(c.Response())
+		wr  = denmaCSV(csv.NewWriter(c.Response())) // denma: cells read as text (denma_csv.go)
 	)
 	hdr.Set(echo.HeaderContentType, "text/csv")
 	hdr.Set(echo.HeaderContentDisposition, "attachment; filename=campaign_"+typ+".csv")

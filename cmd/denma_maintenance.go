@@ -203,7 +203,7 @@ func (a *App) DenmaExportCampaignAnalytics(c echo.Context) error {
 	hdr.Set(echo.HeaderContentType, "text/csv")
 	hdr.Set(echo.HeaderContentDisposition, "attachment; filename=campaign_"+typ+"_all_centers.csv")
 	hdr.Set("Cache-Control", "no-cache")
-	wr := csv.NewWriter(c.Response())
+	wr := denmaCSV(csv.NewWriter(c.Response()))
 
 	head := []string{"center", "campaign_id", "campaign_uuid", "campaign_name", "subscriber_id", "subscriber_uuid", "email", "subscriber_name"}
 	if typ == "clicks" {
