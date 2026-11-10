@@ -72,6 +72,7 @@ func denmaOptinQuiet(ko *koanf.Koanf, send func(models.Subscriber, []int) (int, 
 const (
 	denmaConsentRequestsPerDay = 20  // the admins'
 	denmaServerConsentPerDay   = 100 // the center's Server webhooks' (confirmations, re-subscription e-mails)
+	denmaFormConsentPerDay     = 100 // the center's Form webhooks'
 )
 
 // denmaConsentCapSQL makes the count's table in a center: a row per e-mail and per notice, kept two days.
@@ -116,8 +117,15 @@ func (a *App) denmaConsentClaim(kind string) (int64, error) {
 	return id, tx.Commit()
 }
 
-// signupConsentClaim takes one of the day's consent e-mails for the Server webhooks, or false past the cap.
+// signupConsentClaim takes one of the day's consent e-mails for the center's webhooks of h's kind, or false past the cap.
 func (a *App) signupConsentClaim(h denmaSignupHook) (int64, bool, error) {
+	kind, limit, kinds := "server", denmaServerConsentPerDay, "Server"
+	advice := "people they sign up since aren't sent one. If the system using this webhook shouldn't sign up that many people who need to confirm, its secret may have leaked: a superadmin can give it a new one."
+	if h.Kind == denmaSignupForm {
+		kind, limit, kinds = "form", denmaFormConsentPerDay, "Form"
+		advice = "sign-ups since are refused until tomorrow. A bot may be using a form to send confirmation e-mails to people who didn't ask for them: " +
+			"turn on the form's spam protection, or give the webhook a new address if it has leaked."
+	}
 	tx, err := a.db.Beginx()
 	if err != nil {
 		return 0, false, err
@@ -127,17 +135,16 @@ func (a *App) signupConsentClaim(h denmaSignupHook) (int64, bool, error) {
 		return 0, false, err
 	}
 	var used int
-	if err := tx.Get(&used, `SELECT COUNT(*) FROM denma_consent_requests WHERE kind = 'server' AND created_at > NOW() - INTERVAL '24 hours'`); err != nil {
+	if err := tx.Get(&used, `SELECT COUNT(*) FROM denma_consent_requests WHERE kind = $1 AND created_at > NOW() - INTERVAL '24 hours'`, kind); err != nil {
 		return 0, false, err
 	}
-	if used >= denmaServerConsentPerDay {
-		a.signupAlert(h, "consent", fmt.Sprintf("sent %d e-mails asking for consent in a day", denmaServerConsentPerDay),
-			fmt.Sprintf("The center's Server webhooks sent %d confirmation or re-subscription e-mails in the last 24 hours, the most they can; people they sign up since aren't sent one. "+
-				"If the system using this webhook shouldn't sign up that many people who need to confirm, its secret may have leaked: a superadmin can give it a new one.", denmaServerConsentPerDay))
+	if used >= limit {
+		a.signupAlert(h, "consent", fmt.Sprintf("sent %d e-mails asking for consent in a day", limit),
+			fmt.Sprintf("The center's %s webhooks sent %d confirmation or re-subscription e-mails in the last 24 hours, the most they can; %s", kinds, limit, advice))
 		return 0, false, nil
 	}
 	var id int64
-	if err := tx.Get(&id, `INSERT INTO denma_consent_requests (kind) VALUES ('server') RETURNING id`); err != nil {
+	if err := tx.Get(&id, `INSERT INTO denma_consent_requests (kind) VALUES ($1) RETURNING id`, kind); err != nil {
 		return 0, false, err
 	}
 	return id, true, tx.Commit()

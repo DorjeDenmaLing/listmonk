@@ -65,6 +65,15 @@ func (a *App) denmaOwnConfirm(meta models.JSON, subUUID, token string) {
 	}
 }
 
+// denmaOptinLinkOld is what the opt-in page says to a link without its e-mail's token, or past its time.
+const denmaOptinLinkOld = "This confirmation link is incomplete or too old. Sign up again to be sent a new one."
+
+// denmaOptinLinkOK reports whether a confirmation comes with the token of one of the subscriber's opt-in e-mails.
+func (a *App) denmaOptinLinkOK(subUUID, token string) bool {
+	var subID int
+	return a.db.Get(&subID, `SELECT id FROM subscribers WHERE uuid = $1`, subUUID) == nil && denmaOptinTokenOK(a.db, subID, token)
+}
+
 func denmaOptinTokenOK(db *sqlx.DB, subID int, token string) bool {
 	if token == "" {
 		return false

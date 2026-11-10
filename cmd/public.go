@@ -513,6 +513,9 @@ func (a *App) confirmOptinSubscription(c echo.Context, subUUID string, listUUIDs
 		meta["optin_ip"] = c.RealIP() // denma: not any client's X-Forwarded-For (srv.IPExtractor, cmd/init.go)
 	}
 
+	if !a.denmaOptinLinkOK(subUUID, c.FormValue("t")) { // denma: only the e-mail's own link confirms (cmd/denma_optintoken.go)
+		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("public.errorTitle"), "", denmaOptinLinkOld))
+	}
 	a.denmaNoConsentOptin(subUUID, c.FormValue("t"))   // denma: their own confirmation (cmd/denma_noconsent.go)
 	a.denmaOwnConfirm(meta, subUUID, c.FormValue("t")) // denma: recorded as theirs only with the token (cmd/denma_optintoken.go)
 	if err := a.core.ConfirmOptionSubscription(subUUID, listUUIDs, meta); err != nil {

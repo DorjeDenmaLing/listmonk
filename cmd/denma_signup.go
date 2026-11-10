@@ -850,9 +850,22 @@ func (a *App) DenmaSignup(c echo.Context) error {
 	if first != "" || last != "" {
 		attribs = denmaWithNames(attribs, first, last) // a new subscriber's
 	}
+	// One of the day's e-mails asking for consent (cmd/denma_consentcap.go), given back if none is sent.
+	claim, ok, err := a.signupConsentClaim(h)
+	if err != nil {
+		a.log.Printf("denma: error in sign-up webhook %d: %v", h.ID, err)
+		return reply(http.StatusInternalServerError, a.i18n.T("public.errorProcessingRequest"))
+	}
+	if !ok {
+		logf("the day's e-mails asking for consent are used up")
+		return reply(http.StatusTooManyRequests, "Too many sign-ups for now. Try again tomorrow.")
+	}
 	result, isNew, err := a.signupSubscribe(email, name, listIDs, attribs)
 	if errors.Is(err, errDenmaOptinLimited) { // answered as sent (cmd/denma_signupanswers.go)
 		result, err = "opt-in limit reached: no e-mail sent", nil
+	}
+	if err != nil || strings.HasSuffix(result, "already confirmed") || strings.HasSuffix(result, "no e-mail sent") {
+		a.denmaConsentUnclaim(claim)
 	}
 	if err != nil {
 		var he *echo.HTTPError
